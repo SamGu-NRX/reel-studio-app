@@ -26,6 +26,8 @@ Values are seconds as median [minimum, maximum]. A median delta no larger than t
 | sg/alpha | Re-render 2 | 4.052 [3.971, 4.134] | 4.150 [4.028, 4.346] | +2.4% | noise |
 | sg/alpha | Startup | 0.821 [0.711, 1.033] | 0.518 [0.484, 1.464] | -37.0% | noise |
 
+The b2f3025 Notes trials ran without draft serving because the harness used noncanonical /tmp paths; the #20 worker's [canonical-path re-measurement at c250836](/tmp/rs-evidence/ai-note-staging/guarded-note-perf/README.md#harness-correction-and-reproduction) reports main 6.484 s versus branch 6.583 s, +98.5 ms, inside main's observed range.
+
 ## Accepted loads
 
 Each range covers the timed-operation starts within that trial. Raw loadChecks also include refused attempts, with timestamps and operation names.
