@@ -1,0 +1,1460 @@
+{
+  "benchmarkCommit": "eb9761e36f81f9f8e877e81e93aab4898a8b0c0e",
+  "method": "real-electron-basic-plan-v2-load-guard",
+  "benchmarkHarnessSha256": "2ee5520c523afd07b57dbb60a2204b483fce430071c1b74f963c1680224c39d4",
+  "heads": {
+    "main": "8f618175b9f58da136002fdabb355a719436cd5f",
+    "ai-note-staging": "b2f302508c549de26f7871ec74667325256ee55d",
+    "player-smooth": "6fbbd919b503eaf7716b6f91c0e7f7041166e069",
+    "sg/alpha": "b982ccd1b39d3780b01f05af2a9c5ec8ac1f5d1c"
+  },
+  "loadGuard": {
+    "oneMinuteBelow": 8
+  },
+  "host": {
+    "platform": "darwin",
+    "release": "25.6.0",
+    "cpu": "Apple M4 Pro",
+    "cores": 12,
+    "arch": "arm64",
+    "memoryBytes": 25769803776,
+    "machineFingerprint": "b6393f22b5e8ec98cb894c62187217ccc779f7b25fb9c67763f8e682809f2085"
+  },
+  "runtime": {
+    "node": "v26.5.0",
+    "arch": "arm64",
+    "python": "Python 3.11.15",
+    "electron": "44.8.0",
+    "playwright": "1.64.1",
+    "electronVersions": {
+      "node": "24.22.0",
+      "acorn": "8.18.0",
+      "ada": "4.0.0",
+      "amaro": "1.1.11",
+      "ares": "1.34.8",
+      "brotli": "1.2.0",
+      "cldr": "48.0",
+      "icu": "78.2",
+      "llhttp": "9.4.3",
+      "merve": "1.2.2",
+      "modules": "149",
+      "napi": "10",
+      "nbytes": "0.1.4",
+      "ncrypto": "0.0.1",
+      "nghttp2": "1.70.0",
+      "nghttp3": "",
+      "ngtcp2": "",
+      "openssl": "0.0.0",
+      "simdjson": "4.6.11",
+      "simdutf": "7.7.0",
+      "sqlite": "3.53.4",
+      "tz": "2026d",
+      "undici": "7.29.1",
+      "unicode": "17.0",
+      "uv": "1.52.1",
+      "uvwasi": "0.0.23",
+      "v8": "15.2.124.43-electron.0",
+      "zlib": "1.3.2.1-motley",
+      "zstd": "1.6.0",
+      "electron": "44.8.0",
+      "chrome": "152.0.7977.167"
+    }
+  },
+  "timingComparisons": [
+    {
+      "ref": "ai-note-staging",
+      "sha": "b2f302508c549de26f7871ec74667325256ee55d",
+      "metric": "first_edit_ms",
+      "operation": "First edit",
+      "verdict": "noise",
+      "before": {
+        "median": 9326.001708,
+        "min": 8421.482708,
+        "max": 10688.009375,
+        "spread": 2266.526667,
+        "n": 3
+      },
+      "after": {
+        "median": 8227.131583999995,
+        "min": 7895.6859170000025,
+        "max": 8287.857166,
+        "spread": 392.17124899999726,
+        "n": 3
+      },
+      "deltaMs": -1098.8701240000046,
+      "deltaPercent": -11.782864279955852
+    },
+    {
+      "ref": "ai-note-staging",
+      "sha": "b2f302508c549de26f7871ec74667325256ee55d",
+      "metric": "note_ms",
+      "operation": "Notes",
+      "verdict": "regression",
+      "before": {
+        "median": 6784.712833999991,
+        "min": 6777.190917,
+        "max": 6802.790875000006,
+        "spread": 25.599958000006154,
+        "n": 3
+      },
+      "after": {
+        "median": 7091.499958,
+        "min": 7062.664833000003,
+        "max": 7283.707374999998,
+        "spread": 221.0425419999956,
+        "n": 3
+      },
+      "deltaMs": 306.7871240000095,
+      "deltaPercent": 4.521740735475466
+    },
+    {
+      "ref": "ai-note-staging",
+      "sha": "b2f302508c549de26f7871ec74667325256ee55d",
+      "metric": "rerender_1_ms",
+      "operation": "Re-render 1",
+      "verdict": "noise",
+      "before": {
+        "median": 4302.067458999998,
+        "min": 4244.283291,
+        "max": 4511.669625000002,
+        "spread": 267.38633400000253,
+        "n": 3
+      },
+      "after": {
+        "median": 4437.862499999996,
+        "min": 4344.827541999999,
+        "max": 4543.658875000001,
+        "spread": 198.8313330000019,
+        "n": 3
+      },
+      "deltaMs": 135.79504099999758,
+      "deltaPercent": 3.1565065470071154
+    },
+    {
+      "ref": "ai-note-staging",
+      "sha": "b2f302508c549de26f7871ec74667325256ee55d",
+      "metric": "rerender_2_ms",
+      "operation": "Re-render 2",
+      "verdict": "noise",
+      "before": {
+        "median": 4052.0927079999965,
+        "min": 3971.1024169999873,
+        "max": 4133.745790999998,
+        "spread": 162.64337400001023,
+        "n": 3
+      },
+      "after": {
+        "median": 4065.3798340000067,
+        "min": 3941.6787080000067,
+        "max": 4158.381334000005,
+        "spread": 216.70262599999842,
+        "n": 3
+      },
+      "deltaMs": 13.287126000010176,
+      "deltaPercent": 0.32790774934091627
+    },
+    {
+      "ref": "ai-note-staging",
+      "sha": "b2f302508c549de26f7871ec74667325256ee55d",
+      "metric": "cold_interactive_ms",
+      "operation": "Startup",
+      "verdict": "noise",
+      "before": {
+        "median": 821.2893750000003,
+        "min": 710.6756249999999,
+        "max": 1032.6439169999976,
+        "spread": 321.96829199999775,
+        "n": 3
+      },
+      "after": {
+        "median": 895.765250000004,
+        "min": 890.2429580000007,
+        "max": 928.1303750000006,
+        "spread": 37.887416999999914,
+        "n": 3
+      },
+      "deltaMs": 74.47587500000373,
+      "deltaPercent": 9.06816492055601
+    },
+    {
+      "ref": "player-smooth",
+      "sha": "6fbbd919b503eaf7716b6f91c0e7f7041166e069",
+      "metric": "first_edit_ms",
+      "operation": "First edit",
+      "verdict": "noise",
+      "before": {
+        "median": 9326.001708,
+        "min": 8421.482708,
+        "max": 10688.009375,
+        "spread": 2266.526667,
+        "n": 3
+      },
+      "after": {
+        "median": 8284.802749999999,
+        "min": 7814.003916,
+        "max": 8780.000666000002,
+        "spread": 965.9967500000021,
+        "n": 3
+      },
+      "deltaMs": -1041.1989580000009,
+      "deltaPercent": -11.164473164387726
+    },
+    {
+      "ref": "player-smooth",
+      "sha": "6fbbd919b503eaf7716b6f91c0e7f7041166e069",
+      "metric": "note_ms",
+      "operation": "Notes",
+      "verdict": "noise",
+      "before": {
+        "median": 6784.712833999991,
+        "min": 6777.190917,
+        "max": 6802.790875000006,
+        "spread": 25.599958000006154,
+        "n": 3
+      },
+      "after": {
+        "median": 6995.577292000002,
+        "min": 6758.846833000018,
+        "max": 7052.904541999989,
+        "spread": 294.0577089999715,
+        "n": 3
+      },
+      "deltaMs": 210.86445800001093,
+      "deltaPercent": 3.1079348995187144
+    },
+    {
+      "ref": "player-smooth",
+      "sha": "6fbbd919b503eaf7716b6f91c0e7f7041166e069",
+      "metric": "rerender_1_ms",
+      "operation": "Re-render 1",
+      "verdict": "noise",
+      "before": {
+        "median": 4302.067458999998,
+        "min": 4244.283291,
+        "max": 4511.669625000002,
+        "spread": 267.38633400000253,
+        "n": 3
+      },
+      "after": {
+        "median": 4951.811750000001,
+        "min": 4250.028666999999,
+        "max": 5153.111207999995,
+        "spread": 903.0825409999961,
+        "n": 3
+      },
+      "deltaMs": 649.7442910000027,
+      "deltaPercent": 15.103070725697865
+    },
+    {
+      "ref": "player-smooth",
+      "sha": "6fbbd919b503eaf7716b6f91c0e7f7041166e069",
+      "metric": "rerender_2_ms",
+      "operation": "Re-render 2",
+      "verdict": "noise",
+      "before": {
+        "median": 4052.0927079999965,
+        "min": 3971.1024169999873,
+        "max": 4133.745790999998,
+        "spread": 162.64337400001023,
+        "n": 3
+      },
+      "after": {
+        "median": 4296.203750000001,
+        "min": 4007.750834000002,
+        "max": 4867.3213749999995,
+        "spread": 859.5705409999973,
+        "n": 3
+      },
+      "deltaMs": 244.1110420000041,
+      "deltaPercent": 6.024320260937236
+    },
+    {
+      "ref": "player-smooth",
+      "sha": "6fbbd919b503eaf7716b6f91c0e7f7041166e069",
+      "metric": "cold_interactive_ms",
+      "operation": "Startup",
+      "verdict": "noise",
+      "before": {
+        "median": 821.2893750000003,
+        "min": 710.6756249999999,
+        "max": 1032.6439169999976,
+        "spread": 321.96829199999775,
+        "n": 3
+      },
+      "after": {
+        "median": 930.972291,
+        "min": 890.0419160000001,
+        "max": 1018.2737909999996,
+        "spread": 128.2318749999995,
+        "n": 3
+      },
+      "deltaMs": 109.68291599999975,
+      "deltaPercent": 13.354965903461215
+    },
+    {
+      "ref": "sg/alpha",
+      "sha": "b982ccd1b39d3780b01f05af2a9c5ec8ac1f5d1c",
+      "metric": "first_edit_ms",
+      "operation": "First edit",
+      "verdict": "noise",
+      "before": {
+        "median": 9326.001708,
+        "min": 8421.482708,
+        "max": 10688.009375,
+        "spread": 2266.526667,
+        "n": 3
+      },
+      "after": {
+        "median": 7109.329084000001,
+        "min": 6863.377041,
+        "max": 7361.549500000001,
+        "spread": 498.17245900000125,
+        "n": 3
+      },
+      "deltaMs": -2216.672623999999,
+      "deltaPercent": -23.768734913467796
+    },
+    {
+      "ref": "sg/alpha",
+      "sha": "b982ccd1b39d3780b01f05af2a9c5ec8ac1f5d1c",
+      "metric": "note_ms",
+      "operation": "Notes",
+      "verdict": "noise",
+      "before": {
+        "median": 6784.712833999991,
+        "min": 6777.190917,
+        "max": 6802.790875000006,
+        "spread": 25.599958000006154,
+        "n": 3
+      },
+      "after": {
+        "median": 7181.985292000005,
+        "min": 6754.352875000004,
+        "max": 7272.789791999996,
+        "spread": 518.4369169999918,
+        "n": 3
+      },
+      "deltaMs": 397.272458000014,
+      "deltaPercent": 5.855405640886916
+    },
+    {
+      "ref": "sg/alpha",
+      "sha": "b982ccd1b39d3780b01f05af2a9c5ec8ac1f5d1c",
+      "metric": "rerender_1_ms",
+      "operation": "Re-render 1",
+      "verdict": "noise",
+      "before": {
+        "median": 4302.067458999998,
+        "min": 4244.283291,
+        "max": 4511.669625000002,
+        "spread": 267.38633400000253,
+        "n": 3
+      },
+      "after": {
+        "median": 4499.990583999999,
+        "min": 4420.410459000002,
+        "max": 4511.2539160000015,
+        "spread": 90.84345699999903,
+        "n": 3
+      },
+      "deltaMs": 197.92312500000116,
+      "deltaPercent": 4.600651358591382
+    },
+    {
+      "ref": "sg/alpha",
+      "sha": "b982ccd1b39d3780b01f05af2a9c5ec8ac1f5d1c",
+      "metric": "rerender_2_ms",
+      "operation": "Re-render 2",
+      "verdict": "noise",
+      "before": {
+        "median": 4052.0927079999965,
+        "min": 3971.1024169999873,
+        "max": 4133.745790999998,
+        "spread": 162.64337400001023,
+        "n": 3
+      },
+      "after": {
+        "median": 4149.526542000007,
+        "min": 4027.748166000005,
+        "max": 4346.395165999998,
+        "spread": 318.64699999999357,
+        "n": 3
+      },
+      "deltaMs": 97.43383400001039,
+      "deltaPercent": 2.4045312143931943
+    },
+    {
+      "ref": "sg/alpha",
+      "sha": "b982ccd1b39d3780b01f05af2a9c5ec8ac1f5d1c",
+      "metric": "cold_interactive_ms",
+      "operation": "Startup",
+      "verdict": "noise",
+      "before": {
+        "median": 821.2893750000003,
+        "min": 710.6756249999999,
+        "max": 1032.6439169999976,
+        "spread": 321.96829199999775,
+        "n": 3
+      },
+      "after": {
+        "median": 517.6372920000013,
+        "min": 484.13075000000026,
+        "max": 1464.2230409999993,
+        "spread": 980.092290999999,
+        "n": 3
+      },
+      "deltaMs": -303.65208299999904,
+      "deltaPercent": -36.97260578830682
+    }
+  ],
+  "trialLoads": [
+    {
+      "ref": "main",
+      "sha": "8f618175b9f58da136002fdabb355a719436cd5f",
+      "startup": [
+        4.83251953125,
+        7.80615234375,
+        7.8115234375
+      ],
+      "operationRanges": [
+        [
+          4.83251953125,
+          6.82177734375
+        ],
+        [
+          5.275390625,
+          7.80615234375
+        ],
+        [
+          5.68896484375,
+          7.8115234375
+        ]
+      ],
+      "refusedChecks": [
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 2,
+          "phase": "open_project",
+          "at": "2026-10-21T12:32:55.454Z",
+          "oneMinute": 11.8134765625,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 2,
+          "phase": "open_project",
+          "at": "2026-10-21T12:33:25.560Z",
+          "oneMinute": 8.3251953125,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 3,
+          "phase": "open_project",
+          "at": "2026-10-21T12:37:56.129Z",
+          "oneMinute": 9.2685546875,
+          "threshold": 8,
+          "accepted": false
+        }
+      ]
+    },
+    {
+      "ref": "ai-note-staging",
+      "sha": "b2f302508c549de26f7871ec74667325256ee55d",
+      "startup": [
+        7.21337890625,
+        6.0234375,
+        6.78759765625
+      ],
+      "operationRanges": [
+        [
+          6.513671875,
+          7.51318359375
+        ],
+        [
+          5.689453125,
+          6.7890625
+        ],
+        [
+          6.6337890625,
+          7.40576171875
+        ]
+      ],
+      "refusedChecks": [
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 1,
+          "phase": "startup",
+          "at": "2026-10-21T12:27:19.681Z",
+          "oneMinute": 9.130859375,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 1,
+          "phase": "open_project",
+          "at": "2026-10-21T12:27:59.177Z",
+          "oneMinute": 9.0703125,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 1,
+          "phase": "rerender_2",
+          "at": "2026-10-21T12:28:39.846Z",
+          "oneMinute": 8.02734375,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 2,
+          "phase": "open_project",
+          "at": "2026-10-21T12:34:44.369Z",
+          "oneMinute": 8.216796875,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 2,
+          "phase": "rerender_2",
+          "at": "2026-10-21T12:35:25.342Z",
+          "oneMinute": 8.1162109375,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 3,
+          "phase": "startup",
+          "at": "2026-10-21T12:38:59.686Z",
+          "oneMinute": 10.04150390625,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 3,
+          "phase": "rerender_2",
+          "at": "2026-10-21T12:39:49.575Z",
+          "oneMinute": 10.35400390625,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 3,
+          "phase": "note",
+          "at": "2026-10-21T12:40:24.204Z",
+          "oneMinute": 8.57421875,
+          "threshold": 8,
+          "accepted": false
+        }
+      ]
+    },
+    {
+      "ref": "player-smooth",
+      "sha": "6fbbd919b503eaf7716b6f91c0e7f7041166e069",
+      "startup": [
+        7.07373046875,
+        5.78125,
+        7.86865234375
+      ],
+      "operationRanges": [
+        [
+          7.07373046875,
+          7.77978515625
+        ],
+        [
+          5.78125,
+          7.15966796875
+        ],
+        [
+          6.1708984375,
+          7.912109375
+        ]
+      ],
+      "refusedChecks": [
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 1,
+          "phase": "open_project",
+          "at": "2026-10-21T12:29:42.560Z",
+          "oneMinute": 8.2685546875,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 1,
+          "phase": "rerender_2",
+          "at": "2026-10-21T12:30:24.101Z",
+          "oneMinute": 8.90185546875,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 1,
+          "phase": "note",
+          "at": "2026-10-21T12:30:59.459Z",
+          "oneMinute": 8.81494140625,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 3,
+          "phase": "open_project",
+          "at": "2026-10-21T12:41:23.916Z",
+          "oneMinute": 8.384765625,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 3,
+          "phase": "rerender_2",
+          "at": "2026-10-21T12:42:05.300Z",
+          "oneMinute": 8.92724609375,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 3,
+          "phase": "note",
+          "at": "2026-10-21T12:42:40.068Z",
+          "oneMinute": 9.3603515625,
+          "threshold": 8,
+          "accepted": false
+        }
+      ]
+    },
+    {
+      "ref": "sg/alpha",
+      "sha": "b982ccd1b39d3780b01f05af2a9c5ec8ac1f5d1c",
+      "startup": [
+        6.435546875,
+        7.1806640625,
+        7.373046875
+      ],
+      "operationRanges": [
+        [
+          5.8828125,
+          6.560546875
+        ],
+        [
+          6.54345703125,
+          7.1806640625
+        ],
+        [
+          6.8388671875,
+          7.85400390625
+        ]
+      ],
+      "refusedChecks": [
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 3,
+          "phase": "open_project",
+          "at": "2026-10-21T12:43:40.385Z",
+          "oneMinute": 8.609375,
+          "threshold": 8,
+          "accepted": false
+        },
+        {
+          "clip": "aiden-v1-new.mp4",
+          "run": 3,
+          "phase": "note",
+          "at": "2026-10-21T12:44:25.680Z",
+          "oneMinute": 8.064453125,
+          "threshold": 8,
+          "accepted": false
+        }
+      ]
+    }
+  ],
+  "claims": [
+    [
+      "cover-frame-streaming",
+      "confirmed, phase-specific memory",
+      "1059.80 [966.55, 1089.11] to 179.47 [164.55, 201.38] MiB",
+      "Original origin_main 8f61817 versus fork_cover-frame-streaming 66da344, three unguarded runs. 83.1% lower; full ranges 122.6/36.8 MiB"
+    ],
+    [
+      "player-smooth",
+      "confirmed reduction in committed React work",
+      "18.00 [18.00, 18.00] to 5.00 [5.00, 5.00] commits / 5 s",
+      "Main 8f61817 versus player e8d6e22 in the archived three-round cohort. PhonePlayer 18 to 0, dropped frames 0/0."
+    ],
+    [
+      "sg/alpha memory",
+      "confirmed, historical 9b374a8",
+      "1057.73 [1055.23, 1105.53] to 199.34 [189.33, 200.86] MiB",
+      "Main 8f61817 versus alpha 9b374a8, three interleaved unguarded runs."
+    ],
+    [
+      "sg/alpha React commits",
+      "regression, historical 9b374a8",
+      "18 to 595 root commits per 5 seconds",
+      "Historical head 9b374a8. This is not a verdict on the newly timed b982ccd."
+    ],
+    [
+      "speech-setup model adoption",
+      "confirmed local-weight adoption, historical single run",
+      "486,098,798 logical bytes adopted",
+      "Historical speech head 5eec35e, one adoption run. Pinned model hash verified and no model download. No new adoption timing claim."
+    ]
+  ],
+  "retainedHistoricalClaims": [
+    [
+      "cover-frame-streaming",
+      "confirmed, phase-specific memory",
+      "1059.80 [966.55, 1089.11] to 179.47 [164.55, 201.38] MiB",
+      "Original origin_main 8f61817 versus fork_cover-frame-streaming 66da344, three unguarded runs. 83.1% lower; full ranges 122.6/36.8 MiB"
+    ],
+    [
+      "player-smooth",
+      "confirmed reduction in committed React work",
+      "18.00 [18.00, 18.00] to 5.00 [5.00, 5.00] commits / 5 s",
+      "Main 8f61817 versus player e8d6e22 in the archived three-round cohort. PhonePlayer 18 to 0, dropped frames 0/0."
+    ],
+    [
+      "sg/alpha memory",
+      "confirmed, historical 9b374a8",
+      "1057.73 [1055.23, 1105.53] to 199.34 [189.33, 200.86] MiB",
+      "Main 8f61817 versus alpha 9b374a8, three interleaved unguarded runs."
+    ],
+    [
+      "sg/alpha React commits",
+      "regression, historical 9b374a8",
+      "18 to 595 root commits per 5 seconds",
+      "Historical head 9b374a8. This is not a verdict on the newly timed b982ccd."
+    ],
+    [
+      "speech-setup model adoption",
+      "confirmed local-weight adoption, historical single run",
+      "486,098,798 logical bytes adopted",
+      "Historical speech head 5eec35e, one adoption run. Pinned model hash verified and no model download. No new adoption timing claim."
+    ]
+  ],
+  "historicalEvidence": {
+    "archive": "/tmp/rs-perf-harness/pre-load-guard",
+    "originalClaims": [
+      [
+        "cover-frame-streaming",
+        "confirmed, phase-specific memory",
+        "1059.80 [966.55, 1089.11] to 179.47 [164.55, 201.38] MiB",
+        "Original origin_main 8f61817 versus fork_cover-frame-streaming 66da344, three unguarded runs. 83.1% lower; full ranges 122.6/36.8 MiB"
+      ],
+      [
+        "ai-note-staging",
+        "confirmed for successful caption-note parity; speed not confirmed",
+        "7.04 [6.83, 7.07] to 6.98 [6.82, 7.35] s",
+        "3/3 identical final note MP4s; ranges 0.24/0.53 s"
+      ],
+      [
+        "player-smooth",
+        "confirmed reduction in committed React work",
+        "18.00 [18.00, 18.00] to 5.00 [5.00, 5.00] commits / 5 s",
+        "PhonePlayer 18 to 0; dropped video frames 0/0. Counts do not measure CPU cost or perceived smoothness."
+      ],
+      [
+        "speech-setup",
+        "thread speed not confirmed, noise",
+        "10.63 [8.78, 13.50] to 9.19 [8.05, 9.63] s",
+        "Configured full-edit ranges 4.72/1.58 s. Setup selected 8,4,4 threads."
+      ],
+      [
+        "speech-setup model reuse",
+        "confirmed local-weight adoption, one run",
+        "486,098,798 logical bytes adopted in 265.6 ms",
+        "Pinned model hash verified; no download-model command. This does not reuse a resident WhisperModel."
+      ],
+      [
+        "sg/alpha",
+        "memory confirmed; playback commit regression; first-edit speed not confirmed",
+        "1057.73 [1055.23, 1105.53] to 199.34 [189.33, 200.86] MiB",
+        "First edit 12.16 [8.17, 14.96] to 9.58 [7.50, 10.35] s; root commits 18 to 595. Whole-ref comparison, JavaScript lock differs."
+      ]
+    ],
+    "memoryAndCommitSources": [
+      "origin_main",
+      "fork_cover-frame-streaming",
+      "/tmp/rs-perf-harness/pre-load-guard/8f618175b9f58da136002fdabb355a719436cd5f",
+      "/tmp/rs-perf-harness/pre-load-guard/e62828457279e8a0c8a062bcd3b44b077abe9f41",
+      "/tmp/rs-perf-harness/pre-load-guard/e8d6e22573e2388fdb6f00534bb640de2f57948f",
+      "/tmp/rs-perf-harness/pre-load-guard/9b374a8b4007f5a6f154bf837471f09dc47ab60f"
+    ]
+  },
+  "latest": [
+    {
+      "ref": "main",
+      "sha": "8f618175b9f58da136002fdabb355a719436cd5f",
+      "summary": {
+        "aiden-v1-new.mp4": {
+          "first_edit_ms": {
+            "median": 9326.001708,
+            "min": 8421.482708,
+            "max": 10688.009375,
+            "spread": 2266.526667,
+            "n": 3
+          },
+          "note_ms": {
+            "median": 6784.712833999991,
+            "min": 6777.190917,
+            "max": 6802.790875000006,
+            "spread": 25.599958000006154,
+            "n": 3
+          },
+          "rerender_1_ms": {
+            "median": 4302.067458999998,
+            "min": 4244.283291,
+            "max": 4511.669625000002,
+            "spread": 267.38633400000253,
+            "n": 3
+          },
+          "rerender_2_ms": {
+            "median": 4052.0927079999965,
+            "min": 3971.1024169999873,
+            "max": 4133.745790999998,
+            "spread": 162.64337400001023,
+            "n": 3
+          },
+          "cold_interactive_ms": {
+            "median": 821.2893750000003,
+            "min": 710.6756249999999,
+            "max": 1032.6439169999976,
+            "spread": 321.96829199999775,
+            "n": 3
+          }
+        }
+      },
+      "results": "/tmp/rs-perf-harness/8f618175b9f58da136002fdabb355a719436cd5f/results.json"
+    },
+    {
+      "ref": "ai-note-staging",
+      "sha": "b2f302508c549de26f7871ec74667325256ee55d",
+      "summary": {
+        "aiden-v1-new.mp4": {
+          "first_edit_ms": {
+            "median": 8227.131583999995,
+            "min": 7895.6859170000025,
+            "max": 8287.857166,
+            "spread": 392.17124899999726,
+            "n": 3
+          },
+          "note_ms": {
+            "median": 7091.499958,
+            "min": 7062.664833000003,
+            "max": 7283.707374999998,
+            "spread": 221.0425419999956,
+            "n": 3
+          },
+          "rerender_1_ms": {
+            "median": 4437.862499999996,
+            "min": 4344.827541999999,
+            "max": 4543.658875000001,
+            "spread": 198.8313330000019,
+            "n": 3
+          },
+          "rerender_2_ms": {
+            "median": 4065.3798340000067,
+            "min": 3941.6787080000067,
+            "max": 4158.381334000005,
+            "spread": 216.70262599999842,
+            "n": 3
+          },
+          "cold_interactive_ms": {
+            "median": 895.765250000004,
+            "min": 890.2429580000007,
+            "max": 928.1303750000006,
+            "spread": 37.887416999999914,
+            "n": 3
+          }
+        }
+      },
+      "results": "/tmp/rs-perf-harness/b2f302508c549de26f7871ec74667325256ee55d/results.json"
+    },
+    {
+      "ref": "player-smooth",
+      "sha": "6fbbd919b503eaf7716b6f91c0e7f7041166e069",
+      "summary": {
+        "aiden-v1-new.mp4": {
+          "first_edit_ms": {
+            "median": 8284.802749999999,
+            "min": 7814.003916,
+            "max": 8780.000666000002,
+            "spread": 965.9967500000021,
+            "n": 3
+          },
+          "note_ms": {
+            "median": 6995.577292000002,
+            "min": 6758.846833000018,
+            "max": 7052.904541999989,
+            "spread": 294.0577089999715,
+            "n": 3
+          },
+          "rerender_1_ms": {
+            "median": 4951.811750000001,
+            "min": 4250.028666999999,
+            "max": 5153.111207999995,
+            "spread": 903.0825409999961,
+            "n": 3
+          },
+          "rerender_2_ms": {
+            "median": 4296.203750000001,
+            "min": 4007.750834000002,
+            "max": 4867.3213749999995,
+            "spread": 859.5705409999973,
+            "n": 3
+          },
+          "cold_interactive_ms": {
+            "median": 930.972291,
+            "min": 890.0419160000001,
+            "max": 1018.2737909999996,
+            "spread": 128.2318749999995,
+            "n": 3
+          }
+        }
+      },
+      "results": "/tmp/rs-perf-harness/6fbbd919b503eaf7716b6f91c0e7f7041166e069/results.json"
+    },
+    {
+      "ref": "sg/alpha",
+      "sha": "b982ccd1b39d3780b01f05af2a9c5ec8ac1f5d1c",
+      "summary": {
+        "aiden-v1-new.mp4": {
+          "first_edit_ms": {
+            "median": 7109.329084000001,
+            "min": 6863.377041,
+            "max": 7361.549500000001,
+            "spread": 498.17245900000125,
+            "n": 3
+          },
+          "note_ms": {
+            "median": 7181.985292000005,
+            "min": 6754.352875000004,
+            "max": 7272.789791999996,
+            "spread": 518.4369169999918,
+            "n": 3
+          },
+          "rerender_1_ms": {
+            "median": 4499.990583999999,
+            "min": 4420.410459000002,
+            "max": 4511.2539160000015,
+            "spread": 90.84345699999903,
+            "n": 3
+          },
+          "rerender_2_ms": {
+            "median": 4149.526542000007,
+            "min": 4027.748166000005,
+            "max": 4346.395165999998,
+            "spread": 318.64699999999357,
+            "n": 3
+          },
+          "cold_interactive_ms": {
+            "median": 517.6372920000013,
+            "min": 484.13075000000026,
+            "max": 1464.2230409999993,
+            "spread": 980.092290999999,
+            "n": 3
+          }
+        }
+      },
+      "results": "/tmp/rs-perf-harness/b982ccd1b39d3780b01f05af2a9c5ec8ac1f5d1c/results.json"
+    }
+  ],
+  "latestOutputParity": {
+    "main": {
+      "sha": "8f618175b9f58da136002fdabb355a719436cd5f",
+      "fullExportsMatchingMain": 9,
+      "fullExportsChecked": 9,
+      "noteOutputsMatchingMain": 3,
+      "noteOutputsChecked": 3
+    },
+    "ai-note-staging": {
+      "sha": "b2f302508c549de26f7871ec74667325256ee55d",
+      "fullExportsMatchingMain": 9,
+      "fullExportsChecked": 9,
+      "noteOutputsMatchingMain": 3,
+      "noteOutputsChecked": 3
+    },
+    "player-smooth": {
+      "sha": "6fbbd919b503eaf7716b6f91c0e7f7041166e069",
+      "fullExportsMatchingMain": 9,
+      "fullExportsChecked": 9,
+      "noteOutputsMatchingMain": 3,
+      "noteOutputsChecked": 3
+    },
+    "sg/alpha": {
+      "sha": "b982ccd1b39d3780b01f05af2a9c5ec8ac1f5d1c",
+      "fullExportsMatchingMain": 9,
+      "fullExportsChecked": 9,
+      "noteOutputsMatchingMain": 3,
+      "noteOutputsChecked": 3
+    }
+  },
+  "originalMain": {
+    "aiden-v1-new.mp4": {
+      "cold_interactive_ms": {
+        "median": 1071.7972910000008,
+        "min": 1057.5651670000007,
+        "max": 1461.5979169999991,
+        "spread": 404.0327499999985,
+        "n": 3
+      },
+      "first_edit_ms": {
+        "median": 11634.811958000002,
+        "min": 10118.36475,
+        "max": 11657.477707999999,
+        "spread": 1539.112957999998,
+        "n": 3
+      },
+      "phase_import_ms": {
+        "median": 274.5155829999999,
+        "min": 227.786875,
+        "max": 282.66075,
+        "spread": 54.873875,
+        "n": 3
+      },
+      "phase_listen_ms": {
+        "median": 5859.451542000001,
+        "min": 5204.890333,
+        "max": 6446.353083,
+        "spread": 1241.4627499999997,
+        "n": 3
+      },
+      "phase_analyze_ms": {
+        "median": 461.0960420000001,
+        "min": 421.88920899999994,
+        "max": 686.087125,
+        "spread": 264.1979160000001,
+        "n": 3
+      },
+      "phase_final_ms": {
+        "median": 4221.788583,
+        "min": 4074.789791,
+        "max": 4961.8507500000005,
+        "spread": 887.0609590000004,
+        "n": 3
+      },
+      "open_project_ms": {
+        "median": 64.98695799999768,
+        "min": 60.35229199999958,
+        "max": 83.81574999999793,
+        "spread": 23.463457999998354,
+        "n": 3
+      },
+      "reel_commits_5s": {
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "spread": 0,
+        "n": 3
+      },
+      "player_commits_5s": {
+        "median": 18,
+        "min": 18,
+        "max": 18,
+        "spread": 0,
+        "n": 3
+      },
+      "screen_react_commits_5s": {
+        "median": 18,
+        "min": 18,
+        "max": 18,
+        "spread": 0,
+        "n": 3
+      },
+      "decoded_frames_5s": {
+        "median": 151,
+        "min": 149,
+        "max": 151,
+        "spread": 2,
+        "n": 3
+      },
+      "dropped_frames_5s": {
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "spread": 0,
+        "n": 3
+      },
+      "rerender_1_ms": {
+        "median": 5467.948750000003,
+        "min": 4690.462874999997,
+        "max": 5822.308332999997,
+        "spread": 1131.8454579999998,
+        "n": 3
+      },
+      "rerender_2_ms": {
+        "median": 4805.118083000001,
+        "min": 4157.441917000004,
+        "max": 5869.5265,
+        "spread": 1712.0845829999962,
+        "n": 3
+      },
+      "disk_media_mib": {
+        "median": 25.28536605834961,
+        "min": 25.28536605834961,
+        "max": 25.28536605834961,
+        "spread": 0,
+        "n": 3
+      },
+      "disk_work_mib": {
+        "median": 22.84549331665039,
+        "min": 22.84549331665039,
+        "max": 22.84549331665039,
+        "spread": 0,
+        "n": 3
+      },
+      "disk_versions_mib": {
+        "median": 74.80989170074463,
+        "min": 74.80988883972168,
+        "max": 74.80989360809326,
+        "spread": 4.76837158203125e-06,
+        "n": 3
+      },
+      "disk_project_mib": {
+        "median": 122.94292449951172,
+        "min": 122.94292163848877,
+        "max": 122.94292640686035,
+        "spread": 4.76837158203125e-06,
+        "n": 3
+      },
+      "note_ms": {
+        "median": 8405.971375000001,
+        "min": 6752.687041999998,
+        "max": 9875.352457999994,
+        "spread": 3122.665415999996,
+        "n": 3
+      },
+      "note_render_calls": {
+        "median": 3,
+        "min": 3,
+        "max": 3,
+        "spread": 0,
+        "n": 3
+      },
+      "main_rss_mib": {
+        "median": 223.71875,
+        "min": 213.53125,
+        "max": 224.203125,
+        "spread": 10.671875,
+        "n": 3
+      },
+      "renderer_rss_mib": {
+        "median": 326.109375,
+        "min": 313.828125,
+        "max": 404.859375,
+        "spread": 91.03125,
+        "n": 3
+      },
+      "engine_rss_mib": {
+        "median": 1059.796875,
+        "min": 982.203125,
+        "max": 1089.109375,
+        "spread": 106.90625,
+        "n": 3
+      },
+      "engine_tree_rss_mib": {
+        "median": 1693.328125,
+        "min": 1606.34375,
+        "max": 1744.5,
+        "spread": 138.15625,
+        "n": 3
+      },
+      "first_final_python_rss_mib": {
+        "median": 1059.796875,
+        "min": 966.546875,
+        "max": 1089.109375,
+        "spread": 122.5625,
+        "n": 3
+      },
+      "ipc_detail_max_bytes": {
+        "median": 8539,
+        "min": 8539,
+        "max": 8539,
+        "spread": 0,
+        "n": 3
+      },
+      "ipc_detail_total_bytes": {
+        "median": 108907,
+        "min": 108904,
+        "max": 108912,
+        "spread": 8,
+        "n": 3
+      },
+      "ipc_detail_updates": {
+        "median": 17,
+        "min": 17,
+        "max": 17,
+        "spread": 0,
+        "n": 3
+      }
+    }
+  },
+  "longMain": {
+    "IMG_7303.mov": {
+      "cold_interactive_ms": {
+        "median": 1188.0623750000013,
+        "min": 1188.0623750000013,
+        "max": 1188.0623750000013,
+        "spread": 0,
+        "n": 1
+      },
+      "first_edit_ms": {
+        "median": 37896.823000000004,
+        "min": 37896.823000000004,
+        "max": 37896.823000000004,
+        "spread": 0,
+        "n": 1
+      },
+      "phase_import_ms": {
+        "median": 297.35508300000015,
+        "min": 297.35508300000015,
+        "max": 297.35508300000015,
+        "spread": 0,
+        "n": 1
+      },
+      "phase_listen_ms": {
+        "median": 14870.378499999999,
+        "min": 14870.378499999999,
+        "max": 14870.378499999999,
+        "spread": 0,
+        "n": 1
+      },
+      "phase_analyze_ms": {
+        "median": 464.91854199999943,
+        "min": 464.91854199999943,
+        "max": 464.91854199999943,
+        "spread": 0,
+        "n": 1
+      },
+      "phase_final_ms": {
+        "median": 22196.544708,
+        "min": 22196.544708,
+        "max": 22196.544708,
+        "spread": 0,
+        "n": 1
+      },
+      "open_project_ms": {
+        "median": 67.67783300000156,
+        "min": 67.67783300000156,
+        "max": 67.67783300000156,
+        "spread": 0,
+        "n": 1
+      },
+      "reel_commits_5s": {
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "spread": 0,
+        "n": 1
+      },
+      "player_commits_5s": {
+        "median": 18,
+        "min": 18,
+        "max": 18,
+        "spread": 0,
+        "n": 1
+      },
+      "screen_react_commits_5s": {
+        "median": 18,
+        "min": 18,
+        "max": 18,
+        "spread": 0,
+        "n": 1
+      },
+      "decoded_frames_5s": {
+        "median": 150,
+        "min": 150,
+        "max": 150,
+        "spread": 0,
+        "n": 1
+      },
+      "dropped_frames_5s": {
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "spread": 0,
+        "n": 1
+      },
+      "rerender_1_ms": {
+        "median": 27373.522792000003,
+        "min": 27373.522792000003,
+        "max": 27373.522792000003,
+        "spread": 0,
+        "n": 1
+      },
+      "rerender_2_ms": {
+        "median": 26869.939750000005,
+        "min": 26869.939750000005,
+        "max": 26869.939750000005,
+        "spread": 0,
+        "n": 1
+      },
+      "disk_media_mib": {
+        "median": 80.7076644897461,
+        "min": 80.7076644897461,
+        "max": 80.7076644897461,
+        "spread": 0,
+        "n": 1
+      },
+      "disk_work_mib": {
+        "median": 75.29529762268066,
+        "min": 75.29529762268066,
+        "max": 75.29529762268066,
+        "spread": 0,
+        "n": 1
+      },
+      "disk_versions_mib": {
+        "median": 296.9368896484375,
+        "min": 296.9368896484375,
+        "max": 296.9368896484375,
+        "spread": 0,
+        "n": 1
+      },
+      "disk_project_mib": {
+        "median": 452.9420232772827,
+        "min": 452.9420232772827,
+        "max": 452.9420232772827,
+        "spread": 0,
+        "n": 1
+      },
+      "main_rss_mib": {
+        "median": 209.734375,
+        "min": 209.734375,
+        "max": 209.734375,
+        "spread": 0,
+        "n": 1
+      },
+      "renderer_rss_mib": {
+        "median": 305.671875,
+        "min": 305.671875,
+        "max": 305.671875,
+        "spread": 0,
+        "n": 1
+      },
+      "engine_rss_mib": {
+        "median": 1028.703125,
+        "min": 1028.703125,
+        "max": 1028.703125,
+        "spread": 0,
+        "n": 1
+      },
+      "engine_tree_rss_mib": {
+        "median": 2004.171875,
+        "min": 2004.171875,
+        "max": 2004.171875,
+        "spread": 0,
+        "n": 1
+      },
+      "first_final_python_rss_mib": {
+        "median": 424.515625,
+        "min": 424.515625,
+        "max": 424.515625,
+        "spread": 0,
+        "n": 1
+      },
+      "ipc_detail_max_bytes": {
+        "median": 15343,
+        "min": 15343,
+        "max": 15343,
+        "spread": 0,
+        "n": 1
+      },
+      "ipc_detail_total_bytes": {
+        "median": 175845,
+        "min": 175845,
+        "max": 175845,
+        "spread": 0,
+        "n": 1
+      },
+      "ipc_detail_updates": {
+        "median": 14,
+        "min": 14,
+        "max": 14,
+        "spread": 0,
+        "n": 1
+      }
+    }
+  },
+  "historicalDataNotes": {
+    "originalMain": "Original unguarded three-round cohort. Disk values predate hard-link deduplication.",
+    "longMain": "Original unguarded single long-clip run. No timing verdict."
+  },
+  "apfsClonePhysicalUsage": "not measured",
+  "checks": [
+    {
+      "name": "ci",
+      "command": [
+        "npm",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "log": "/tmp/rs-perf-harness/guarded-check-ci.log"
+    },
+    {
+      "name": "build-ai",
+      "command": [
+        "npm",
+        "run",
+        "build",
+        "-w",
+        "ai"
+      ],
+      "exitCode": 0,
+      "log": "/tmp/rs-perf-harness/guarded-check-build-ai.log"
+    },
+    {
+      "name": "typecheck",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "log": "/tmp/rs-perf-harness/guarded-check-typecheck.log"
+    },
+    {
+      "name": "test",
+      "command": [
+        "npm",
+        "test"
+      ],
+      "exitCode": 1,
+      "log": "/tmp/rs-perf-harness/guarded-check-test.log"
+    },
+    {
+      "name": "perf-tests",
+      "command": [
+        "node",
+        "--test",
+        "scripts/perf/*.test.mjs"
+      ],
+      "exitCode": 0,
+      "passed": 6,
+      "evidence": "foreground tool result after the final metrics and cleanup fixes"
+    }
+  ],
+  "decisionsMadeForSam": [
+    "Use a fixed 1-minute load threshold of 8, strictly below, before every timed operation, including project opening and any optional setup timing. Record refusals and retry after 30 seconds outside timing.",
+    "Pin main to the requested 8f61817 even though fork/main moved. Pin staging, player, and alpha to the fetched heads in guarded-heads.json. Staging moved during setup, so refresh it once immediately before the suite.",
+    "Restart the cohort after the review fixes. Archive the interrupted first guarded attempt under guarded-attempt-1 and exclude it from corrected verdicts.",
+    "Run exactly three interleaved trials per ref on the Aiden clip with the same successful replay note. Use existing offline model weights and read-only FFmpeg. Retain all output validation.",
+    "Preserve earlier memory and commit verdicts with their tested heads. Do not transfer an old commit regression to a newly timed head or recalculate memory claims from this timing cohort.",
+    "Retain scratch and report cleaned=false when registry-based cleanup cannot verify termination. Verify scratch paths in process commands before signalling; media executables may be read-only outside scratch while their input/output paths belong to scratch.",
+    "Use the documented full-range rule: an absolute median difference no greater than either full observed range is noise. Three trials do not constitute a statistical significance test.",
+    "Context7 is unavailable in this session. The code uses existing repository patterns and official Node child_process, fs, and os documentation."
+  ]
+}
