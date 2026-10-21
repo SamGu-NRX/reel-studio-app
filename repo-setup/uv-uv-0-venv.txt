@@ -1,0 +1,3 @@
+Using CPython 3.11.15 interpreter at: /Users/samgu/.local/share/uv/python/cpython-3.11-macos-aarch64-none/bin/python3.11
+Creating virtual environment at: .scratch/bench-uv
+Activate with: source .scratch/bench-uv/bin/activate

@@ -1,0 +1,222 @@
+{
+  "python": "/Users/samgu/.local/share/uv/python/cpython-3.11-macos-aarch64-none/bin/python3.11",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "uv": "uv 0.11.15 (3cffe97c2 2026-05-18 aarch64-apple-darwin)",
+  "method": "Five alternating fresh-venv runs after one cache-priming run per tool; both installers constrained by engine/requirements.txt; includes venv creation and editable engine[dev] install, excludes uv installation and Python download.",
+  "results": [
+    {
+      "tool": "pip",
+      "run": 0,
+      "warm": false,
+      "venv": 2.005510583985597,
+      "install": 17.612249583005905,
+      "total": 19.617760166991502,
+      "cpu": 10.447606,
+      "packages": 36
+    },
+    {
+      "tool": "uv",
+      "run": 0,
+      "warm": false,
+      "venv": 0.046808416984276846,
+      "install": 3.30546770899673,
+      "total": 3.3522761259810068,
+      "cpu": 2.3290690000000014,
+      "packages": 36
+    },
+    {
+      "tool": "pip",
+      "run": 1,
+      "warm": true,
+      "venv": 2.4918558330100495,
+      "install": 14.406975499994587,
+      "total": 16.898831333004637,
+      "cpu": 9.841711999999998,
+      "packages": 36
+    },
+    {
+      "tool": "uv",
+      "run": 1,
+      "warm": true,
+      "venv": 0.012450332986190915,
+      "install": 0.575281500001438,
+      "total": 0.5877318329876289,
+      "cpu": 0.5685610000000016,
+      "packages": 36
+    },
+    {
+      "tool": "pip",
+      "run": 2,
+      "warm": true,
+      "venv": 2.0597431249916553,
+      "install": 14.348672249994706,
+      "total": 16.40841537498636,
+      "cpu": 9.772100000000002,
+      "packages": 36
+    },
+    {
+      "tool": "uv",
+      "run": 2,
+      "warm": true,
+      "venv": 0.01590274999034591,
+      "install": 0.6252519160043448,
+      "total": 0.6411546659946907,
+      "cpu": 0.5722839999999998,
+      "packages": 36
+    },
+    {
+      "tool": "pip",
+      "run": 3,
+      "warm": true,
+      "venv": 1.9053882920125034,
+      "install": 16.376826500025345,
+      "total": 18.28221479203785,
+      "cpu": 9.688755999999998,
+      "packages": 36
+    },
+    {
+      "tool": "uv",
+      "run": 3,
+      "warm": true,
+      "venv": 0.012065166985848919,
+      "install": 0.6123561249987688,
+      "total": 0.6244212919846177,
+      "cpu": 0.5699250000000031,
+      "packages": 36
+    },
+    {
+      "tool": "pip",
+      "run": 4,
+      "warm": true,
+      "venv": 3.9900935409823433,
+      "install": 20.379621957981726,
+      "total": 24.36971549896407,
+      "cpu": 10.481668999999998,
+      "packages": 36
+    },
+    {
+      "tool": "uv",
+      "run": 4,
+      "warm": true,
+      "venv": 0.03419204201782122,
+      "install": 1.0048195410054177,
+      "total": 1.039011583023239,
+      "cpu": 0.6017830000000046,
+      "packages": 36
+    },
+    {
+      "tool": "pip",
+      "run": 5,
+      "warm": true,
+      "venv": 2.531497583986493,
+      "install": 22.93658995901933,
+      "total": 25.468087543005822,
+      "cpu": 10.318013999999994,
+      "packages": 36
+    },
+    {
+      "tool": "uv",
+      "run": 5,
+      "warm": true,
+      "venv": 0.03892112500034273,
+      "install": 1.2407679999887478,
+      "total": 1.2796891249890905,
+      "cpu": 0.5943059999999996,
+      "packages": 36
+    }
+  ],
+  "summary": {
+    "pip": {
+      "median": 18.28221479203785,
+      "range": [
+        16.40841537498636,
+        25.468087543005822
+      ]
+    },
+    "uv": {
+      "median": 0.6411546659946907,
+      "range": [
+        0.5877318329876289,
+        1.2796891249890905
+      ]
+    }
+  },
+  "inventory": {
+    "pip": {
+      "av": "18.1.0",
+      "click": "8.5.0",
+      "onnxruntime": "1.31.0",
+      "packaging": "26.3",
+      "protobuf": "7.36.2",
+      "tokenizers": "0.23.3",
+      "pygments": "2.21.0",
+      "jsonschema-specifications": "2025.9.1",
+      "jsonschema": "4.26.0",
+      "numpy": "2.4.6",
+      "iniconfig": "2.3.1",
+      "pillow": "13.0.0",
+      "pluggy": "1.7.0",
+      "hf-xet": "1.7.0",
+      "tqdm": "4.70.1",
+      "pytest": "9.1.1",
+      "reelengine": "0.1.2",
+      "h11": "0.16.0",
+      "yt-dlp": "2026.8.19",
+      "pyyaml": "6.0.3",
+      "fsspec": "2026.9.0",
+      "huggingface_hub": "2.2.0",
+      "truststore": "0.10.5",
+      "filelock": "4.2.0",
+      "referencing": "0.37.0",
+      "rpds-py": "2026.9.1",
+      "flatbuffers": "25.12.19",
+      "attrs": "26.1.0",
+      "typing_extensions": "4.16.0",
+      "httpx2": "2.13.1",
+      "faster-whisper": "1.2.1",
+      "ctranslate2": "4.8.3",
+      "httpcore2": "2.13.1",
+      "anyio": "4.15.1",
+      "idna": "3.20",
+      "opencv-python-headless": "5.0.0.93"
+    },
+    "uv": {
+      "av": "18.1.0",
+      "click": "8.5.0",
+      "onnxruntime": "1.31.0",
+      "packaging": "26.3",
+      "protobuf": "7.36.2",
+      "tokenizers": "0.23.3",
+      "pygments": "2.21.0",
+      "jsonschema-specifications": "2025.9.1",
+      "jsonschema": "4.26.0",
+      "numpy": "2.4.6",
+      "iniconfig": "2.3.1",
+      "pillow": "13.0.0",
+      "pluggy": "1.7.0",
+      "hf-xet": "1.7.0",
+      "tqdm": "4.70.1",
+      "pytest": "9.1.1",
+      "reelengine": "0.1.2",
+      "h11": "0.16.0",
+      "yt-dlp": "2026.8.19",
+      "pyyaml": "6.0.3",
+      "fsspec": "2026.9.0",
+      "huggingface_hub": "2.2.0",
+      "truststore": "0.10.5",
+      "filelock": "4.2.0",
+      "referencing": "0.37.0",
+      "rpds-py": "2026.9.1",
+      "flatbuffers": "25.12.19",
+      "attrs": "26.1.0",
+      "typing_extensions": "4.16.0",
+      "httpx2": "2.13.1",
+      "faster-whisper": "1.2.1",
+      "ctranslate2": "4.8.3",
+      "httpcore2": "2.13.1",
+      "anyio": "4.15.1",
+      "idna": "3.20",
+      "opencv-python-headless": "5.0.0.93"
+    }
+  }
+}
