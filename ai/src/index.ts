@@ -15,6 +15,7 @@ import { ClaudeCliProvider, CodexCliProvider } from './providers/cli';
 import { ReplayProvider } from './providers/replay';
 import { detectLocalClaude, DetectOptions, LocalClaude } from './providers/localClaude';
 import * as editor from './editor';
+import { recoverNote } from './noteTxn';
 
 export * from './types';
 export * from './project';
@@ -31,6 +32,7 @@ export { ReplayProvider, RecordingProvider } from './providers/replay';
 export { detectLocalClaude, findClaude, claudeCandidates, claudeFromLoginShell, CLAUDE_CODE_MESSAGES } from './providers/localClaude';
 export type { LocalClaude, ClaudeCodeState } from './providers/localClaude';
 export { pickTakes, formatForPicking, deterministicEdit } from './editor';
+export { recoverNote };
 export type { ApplyNoteOptions } from './editor';
 export { ATTACHMENT_REF, MAX_ATTACHMENTS_PER_NOTE, readAttachment, listAttachments, validateAttachments, placedAssets } from './attachments';
 export type { AttachmentInfo } from './attachments';
@@ -283,6 +285,11 @@ export function createAI(opts: CreateAIOptions) {
     },
     async applyNote(projectDir: string, note: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts?: editor.ApplyNoteOptions): Promise<AgentResult> {
       return exclusive(projectDir, async () => editor.applyNote(deps(), await modelProvider(), projectDir, note, onEvent, signal, opts));
+    },
+    /** At app start, for a project whose note job was cut off: undoes the note if it had changed anything.
+     * True means the project was put back as before the note. */
+    async recoverNote(projectDir: string): Promise<boolean> {
+      return exclusive(projectDir, () => recoverNote(projectDir, style));
     },
     async writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult> {
       return editor.writeScript(deps(), await modelProvider(), idea, onEvent, signal);

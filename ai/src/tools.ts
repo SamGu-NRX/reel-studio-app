@@ -35,6 +35,8 @@ export interface ToolState {
   previewSkipped?: boolean;
   /** raw-take times of the cover stills the model was shown (set_cover on one of them is exact) */
   coverCandidates?: number[];
+  /** each tool call id's result, so a repeated id never runs twice */
+  calls?: Map<string, Promise<ToolResult>>;
 }
 
 export interface ToolContext {
@@ -1327,8 +1329,20 @@ export function toolSchemas(names?: string[]): ToolSchema[] {
   return tools.filter((t) => !names || names.includes(t.name)).map(({ name, description, parameters }) => ({ name, description, parameters }));
 }
 
-/** Validates + runs one tool call. Never throws for model mistakes: returns an error result the model can read. */
-export async function executeTool(ctx: ToolContext, name: string, rawArgs: unknown): Promise<{ content: string; images?: ImagePart[]; isError: boolean; summary?: string }> {
+export type ToolResult = { content: string; images?: ImagePart[]; isError: boolean; summary?: string };
+
+/** Validates + runs one tool call. Never throws for model mistakes: returns an error result the model can read.
+ * A `callId` already seen in this task is the same call sent twice (audit: two add_broll calls with one id
+ * made two b-roll items): it gets the first call's result and does not run again. */
+export function executeTool(ctx: ToolContext, name: string, rawArgs: unknown, callId?: string): Promise<ToolResult> {
+  if (callId === undefined) return runTool(ctx, name, rawArgs);
+  const calls = (ctx.state.calls ??= new Map());
+  let run = calls.get(callId);
+  if (!run) { run = runTool(ctx, name, rawArgs); calls.set(callId, run); }
+  return run;
+}
+
+async function runTool(ctx: ToolContext, name: string, rawArgs: unknown): Promise<ToolResult> {
   ctx.state.toolCalls++;
   const tool = toolByName(name);
   if (!tool) return { content: JSON.stringify({ error: `unknown tool "${name}". Tools: ${TOOL_NAMES.join(', ')}` }), isError: true };

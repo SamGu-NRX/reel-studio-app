@@ -296,9 +296,9 @@ export async function cleanPartialVersions(dir: string): Promise<string[]> {
 /**
  * Called once at startup, before any job can run: a project whose app.json still says a job is
  * running was interrupted (quit, crash, power cut). Clean it up and mark it so the UI can offer
- * to pick up where it left off.
+ * to pick up where it left off. `undoNote` puts a cut-off note's changes back (the AI's recoverNote).
  */
-export async function recoverInterrupted(): Promise<string[]> {
+export async function recoverInterrupted(undoNote?: (dir: string) => Promise<boolean>): Promise<string[]> {
   const recovered: string[] = []
   let slugs: string[] = []
   try {
@@ -316,6 +316,8 @@ export async function recoverInterrupted(): Promise<string[]> {
     if (!existsSync(join(dir, 'app.json'))) continue
     const s = await readAppState(slug)
     if (!s.job) continue
+    // a failed undo must not stop the other projects' recovery: its marker stays, and the next note retries it
+    const undone = s.job.kind === 'note' && undoNote ? await undoNote(dir).catch(() => false) : false
     await cleanPartialVersions(dir)
     await updateAppState(slug, (st) => {
       st.status = st.job?.kind === 'first-edit' || !existsSync(join(dir, 'versions')) ? 'interrupted' : 'ready'
@@ -323,7 +325,9 @@ export async function recoverInterrupted(): Promise<string[]> {
         st.chat.push({
           id: randomUUID(),
           from: 'editor',
-          text: 'Reel Studio closed before I finished that change. Send your note again and I will pick it up.',
+          text: undone
+            ? 'Reel Studio closed before I finished your note, so I put your video back the way it was. Send the note again to try once more.'
+            : 'Reel Studio closed before I finished that change. Send your note again and I will pick it up.',
           at: new Date().toISOString()
         })
       }

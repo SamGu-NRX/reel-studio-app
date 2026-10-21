@@ -134,7 +134,7 @@ async function runCalls(o: RunAgentOptions, calls: ToolCall[]): Promise<ToolResu
     const stage = STAGE[call.name];
     if (stage) o.onEvent({ type: 'status', message: stage.message, pct: stage.pct, phase: 'edit' });
     if (o.signal?.aborted) throw new AIError('cancelled', 'Stopped.');
-    const r = await executeTool(o.ctx, call.name, call.args);
+    const r = await executeTool(o.ctx, call.name, call.args, call.id);
     return { callId: call.id, name: call.name, content: r.content, images: r.images, isError: r.isError };
   };
   for (let i = 0; i < calls.length;) {

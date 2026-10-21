@@ -45,8 +45,9 @@ Rules:
 - **While an AI run is working**, the player may show `versions/preview/draft.mp4` (the `render`
   event with `draft: true`).
 - **`AgentResult.version`** is the version to select after a run. In the rare case its folder has
-  no `export.mp4` (the final render failed and the run fell back to its preview), show
-  `versions/preview/draft.mp4` and offer to try the final render again.
+  no `export.mp4` (a first edit's final render failed and the run fell back to its preview of the
+  same edit), show `versions/preview/draft.mp4` and offer to try the final render again. A note
+  never falls back: when its final render fails, the note is undone and the run fails.
 - `versions/vN/notes.md` (written by the ai package) is the note text for that chip.
 
 ## ai package
@@ -55,3 +56,7 @@ Rules:
   edit, 2 per note).
 - After the agent calls `finish`, the loop runs one final `render`: that is the only step that adds a
   version.
+- A note is all-or-nothing. Before its first change the ai package copies `project.json` and writes a
+  marker into `work/.note-in-progress/`. A note that fails, or that the app closed in the middle of, is
+  undone from that copy: `project.json`, new `work/assets` files, new `vN` folders and the My style rules
+  it saved. The app calls `recoverNote` at startup for a cut-off note job; `applyNote` calls it too.

@@ -80,6 +80,9 @@ export interface AI {
   removeStyleRule(id: string): Promise<void>
   /** Saves one My style rule (after the user said Yes). Optional: older packages lack it. */
   addStyleRule?(text: string): Promise<{ id: string; text: string; createdAt: string }>
+  /** At startup, for a project whose note was cut off: puts it back as before the note. True when it did.
+   * Optional: older packages and the mock lack it. */
+  recoverNote?(projectDir: string): Promise<boolean>
   /** Optional extras from @reelstudio/ai. */
   cancelSignInChatGPT?(): void | Promise<void>
   /** A fresh look at the person's own Claude Code app (`bin` stays in main). Optional: older packages lack it. */

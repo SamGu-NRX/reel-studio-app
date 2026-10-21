@@ -623,11 +623,6 @@ app.whenReady().then(async () => {
   const settings = await loadSettings()
   if (settings.root) setRootOverride(settings.root)
   await ensureRoot().catch((e) => log(`[root] ${String(e)}`))
-  const recovered = await recoverInterrupted().catch((e) => {
-    log(`[recover] ${String(e)}`)
-    return []
-  })
-  if (recovered.length) log(`[recover] cleaned up ${recovered.join(', ')}`)
   const loaded = await loadAI(
     {
       host,
@@ -639,6 +634,12 @@ app.whenReady().then(async () => {
   )
   ai = loaded.ai
   aiSource = loaded.source
+  // after loadAI: a cut-off note is undone by the AI package, which knows what the note changed
+  const recovered = await recoverInterrupted((dir) => ai.recoverNote?.(dir) ?? Promise.resolve(false)).catch((e) => {
+    log(`[recover] ${String(e)}`)
+    return []
+  })
+  if (recovered.length) log(`[recover] cleaned up ${recovered.join(', ')}`)
   await carryOverClaudeCode(settings).catch((e) => log(`[ai] carry-over: ${String(e)}`))
   log(`[start] root=${reelStudioRoot()} engine=${engineMode()}:${engineDir()} python=${pythonExe()} ai=${aiSource}`)
   handleMediaProtocol(() => [reelStudioRoot(), projectsDir()])
