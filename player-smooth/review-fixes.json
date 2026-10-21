@@ -1,0 +1,26 @@
+{
+  "keys": {
+    "5": "no change",
+    "ArrowRight": "4->5",
+    "ArrowLeft": "5->4",
+    "l": "no change",
+    "j": "no change",
+    "k": "no change",
+    "m": "no change",
+    "Home": "no change",
+    "End": "no change",
+    "Space": "playing"
+  },
+  "holdMoved": true,
+  "duringFailure": {
+    "rawShown": false,
+    "reelPlaying": true
+  },
+  "monitor": {
+    "mislabeled": 0,
+    "tags": [
+      "Original",
+      "Couldn't load the original"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "label": "after",
+  "rendersIn5sPlayback": 0,
+  "switches": {
+    "frames": 913,
+    "blank": 0
+  },
+  "hold": {
+    "rawPaused": false,
+    "rawTime": 1.448247
+  },
+  "afterRelease": {
+    "paused": false
+  }
+}

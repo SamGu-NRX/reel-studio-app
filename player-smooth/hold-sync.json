@@ -1,0 +1,25 @@
+{
+  "preloadAtRest": "metadata",
+  "preloadOnHover": "auto",
+  "oneTake": {
+    "tag": 1,
+    "reelAtPress": 7.35,
+    "rawAtShow": 7.45,
+    "rawFile": "take01.mp4",
+    "reelPlayingAfter": true
+  },
+  "secondTake": {
+    "tag": 1,
+    "reelAtPress": 8.43,
+    "rawAtShow": 4.6,
+    "rawFile": "take02.mp4",
+    "reelPlayingAfter": true
+  },
+  "firstTakeAgain": {
+    "tag": 1,
+    "reelAtPress": 3.42,
+    "rawAtShow": 3.46,
+    "rawFile": "take01.mp4",
+    "reelPlayingAfter": true
+  }
+}
