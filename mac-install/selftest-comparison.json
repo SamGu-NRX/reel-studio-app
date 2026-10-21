@@ -1,0 +1,52 @@
+[
+  {
+    "build": "main",
+    "timed_out": true,
+    "exit": 0,
+    "result_written": false
+  },
+  {
+    "build": "mac-install",
+    "timed_out": false,
+    "exit": 1,
+    "result_written": true,
+    "ok": false,
+    "isPackaged": false,
+    "checks": [
+      {
+        "name": "bundled python",
+        "ok": true,
+        "required": true,
+        "detail": "/opt/homebrew/bin/python3"
+      },
+      {
+        "name": "bundled ffmpeg",
+        "ok": true,
+        "required": true,
+        "detail": "/opt/homebrew/bin/ffmpeg"
+      },
+      {
+        "name": "bundled ffprobe",
+        "ok": true,
+        "required": true,
+        "detail": "/opt/homebrew/bin/ffprobe"
+      },
+      {
+        "name": "engine files",
+        "ok": true,
+        "required": true,
+        "detail": "/Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/engine"
+      },
+      {
+        "name": "engine doctor",
+        "ok": false,
+        "required": true,
+        "detail": {
+          "code": "INTERNAL",
+          "message": "ModuleNotFoundError: No module named 'numpy'\nTraceback (most recent call last):\n  File \"/Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/engine/reelengine/cli.py\", line 399, in main\n    result = args.fn(args)\n  File \"/Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/engine/reelengine/cli.py\", line 292, in cmd_doctor\n    from . import doctor\n  File \"/Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/engine/reelengine/doctor.py\", line 7, in <module>\n    from . import tools, transcribe\n  File \"/Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/engine/reelengine/transcribe.py\", line 28, in <module>\n    from . import audio_env, project as projmod, tools, vocab as vocabmod\n  File \"/Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/engine/reelengine/audio_env.py\", line 20, in <module>\n    import numpy as np\nModuleNotFoundError: No module named 'numpy'\n"
+        },
+        "seconds": 0.1
+      }
+    ]
+  }
+]

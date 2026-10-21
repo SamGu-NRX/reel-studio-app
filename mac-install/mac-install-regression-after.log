@@ -1,0 +1,13 @@
+
+> @reelstudio/app@0.1.2 test
+> vitest run test/self-test.test.ts test/move-to-applications.test.ts test/installed-runtime.test.ts test/engine.test.ts
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/app
+
+
+ Test Files  4 passed (4)
+      Tests  35 passed (35)
+   Start at  17:08:14
+   Duration  1.49s (tests 94%, transform 3%, import 2%)
+

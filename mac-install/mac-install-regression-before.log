@@ -1,0 +1,66 @@
+
+> @reelstudio/app@0.1.2 test
+> vitest run test/self-test.test.ts test/move-to-applications.test.ts
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/app
+
+ ❯ test/move-to-applications.test.ts (14 tests | 1 failed) 5ms
+   ❯ offerMoveToApplications (5)
+     × fails if a move starts without replacement consent 1 3ms
+ ❯ test/self-test.test.ts (5 tests | 2 failed) 6ms
+   ❯ runSelfTest (5)
+     × fails if a non-executable ffprobe passes 3ms
+     × fails if a broken ffprobe passes 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/move-to-applications.test.ts > offerMoveToApplications > fails if a move starts without replacement consent 1
+AssertionError: expected 'moving' to be 'declined' // Object.is equality
+
+Expected: "declined"
+Received: "moving"
+
+ ❯ test/move-to-applications.test.ts:61:59
+     59|       log: () => {}
+     60|     }
+     61|     expect(await offerMoveToApplications(fromDisk, deps)).toBe(allowed…
+       |                                                           ^
+     62|     expect(moved).toBe(allowed)
+     63|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/self-test.test.ts > runSelfTest > fails if a non-executable ffprobe passes
+ FAIL  test/self-test.test.ts > runSelfTest > fails if a broken ffprobe passes
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/self-test.test.ts:44:23
+     42|     if (kind === 'non-executable') writeFileSync(ffprobe, 'not an exec…
+     43|     const result = await runSelfTest({ locations: { ...locations, ffpr…
+     44|     expect(result.ok).toBe(false)
+       |                       ^
+     45|     expect(result.checks.find((check) => check.name === 'bundled ffpro…
+     46|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  3 failed | 16 passed (19)
+   Start at  17:04:35
+   Duration  118ms (transform 59%, import 19%, tests 15%, worker 6%)
+
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path /Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/app
+npm error workspace @reelstudio/app@0.1.2
+npm error location /Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/app
+npm error command failed
+npm error command sh -c vitest run test/self-test.test.ts test/move-to-applications.test.ts

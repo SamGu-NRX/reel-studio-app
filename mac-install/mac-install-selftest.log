@@ -1,0 +1,12 @@
+2026-10-21T21:54:52.150Z [engine doctor] Traceback (most recent call last):
+2026-10-21T21:54:52.151Z [engine doctor]   File "/Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/engine/reelengine/cli.py", line 399, in main
+2026-10-21T21:54:52.151Z [engine doctor]     result = args.fn(args)
+2026-10-21T21:54:52.151Z [engine doctor]   File "/Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/engine/reelengine/cli.py", line 292, in cmd_doctor
+2026-10-21T21:54:52.151Z [engine doctor]     from . import doctor
+2026-10-21T21:54:52.151Z [engine doctor]   File "/Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/engine/reelengine/doctor.py", line 7, in <module>
+2026-10-21T21:54:52.151Z [engine doctor]     from . import tools, transcribe
+2026-10-21T21:54:52.151Z [engine doctor]   File "/Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/engine/reelengine/transcribe.py", line 28, in <module>
+2026-10-21T21:54:52.152Z [engine doctor]     from . import audio_env, project as projmod, tools, vocab as vocabmod
+2026-10-21T21:54:52.152Z [engine doctor]   File "/Users/samgu/Programming Projects/reel-studio-app-wt/mac-install/engine/reelengine/audio_env.py", line 20, in <module>
+2026-10-21T21:54:52.152Z [engine doctor]     import numpy as np
+2026-10-21T21:54:52.152Z [engine doctor] ModuleNotFoundError: No module named 'numpy'

@@ -1,0 +1,41 @@
+
+> @reelstudio/app@0.1.2 e2e
+> electron-vite build && playwright test e2e/smoke.spec.ts
+
+vite v8.3.4 building ssr environment for production...
+transforming...
+✓ 38 modules transformed.
+rendering chunks...
+out/main/index.js  158.81 kB
+
+✓ built in 22ms
+vite v8.3.4 building ssr environment for production...
+transforming...
+✓ 2 modules transformed.
+rendering chunks...
+out/preload/index.js  3.55 kB
+
+✓ built in 5ms
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 47 modules transformed.
+rendering chunks...
+out/renderer/index.html                                 0.56 kB
+out/renderer/assets/Montserrat-SemiBold-DWiWrehp.ttf  374.74 kB
+out/renderer/assets/index-oOCxJozv.css                 38.68 kB
+out/renderer/assets/index-BE5oxlWt.js                 798.91 kB
+
+✓ built in 57ms
+
+Running 2 tests using 1 worker
+
+(node:15893) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+full-size animation: 60 frames in 2500 ms
+stat-count-up: /tmp/rs-mac-install-work/tmp/rs-e2e-qwe76A/anim real ü.mov in 4691 ms
+
+  ✓  1 e2e/smoke.spec.ts:18:5 › make a reel end to end (31.5s)
+
+  ✓  2 e2e/smoke.spec.ts:210:5 › a force quit mid-job recovers on the next start (6.1s)
+
+  2 passed (37.9s)

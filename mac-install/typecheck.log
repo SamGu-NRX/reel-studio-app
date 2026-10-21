@@ -1,0 +1,12 @@
+
+> reel-studio@0.1.2 typecheck
+> npm run typecheck --workspaces --if-present
+
+
+> @reelstudio/app@0.1.2 typecheck
+> tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.e2e.json
+
+
+> @reelstudio/ai@0.1.2 typecheck
+> tsc --noEmit -p tsconfig.json
+

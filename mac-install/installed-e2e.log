@@ -1,0 +1,35 @@
+
+> @reelstudio/app@0.1.2 e2e
+> electron-vite build && playwright test e2e/mac.spec.ts e2e/installed.spec.ts
+
+vite v8.3.4 building ssr environment for production...
+transforming...
+✓ 38 modules transformed.
+rendering chunks...
+out/main/index.js  158.81 kB
+
+✓ built in 25ms
+vite v8.3.4 building ssr environment for production...
+transforming...
+✓ 2 modules transformed.
+rendering chunks...
+out/preload/index.js  3.55 kB
+
+✓ built in 5ms
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 47 modules transformed.
+rendering chunks...
+out/renderer/index.html                                 0.56 kB
+out/renderer/assets/Montserrat-SemiBold-DWiWrehp.ttf  374.74 kB
+out/renderer/assets/index-oOCxJozv.css                 38.68 kB
+out/renderer/assets/index-BE5oxlWt.js                 798.91 kB
+
+✓ built in 64ms
+
+Running 2 tests using 1 worker
+
+  -  1 e2e/installed.spec.ts:104:5 › first run: speech model + AI
+  -  2 e2e/mac.spec.ts:139:5 › claude: first run + macOS chrome
+
+  2 skipped
