@@ -32,7 +32,8 @@ import {
   uniqueSlug,
   updateAppState,
   writeJson,
-  writeProject
+  updateProject,
+  asProjectWriter
 } from './store'
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { createJobManager } from './jobs'
@@ -348,6 +349,7 @@ function registerIpc(): void {
     log,
     projectDir,
     readProject,
+    asWriter: asProjectWriter,
     busy: (slug) => !!jobs.forSlug(slug),
     clipboardImage: async () => {
       // Electron's async clipboard: the first item that carries a picture, as bytes
@@ -464,12 +466,12 @@ function registerIpc(): void {
   })
   handle('projects:update', async (_e, slug: string, patch: Partial<ProjectJson>) => {
     if (jobs.forSlug(slug)) throw { code: 'BUSY', userMessage: 'I am still working on this video. Give me a moment, or press Stop.' }
-    const p = await readProject(slug)
-    for (const k of Object.keys(patch ?? {}) as (keyof ProjectJson)[]) {
-      if (!EDITABLE.includes(k)) continue
-      ;(p as any)[k] = (patch as any)[k]
-    }
-    await writeProject(slug, p)
+    await updateProject(slug, (p) => {
+      for (const k of Object.keys(patch ?? {}) as (keyof ProjectJson)[]) {
+        if (!EDITABLE.includes(k)) continue
+        ;(p as any)[k] = (patch as any)[k]
+      }
+    })
     const d = await detail(slug)
     return d
   })

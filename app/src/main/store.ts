@@ -179,25 +179,75 @@ export const NOTE_PENDING: UserError = {
     'An earlier change to this video did not finish, and I could not put the video back the way it was yet, so I cannot change it right now. Nothing was lost. Try again in a moment, or make a new video from the same takes.'
 }
 
-/**
- * Every write to a project from the main process passes here first: writeProject (manual edits and
- * renames) and jobs.start (first edit, notes, re-renders, the export's full-quality render). A project
- * with an unfinished note is read-only, because undoing that note puts back its copy of project.json
- * over anything written meanwhile. One undo attempt is made first; if the marker is still there, the
- * write is refused.
- */
-export async function assertProjectWritable(slug: string): Promise<void> {
-  const marker = join(projectDir(slug), NOTE_MARKER)
-  if (!existsSync(marker)) return
-  await undoNote?.(projectDir(slug)).catch(() => undefined)
-  if (existsSync(marker)) throw { ...NOTE_PENDING }
+/** Whether the marker is there. A check that fails counts as "there": the project stays read-only. */
+async function notePending(dir: string): Promise<boolean> {
+  try {
+    await fs.lstat(join(dir, NOTE_MARKER))
+    return true
+  } catch (e) {
+    return (e as NodeJS.ErrnoException)?.code !== 'ENOENT'
+  }
 }
 
-export async function writeProject(slug: string, project: ProjectJson): Promise<void> {
-  await assertProjectWritable(slug)
-  project.updatedAt = new Date().toISOString()
-  const file = join(projectDir(slug), 'project.json')
-  await serialized(file, () => writeJson(file, project))
+/** One writer at a time per project, note recovery included. Held by a whole job (jobs.ts), by a manual
+ * edit from its read to its write (updateProject), by attachment removal and by startup recovery. */
+const projectLocks = new Map<string, Promise<void>>()
+
+export async function acquireProjectLock(slug: string): Promise<() => void> {
+  const key = projectDir(slug)
+  const prev = projectLocks.get(key) ?? Promise.resolve()
+  let release!: () => void
+  const held = new Promise<void>((r) => (release = r))
+  const tail = prev.then(() => held)
+  projectLocks.set(key, tail)
+  await prev
+  return () => {
+    release()
+    if (projectLocks.get(key) === tail) projectLocks.delete(key)
+  }
+}
+
+async function withProjectLock<T>(slug: string, fn: () => Promise<T>): Promise<T> {
+  const release = await acquireProjectLock(slug)
+  try {
+    return await fn()
+  } finally {
+    release()
+  }
+}
+
+/**
+ * Call while holding the project's lock, before writing to the project. A project with an unfinished
+ * note is read-only, because undoing that note puts back its copy of project.json over anything written
+ * meanwhile. One undo attempt is made first; if the marker is still there, the write is refused.
+ */
+export async function assertProjectWritable(slug: string): Promise<void> {
+  const dir = projectDir(slug)
+  if (!(await notePending(dir))) return
+  await undoNote?.(dir).catch(() => undefined)
+  if (await notePending(dir)) throw { ...NOTE_PENDING }
+}
+
+/** Runs `fn` as the project's only writer, after any unfinished note is undone. Manual edits and
+ * attachment removal go through here; jobs take the same lock and gate in jobs.start. */
+export function asProjectWriter<T>(slug: string, fn: () => Promise<T>): Promise<T> {
+  return withProjectLock(slug, async () => {
+    await assertProjectWritable(slug)
+    return fn()
+  })
+}
+
+/** A manual edit: undo any unfinished note, then read, change and write project.json, all as the
+ * project's only writer, so the read is never older than a restore that happened before the write. */
+export function updateProject(slug: string, change: (p: ProjectJson) => void): Promise<ProjectJson> {
+  return asProjectWriter(slug, async () => {
+    const p = await readProject(slug)
+    change(p)
+    p.updatedAt = new Date().toISOString()
+    const file = join(projectDir(slug), 'project.json')
+    await serialized(file, () => writeJson(file, p))
+    return p
+  })
 }
 
 async function readAppStateNow(file: string): Promise<AppState> {
@@ -353,13 +403,14 @@ export async function recoverInterrupted(): Promise<string[]> {
     if (!existsSync(join(dir, 'app.json'))) continue
     const s = await readAppState(slug)
     if (!s.job) continue
+    const job = s.job
     // a failed undo must not stop the other projects' recovery: its marker stays, and the write gate retries it
-    const outcome = s.job.kind === 'note' && undoNote ? await undoNote(dir).catch(() => null) : null
+    const outcome = await withProjectLock(slug, async () => (job.kind === 'note' && undoNote ? undoNote(dir).catch(() => null) : null))
     // the marker decides, not the outcome: while it exists the note is neither saved nor undone
-    const pending = existsSync(join(dir, NOTE_MARKER))
+    const pending = await notePending(dir)
     const undone = !pending && outcome === 'undone'
     // a note that was saved before the app closed: sending it again would apply it twice
-    const saved = !pending && !undone && s.job.kind === 'note' && !!s.job.txnId && (await savedNoteVersion(slug, s.job.txnId)) !== null
+    const saved = !pending && !undone && job.kind === 'note' && job.txnId ? await noteSaved(slug, job.txnId) : false
     await cleanPartialVersions(dir)
     await updateAppState(slug, (st) => {
       st.status = st.job?.kind === 'first-edit' || !existsSync(join(dir, 'versions')) ? 'interrupted' : 'ready'
@@ -378,20 +429,25 @@ export async function recoverInterrupted(): Promise<string[]> {
   return recovered
 }
 
-/** What the chat says about a job the app closed in the middle of, from what is on disk now. */
-function interruptedMessage(pending: boolean, saved: boolean, undone: boolean): string {
+/** What the chat says about a job the app closed in the middle of, from what is on disk now. `saved`
+ * is null when project.json could not be read, so whether the note was saved is unknown. */
+function interruptedMessage(pending: boolean, saved: boolean | null, undone: boolean): string {
   if (pending) {
     return 'Reel Studio closed before I finished your note, and I could not put your video back the way it was yet. Nothing was lost: I kept a copy of how it was. I will try again the next time you change this video.'
+  }
+  if (saved === null) {
+    return 'Reel Studio closed while I was working on your note, and I could not check whether it was saved. Look at the newest version before you send the note again.'
   }
   if (saved) return 'Reel Studio closed just after I finished your note. Your change is saved in the newest version.'
   if (undone) return 'Reel Studio closed before I finished your note, so I put your video back the way it was. Send the note again to try once more.'
   return 'Reel Studio closed before I finished that change. Send your note again and I will pick it up.'
 }
 
-/** The version a saved note made, found by the id its job record holds; null when no saved note has it. */
-async function savedNoteVersion(slug: string, txnId: string): Promise<number | null> {
+/** Whether a saved note carries this id; null when project.json cannot be read (never "not saved",
+ * which would ask for a note that may already be in the video). */
+async function noteSaved(slug: string, txnId: string): Promise<boolean | null> {
   const p = await readProject(slug).catch(() => null)
-  return p?.notes?.find((n) => n.txnId === txnId)?.version ?? null
+  return p ? !!p.notes?.some((n) => n.txnId === txnId) : null
 }
 
 // ---- transcript and cut ------------------------------------------------------------------------

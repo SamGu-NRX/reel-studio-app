@@ -182,6 +182,31 @@ export async function writeFileAtomic(file: string, data: string | Buffer, mode?
   throw lastErr;
 }
 
+// Strict reads for the note transaction and its recovery: only ENOENT means "not there". Any other
+// failure (permissions, I/O) throws, because treating it as absent makes a rollback delete or overwrite
+// something that exists. Ordinary UI reads keep their lenient fallbacks.
+
+const absent = (e: NodeJS.ErrnoException): null => { if (e?.code === 'ENOENT') return null; throw e; };
+
+/** The file's bytes, or null when it does not exist. */
+export async function readFileOrAbsent(file: string): Promise<Buffer | null> {
+  return fsp.readFile(file).catch(absent);
+}
+
+/** lstat of the path itself, or null when it does not exist. */
+export async function lstatOrAbsent(p: string): Promise<fs.Stats | null> {
+  return fsp.lstat(p).catch(absent);
+}
+
+/** The real path, or null when it does not exist. */
+export async function realpathOrAbsent(p: string): Promise<string | null> {
+  return fsp.realpath(p).catch(absent);
+}
+
+export async function pathExists(p: string): Promise<boolean> {
+  return (await lstatOrAbsent(p)) !== null;
+}
+
 export async function readJson<T = any>(file: string): Promise<T> {
   const text = await fsp.readFile(file, 'utf8');
   return JSON.parse(text.replace(/^﻿/, '')) as T;

@@ -70,7 +70,9 @@ Rules:
   before it is written. A note in a project where one leads out of the project folder fails before it
   changes anything. If recovery later meets one, or a read or write fails, it restores nothing and keeps
   the marker and copies (`blocked`); only a marker proven to belong to another project, folder or copy is
-  removed. While the marker exists the project is read-only: every project write in the app's main process
-  (`writeProject` and `jobs.start`) passes `assertProjectWritable`, which tries the undo once and refuses
-  the write if the marker is still there. Deleting the marker is the commit point. The app calls `recoverNote` at startup for a cut-off note job; `applyNote` calls it too. A note job whose `txnId` is already in
+  removed. On these paths only ENOENT means "absent": any other failed read keeps everything pending.
+  While the marker exists the project is read-only. Every project write in the app's main process holds
+  the project's lock (`acquireProjectLock` in store.ts: jobs for their whole run, `updateProject` from read
+  to write, attachment removal, startup recovery) and passes `assertProjectWritable`, which tries the undo
+  once and refuses the write if the marker is still there. Deleting the marker is the commit point. The app calls `recoverNote` at startup for a cut-off note job; `applyNote` calls it too. A note job whose `txnId` is already in
   `project.json` `notes` was saved before the app closed and is not asked for again.

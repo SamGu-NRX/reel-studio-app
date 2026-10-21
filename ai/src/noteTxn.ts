@@ -6,10 +6,9 @@
 // listing. A marker still on disk later means the process died mid-note (a crash or a force quit skips
 // every catch), and recoverNote() does the same rollback before anything else edits the project.
 import { createHash, randomUUID } from 'node:crypto';
-import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
-import { PROJECT_FILE, readJson, writeFileAtomic } from './project';
+import { PROJECT_FILE, lstatOrAbsent, pathExists, readFileOrAbsent, realpathOrAbsent, writeFileAtomic } from './project';
 import { StyleStore } from './style';
 import type { ToolJournal } from './tools';
 
@@ -103,7 +102,7 @@ export class NoteTransaction {
   /** Call before the note's first change, after recoverNote (a marker left by a dead note is never overwritten). */
   static async begin(projectDir: string, store: StyleStore, txnId: string, log: Log = () => undefined): Promise<NoteTransaction> {
     const dir = at(projectDir, DIR);
-    if (fs.existsSync(at(dir, MARKER))) throw new Error(`${dir} holds a note that did not finish: run recoverNote first`);
+    if (await pathExists(at(dir, MARKER))) throw new Error(`${dir} holds a note that did not finish: run recoverNote first`);
     const bytes = await fsp.readFile(at(projectDir, PROJECT_FILE));
     const project = JSON.parse(bytes.toString('utf8'));
     const projectId = project?.id;
@@ -113,7 +112,7 @@ export class NoteTransaction {
     await checkPlaces(projectDir, [...FIXED_PLACES, `versions/v${version}/project.json`, `versions/v${version}/notes.md`, `versions/v${version + 1}`]);
     // the copies first: a marker on disk always has its copies beside it
     await writeFileAtomic(at(dir, PROJECT_FILE), bytes);
-    const credits = await fsp.readFile(at(projectDir, CREDITS)).catch(() => null);
+    const credits = await readFileOrAbsent(at(projectDir, CREDITS));
     if (credits) await writeFileAtomic(at(dir, 'credits.json'), credits);
     const marker: Marker = {
       v: 3, txnId, projectId, folder: await fsp.realpath(projectDir), sha256: sha256(bytes), startedAt: new Date().toISOString(),
@@ -142,7 +141,7 @@ export class NoteTransaction {
       await checkPlaces(this.projectDir, [rel]);
       const m = this.marker;
       if (m.created.some((c) => rel === c || rel.startsWith(`${c}/`)) || m.modified.some((e) => e.path === rel)) return;
-      const bytes = await fsp.readFile(at(this.projectDir, rel)).catch(() => null);
+      const bytes = await readFileOrAbsent(at(this.projectDir, rel));
       if (!bytes) { m.created.push(rel); await this.save(); return; }
       const copy = `modified-${m.modified.length}`;
       await writeFileAtomic(at(this.projectDir, DIR, copy), bytes);
@@ -152,7 +151,7 @@ export class NoteTransaction {
     preview: async () => {
       if (this.marker.preview !== 'untouched') return;
       const live = at(this.projectDir, PREVIEW);
-      this.marker.preview = fs.existsSync(live) ? 'saved' : 'absent';
+      this.marker.preview = (await pathExists(live)) ? 'saved' : 'absent';
       await this.save();
       if (this.marker.preview === 'saved') await fsp.rename(live, at(this.projectDir, DIR, 'preview'));
     },
@@ -194,7 +193,7 @@ export class NoteTransaction {
     await this.saving;
     // the preview from before the note comes back only when the note made none of its own
     const saved = at(this.projectDir, DIR, 'preview');
-    if (this.marker.preview === 'saved' && fs.existsSync(saved) && !fs.existsSync(at(this.projectDir, PREVIEW))) {
+    if (this.marker.preview === 'saved' && (await pathExists(saved)) && !(await pathExists(at(this.projectDir, PREVIEW)))) {
       await fsp.rename(saved, at(this.projectDir, PREVIEW));
     }
     await fsp.rm(at(this.projectDir, DIR, MARKER), { force: true });
@@ -221,11 +220,11 @@ async function checkPlaces(projectDir: string, rels: string[]): Promise<void> {
   for (const rel of rels) {
     const parts = rel.split('/');
     for (let i = 1; i <= parts.length; i++) {
-      const st = await fsp.lstat(at(projectDir, ...parts.slice(0, i))).catch(() => null);
+      const st = await lstatOrAbsent(at(projectDir, ...parts.slice(0, i)));
       if (!st) break;                                   // nothing there, so nothing below it to write through
       if (st.isSymbolicLink()) throw new UnsafePathError(`${parts.slice(0, i).join('/')} is a symlink`);
     }
-    const parent = await fsp.realpath(path.dirname(at(projectDir, rel))).catch(() => null);
+    const parent = await realpathOrAbsent(path.dirname(at(projectDir, rel)));
     if (parent && parent !== root && !parent.startsWith(root + path.sep)) throw new UnsafePathError(`${rel} is outside the project`);
   }
 }
@@ -240,12 +239,12 @@ async function undo(projectDir: string, m: Marker, store: StyleStore): Promise<v
   else await fsp.rm(at(projectDir, CREDITS), { force: true });
   for (const e of m.modified) await writeFileAtomic(at(projectDir, e.path), await fsp.readFile(at(dir, e.copy)));
   for (const rel of m.created) await fsp.rm(at(projectDir, rel), { recursive: true, force: true });
-  const ours = new Set(m.styleRules);
-  for (const rule of await store.list()) if (ours.has(rule.id)) await store.remove(rule.id);
+  await store.removeIds(m.styleRules);
   const saved = at(dir, 'preview');
-  if (m.preview === 'absent' || (m.preview === 'saved' && fs.existsSync(saved))) await fsp.rm(at(projectDir, PREVIEW), { recursive: true, force: true });
+  const movedAside = m.preview === 'saved' && (await pathExists(saved));
+  if (m.preview === 'absent' || movedAside) await fsp.rm(at(projectDir, PREVIEW), { recursive: true, force: true });
   // 'saved' without the moved folder: the process died before the move, so the original never left
-  if (m.preview === 'saved' && fs.existsSync(saved)) await fsp.rename(saved, at(projectDir, PREVIEW));
+  if (movedAside) await fsp.rename(saved, at(projectDir, PREVIEW));
 }
 
 /** Undoes a note the process died in the middle of. Run it while holding the project's edit lock,
@@ -255,14 +254,16 @@ async function undo(projectDir: string, m: Marker, store: StyleStore): Promise<v
  * are kept and the reason is logged. */
 export async function recoverNote(projectDir: string, store: StyleStore, log: Log = () => undefined): Promise<RecoverResult> {
   const dir = at(projectDir, DIR);
-  if (!fs.existsSync(at(dir, MARKER))) {
-    await fsp.rm(dir, { recursive: true, force: true });   // copies whose marker was never written: the note had not started
-    return 'none';
-  }
   const keep = (why: string): RecoverResult => {
     log(`unfinished note in ${projectDir} not undone: ${why}. The marker and its copies were kept.`);
     return 'blocked';
   };
+  let marked: boolean;
+  try { marked = await pathExists(at(dir, MARKER)); } catch (e: any) { return keep(`could not check for it (${e?.code ?? e?.message ?? e})`); }
+  if (!marked) {
+    await fsp.rm(dir, { recursive: true, force: true });   // copies whose marker was never written: the note had not started
+    return 'none';
+  }
   const refuse = async (why: string): Promise<RecoverResult> => {
     log(`unfinished note in ${projectDir} not undone: ${why}. The marker was removed and nothing was restored.`);
     await fsp.rm(dir, { recursive: true, force: true });
@@ -274,7 +275,7 @@ export async function recoverNote(projectDir: string, store: StyleStore, log: Lo
   try {
     raw = await fsp.readFile(at(dir, MARKER), 'utf8');
     // begin() writes the copy before the marker, so a marker without one was never this project's own note
-    copy = await fsp.readFile(at(dir, PROJECT_FILE)).catch((e) => { if (e?.code === 'ENOENT') return null; throw e; });
+    copy = await readFileOrAbsent(at(dir, PROJECT_FILE));
     live = await fsp.readFile(at(projectDir, PROJECT_FILE), 'utf8');
     folder = await fsp.realpath(projectDir);
   } catch (e: any) {

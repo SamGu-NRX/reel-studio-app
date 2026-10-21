@@ -155,6 +155,40 @@ describe('note transaction', () => {
     expect(fs.existsSync(path.join(dir, 'work', '.note-in-progress', 'project.json'))).toBe(true);
   });
 
+  it('a credits.json that cannot be read fails the note and survives it', async () => {
+    const { root, dir } = await makeProject();
+    const credits = path.join(dir, 'work', 'assets', 'credits.json');
+    await fsp.mkdir(path.dirname(credits), { recursive: true });
+    await fsp.writeFile(credits, '{"loaf.png":"Photo by A"}');
+    await fsp.chmod(credits, 0o000);
+    const host = new FakeHost(root);
+    host.failRender = true;
+    const m = new ScriptedModel([{ toolCalls: [call('set_gap_cap', { seconds: 0.4 }), call('finish', { summary_for_user: 'done' })] }]);
+    try {
+      await expect(createAI({ host, settingsDir: tmpDir(), providerOverride: m }).applyNote(dir, 'slower', () => undefined)).rejects.toBeTruthy();
+    } finally {
+      await fsp.chmod(credits, 0o644);
+    }
+    expect(await fsp.readFile(credits, 'utf8')).toBe('{"loaf.png":"Photo by A"}');
+  });
+
+  it('a My style file that cannot be read keeps the unfinished note instead of reporting it undone', async () => {
+    const { root, dir } = await makeProject();
+    const store = new StyleStore(() => root);
+    await store.add('Keep music quiet.');
+    const txn = await NoteTransaction.begin(dir, store, 'n1');
+    await txn.style.add('Slow pauses.');
+    const before = await fsp.readFile(store.file);
+    await fsp.chmod(store.file, 0o000);
+    try {
+      expect(await recoverNote(dir, store)).toBe('blocked');
+    } finally {
+      await fsp.chmod(store.file, 0o644);
+    }
+    expect(await fsp.readFile(store.file)).toEqual(before);
+    expect(fs.existsSync(path.join(dir, 'work', '.note-in-progress', 'note.json'))).toBe(true);
+  });
+
   it('the app dying after a change: the next start puts back the exact project bytes', async () => {
     const { root, dir } = await makeProject();
     const before = await fsp.readFile(path.join(dir, 'project.json'));

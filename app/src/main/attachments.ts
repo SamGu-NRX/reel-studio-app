@@ -185,6 +185,8 @@ export interface AttachIpcDeps extends AttachDeps {
   handle: Handle
   projectDir: (slug: string) => string
   readProject: (slug: string) => Promise<ProjectJson>
+  /** runs a write as the project's only writer, after any unfinished note is undone (store.ts asProjectWriter) */
+  asWriter: <T>(slug: string, fn: () => Promise<T>) => Promise<T>
   /** a job is running on this video (removing a file then could pull it from under the AI) */
   busy: (slug: string) => boolean
   /** the picture on the system clipboard (null = none) */
@@ -229,6 +231,7 @@ export function registerAttachmentIpc(deps: AttachIpcDeps): void {
   })
   deps.handle('notes:removeAttachment', async (_e, slug: unknown, asset: unknown) => {
     const dir = await projectOf(deps, slug)
-    await removeAttachment(dir, asset, await deps.readProject(slug as string).catch(() => null))
+    // the usage check reads project.json after any unfinished note is undone, and nothing writes until the file is gone
+    await deps.asWriter(slug as string, async () => removeAttachment(dir, asset, await deps.readProject(slug as string)))
   })
 }

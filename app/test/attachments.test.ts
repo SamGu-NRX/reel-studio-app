@@ -266,6 +266,7 @@ describe('main: the IPC handlers', () => {
       log: () => undefined,
       projectDir: () => dir,
       readProject: async () => ({ broll: [] }) as any,
+      asWriter: (_slug, fn) => fn(),
       busy: () => busy,
       clipboardImage: async () => null,
       choose: async () => null

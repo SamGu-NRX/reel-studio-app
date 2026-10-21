@@ -2,7 +2,7 @@
 // goes to the renderer; app.json records the running job so a crash can be recovered at startup.
 import { randomUUID } from 'node:crypto'
 import type { JobEvent, JobKind, JobUpdate, Phase } from '../shared/api'
-import { addChat, assertProjectWritable, cleanPartialVersions, projectDir, updateAppState } from './store'
+import { acquireProjectLock, addChat, assertProjectWritable, cleanPartialVersions, projectDir, updateAppState } from './store'
 import { toUserError } from './engine'
 import { learn, ProgressTracker, type SpeedHistory } from './progress'
 
@@ -73,9 +73,15 @@ export function createJobManager(broadcast: (e: JobEvent) => void, log: (s: stri
     tick.unref?.()
 
     job.done = (async () => {
+      // the job is reserved above (forSlug sees it at once); the lock orders it after a manual edit
+      // already writing, and keeps every other writer out until its cleanup is done
+      let release: (() => void) | null = null
       try {
         // Inside the try: if even this fails, the user gets an error instead of a job that never ends.
-        if (slug) await assertProjectWritable(slug) // every job writes to its project
+        if (slug) {
+          release = await acquireProjectLock(slug)
+          await assertProjectWritable(slug) // every job writes to its project
+        }
         if (slug) {
           await updateAppState(slug, (s) => {
             s.job = { id, kind, startedAt: new Date().toISOString(), note: opts.note, ...(opts.txnId ? { txnId: opts.txnId } : {}) }
@@ -146,6 +152,7 @@ export function createJobManager(broadcast: (e: JobEvent) => void, log: (s: stri
         }
         send(cancelled ? { jobId: id, slug, type: 'cancelled' } : { jobId: id, slug, type: 'error', code: err.code, userMessage: err.userMessage })
       } finally {
+        release?.()
         clearInterval(tick)
         jobs.delete(id)
       }

@@ -18,7 +18,7 @@ import {
   uniqueSlug,
   updateAppState,
   writeJson,
-  writeProject,
+  updateProject,
   detail,
   rootRelative,
   brollLabel
@@ -235,9 +235,29 @@ describe('project store', () => {
     const dir = fakeProject('eta', {})
     mkdirSync(join(dir, 'work', '.note-in-progress'), { recursive: true })
     writeFileSync(join(dir, 'work', '.note-in-progress', 'note.json'), '{}')
-    const p = await readProject('eta')
-    await expect(writeProject('eta', { ...p, title: 'Renamed' })).rejects.toMatchObject({ code: 'NOTE_PENDING' })
+    await expect(updateProject('eta', (p) => { p.title = 'Renamed' })).rejects.toMatchObject({ code: 'NOTE_PENDING' })
     expect((await readProject('eta')).title).toBe('Title eta')
+  })
+
+  it('a manual edit reads the project after an unfinished note is undone, not before', async () => {
+    setupPaths()
+    await ensureRoot()
+    const dir = fakeProject('theta', {})
+    const marker = join(dir, 'work', '.note-in-progress', 'note.json')
+    mkdirSync(join(dir, 'work', '.note-in-progress'), { recursive: true })
+    writeFileSync(marker, '{}')
+    // the undo puts back the cut from before the note
+    setNoteRecovery(async (d) => {
+      const p = JSON.parse(await fs.readFile(join(d, 'project.json'), 'utf8'))
+      writeFileSync(join(d, 'project.json'), JSON.stringify({ ...p, cut: { keep: [{ from: 'w2', to: 'w3' }] } }))
+      await fs.rm(marker)
+      return 'undone'
+    })
+    await updateProject('theta', (p) => { p.title = 'Renamed' })
+    setNoteRecovery(null)
+    const after = await readProject('theta')
+    expect(after.title).toBe('Renamed')
+    expect(after.cut?.keep).toEqual([{ from: 'w2', to: 'w3' }])
   })
 
   it('writes json atomically (no temp files left behind)', async () => {

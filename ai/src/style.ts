@@ -1,7 +1,7 @@
 // "My style": durable user preferences, persisted in <Reel Studio root>/My style.json.
 import * as fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { readJson, styleFile, writeFileAtomic } from './project';
+import { readFileOrAbsent, readJson, styleFile, writeFileAtomic } from './project';
 
 export interface StyleRule { id: string; text: string; createdAt: string }
 export interface StyleFile { version: 1; rules: StyleRule[] }
@@ -45,6 +45,16 @@ export class StyleStore {
     } catch { return []; }
   }
 
+  /** The rules as stored, for a read-modify-write: an unreadable or unparsable file throws instead of
+   * reading as empty, which would write back an empty list and lose every rule. */
+  private async rulesForWrite(): Promise<StyleRule[]> {
+    const bytes = await readFileOrAbsent(this.file);
+    if (!bytes) return [];
+    const data = JSON.parse(bytes.toString('utf8')) as StyleFile;
+    if (!Array.isArray(data?.rules)) throw new Error(`${this.file} has no rules list`);
+    return data.rules.filter((r) => r && typeof r.text === 'string');
+  }
+
   private async write(rules: StyleRule[]): Promise<void> {
     await writeFileAtomic(this.file, JSON.stringify({ version: 1, rules } satisfies StyleFile, null, 2) + '\n');
   }
@@ -62,7 +72,7 @@ export class StyleStore {
 
   private async addNow(text: string, id: string): Promise<{ added: boolean; rule: StyleRule }> {
     const clean = cleanRuleText(text);
-    const rules = await this.list();
+    const rules = await this.rulesForWrite();
     const dup = rules.find((r) => normalize(r.text) === normalize(clean));
     if (dup) return { added: false, rule: dup };
     const rule: StyleRule = { id, text: clean, createdAt: new Date().toISOString() };
@@ -71,9 +81,16 @@ export class StyleStore {
   }
 
   async remove(id: string): Promise<void> {
+    return this.removeIds([id]);
+  }
+
+  /** Removes the rules with these ids in one read and one write. A read that fails throws. */
+  async removeIds(ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    const drop = new Set(ids);
     return this.serial(async () => {
-      const rules = await this.list();
-      await this.write(rules.filter((r) => r.id !== id));
+      const rules = await this.rulesForWrite();
+      if (rules.some((r) => drop.has(r.id))) await this.write(rules.filter((r) => !drop.has(r.id)));
     });
   }
 
