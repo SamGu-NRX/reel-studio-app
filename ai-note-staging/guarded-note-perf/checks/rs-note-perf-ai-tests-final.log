@@ -1,0 +1,16 @@
+
+> @reelstudio/ai@0.1.2 test
+> vitest run --maxWorkers=1
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/ai
+
+
+ Test Files  20 passed (20)
+      Tests  225 passed (225)
+   Start at  08:25:34
+   Duration  8.44s (tests 81%, import 17%, transform 1%)
+
+    Isolate  20 workers spawned · ~53ms startup each (spawn + environment, per file)
+             at least ~1.00s faster with isolate: false — reuses workers across files instead of one per file
+

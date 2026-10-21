@@ -1,0 +1,38 @@
+
+> @reelstudio/app@0.1.2 test
+> vitest run test/live.test.ts -t symlinked root --maxWorkers=1
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+
+ ❯ test/live.test.ts (11 tests | 1 failed | 10 skipped) 5ms
+   ❯ job manager (main): the contract on the wire (5)
+     × serves canonical note drafts through a symlinked root without granting another transaction 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/live.test.ts > job manager (main): the contract on the wire > serves canonical note drafts through a symlinked root without granting another transaction
+AssertionError: expected null not to be null
+ ❯ test/live.test.ts:168:23
+    166|       videos.set('job', dir, stage)
+    167|       const url = await videos.video('job', render)
+    168|       expect(url).not.toBeNull()
+       |                       ^
+    169|       const request = (file: string) => serveMedia(new Request(file, {…
+    170|       const response = await request(url!)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 10 skipped (11)
+   Start at  08:59:03
+   Duration  150ms (transform 73%, import 19%, tests 6%, worker 3%)
+
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+npm error workspace @reelstudio/app@0.1.2
+npm error location /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+npm error command failed
+npm error command sh -c vitest run test/live.test.ts -t 'symlinked root' --maxWorkers=1

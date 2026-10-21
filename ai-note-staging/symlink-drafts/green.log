@@ -1,0 +1,13 @@
+
+> @reelstudio/app@0.1.2 test
+> vitest run test/live.test.ts test/symlink-main-baseline.test.ts --maxWorkers=1
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+
+
+ Test Files  2 passed (2)
+      Tests  12 passed (12)
+   Start at  09:00:16
+   Duration  296ms (tests 67%, transform 20%, import 11%, worker 2%)
+
