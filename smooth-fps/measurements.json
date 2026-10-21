@@ -1,0 +1,50 @@
+[
+  {
+    "mode": "draft",
+    "target_fps": 30,
+    "output_fps": 30.0,
+    "encoder": "h264_videotoolbox",
+    "seconds": 1.725,
+    "bytes": 5298517,
+    "mbps": 5.299,
+    "ssim_same_rate": 0.999717,
+    "ssim_against_60": 0.978291,
+    "vmaf_same_rate": 99.029362
+  },
+  {
+    "mode": "draft",
+    "target_fps": 60,
+    "output_fps": 60.0,
+    "encoder": "h264_videotoolbox",
+    "seconds": 1.955,
+    "bytes": 6285148,
+    "mbps": 6.285,
+    "ssim_same_rate": 0.999071,
+    "ssim_against_60": 0.999071,
+    "vmaf_same_rate": 97.869807
+  },
+  {
+    "mode": "final",
+    "target_fps": 30,
+    "output_fps": 30.0,
+    "encoder": "libx264",
+    "seconds": 1.552,
+    "bytes": 9154426,
+    "mbps": 9.154,
+    "ssim_same_rate": 0.998227,
+    "ssim_against_60": 0.978915,
+    "vmaf_same_rate": 96.961394
+  },
+  {
+    "mode": "final",
+    "target_fps": 60,
+    "output_fps": 60.0,
+    "encoder": "libx264",
+    "seconds": 1.664,
+    "bytes": 13704911,
+    "mbps": 13.705,
+    "ssim_same_rate": 0.997254,
+    "ssim_against_60": 0.997254,
+    "vmaf_same_rate": 95.758528
+  }
+]
