@@ -674,10 +674,11 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                 <Progress pct={job.overall} label={job.message} />
               </div>
             )}
-            {extras.length > 0 && !job && (
+            {/* greyed, not removed, while working (polish-pass); on an older version they act on the latest (version-switcher) */}
+            {extras.length > 0 && (
               <div className="extras" data-testid="extras">
                 {extras.map((x) => (
-                  <button key={x.key} className="extra" onClick={x.run} data-testid={x.testid}>
+                  <button key={x.key} className="extra" onClick={onLatest(x.run)} disabled={!!job} data-testid={x.testid}>
                     <Icon name="plus" size={14} stroke={2} /> {x.label}
                   </button>
                 ))}
