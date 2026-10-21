@@ -1,0 +1,85 @@
+{
+  "method": "perf-harness instrumentation (React DevTools commit hook installed before the renderer, layout-effect counters in Reel and PhonePlayer) plus counters on ScrubRange, ScrubTime and ChangeAt; built app, fake engine, muted playback from 0, 5 s after two frames; 120 Hz display",
+  "before_d65d760": [
+    {
+      "screen": 596,
+      "counts": {
+        "Reel": 0,
+        "ScrubRange": 596,
+        "ScrubTime": 5,
+        "PhonePlayer": 0,
+        "ChangeAt": 5
+      },
+      "rafFrames": 600,
+      "advanced": 4.958985,
+      "renderers": 1
+    },
+    {
+      "screen": 596,
+      "counts": {
+        "Reel": 0,
+        "ScrubRange": 596,
+        "ScrubTime": 5,
+        "PhonePlayer": 0,
+        "ChangeAt": 5
+      },
+      "rafFrames": 600,
+      "advanced": 4.957299,
+      "renderers": 1
+    },
+    {
+      "screen": 595,
+      "counts": {
+        "Reel": 0,
+        "ScrubRange": 595,
+        "ScrubTime": 5,
+        "PhonePlayer": 0,
+        "ChangeAt": 5
+      },
+      "rafFrames": 600,
+      "advanced": 4.960236,
+      "renderers": 1
+    }
+  ],
+  "after": [
+    {
+      "screen": 5,
+      "counts": {
+        "Reel": 0,
+        "ScrubRange": 0,
+        "ScrubTime": 0,
+        "PhonePlayer": 0,
+        "ChangeAt": 5
+      },
+      "rafFrames": 600,
+      "advanced": 4.959772999999999,
+      "renderers": 1
+    },
+    {
+      "screen": 5,
+      "counts": {
+        "Reel": 0,
+        "ScrubRange": 0,
+        "ScrubTime": 0,
+        "PhonePlayer": 0,
+        "ChangeAt": 5
+      },
+      "rafFrames": 589,
+      "advanced": 4.96012,
+      "renderers": 1
+    },
+    {
+      "screen": 5,
+      "counts": {
+        "Reel": 0,
+        "ScrubRange": 0,
+        "ScrubTime": 0,
+        "PhonePlayer": 0,
+        "ChangeAt": 5
+      },
+      "rafFrames": 600,
+      "advanced": 4.955521,
+      "renderers": 1
+    }
+  ]
+}
