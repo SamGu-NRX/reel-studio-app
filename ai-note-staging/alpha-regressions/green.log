@@ -1,0 +1,13 @@
+
+> @reelstudio/app@0.1.2 test
+> vitest run test/project-engine.test.ts test/live.test.ts test/store.test.ts --maxWorkers=1 -t forwards additional|inactive staging private|explains an interrupted staged
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+
+
+ Test Files  3 passed (3)
+      Tests  3 passed | 25 skipped (28)
+   Start at  06:25:28
+   Duration  351ms (tests 71%, import 17%, transform 9%, worker 3%)
+

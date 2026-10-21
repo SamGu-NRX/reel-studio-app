@@ -1,0 +1,84 @@
+
+> @reelstudio/app@0.1.2 test
+> vitest run test/project-engine.test.ts test/live.test.ts test/store.test.ts --maxWorkers=1 -t forwards additional|inactive staging private|explains an interrupted staged
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+
+ ❯ test/store.test.ts (18 tests | 1 failed | 17 skipped) 106ms
+   ❯ project store (8)
+     × explains an interrupted staged note once even without a saved job, and removes staging 106ms
+ ❯ test/live.test.ts (9 tests | 1 failed | 8 skipped) 14ms
+   ❯ job manager (main): the contract on the wire (3)
+     × keeps inactive staging private through an alias in an allowed media folder 13ms
+ ❯ test/project-engine.test.ts (1 test | 1 failed) 42ms
+   × forwards additional caller options unchanged through the project lock, even after cancellation 42ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/live.test.ts > job manager (main): the contract on the wire > keeps inactive staging private through an alias in an allowed media folder
+AssertionError: expected 200 to be 403 // Object.is equality
+
+- Expected
++ Received
+
+- 403
++ 200
+
+ ❯ test/live.test.ts:120:29
+    118|     symlinkSync(join(stage, 'draft.mp4'), alias)
+    119|     const response = await serveMedia(new Request(mediaUrl(alias)), ()…
+    120|     expect(response.status).toBe(403)
+       |                             ^
+    121|   })
+    122|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/project-engine.test.ts > forwards additional caller options unchanged through the project lock, even after cancellation
+TypeError: Cannot read properties of undefined (reading 'onExit')
+ ❯ test/project-engine.test.ts:10:16
+      8|   const signal = controller.signal
+      9|   const runner = vi.fn(async (...options: [string, string[], undefined…
+     10|     options[4].onExit()
+       |                ^
+     11|     return 'finished'
+     12|   })
+ ❯ run src/main/project-engine.ts:8:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  test/store.test.ts > project store > explains an interrupted staged note once even without a saved job, and removes staging
+AssertionError: expected [] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+- [
+-   "Reel Studio closed before I finished that change. Send your note again and I will pick it up.",
+- ]
++ []
+
+ ❯ test/store.test.ts:216:55
+    214|     expect(existsSync(join(dir, '.staging'))).toBe(false)
+    215|     const state = await readAppState('orphan')
+    216|     expect(state.chat.map((message) => message.text)).toEqual([
+       |                                                       ^
+    217|       'Reel Studio closed before I finished that change. Send your not…
+    218|     ])
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  3 failed (3)
+      Tests  3 failed | 25 skipped (28)
+   Start at  06:24:09
+   Duration  435ms (tests 65%, transform 18%, import 14%, worker 2%)
+
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+npm error workspace @reelstudio/app@0.1.2
+npm error location /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+npm error command failed
+npm error command sh -c vitest run test/project-engine.test.ts test/live.test.ts test/store.test.ts --maxWorkers=1 -t 'forwards additional|inactive staging private|explains an interrupted staged'

@@ -1,0 +1,28 @@
+9763e2f1d56038304609dfa748648a91cacc561a
+100644 41efddf42ee9d7456da659d1a231a3e17f8d1e72 1	app/src/main/engine.ts
+100644 5cd342df676a8f27fe0db84dbbf31d476ce35c24 2	app/src/main/engine.ts
+100644 4fb21281810745fbb96e72b9f480b49a60186114 3	app/src/main/engine.ts
+100644 a64cd1e204efe925cad62301d79410e2f8f0cc5e 1	docs/schema-changes.md
+100644 58dec6b361db085bd9422016f66e789f48cb768f 2	docs/schema-changes.md
+100644 c4fa18ae2b5cdab0076a1e506fb95081cbd03f23 3	docs/schema-changes.md
+100644 52a7a36dbc62317def61fc3eaeee04db729b5b47 1	engine/reelengine/cli.py
+100644 6af20b6ca3b017cea6570605b969bc18f0eb8cdf 2	engine/reelengine/cli.py
+100644 2468118cca88bd69e382f41c67ebe8289b96aada 3	engine/reelengine/cli.py
+100644 214ce4595ad340bfef60a3351bdd44182f9ae598 1	engine/reelengine/render.py
+100644 59f8ce4c27179f2335903b9615b1ea037d92aa68 2	engine/reelengine/render.py
+100644 285bf97ec420a6616a21e3db7e79709604c8e131 3	engine/reelengine/render.py
+
+Auto-merging ai/src/tools.ts
+Auto-merging app/src/main/engine.ts
+CONFLICT (content): Merge conflict in app/src/main/engine.ts
+Auto-merging app/src/main/index.ts
+Auto-merging app/src/main/media.ts
+Auto-merging app/src/main/store.ts
+Auto-merging app/src/renderer/src/screens/ShowMeHow.tsx
+Auto-merging docs/schema-changes.md
+CONFLICT (content): Merge conflict in docs/schema-changes.md
+Auto-merging engine/reelengine/cli.py
+CONFLICT (content): Merge conflict in engine/reelengine/cli.py
+Auto-merging engine/reelengine/render.py
+CONFLICT (content): Merge conflict in engine/reelengine/render.py
+Auto-merging engine/reelengine/schema/project.schema.json

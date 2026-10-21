@@ -1,0 +1,13 @@
+
+> @reelstudio/app@0.1.2 test
+> vitest run test/live.test.ts test/alpha-media-integration.test.ts --maxWorkers=1
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+
+
+ Test Files  2 passed (2)
+      Tests  10 passed (10)
+   Start at  06:24:48
+   Duration  281ms (tests 72%, import 13%, transform 13%, worker 2%)
+
