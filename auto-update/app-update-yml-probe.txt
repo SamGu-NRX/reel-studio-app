@@ -1,0 +1,6 @@
+electron-builder 26.15.3 --mac zip --publish never, publish: github in the config. Contents/Resources/app-update.yml:
+owner: AidenJohnston
+repo: reel-studio-app
+provider: github
+releaseType: release
+updaterCacheDirName: rs-eb-probe-updater
