@@ -83,7 +83,7 @@ export interface AI {
   addStyleRule?(text: string): Promise<{ id: string; text: string; createdAt: string }>
   /** At startup, for a project whose note was cut off: 'undone' when it put the project back as before
    * the note, 'refused' when the leftover marker was not this project's own (it is removed), 'blocked' when
-   * undoing it would reach outside the project (it is kept).
+   * it could not be undone now (it is kept, and assertProjectWritable keeps the project read-only).
    * Optional: older packages and the mock lack it. */
   recoverNote?(projectDir: string): Promise<'undone' | 'refused' | 'blocked' | 'none'>
   /** Optional extras from @reelstudio/ai. */

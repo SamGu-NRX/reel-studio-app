@@ -141,6 +141,20 @@ describe('note transaction', () => {
     expect(await fsp.readFile(snapshot, 'utf8')).toBe(JSON.stringify(p));
   });
 
+  it('a project.json that cannot be read keeps the unfinished note and its copies', async () => {
+    const { root, dir } = await makeProject();
+    await NoteTransaction.begin(dir, new StyleStore(() => root), 'n1');
+    const live = path.join(dir, 'project.json');
+    await fsp.chmod(live, 0o000);
+    try {
+      expect(await recoverNote(dir, new StyleStore(() => root))).toBe('blocked');
+    } finally {
+      await fsp.chmod(live, 0o644);
+    }
+    expect(fs.existsSync(path.join(dir, 'work', '.note-in-progress', 'note.json'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'work', '.note-in-progress', 'project.json'))).toBe(true);
+  });
+
   it('the app dying after a change: the next start puts back the exact project bytes', async () => {
     const { root, dir } = await makeProject();
     const before = await fsp.readFile(path.join(dir, 'project.json'));

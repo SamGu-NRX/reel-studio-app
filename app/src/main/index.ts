@@ -27,6 +27,7 @@ import {
   readProject,
   readWords,
   recoverInterrupted,
+  setNoteRecovery,
   titleFromFile,
   uniqueSlug,
   updateAppState,
@@ -638,9 +639,9 @@ app.whenReady().then(async () => {
   ai = loaded.ai
   aiSource = loaded.source
   // after loadAI: a cut-off note is undone by the AI package, which knows what the note changed
-  // a refused marker is logged by the AI package with its reason
-  const undoNote = async (dir: string): Promise<boolean> => (await ai.recoverNote?.(dir)) === 'undone'
-  const recovered = await recoverInterrupted(undoNote).catch((e) => {
+  // the write gate and startup recovery undo a cut-off note through the AI package; it logs why when it can't
+  setNoteRecovery((dir) => ai.recoverNote?.(dir) ?? Promise.resolve(null))
+  const recovered = await recoverInterrupted().catch((e) => {
     log(`[recover] ${String(e)}`)
     return []
   })

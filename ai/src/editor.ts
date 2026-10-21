@@ -330,7 +330,7 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
  * a new edit on top would be undone with it later. */
 async function recoverEarlierNote(deps: EditorDeps, projectDir: string): Promise<void> {
   if (await recoverNote(projectDir, deps.style, deps.log) !== 'blocked') return;
-  throw new AIError('note_unresolved', 'An earlier change to this video did not finish, and I could not safely put the video back the way it was. I left everything as it is so nothing is lost. To keep editing, make a new video from the same takes.');
+  throw new AIError('note_unresolved', 'An earlier change to this video did not finish, and I could not put the video back the way it was yet, so I cannot change it right now. Nothing was lost. Try again in a moment, or make a new video from the same takes.');
 }
 
 /** A note's version is its final render. When that fails the note is undone, and the message says so. */

@@ -2,7 +2,7 @@
 // goes to the renderer; app.json records the running job so a crash can be recovered at startup.
 import { randomUUID } from 'node:crypto'
 import type { JobEvent, JobKind, JobUpdate, Phase } from '../shared/api'
-import { addChat, cleanPartialVersions, projectDir, updateAppState } from './store'
+import { addChat, assertProjectWritable, cleanPartialVersions, projectDir, updateAppState } from './store'
 import { toUserError } from './engine'
 import { learn, ProgressTracker, type SpeedHistory } from './progress'
 
@@ -75,6 +75,7 @@ export function createJobManager(broadcast: (e: JobEvent) => void, log: (s: stri
     job.done = (async () => {
       try {
         // Inside the try: if even this fails, the user gets an error instead of a job that never ends.
+        if (slug) await assertProjectWritable(slug) // every job writes to its project
         if (slug) {
           await updateAppState(slug, (s) => {
             s.job = { id, kind, startedAt: new Date().toISOString(), note: opts.note, ...(opts.txnId ? { txnId: opts.txnId } : {}) }

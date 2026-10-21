@@ -15,7 +15,8 @@ import type {
   ScreenStatus,
   VersionInfo,
   Word,
-  JobKind
+  JobKind,
+  UserError
 } from '../shared/api'
 import { mediaUrl } from './media-url'
 import { keptIds } from '../shared/cut'
@@ -159,7 +160,41 @@ export function readProject(slug: string): Promise<ProjectJson> {
   return serialized(p, async () => JSON.parse(await fs.readFile(p, 'utf8')) as ProjectJson)
 }
 
+// ---- the project write gate ----------------------------------------------------------------------
+
+/** The ai package's record of a note that is neither saved nor undone yet (ai/src/noteTxn.ts,
+ * docs/versions.md). While it exists, the project before the note is only in its copies. */
+export const NOTE_MARKER = join('work', '.note-in-progress', 'note.json')
+
+/** The AI package's recoverNote (ai-types.ts), set once it is loaded. Without one (the mock AI), a marker stays. */
+type NoteRecovery = (dir: string) => Promise<'undone' | 'refused' | 'blocked' | 'none' | null>
+let undoNote: NoteRecovery | null = null
+export function setNoteRecovery(fn: NoteRecovery | null): void {
+  undoNote = fn
+}
+
+export const NOTE_PENDING: UserError = {
+  code: 'NOTE_PENDING',
+  userMessage:
+    'An earlier change to this video did not finish, and I could not put the video back the way it was yet, so I cannot change it right now. Nothing was lost. Try again in a moment, or make a new video from the same takes.'
+}
+
+/**
+ * Every write to a project from the main process passes here first: writeProject (manual edits and
+ * renames) and jobs.start (first edit, notes, re-renders, the export's full-quality render). A project
+ * with an unfinished note is read-only, because undoing that note puts back its copy of project.json
+ * over anything written meanwhile. One undo attempt is made first; if the marker is still there, the
+ * write is refused.
+ */
+export async function assertProjectWritable(slug: string): Promise<void> {
+  const marker = join(projectDir(slug), NOTE_MARKER)
+  if (!existsSync(marker)) return
+  await undoNote?.(projectDir(slug)).catch(() => undefined)
+  if (existsSync(marker)) throw { ...NOTE_PENDING }
+}
+
 export async function writeProject(slug: string, project: ProjectJson): Promise<void> {
+  await assertProjectWritable(slug)
   project.updatedAt = new Date().toISOString()
   const file = join(projectDir(slug), 'project.json')
   await serialized(file, () => writeJson(file, project))
@@ -297,9 +332,10 @@ export async function cleanPartialVersions(dir: string): Promise<string[]> {
 /**
  * Called once at startup, before any job can run: a project whose app.json still says a job is
  * running was interrupted (quit, crash, power cut). Clean it up and mark it so the UI can offer
- * to pick up where it left off. `undoNote` puts a cut-off note's changes back (the AI's recoverNote).
+ * to pick up where it left off. A cut-off note is undone through setNoteRecovery's function, and the
+ * chat says what is really on disk afterwards: undone, saved, or still waiting to be undone.
  */
-export async function recoverInterrupted(undoNote?: (dir: string) => Promise<boolean>): Promise<string[]> {
+export async function recoverInterrupted(): Promise<string[]> {
   const recovered: string[] = []
   let slugs: string[] = []
   try {
@@ -317,10 +353,13 @@ export async function recoverInterrupted(undoNote?: (dir: string) => Promise<boo
     if (!existsSync(join(dir, 'app.json'))) continue
     const s = await readAppState(slug)
     if (!s.job) continue
-    // a failed undo must not stop the other projects' recovery: its marker stays, and the next note retries it
-    const undone = s.job.kind === 'note' && undoNote ? await undoNote(dir).catch(() => false) : false
+    // a failed undo must not stop the other projects' recovery: its marker stays, and the write gate retries it
+    const outcome = s.job.kind === 'note' && undoNote ? await undoNote(dir).catch(() => null) : null
+    // the marker decides, not the outcome: while it exists the note is neither saved nor undone
+    const pending = existsSync(join(dir, NOTE_MARKER))
+    const undone = !pending && outcome === 'undone'
     // a note that was saved before the app closed: sending it again would apply it twice
-    const saved = !undone && s.job.kind === 'note' && !!s.job.txnId && (await savedNoteVersion(slug, s.job.txnId)) !== null
+    const saved = !pending && !undone && s.job.kind === 'note' && !!s.job.txnId && (await savedNoteVersion(slug, s.job.txnId)) !== null
     await cleanPartialVersions(dir)
     await updateAppState(slug, (st) => {
       st.status = st.job?.kind === 'first-edit' || !existsSync(join(dir, 'versions')) ? 'interrupted' : 'ready'
@@ -328,11 +367,7 @@ export async function recoverInterrupted(undoNote?: (dir: string) => Promise<boo
         st.chat.push({
           id: randomUUID(),
           from: 'editor',
-          text: saved
-            ? 'Reel Studio closed just after I finished your note. Your change is saved in the newest version.'
-            : undone
-              ? 'Reel Studio closed before I finished your note, so I put your video back the way it was. Send the note again to try once more.'
-              : 'Reel Studio closed before I finished that change. Send your note again and I will pick it up.',
+          text: interruptedMessage(pending, saved, undone),
           at: new Date().toISOString()
         })
       }
@@ -341,6 +376,16 @@ export async function recoverInterrupted(undoNote?: (dir: string) => Promise<boo
     recovered.push(slug)
   }
   return recovered
+}
+
+/** What the chat says about a job the app closed in the middle of, from what is on disk now. */
+function interruptedMessage(pending: boolean, saved: boolean, undone: boolean): string {
+  if (pending) {
+    return 'Reel Studio closed before I finished your note, and I could not put your video back the way it was yet. Nothing was lost: I kept a copy of how it was. I will try again the next time you change this video.'
+  }
+  if (saved) return 'Reel Studio closed just after I finished your note. Your change is saved in the newest version.'
+  if (undone) return 'Reel Studio closed before I finished your note, so I put your video back the way it was. Send the note again to try once more.'
+  return 'Reel Studio closed before I finished that change. Send your note again and I will pick it up.'
 }
 
 /** The version a saved note made, found by the id its job record holds; null when no saved note has it. */

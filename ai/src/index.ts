@@ -291,7 +291,7 @@ export function createAI(opts: CreateAIOptions) {
     },
     /** At app start, for a project whose note job was cut off: 'undone' when the project was put back as
      * before the note, 'refused' when the leftover marker was not this project's own (it is removed), 'blocked'
-     * when undoing it would reach outside the project (it is kept). */
+     * when it could not be undone now (it is kept, and the app keeps the project read-only). */
     async recoverNote(projectDir: string): Promise<RecoverResult> {
       return exclusive(projectDir, () => recoverNote(projectDir, style, opts.log));
     },

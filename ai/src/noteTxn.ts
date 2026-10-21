@@ -49,8 +49,9 @@ interface Marker {
   preview: 'untouched' | 'saved' | 'absent';
 }
 
-/** 'refused': the marker was not this project's own and was removed. 'blocked': it is this project's own,
- * but undoing it would touch a path that leads out of the project; marker and copies are kept. */
+/** 'refused': the marker was proven not this project's own and was removed. 'blocked': it could not be
+ * undone now (a path that leads out of the project, or a read or write that failed); marker and copies
+ * are kept, and the project must not be edited until a later attempt undoes it. */
 export type RecoverResult = 'undone' | 'refused' | 'blocked' | 'none';
 
 /** A path the note would write or delete leads out of the project folder (a symlink on the way). */
@@ -250,33 +251,48 @@ async function undo(projectDir: string, m: Marker, store: StyleStore): Promise<v
 /** Undoes a note the process died in the middle of. Run it while holding the project's edit lock,
  * before anything else changes the project. 'refused': the marker was malformed or not this project's
  * own (another project, a copied project folder, or a copy that does not match); it is removed, nothing
- * is restored, and the reason is logged. 'blocked': the marker is this project's own but a path it
- * would touch now leads out of the project; nothing is restored and the marker and copies are kept. */
+ * is restored, and the reason is logged. 'blocked': it could not be undone now; the marker and copies
+ * are kept and the reason is logged. */
 export async function recoverNote(projectDir: string, store: StyleStore, log: Log = () => undefined): Promise<RecoverResult> {
   const dir = at(projectDir, DIR);
   if (!fs.existsSync(at(dir, MARKER))) {
     await fsp.rm(dir, { recursive: true, force: true });   // copies whose marker was never written: the note had not started
     return 'none';
   }
-  const m = await readJson<Marker>(at(dir, MARKER)).catch(() => null);
-  const copy = await fsp.readFile(at(dir, PROJECT_FILE)).catch(() => null);
-  const live = await readJson<{ id?: unknown }>(at(projectDir, PROJECT_FILE)).catch(() => null);
-  const folder = await fsp.realpath(projectDir).catch(() => null);
-  const problem = markerProblem(m)
-    ?? (!copy || sha256(copy) !== m!.sha256 ? 'the project copy does not match the marker'
-      : live?.id !== m!.projectId ? 'the marker belongs to another project'
-        : folder !== m!.folder ? `the marker was written in another folder (${m!.folder})` : null);
+  const keep = (why: string): RecoverResult => {
+    log(`unfinished note in ${projectDir} not undone: ${why}. The marker and its copies were kept.`);
+    return 'blocked';
+  };
   const refuse = async (why: string): Promise<RecoverResult> => {
     log(`unfinished note in ${projectDir} not undone: ${why}. The marker was removed and nothing was restored.`);
     await fsp.rm(dir, { recursive: true, force: true });
     return 'refused';
   };
+  // A read that fails proves nothing about whose marker this is: keep everything and try again later.
+  // Only a marker that reads as malformed, or names another project, folder or copy, is removed.
+  let raw: string; let copy: Buffer | null; let live: string; let folder: string;
+  try {
+    raw = await fsp.readFile(at(dir, MARKER), 'utf8');
+    // begin() writes the copy before the marker, so a marker without one was never this project's own note
+    copy = await fsp.readFile(at(dir, PROJECT_FILE)).catch((e) => { if (e?.code === 'ENOENT') return null; throw e; });
+    live = await fsp.readFile(at(projectDir, PROJECT_FILE), 'utf8');
+    folder = await fsp.realpath(projectDir);
+  } catch (e: any) {
+    return keep(`could not read it (${e?.code ?? e?.message ?? e})`);
+  }
+  let m: Marker;
+  try { m = JSON.parse(raw); } catch { return refuse('the marker is not valid JSON'); }
+  let liveId: unknown;
+  try { liveId = JSON.parse(live)?.id; } catch { return keep('project.json is not valid JSON'); }
+  const problem = markerProblem(m)
+    ?? (!copy || sha256(copy) !== m.sha256 ? 'the project copy does not match the marker'
+      : liveId !== m.projectId ? 'the marker belongs to another project'
+        : folder !== m.folder ? `the marker was written in another folder (${m.folder})` : null);
   if (problem) return refuse(problem);
-  try { await undo(projectDir, m!, store); } catch (e) {
-    if (!(e instanceof UnsafePathError)) throw e;
-    // checked before undo touched anything; the copies are the only record of the project before the note
-    log(`unfinished note in ${projectDir} not undone: ${e.message}. The marker and its copies were kept.`);
-    return 'blocked';
+  try { await undo(projectDir, m, store); } catch (e: any) {
+    // a path check fails before undo touches anything; any other failure leaves undo half done, and
+    // undo is safe to repeat from the same copies
+    return keep(e instanceof UnsafePathError ? e.message : `undo failed (${e?.code ?? e?.message ?? e})`);
   }
   await fsp.rm(at(dir, MARKER), { force: true });
   await fsp.rm(dir, { recursive: true, force: true }).catch((e) => log(`could not remove ${dir} (${e?.message ?? e})`));

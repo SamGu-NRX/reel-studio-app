@@ -10,12 +10,15 @@ import {
   rangesFromKept,
   rangesKeepingOrder,
   readAppState,
+  readProject,
   recoverInterrupted,
+  setNoteRecovery,
   slugify,
   titleFromFile,
   uniqueSlug,
   updateAppState,
   writeJson,
+  writeProject,
   detail,
   rootRelative,
   brollLabel
@@ -204,8 +207,37 @@ describe('project store', () => {
     await updateAppState('epsilon', (s) => {
       s.job = { id: 'j3', kind: 'note', startedAt: new Date().toISOString(), txnId: 'n1' }
     })
-    await recoverInterrupted(async () => false)
+    await recoverInterrupted()
     expect((await readAppState('epsilon')).chat.at(-1)?.text).not.toMatch(/Send your note again/)
+  })
+
+  it('a note still waiting to be undone is reported as not finished, even when its id was saved', async () => {
+    setupPaths()
+    await ensureRoot()
+    const dir = fakeProject('zeta', { versions: [1] })
+    const p = JSON.parse(await fs.readFile(join(dir, 'project.json'), 'utf8'))
+    p.notes = [{ version: 1, text: 'slower', applied: ['cut'], at: new Date().toISOString(), txnId: 'n1' }]
+    writeFileSync(join(dir, 'project.json'), JSON.stringify(p))
+    mkdirSync(join(dir, 'work', '.note-in-progress'), { recursive: true })
+    writeFileSync(join(dir, 'work', '.note-in-progress', 'note.json'), '{}')
+    await updateAppState('zeta', (s) => {
+      s.job = { id: 'j4', kind: 'note', startedAt: new Date().toISOString(), txnId: 'n1' }
+    })
+    setNoteRecovery(async () => 'blocked')
+    await recoverInterrupted()
+    setNoteRecovery(null)
+    expect((await readAppState('zeta')).chat.at(-1)?.text).toMatch(/could not put your video back the way it was yet/)
+  })
+
+  it('a project with an unfinished note refuses writes until the note is undone', async () => {
+    setupPaths()
+    await ensureRoot()
+    const dir = fakeProject('eta', {})
+    mkdirSync(join(dir, 'work', '.note-in-progress'), { recursive: true })
+    writeFileSync(join(dir, 'work', '.note-in-progress', 'note.json'), '{}')
+    const p = await readProject('eta')
+    await expect(writeProject('eta', { ...p, title: 'Renamed' })).rejects.toMatchObject({ code: 'NOTE_PENDING' })
+    expect((await readProject('eta')).title).toBe('Title eta')
   })
 
   it('writes json atomically (no temp files left behind)', async () => {
