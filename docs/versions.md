@@ -64,7 +64,7 @@ Rules:
   nothing else in the project is touched. A note that re-uses a version folder (an edit that renders the
   same video) records the old bytes of `notes.md` there first. The marker also holds the project id, the
   project folder's real path and the copy's sha256, and may only name files a note can make (one file in
-  `work/assets` or `work/thumbs`, a `vN` folder or a file in one); recovery removes a marker that does not
-  match or is malformed, restores nothing and logs why. Deleting the marker is the commit point. The app calls `recoverNote` at
+  `work/assets` or `work/thumbs`, a `vN` folder or a file in one, with no backslash and no symlink on the
+  way); recovery removes a marker that does not match or is malformed, restores nothing and logs why. Deleting the marker is the commit point. The app calls `recoverNote` at
   startup for a cut-off note job; `applyNote` calls it too. A note job whose `txnId` is already in
   `project.json` `notes` was saved before the app closed and is not asked for again.

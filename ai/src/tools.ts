@@ -424,9 +424,14 @@ export async function doRender(ctx: ToolContext, draft: boolean): Promise<Render
   if (ctx.renderGate) await ctx.renderGate.catch(() => undefined);
   if (draft) await ctx.journal?.preview();
   else if (ctx.journal) {
-    // docs/versions.md: a final render writes v(version + 1), or re-uses vN for an unchanged edit
-    const next = `versions/v${(await loadProject(ctx.projectDir)).version + 1}`;
+    // docs/versions.md: a final render writes v(version + 1), or re-uses vN (and overwrites its
+    // project.json) for an edit that renders the same video, so vN's files are recorded first
+    const n = (await loadProject(ctx.projectDir)).version;
+    const next = `versions/v${n + 1}`;
     if (!fs.existsSync(path.join(ctx.projectDir, next))) await ctx.journal.created(next);
+    if (n > 0 && fs.existsSync(path.join(ctx.projectDir, 'versions', `v${n}`))) {
+      for (const f of ['project.json', 'notes.md']) await ctx.journal.modified(`versions/v${n}/${f}`);
+    }
   }
   ctx.state.dirty = new Set();
   const result = await engine(ctx, 'render', draft ? ['--draft'] : [], draft ? 'Making a preview' : 'Making the final video');

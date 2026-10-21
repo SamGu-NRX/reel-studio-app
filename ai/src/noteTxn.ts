@@ -50,6 +50,11 @@ interface Marker {
 }
 
 export type RecoverResult = 'undone' | 'refused' | 'none';
+
+/** An entry of the marker would touch something outside the project: nothing is undone. */
+export class UnsafeMarkerError extends Error {
+  constructor(message: string) { super(message); this.name = 'UnsafeMarkerError'; }
+}
 type Log = (line: string) => void;
 
 const sha256 = (b: Buffer) => createHash('sha256').update(b).digest('hex');
@@ -57,6 +62,8 @@ const at = (projectDir: string, ...p: string[]) => path.join(projectDir, ...p);
 const isStr = (x: unknown): x is string => typeof x === 'string' && x.length > 0;
 const isStrList = (x: unknown): x is string[] => Array.isArray(x) && x.every(isStr);
 const COPY_NAME = /^modified-\d+$/;
+/** POSIX normal form, and no backslash: Windows reads "work/assets/..\\..\\x" as a path out of the project. */
+const plain = (p: string) => !p.includes('\\') && path.posix.normalize(p) === p;
 
 /** Why a marker read from disk cannot be trusted, or null when it is well formed. */
 function markerProblem(m: any): string | null {
@@ -65,10 +72,10 @@ function markerProblem(m: any): string | null {
   if (!isStrList(m.created) || !isStrList(m.styleRules) || !Array.isArray(m.modified)) return 'a list is malformed';
   if (m.credits !== 'saved' && m.credits !== 'absent') return 'credits is malformed';
   if (!['untouched', 'saved', 'absent'].includes(m.preview)) return 'preview is malformed';
-  const bad = m.created.find((p: string) => !CREATABLE.test(p) || path.posix.normalize(p) !== p);
+  const bad = m.created.find((p: string) => !CREATABLE.test(p) || !plain(p));
   if (bad !== undefined) return `created entry ${JSON.stringify(bad)} is not a file the note could make`;
   for (const e of m.modified) {
-    if (!e || !isStr(e.path) || !MODIFIABLE.test(e.path) || path.posix.normalize(e.path) !== e.path || !isStr(e.copy) || !COPY_NAME.test(e.copy)) {
+    if (!e || !isStr(e.path) || !MODIFIABLE.test(e.path) || !plain(e.path) || !isStr(e.copy) || !COPY_NAME.test(e.copy)) {
       return `modified entry ${JSON.stringify(e)} is malformed`;
     }
   }
@@ -78,7 +85,7 @@ function markerProblem(m: any): string | null {
 /** A project-relative path in the form the marker keeps, or an error for one outside `allowed`. */
 function relPath(projectDir: string, ref: string, allowed: RegExp): string {
   const rel = path.relative(projectDir, path.resolve(projectDir, ref)).split(path.sep).join('/');
-  if (!allowed.test(rel)) throw new Error(`note journal: ${ref} is not a file a note may change`);
+  if (!allowed.test(rel) || !plain(rel)) throw new Error(`note journal: ${ref} is not a file a note may change`);
   return rel;
 }
 
@@ -191,7 +198,26 @@ export class NoteTransaction {
   }
 }
 
+/** Why deleting or writing `rel` could reach outside the project, or null. The text of a path is not
+ * enough: a symlinked versions/v1 makes "versions/v1/keep.txt" a file somewhere else. */
+async function placeProblem(projectDir: string, root: string, rel: string): Promise<string | null> {
+  const parts = rel.split('/');
+  for (let i = 1; i <= parts.length; i++) {
+    const st = await fsp.lstat(at(projectDir, ...parts.slice(0, i))).catch(() => null);
+    if (!st) break;                                   // nothing there, so nothing below it to delete
+    if (st.isSymbolicLink()) return `${parts.slice(0, i).join('/')} is a symlink`;
+  }
+  const parent = await fsp.realpath(path.dirname(at(projectDir, rel))).catch(() => null);
+  if (parent && parent !== root && !parent.startsWith(root + path.sep)) return `${rel} is outside the project`;
+  return null;
+}
+
 async function undo(projectDir: string, m: Marker, store: StyleStore): Promise<void> {
+  const root = await fsp.realpath(projectDir);
+  for (const rel of [...m.created, ...m.modified.map((e) => e.path)]) {
+    const problem = await placeProblem(projectDir, root, rel);
+    if (problem) throw new UnsafeMarkerError(problem);
+  }
   const dir = at(projectDir, DIR);
   await writeFileAtomic(at(projectDir, PROJECT_FILE), await fsp.readFile(at(dir, PROJECT_FILE)));
   // credits.json is written only by the note's own downloads and screenshots (engine fetch-image, register-capture)
@@ -225,12 +251,16 @@ export async function recoverNote(projectDir: string, store: StyleStore, log: Lo
     ?? (!copy || sha256(copy) !== m!.sha256 ? 'the project copy does not match the marker'
       : live?.id !== m!.projectId ? 'the marker belongs to another project'
         : folder !== m!.folder ? `the marker was written in another folder (${m!.folder})` : null);
-  if (problem) {
-    log(`unfinished note in ${projectDir} not undone: ${problem}. The marker was removed and nothing was restored.`);
+  const refuse = async (why: string): Promise<RecoverResult> => {
+    log(`unfinished note in ${projectDir} not undone: ${why}. The marker was removed and nothing was restored.`);
     await fsp.rm(dir, { recursive: true, force: true });
     return 'refused';
+  };
+  if (problem) return refuse(problem);
+  try { await undo(projectDir, m!, store); } catch (e) {
+    if (e instanceof UnsafeMarkerError) return refuse(e.message);   // checked before undo touched anything
+    throw e;
   }
-  await undo(projectDir, m!, store);
   await fsp.rm(at(dir, MARKER), { force: true });
   await fsp.rm(dir, { recursive: true, force: true }).catch((e) => log(`could not remove ${dir} (${e?.message ?? e})`));
   return 'undone';

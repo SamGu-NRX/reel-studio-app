@@ -310,7 +310,7 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     return r;
   } catch (e) {
     // a no-op once commit() deleted the marker; an undo that fails leaves the marker, and the next note or app start finishes it
-    await txn.rollback().catch(() => undefined);
+    await txn.rollback().catch((u) => deps.log?.(`note ${txn.txnId} not undone: ${u?.message ?? u}`));
     throw e;
   }
 }

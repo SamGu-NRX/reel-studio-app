@@ -58,20 +58,34 @@ describe('note transaction', () => {
     expect(fs.existsSync(path.join(b.dir, marker))).toBe(false);
   });
 
-  it('a marker naming "work" or "../x" is refused and deletes nothing', async () => {
+  it('a marker naming "work", "../x" or a backslash path is refused and deletes nothing', async () => {
     const { root, dir } = await makeProject();
     const outside = path.join(dir, '..', 'x');
     await fsp.writeFile(outside, 'not the note\'s');
     await NoteTransaction.begin(dir, new StyleStore(() => root), 'n1');
     const markerFile = path.join(dir, 'work', '.note-in-progress', 'note.json');
     const marker = JSON.parse(await fsp.readFile(markerFile, 'utf8'));
-    await fsp.writeFile(markerFile, JSON.stringify({ ...marker, created: ['work', '../x'] }));
+    await fsp.writeFile(markerFile, JSON.stringify({ ...marker, created: ['work', '../x', 'work/assets/..\\..\\..\\x'] }));
     expect(await recoverNote(dir, new StyleStore(() => root))).toBe('refused');
     expect(fs.existsSync(path.join(dir, 'work', 'transcript.json'))).toBe(true);
     expect(fs.existsSync(outside)).toBe(true);
   });
 
-  it('a failed note puts back notes.md in the version folder it re-used', async () => {
+  it('a marker naming a file under a symlinked version folder deletes nothing outside the project', async () => {
+    const { root, dir } = await makeProject();
+    const outside = tmpDir('outside ');
+    await fsp.writeFile(path.join(outside, 'keep.txt'), 'not the note\'s');
+    await fsp.mkdir(path.join(dir, 'versions'), { recursive: true });
+    await fsp.symlink(outside, path.join(dir, 'versions', 'v1'));
+    await NoteTransaction.begin(dir, new StyleStore(() => root), 'n1');
+    const markerFile = path.join(dir, 'work', '.note-in-progress', 'note.json');
+    const marker = JSON.parse(await fsp.readFile(markerFile, 'utf8'));
+    await fsp.writeFile(markerFile, JSON.stringify({ ...marker, created: ['versions/v1/keep.txt'] }));
+    expect(await recoverNote(dir, new StyleStore(() => root))).toBe('refused');
+    expect(fs.existsSync(path.join(outside, 'keep.txt'))).toBe(true);
+  });
+
+  it('a failed note puts back notes.md and project.json in the version folder it re-used', async () => {
     const { root, dir } = await makeProject();
     const p = await loadProject(dir);
     p.version = 1;
@@ -79,10 +93,16 @@ describe('note transaction', () => {
     const notes = path.join(dir, 'versions', 'v1', 'notes.md');
     await fsp.mkdir(path.dirname(notes), { recursive: true });
     await fsp.writeFile(notes, '# v1\n\nFirst edit.\n');
+    const snapshot = path.join(dir, 'versions', 'v1', 'project.json');
+    await fsp.writeFile(snapshot, JSON.stringify(p));
     const host = new FakeHost(root);
     const engine = host.runEngine.bind(host);
-    // the engine re-uses v1 for an edit that renders the same video (a post-only note)
-    host.runEngine = async (command, args, ...rest) => command === 'render' && !args.includes('--draft') ? { version: 1 } : engine(command, args, ...rest);
+    // the engine re-uses v1 for an edit that renders the same video (a post-only note) and rewrites its project.json
+    host.runEngine = async (command, args, ...rest) => {
+      if (command !== 'render' || args.includes('--draft')) return engine(command, args, ...rest);
+      await fsp.copyFile(path.join(dir, 'project.json'), snapshot);
+      return { version: 1 };
+    };
     const m = new ScriptedModel([
       { toolCalls: [call('write_post', { caption: 'Bread', hashtags: ['a', 'b', 'c', 'd', 'e'], keywords: [] }), call('finish', { summary_for_user: 'New caption.' })] },
     ]);
@@ -90,6 +110,7 @@ describe('note transaction', () => {
     const onEvent = (e: { type: string; message?: string }) => { if (e.type === 'status' && e.message === 'Done') throw new Error('gone'); };
     await expect(createAI({ host, settingsDir: tmpDir(), providerOverride: m }).applyNote(dir, 'new caption', onEvent)).rejects.toThrow('gone');
     expect(await fsp.readFile(notes, 'utf8')).toBe('# v1\n\nFirst edit.\n');
+    expect(await fsp.readFile(snapshot, 'utf8')).toBe(JSON.stringify(p));
   });
 
   it('the app dying after a change: the next start puts back the exact project bytes', async () => {
