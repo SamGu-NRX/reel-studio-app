@@ -13,7 +13,7 @@ import {
   snapshotVersion, LIBRARY_FOLDERS, anchorText, keptWords,
 } from './project';
 import { extractJson } from './providers/cli';
-import { NoteTransaction, recoverNote } from './noteTxn';
+import { NoteTransaction, UnsafePathError, recoverNote } from './noteTxn';
 import * as fsp from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
@@ -232,7 +232,7 @@ async function firstLook(deps: EditorDeps, ctx: ToolContext, onEvent: (e: AgentE
 }
 
 export async function firstEdit(deps: EditorDeps, provider: ModelProvider | null, projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<EditResult> {
-  await recoverNote(projectDir, deps.style, deps.log);   // a note that died with the app is undone before anything reads the project
+  await recoverEarlierNote(deps, projectDir);   // a note that died with the app is undone before anything reads the project
   await ensureAnalyzed(deps, projectDir, onEvent, signal);
   if (!provider) return deterministicEdit(deps, projectDir, onEvent, signal);
   const ctx = newCtx(deps, projectDir, provider, onEvent, signal, 3);
@@ -302,17 +302,35 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   if (!note.trim() && !attached.length) throw new AIError('empty_note', 'Type what you would like me to change.');
   // A note is all-or-nothing: it ends saved with its video, or with project.json, My style,
   // work/assets and versions/ as they were. One that died with the app is undone first.
-  await recoverNote(projectDir, deps.style, deps.log);
-  const txn = await NoteTransaction.begin(projectDir, deps.style, opts.txnId ?? randomUUID(), deps.log);
+  await recoverEarlierNote(deps, projectDir);
+  let txn: NoteTransaction;
+  try {
+    txn = await NoteTransaction.begin(projectDir, deps.style, opts.txnId ?? randomUUID(), deps.log);
+  } catch (e) {
+    if (!(e instanceof UnsafePathError)) throw e;
+    deps.log?.(`note refused before any change: ${e.message}`);
+    throw new AIError('note_unsafe_folder', "Some of this video's folders are links to another place, so I can't safely change it from a note. Nothing was changed. To edit it with notes, make a new video from the same takes.", { detail: e.message });
+  }
   try {
     const r = await noteSteps(deps, provider, projectDir, note, attached, txn, onEvent, signal);
     await txn.commit();
     return r;
   } catch (e) {
-    // a no-op once commit() deleted the marker; an undo that fails leaves the marker, and the next note or app start finishes it
-    await txn.rollback().catch((u) => deps.log?.(`note ${txn.txnId} not undone: ${u?.message ?? u}`));
+    // a no-op once commit() deleted the marker. An undo that fails keeps the marker and copies, and the
+    // next note tries again; the user must not hear that the video was put back.
+    const undone = await txn.rollback().then(() => true, (u) => { deps.log?.(`note ${txn.txnId} not undone: ${u?.message ?? u}`); return false; });
+    if (!undone) {
+      throw new AIError('note_not_undone', 'That change did not finish, and I could not put your video back the way it was yet. I kept a copy of how it was, and I will try to put it back before your next change.', { detail: e instanceof Error ? e.message : String(e) });
+    }
     throw e;
   }
+}
+
+/** Undoes a note left by a process that died. When that is blocked, nothing else may edit the project:
+ * a new edit on top would be undone with it later. */
+async function recoverEarlierNote(deps: EditorDeps, projectDir: string): Promise<void> {
+  if (await recoverNote(projectDir, deps.style, deps.log) !== 'blocked') return;
+  throw new AIError('note_unresolved', 'An earlier change to this video did not finish, and I could not safely put the video back the way it was. I left everything as it is so nothing is lost. To keep editing, make a new video from the same takes.');
 }
 
 /** A note's version is its final render. When that fails the note is undone, and the message says so. */

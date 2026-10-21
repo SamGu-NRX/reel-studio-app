@@ -75,14 +75,42 @@ describe('note transaction', () => {
     const { root, dir } = await makeProject();
     const outside = tmpDir('outside ');
     await fsp.writeFile(path.join(outside, 'keep.txt'), 'not the note\'s');
+    await NoteTransaction.begin(dir, new StyleStore(() => root), 'n1');
     await fsp.mkdir(path.join(dir, 'versions'), { recursive: true });
     await fsp.symlink(outside, path.join(dir, 'versions', 'v1'));
-    await NoteTransaction.begin(dir, new StyleStore(() => root), 'n1');
     const markerFile = path.join(dir, 'work', '.note-in-progress', 'note.json');
     const marker = JSON.parse(await fsp.readFile(markerFile, 'utf8'));
     await fsp.writeFile(markerFile, JSON.stringify({ ...marker, created: ['versions/v1/keep.txt'] }));
-    expect(await recoverNote(dir, new StyleStore(() => root))).toBe('refused');
+    expect(await recoverNote(dir, new StyleStore(() => root))).toBe('blocked');
     expect(fs.existsSync(path.join(outside, 'keep.txt'))).toBe(true);
+  });
+
+  it('recovery through a symlinked work/assets deletes nothing outside and keeps its copies', async () => {
+    const { root, dir } = await makeProject();
+    await NoteTransaction.begin(dir, new StyleStore(() => root), 'n1');
+    const outside = tmpDir('outside ');
+    await fsp.writeFile(path.join(outside, 'credits.json'), '{}');
+    await fsp.symlink(outside, path.join(dir, 'work', 'assets'));
+    expect(await recoverNote(dir, new StyleStore(() => root))).toBe('blocked');
+    expect(fs.existsSync(path.join(outside, 'credits.json'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'work', '.note-in-progress', 'project.json'))).toBe(true);
+  });
+
+  it('a note in a project with a symlinked version folder is refused before it changes anything', async () => {
+    const { root, dir } = await makeProject();
+    const p = await loadProject(dir);
+    p.version = 1;
+    await fsp.writeFile(path.join(dir, 'project.json'), JSON.stringify(p));
+    const before = await fsp.readFile(path.join(dir, 'project.json'));
+    await fsp.mkdir(path.join(dir, 'storage', 'v1'), { recursive: true });
+    await fsp.mkdir(path.join(dir, 'versions'), { recursive: true });
+    await fsp.symlink(path.join(dir, 'storage', 'v1'), path.join(dir, 'versions', 'v1'));
+    const host = new FakeHost(root);
+    host.failRender = true;
+    const m = new ScriptedModel([{ toolCalls: [call('set_gap_cap', { seconds: 0.4 }), call('finish', { summary_for_user: 'done' })] }]);
+    await expect(createAI({ host, settingsDir: tmpDir(), providerOverride: m }).applyNote(dir, 'slower', () => undefined))
+      .rejects.toMatchObject({ code: 'note_unsafe_folder' });
+    expect(await fsp.readFile(path.join(dir, 'project.json'))).toEqual(before);
   });
 
   it('a failed note puts back notes.md and project.json in the version folder it re-used', async () => {

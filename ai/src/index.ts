@@ -290,7 +290,8 @@ export function createAI(opts: CreateAIOptions) {
       return exclusive(projectDir, async () => editor.applyNote(deps(), await modelProvider(), projectDir, note, onEvent, signal, opts));
     },
     /** At app start, for a project whose note job was cut off: 'undone' when the project was put back as
-     * before the note, 'refused' when the leftover marker was not this project's own (it is removed). */
+     * before the note, 'refused' when the leftover marker was not this project's own (it is removed), 'blocked'
+     * when undoing it would reach outside the project (it is kept). */
     async recoverNote(projectDir: string): Promise<RecoverResult> {
       return exclusive(projectDir, () => recoverNote(projectDir, style, opts.log));
     },

@@ -49,11 +49,13 @@ interface Marker {
   preview: 'untouched' | 'saved' | 'absent';
 }
 
-export type RecoverResult = 'undone' | 'refused' | 'none';
+/** 'refused': the marker was not this project's own and was removed. 'blocked': it is this project's own,
+ * but undoing it would touch a path that leads out of the project; marker and copies are kept. */
+export type RecoverResult = 'undone' | 'refused' | 'blocked' | 'none';
 
-/** An entry of the marker would touch something outside the project: nothing is undone. */
-export class UnsafeMarkerError extends Error {
-  constructor(message: string) { super(message); this.name = 'UnsafeMarkerError'; }
+/** A path the note would write or delete leads out of the project folder (a symlink on the way). */
+export class UnsafePathError extends Error {
+  constructor(message: string) { super(message); this.name = 'UnsafePathError'; }
 }
 type Log = (line: string) => void;
 
@@ -102,8 +104,12 @@ export class NoteTransaction {
     const dir = at(projectDir, DIR);
     if (fs.existsSync(at(dir, MARKER))) throw new Error(`${dir} holds a note that did not finish: run recoverNote first`);
     const bytes = await fsp.readFile(at(projectDir, PROJECT_FILE));
-    const projectId = JSON.parse(bytes.toString('utf8'))?.id;
+    const project = JSON.parse(bytes.toString('utf8'));
+    const projectId = project?.id;
     if (!isStr(projectId)) throw new Error(`${projectDir}/project.json has no id`);
+    // before the first write: every place this note can write or delete must stay inside the project
+    const version = Number.isInteger(project.version) && project.version >= 0 ? project.version : 0;
+    await checkPlaces(projectDir, [...FIXED_PLACES, `versions/v${version}/project.json`, `versions/v${version}/notes.md`, `versions/v${version + 1}`]);
     // the copies first: a marker on disk always has its copies beside it
     await writeFileAtomic(at(dir, PROJECT_FILE), bytes);
     const credits = await fsp.readFile(at(projectDir, CREDITS)).catch(() => null);
@@ -125,11 +131,14 @@ export class NoteTransaction {
   /** What the note's tools record as they write (ToolContext.journal). */
   readonly journal: ToolJournal = {
     created: async (ref: string) => {
-      this.marker.created.push(relPath(this.projectDir, ref, CREATABLE));
+      const rel = relPath(this.projectDir, ref, CREATABLE);
+      await checkPlaces(this.projectDir, [rel]);
+      this.marker.created.push(rel);
       await this.save();
     },
     modified: async (ref: string) => {
       const rel = relPath(this.projectDir, ref, MODIFIABLE);
+      await checkPlaces(this.projectDir, [rel]);
       const m = this.marker;
       if (m.created.some((c) => rel === c || rel.startsWith(`${c}/`)) || m.modified.some((e) => e.path === rel)) return;
       const bytes = await fsp.readFile(at(this.projectDir, rel)).catch(() => null);
@@ -198,26 +207,31 @@ export class NoteTransaction {
   }
 }
 
-/** Why deleting or writing `rel` could reach outside the project, or null. The text of a path is not
- * enough: a symlinked versions/v1 makes "versions/v1/keep.txt" a file somewhere else. */
-async function placeProblem(projectDir: string, root: string, rel: string): Promise<string | null> {
-  const parts = rel.split('/');
-  for (let i = 1; i <= parts.length; i++) {
-    const st = await fsp.lstat(at(projectDir, ...parts.slice(0, i))).catch(() => null);
-    if (!st) break;                                   // nothing there, so nothing below it to delete
-    if (st.isSymbolicLink()) return `${parts.slice(0, i).join('/')} is a symlink`;
+/** Places every note writes or deletes whatever its tools do: the copies and marker, project.json,
+ * credits.json, the preview folder and work/thumbs (thumbnails). */
+const FIXED_PLACES = [`${DIR.split(path.sep).join('/')}/${MARKER}`, PROJECT_FILE, 'work/assets/credits.json', 'work/thumbs', 'versions/preview'];
+
+/** Throws UnsafePathError when writing or deleting one of `rels` could reach outside the project. The
+ * text of a path is not enough: a symlinked versions/v1 makes "versions/v1/keep.txt" a file somewhere
+ * else. Each segment from the project root down must not be a symlink, and the parent's real path must
+ * be inside the project's. */
+async function checkPlaces(projectDir: string, rels: string[]): Promise<void> {
+  const root = await fsp.realpath(projectDir);
+  for (const rel of rels) {
+    const parts = rel.split('/');
+    for (let i = 1; i <= parts.length; i++) {
+      const st = await fsp.lstat(at(projectDir, ...parts.slice(0, i))).catch(() => null);
+      if (!st) break;                                   // nothing there, so nothing below it to write through
+      if (st.isSymbolicLink()) throw new UnsafePathError(`${parts.slice(0, i).join('/')} is a symlink`);
+    }
+    const parent = await fsp.realpath(path.dirname(at(projectDir, rel))).catch(() => null);
+    if (parent && parent !== root && !parent.startsWith(root + path.sep)) throw new UnsafePathError(`${rel} is outside the project`);
   }
-  const parent = await fsp.realpath(path.dirname(at(projectDir, rel))).catch(() => null);
-  if (parent && parent !== root && !parent.startsWith(root + path.sep)) return `${rel} is outside the project`;
-  return null;
 }
 
 async function undo(projectDir: string, m: Marker, store: StyleStore): Promise<void> {
-  const root = await fsp.realpath(projectDir);
-  for (const rel of [...m.created, ...m.modified.map((e) => e.path)]) {
-    const problem = await placeProblem(projectDir, root, rel);
-    if (problem) throw new UnsafeMarkerError(problem);
-  }
+  // checked again: a link made after the note began, or a marker edited on disk
+  await checkPlaces(projectDir, [...FIXED_PLACES, ...m.created, ...m.modified.map((e) => e.path)]);
   const dir = at(projectDir, DIR);
   await writeFileAtomic(at(projectDir, PROJECT_FILE), await fsp.readFile(at(dir, PROJECT_FILE)));
   // credits.json is written only by the note's own downloads and screenshots (engine fetch-image, register-capture)
@@ -236,7 +250,8 @@ async function undo(projectDir: string, m: Marker, store: StyleStore): Promise<v
 /** Undoes a note the process died in the middle of. Run it while holding the project's edit lock,
  * before anything else changes the project. 'refused': the marker was malformed or not this project's
  * own (another project, a copied project folder, or a copy that does not match); it is removed, nothing
- * is restored, and the reason is logged. */
+ * is restored, and the reason is logged. 'blocked': the marker is this project's own but a path it
+ * would touch now leads out of the project; nothing is restored and the marker and copies are kept. */
 export async function recoverNote(projectDir: string, store: StyleStore, log: Log = () => undefined): Promise<RecoverResult> {
   const dir = at(projectDir, DIR);
   if (!fs.existsSync(at(dir, MARKER))) {
@@ -258,8 +273,10 @@ export async function recoverNote(projectDir: string, store: StyleStore, log: Lo
   };
   if (problem) return refuse(problem);
   try { await undo(projectDir, m!, store); } catch (e) {
-    if (e instanceof UnsafeMarkerError) return refuse(e.message);   // checked before undo touched anything
-    throw e;
+    if (!(e instanceof UnsafePathError)) throw e;
+    // checked before undo touched anything; the copies are the only record of the project before the note
+    log(`unfinished note in ${projectDir} not undone: ${e.message}. The marker and its copies were kept.`);
+    return 'blocked';
   }
   await fsp.rm(at(dir, MARKER), { force: true });
   await fsp.rm(dir, { recursive: true, force: true }).catch((e) => log(`could not remove ${dir} (${e?.message ?? e})`));
