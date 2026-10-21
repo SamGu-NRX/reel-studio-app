@@ -1,0 +1,4 @@
+Electron 44 capture with isolated user data.
+Controlled HTTP fixture, fake DNS and local routing: gzip, redirect and site=test cookie passed.
+DNS rebinding and a redirect to literal loopback: zero private-service requests.
+Real https://example.com capture through the CONNECT proxy: 1080 x 2340.
