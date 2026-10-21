@@ -55,6 +55,7 @@ export function DevicePreview({ instagram, caption, children }: { instagram?: bo
 
   return (
     <>
+      <div className="phone-slot">
       <div className="device-frame" data-device={id} style={device ? frameVars(device) : undefined} data-testid="device-frame">
         {children}
         {device && (
@@ -78,6 +79,7 @@ export function DevicePreview({ instagram, caption, children }: { instagram?: bo
           </div>
         )}
         {device?.homeButton && <div className="home-button" aria-hidden />}
+      </div>
       </div>
       <div className="device-pick">
         <div className="device-select">

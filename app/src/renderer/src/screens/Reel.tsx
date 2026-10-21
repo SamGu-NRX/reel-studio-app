@@ -391,8 +391,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     <div className={`page reel-page${fresh ? ' fresh' : ''}`}>
       <div className="reel">
         <div className="reel-left">
-          {/* the phone gets the height the rows under it leave (styles.css .phone-slot) */}
-          <div className="phone-slot">
           <DevicePreview instagram={igOverlay && !holding} caption={d.project.post?.caption}>
             <PhonePlayer
               src={changePreview ?? version?.video ?? null}
@@ -425,7 +423,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               }}
             />
           </DevicePreview>
-          </div>
           <ChangeAt
             slug={slug}
             playhead={playhead}
