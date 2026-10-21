@@ -1,0 +1,275 @@
+
+> @reelstudio/ai@0.1.2 test
+> vitest run test/note-staging.test.ts -t crash at each|recovers style --maxWorkers=1
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/ai
+
+ ❯ test/note-staging.test.ts (10 tests | 2 failed | 8 skipped) 93ms
+   × a crash at each publish boundary exposes the old project or a complete new version 72ms
+   × recovers style rules after the project commit without rewriting the committed project or duplicating rules 20ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/note-staging.test.ts > a crash at each publish boundary exposes the old project or a complete new version
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ test/note-staging.test.ts:212:68
+    210|       expect(await fs.readFile(path.join(dir, 'project.json'))).toEqua…
+    211|       await expect(fs.access(path.join(dir, 'versions', 'v2'))).reject…
+    212|       await expect(fs.access(path.join(dir, 'work/assets', asset))).re…
+       |                                                                    ^
+    213|       expect(await fs.readFile(creditsFile, 'utf8')).toBe(oldCredits);
+    214|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/note-staging.test.ts > recovers style rules after the project commit without rewriting the committed project or duplicating rules
+AssertionError: expected Buffer[ 123, 10, 32, 32, 34, 116, …(1216) ] to deeply equal Buffer[ 123, 10, 32, 32, 34, 116, …(1416) ]
+
+- Expected
++ Received
+
+@@ -1314,210 +1314,10 @@
+      115,
+      34,
+      58,
+      32,
+      91,
+-     10,
+-     32,
+-     32,
+-     32,
+-     32,
+-     123,
+-     10,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     34,
+-     116,
+-     101,
+-     120,
+-     116,
+-     34,
+-     58,
+-     32,
+-     34,
+-     113,
+-     117,
+-     105,
+-     101,
+-     116,
+-     101,
+-     114,
+-     32,
+-     109,
+-     117,
+-     115,
+-     105,
+-     99,
+-     34,
+-     44,
+-     10,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     34,
+-     97,
+-     112,
+-     112,
+-     108,
+-     105,
+-     101,
+-     100,
+-     34,
+-     58,
+-     32,
+-     91,
+-     10,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     34,
+-     109,
+-     117,
+-     115,
+-     105,
+-     99,
+-     34,
+-     10,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     93,
+-     44,
+-     10,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     34,
+-     97,
+-     116,
+-     34,
+-     58,
+-     32,
+-     34,
+-     50,
+-     48,
+-     50,
+-     54,
+-     45,
+-     49,
+-     48,
+-     45,
+-     50,
+-     49,
+-     84,
+-     48,
+-     48,
+-     58,
+-     48,
+-     48,
+-     58,
+-     48,
+-     48,
+-     90,
+-     34,
+-     44,
+-     10,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     34,
+-     118,
+-     101,
+-     114,
+-     115,
+-     105,
+-     111,
+-     110,
+-     34,
+-     58,
+-     32,
+-     50,
+-     44,
+-     10,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     32,
+-     34,
+-     116,
+-     120,
+-     110,
+-     73,
+-     100,
+-     34,
+-     58,
+-     32,
+-     34,
+-     53,
+-     55,
+-     99,
+-     54,
+-     57,
+-     101,
+-     50,
+-     50,
+-     45,
+-     102,
+-     98,
+-     52,
+-     100,
+-     45,
+-     52,
+-     102,
+-     56,
+-     53,
+-     45,
+-     98,
+-     51,
+-     51,
+-     50,
+-     45,
+-     49,
+-     52,
+-     56,
+-     100,
+-     55,
+-     102,
+-     52,
+-     53,
+-     99,
+-     97,
+-     102,
+-     100,
+-     34,
+-     10,
+-     32,
+-     32,
+-     32,
+-     32,
+-     125,
+-     10,
+-     32,
+-     32,
+      93,
+      10,
+      125,
+      10,
+    ],
+
+ ❯ test/note-staging.test.ts:229:61
+    227|   })).rejects.toThrow('simulated process crash');
+    228|   const committed = await fs.readFile(path.join(dir, 'versions/v2/proj…
+    229|   expect(await fs.readFile(path.join(dir, 'project.json'))).toEqual(co…
+       |                                                             ^
+    230|   // A retry after a partially completed append must recognize an exis…
+    231|   await style.add('Always use quiet music');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 8 skipped (10)
+   Start at  09:09:41
+   Duration  378ms (transform 38%, import 32%, tests 30%, worker 1%)
+
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/ai
+npm error workspace @reelstudio/ai@0.1.2
+npm error location /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/ai
+npm error command failed
+npm error command sh -c vitest run test/note-staging.test.ts -t 'crash at each|recovers style' --maxWorkers=1

@@ -1,0 +1,58 @@
+
+> @reelstudio/ai@0.1.2 test
+> vitest run test/note-staging.test.ts -t entire recovery manifest|newer credits --maxWorkers=1
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/ai
+
+ ❯ test/note-staging.test.ts (14 tests | 2 failed | 12 skipped) 70ms
+   × refuses the entire recovery manifest for unrelated paths, traversal or a symlinked assets directory 28ms
+   × preserves and logs newer credits instead of restoring an interrupted note over them 41ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/note-staging.test.ts > refuses the entire recovery manifest for unrelated paths, traversal or a symlinked assets directory
+Error: ENOENT: no such file or directory, open '/var/folders/rq/cbyhqh497_b9xwgmxw3qlq680000gn/T/rs ai tést-Pa5rzF/Projects/bread video/project.json'
+ ❯ test/note-staging.test.ts:365:14
+    363|       }));
+    364|       await recoverNoteStaging(dir);
+    365|       expect(await fs.readFile(path.join(dir, 'project.json'))).toEqua…
+       |              ^
+    366|       expect(await fs.readFile(path.resolve(dir, '../x'), 'utf8')).toB…
+    367|       expect(await fs.readFile(path.join(assets, name), 'utf8')).toBe(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/note-staging.test.ts > preserves and logs newer credits instead of restoring an interrupted note over them
+AssertionError: expected '{ "old.png": {} }\n' to be '{ "newer.png": {"attribution":"User"}…' // Object.is equality
+
+- Expected
++ Received
+
+- { "newer.png": {"attribution":"User"} }
++ { "old.png": {} }
+
+
+ ❯ test/note-staging.test.ts:406:48
+    404|   try {
+    405|     await recoverNoteStaging(dir);
+    406|     expect(await fs.readFile(credits, 'utf8')).toBe(newer);
+       |                                                ^
+    407|     expect(warn).toHaveBeenCalledWith(expect.stringContaining('credits…
+    408|   } finally { warn.mockRestore(); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 12 skipped (14)
+   Start at  09:32:18
+   Duration  413ms (transform 43%, import 36%, tests 21%, worker 1%)
+
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/ai
+npm error workspace @reelstudio/ai@0.1.2
+npm error location /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/ai
+npm error command failed
+npm error command sh -c vitest run test/note-staging.test.ts -t 'entire recovery manifest|newer credits' --maxWorkers=1

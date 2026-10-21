@@ -1,0 +1,64 @@
+
+> @reelstudio/ai@0.1.2 test
+> vitest run test/note-staging.test.ts
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/ai
+
+ ❯ test/note-staging.test.ts (17 tests | 2 failed) 779ms
+   × recovers valid transactions on both sides of an invalid manifest and accepts another note 11ms
+   × returns committed success when directory sync reports EINVAL after the project rename 25ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/note-staging.test.ts > recovers valid transactions on both sides of an invalid manifest and accepts another note
+AssertionError: expected [ …(2) ] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+  [
+    "00000000-0000-4000-8000-000000000002",
++   "00000000-0000-4000-8000-000000000003",
+  ]
+
+ ❯ test/note-staging.test.ts:445:58
+    443|   try {
+    444|     await recoverNoteStaging(dir);
+    445|     expect(await fs.readdir(path.join(dir, '.staging'))).toEqual([ids[…
+       |                                                          ^
+    446|     expect(await fs.readdir(path.join(dir, 'work/assets'))).toEqual([`…
+    447|     expect(await fs.readFile(path.join(dir, 'project.json'))).toEqual(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/note-staging.test.ts > returns committed success when directory sync reports EINVAL after the project rename
+AssertionError: promise rejected "Error: directory sync unsupported { code: '…' }" instead of resolving
+ ❯ test/note-staging.test.ts:471:40
+    469|   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    470|   try {
+    471|     await expect(txn.publish(note, [])).resolves.toBe(2);
+       |                                        ^
+    472|     expect(txn.published).toBe(true);
+    473|     expect(await fs.readFile(path.join(dir, 'project.json'))).toEqual(…
+
+Caused by: Error: directory sync unsupported
+ ❯ Proxy.<anonymous> test/note-staging.test.ts:464:64
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'EINVAL' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 15 passed (17)
+   Start at  10:07:30
+   Duration  959ms (tests 87%, import 9%, transform 3%)
+
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/ai
+npm error workspace @reelstudio/ai@0.1.2
+npm error location /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/ai
+npm error command failed
+npm error command sh -c vitest run test/note-staging.test.ts

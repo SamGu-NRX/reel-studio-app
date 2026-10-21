@@ -1,0 +1,13 @@
+
+> @reelstudio/ai@0.1.2 test
+> vitest run test/note-staging.test.ts
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/ai
+
+
+ Test Files  1 passed (1)
+      Tests  18 passed (18)
+   Start at  10:25:47
+   Duration  999ms (tests 89%, import 7%, transform 4%)
+
