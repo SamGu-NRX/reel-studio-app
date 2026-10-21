@@ -1,0 +1,79 @@
+68645aeaa5d04252d99b8638074e9095b66b2b00 Merge remote-tracking branch 'fork/device-previews' into scratch/cam-x-device-previews
+
+diff --git a/app/src/renderer/src/components/Player.tsx b/app/src/renderer/src/components/Player.tsx
+remerge CONFLICT (content): Merge conflict in app/src/renderer/src/components/Player.tsx
+index 19cad22..68620a7 100644
+--- a/app/src/renderer/src/components/Player.tsx
++++ b/app/src/renderer/src/components/Player.tsx
+@@ -1,10 +1,7 @@
+ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+ import { clock } from '../../../shared/progress'
+-<<<<<<< 982efb9 (fix(reel): size the phone from the column; wait for the AI check)
+ import { groupMarks, type NoteMark } from '../../../shared/moments'
+-=======
+ import { BOX_PAD, MARGIN_FRAC, SIZE_PER_EM, fitCaption, type Measure } from '../../../shared/caption-fit'
+->>>>>>> efc4c41 (fix(working): bring back the phone's spinner before the footage is in)
+ import { Icon } from './icons'
+ import { reel } from '../api'
+ 
+diff --git a/app/src/renderer/src/screens/Reel.tsx b/app/src/renderer/src/screens/Reel.tsx
+remerge CONFLICT (content): Merge conflict in app/src/renderer/src/screens/Reel.tsx
+index 6dd6253..d12ce96 100644
+--- a/app/src/renderer/src/screens/Reel.tsx
++++ b/app/src/renderer/src/screens/Reel.tsx
+@@ -9,12 +9,8 @@ import { Check, Confirm, FOLDER_APP, Modal, MoreMenu, Progress, Spinner, Thinkin
+ import { SendToPhone } from '../components/SendToPhone'
+ import { Icon } from '../components/icons'
+ import { PhonePlayer, type SubtitleLook } from '../components/Player'
+-<<<<<<< 982efb9 (fix(reel): size the phone from the column; wait for the AI check)
+-import { EXPORT_EVENT, useNotify } from '../App'
+-=======
+ import { DevicePreview } from '../components/DevicePreview'
+-import { EXPORT_EVENT, NOTE_DROP_DONE, useNotify } from '../App'
+->>>>>>> efc4c41 (fix(working): bring back the phone's spinner before the footage is in)
++import { EXPORT_EVENT, useNotify } from '../App'
+ import { ShowMeHow, type Tab } from './ShowMeHow'
+ import { AttachmentThumb } from '../components/NoteAttachments'
+ import { ChangeAt } from '../components/ChangeAt'
+@@ -286,16 +282,11 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
+     <div className={`page reel-page${fresh ? ' fresh' : ''}`}>
+       <div className="reel">
+         <div className="reel-left">
+-<<<<<<< 982efb9 (fix(reel): size the phone from the column; wait for the AI check)
+           {/* the phone gets the height the rows under it leave (styles.css .phone-slot) */}
+           <div className="phone-slot">
+-            <PhonePlayer
+-              key={playerSrc}
+-=======
+           <DevicePreview instagram={igOverlay && !holding} caption={d.project.post?.caption}>
+             <PhonePlayer
+-              key={changePreview ?? version?.video ?? 'none'}
+->>>>>>> efc4c41 (fix(working): bring back the phone's spinner before the footage is in)
++              key={playerSrc}
+               src={changePreview ?? version?.video ?? null}
+               poster={version?.cover}
+               autoPlayMuted={!!changePreview || (fresh && version?.n === d.versions[d.versions.length - 1]?.n)}
+@@ -307,11 +298,11 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
+               holdingOriginal={holding}
+               onDuration={setDuration}
+               dragFile={version && !version.draft ? version.videoPath : null}
+-<<<<<<< 982efb9 (fix(reel): size the phone from the column; wait for the AI check)
+               marks={marks}
+               asking={asking}
+               onTime={setPlayhead}
+             />
++          </DevicePreview>
+           </div>
+           <ChangeAt
+             slug={slug}
+@@ -324,10 +315,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
+             onOpenChange={setAsking}
+             onSent={(id) => void sent(id)}
+           />
+-=======
+-            />
+-          </DevicePreview>
+->>>>>>> efc4c41 (fix(working): bring back the phone's spinner before the footage is in)
+           {changePreview && (
+             <p className="muted-sm center" data-testid="change-preview">Here's your change. I'm making the full-quality version.</p>
+           )}

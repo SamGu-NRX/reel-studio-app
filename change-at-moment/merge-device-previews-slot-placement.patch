@@ -1,0 +1,41 @@
+diff --git a/app/src/renderer/src/components/DevicePreview.tsx b/app/src/renderer/src/components/DevicePreview.tsx
+index b2dfd76..93d072f 100644
+--- a/app/src/renderer/src/components/DevicePreview.tsx
++++ b/app/src/renderer/src/components/DevicePreview.tsx
+@@ -55,6 +55,7 @@ export function DevicePreview({ instagram, caption, children }: { instagram?: bo
+ 
+   return (
+     <>
++      <div className="phone-slot">
+       <div className="device-frame" data-device={id} style={device ? frameVars(device) : undefined} data-testid="device-frame">
+         {children}
+         {device && (
+@@ -79,6 +80,7 @@ export function DevicePreview({ instagram, caption, children }: { instagram?: bo
+         )}
+         {device?.homeButton && <div className="home-button" aria-hidden />}
+       </div>
++      </div>
+       <div className="device-pick">
+         <div className="device-select">
+           <PhoneIcon />
+diff --git a/app/src/renderer/src/screens/Reel.tsx b/app/src/renderer/src/screens/Reel.tsx
+index d12ce96..f66aff0 100644
+--- a/app/src/renderer/src/screens/Reel.tsx
++++ b/app/src/renderer/src/screens/Reel.tsx
+@@ -282,8 +282,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
+     <div className={`page reel-page${fresh ? ' fresh' : ''}`}>
+       <div className="reel">
+         <div className="reel-left">
+-          {/* the phone gets the height the rows under it leave (styles.css .phone-slot) */}
+-          <div className="phone-slot">
+           <DevicePreview instagram={igOverlay && !holding} caption={d.project.post?.caption}>
+             <PhonePlayer
+               key={playerSrc}
+@@ -303,7 +301,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
+               onTime={setPlayhead}
+             />
+           </DevicePreview>
+-          </div>
+           <ChangeAt
+             slug={slug}
+             at={playhead}
