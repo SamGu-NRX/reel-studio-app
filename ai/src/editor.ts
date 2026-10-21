@@ -33,6 +33,8 @@ export interface EditorDeps {
   firstLook?: boolean;
   /** apply unambiguous whole-video notes without the AI (default true) */
   fastNotes?: boolean;
+  /** problems worth a line in the app's log that the user never sees */
+  log?: (line: string) => void;
 }
 
 export interface EditResult extends AgentResult {
@@ -230,7 +232,7 @@ async function firstLook(deps: EditorDeps, ctx: ToolContext, onEvent: (e: AgentE
 }
 
 export async function firstEdit(deps: EditorDeps, provider: ModelProvider | null, projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<EditResult> {
-  await recoverNote(projectDir, deps.style);   // a note that died with the app is undone before anything reads the project
+  await recoverNote(projectDir, deps.style, deps.log);   // a note that died with the app is undone before anything reads the project
   await ensureAnalyzed(deps, projectDir, onEvent, signal);
   if (!provider) return deterministicEdit(deps, projectDir, onEvent, signal);
   const ctx = newCtx(deps, projectDir, provider, onEvent, signal, 3);
@@ -300,14 +302,14 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   if (!note.trim() && !attached.length) throw new AIError('empty_note', 'Type what you would like me to change.');
   // A note is all-or-nothing: it ends saved with its video, or with project.json, My style,
   // work/assets and versions/ as they were. One that died with the app is undone first.
-  await recoverNote(projectDir, deps.style);
-  const txn = await NoteTransaction.begin(projectDir, deps.style, opts.txnId ?? randomUUID());
+  await recoverNote(projectDir, deps.style, deps.log);
+  const txn = await NoteTransaction.begin(projectDir, deps.style, opts.txnId ?? randomUUID(), deps.log);
   try {
     const r = await noteSteps(deps, provider, projectDir, note, attached, txn, onEvent, signal);
     await txn.commit();
     return r;
   } catch (e) {
-    // an undo that fails leaves the marker on disk, and the next note or app start finishes it
+    // a no-op once commit() deleted the marker; an undo that fails leaves the marker, and the next note or app start finishes it
     await txn.rollback().catch(() => undefined);
     throw e;
   }
@@ -320,6 +322,15 @@ async function noteVersion(deps: EditorDeps, ctx: ToolContext, onEvent: (e: Agen
     const why = typeof e?.userMessage === 'string' ? e.userMessage : 'I could not make the new video.';
     throw new AIError('note_not_saved', `${why} I put your video back the way it was before this note. Send it again to try once more.`, { detail: e?.message ?? e?.code });
   }
+}
+
+/** A note whose edit renders the same video re-uses that version's folder (engine edit_signature leaves
+ * out post and notes), so the files it writes there are recorded with their old bytes first. */
+async function noteSnapshot(txn: NoteTransaction, projectDir: string, p: Project, version: number, notesMd: string): Promise<void> {
+  const dir = path.join('versions', `v${version}`);
+  await txn.journal.modified(path.join(dir, 'notes.md'));
+  await txn.journal.modified(path.join(dir, 'project.json'));
+  await snapshotVersion(projectDir, p, version, notesMd);
 }
 
 async function noteSteps(deps: EditorDeps, provider: ModelProvider, projectDir: string, note: string, attached: AttachmentInfo[], txn: NoteTransaction, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<EditResult> {
@@ -343,7 +354,7 @@ async function noteSteps(deps: EditorDeps, provider: ModelProvider, projectDir: 
       const p = await loadProject(projectDir);
       p.notes = [...(p.notes ?? []), { version, text: note.trim(), applied: [...ctx.state.changed], at: new Date().toISOString(), txnId: txn.txnId }];
       await saveProject(projectDir, p);
-      await snapshotVersion(projectDir, p, version, `# v${version}\n\nNote: ${note.trim()}\n\n${fast.summary}\n`);
+      await noteSnapshot(txn, projectDir, p, version, `# v${version}\n\nNote: ${note.trim()}\n\n${fast.summary}\n`);
       onEvent({ type: 'status', message: 'Done', pct: 100 });
       return { summary: fast.summary, version, styleRulesAdded: [], styleSuggestions: [], changed: [...ctx.state.changed], fast: fast.kind };
     }
@@ -377,7 +388,7 @@ async function noteSteps(deps: EditorDeps, provider: ModelProvider, projectDir: 
   const recorded = [...refs, ...earlier.map((a) => a.asset).filter((r) => placedNow.has(r) && !refs.includes(r))];
   p.notes = [...(p.notes ?? []), { version, text: note.trim(), applied: [...ctx.state.changed], at: new Date().toISOString(), txnId: txn.txnId, ...(recorded.length ? { attachments: recorded } : {}) }];
   await saveProject(projectDir, p);
-  await snapshotVersion(projectDir, p, version, `# v${version}\n\nNote: ${label}\n\n${summary}\n`);
+  await noteSnapshot(txn, projectDir, p, version, `# v${version}\n\nNote: ${label}\n\n${summary}\n`);
   onEvent({ type: 'status', message: 'Done', pct: 100 });
   return { summary, version, styleRulesAdded: ctx.state.styleRulesAdded, styleSuggestions: ctx.state.styleSuggestions, changed: [...ctx.state.changed] };
 }

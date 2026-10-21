@@ -630,18 +630,16 @@ app.whenReady().then(async () => {
       host,
       settingsDir: join(settingsDir(), 'ai'),
       dev: DEV_PROVIDERS,
-      secretStore: safeStorage
+      secretStore: safeStorage,
+      log: (line) => log(`[ai] ${line}`)
     },
     log
   )
   ai = loaded.ai
   aiSource = loaded.source
   // after loadAI: a cut-off note is undone by the AI package, which knows what the note changed
-  const undoNote = async (dir: string): Promise<boolean> => {
-    const r = await ai.recoverNote?.(dir)
-    if (r === 'refused') log(`[recover] ${dir}: the unfinished-note marker was not this project's own, so it was removed and nothing was restored`)
-    return r === 'undone'
-  }
+  // a refused marker is logged by the AI package with its reason
+  const undoNote = async (dir: string): Promise<boolean> => (await ai.recoverNote?.(dir)) === 'undone'
   const recovered = await recoverInterrupted(undoNote).catch((e) => {
     log(`[recover] ${String(e)}`)
     return []

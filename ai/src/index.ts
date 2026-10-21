@@ -71,6 +71,8 @@ export interface CreateAIOptions {
   providerOverride?: ModelProvider;
   finalRender?: boolean;
   maxSteps?: number;
+  /** problems worth a line in the app's log that the user never sees (a refused unfinished-note marker) */
+  log?: (line: string) => void;
 }
 
 // claude-cli = the person's own Claude Code app, offered to everyone. It is never called "Claude Code" on its own:
@@ -109,7 +111,7 @@ export function createAI(opts: CreateAIOptions) {
     locks.set(key, tail);
     return run;
   }
-  const deps = (): editor.EditorDeps => ({ host: opts.host, prompts, style, fetchImpl: opts.fetch, finalRender: opts.finalRender, maxSteps: opts.maxSteps, tokenBudget: opts.tokenBudget, lookup: opts.lookup });
+  const deps = (): editor.EditorDeps => ({ host: opts.host, prompts, style, fetchImpl: opts.fetch, finalRender: opts.finalRender, maxSteps: opts.maxSteps, tokenBudget: opts.tokenBudget, lookup: opts.lookup, log: opts.log });
 
   async function settings(): Promise<AISettings> {
     try { return JSON.parse(await fsp.readFile(settingsFile, 'utf8')); } catch { return {}; }
@@ -290,7 +292,7 @@ export function createAI(opts: CreateAIOptions) {
     /** At app start, for a project whose note job was cut off: 'undone' when the project was put back as
      * before the note, 'refused' when the leftover marker was not this project's own (it is removed). */
     async recoverNote(projectDir: string): Promise<RecoverResult> {
-      return exclusive(projectDir, () => recoverNote(projectDir, style));
+      return exclusive(projectDir, () => recoverNote(projectDir, style, opts.log));
     },
     async writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult> {
       return editor.writeScript(deps(), await modelProvider(), idea, onEvent, signal);

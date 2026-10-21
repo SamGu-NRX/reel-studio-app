@@ -106,6 +106,8 @@ export interface CreateAIOptions {
   settingsDir: string
   dev?: boolean
   secretStore?: SecretStore
+  /** lines for main.log (a refused unfinished-note marker says why) */
+  log?: (line: string) => void
 }
 
 export type CreateAI = (opts: CreateAIOptions) => AI

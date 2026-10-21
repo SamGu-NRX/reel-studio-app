@@ -1,10 +1,10 @@
 // A note is all-or-nothing. Its tools change project.json, work/assets, versions/ and My style one call
 // at a time, so before the first change begin() copies project.json (and work/assets/credits.json)
 // into work/.note-in-progress/ beside a marker. The tools then record in the marker each thing they
-// create (ToolJournal), as they create it. commit() deletes the marker; rollback() puts the copies
-// back and removes exactly what the marker records, never anything inferred from a folder listing.
-// A marker still on disk later means the process died mid-note (a crash or a force quit skips every
-// catch), and recoverNote() does the same rollback before anything else edits the project.
+// create or modify (ToolJournal), as they do it. Deleting the marker commits the note; rollback() puts
+// the copies back and removes exactly what the marker records, never anything inferred from a folder
+// listing. A marker still on disk later means the process died mid-note (a crash or a force quit skips
+// every catch), and recoverNote() does the same rollback before anything else edits the project.
 import { createHash, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
@@ -18,16 +18,29 @@ const MARKER = 'note.json';
 const CREDITS = path.join('work', 'assets', 'credits.json');
 const PREVIEW = path.join('versions', 'preview');
 
+/** What a note may create: one file in work/assets or work/thumbs, a version folder, or one file in a
+ * version folder. Recovery deletes these, so a marker naming anything else (a folder like "work",
+ * "../x", project.json) is refused whole. */
+const CREATABLE = /^(work\/assets\/[^/]+|work\/thumbs\/[^/]+|versions\/v\d+(\/[^/]+)?)$/;
+/** What a note may modify and put back from a copy: a file in a version folder it re-used (notes.md). */
+const MODIFIABLE = /^versions\/v\d+\/[^/]+$/;
+
+interface Modified { path: string; copy: string }
+
 interface Marker {
-  v: 2;
+  v: 3;
   /** the app's id for this note; the committed note record carries it too (NoteEntry.txnId) */
   txnId: string;
-  /** project.json `id` and the sha256 of the copy: recovery refuses a marker that belongs to another project or copy */
+  /** project.json `id`, the project folder's real path and the sha256 of the copy: recovery refuses a
+   * marker that belongs to another project, another folder (a copied project) or another copy */
   projectId: string;
+  folder: string;
   sha256: string;
   startedAt: string;
   /** project-relative files and folders the note created (downloads, animations, its version folder) */
   created: string[];
+  /** existing files the note changed, each with its copy (a file name in the marker's folder) */
+  modified: Modified[];
   /** My style rule ids the note created, recorded before each save */
   styleRules: string[];
   /** work/assets/credits.json before the note: a copy beside the marker, or none */
@@ -37,34 +50,63 @@ interface Marker {
 }
 
 export type RecoverResult = 'undone' | 'refused' | 'none';
+type Log = (line: string) => void;
 
 const sha256 = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const at = (projectDir: string, ...p: string[]) => path.join(projectDir, ...p);
+const isStr = (x: unknown): x is string => typeof x === 'string' && x.length > 0;
+const isStrList = (x: unknown): x is string[] => Array.isArray(x) && x.every(isStr);
+const COPY_NAME = /^modified-\d+$/;
+
+/** Why a marker read from disk cannot be trusted, or null when it is well formed. */
+function markerProblem(m: any): string | null {
+  if (!m || typeof m !== 'object' || m.v !== 3) return 'unknown marker version';
+  for (const k of ['txnId', 'projectId', 'folder', 'sha256', 'startedAt']) if (!isStr(m[k])) return `${k} is missing`;
+  if (!isStrList(m.created) || !isStrList(m.styleRules) || !Array.isArray(m.modified)) return 'a list is malformed';
+  if (m.credits !== 'saved' && m.credits !== 'absent') return 'credits is malformed';
+  if (!['untouched', 'saved', 'absent'].includes(m.preview)) return 'preview is malformed';
+  const bad = m.created.find((p: string) => !CREATABLE.test(p) || path.posix.normalize(p) !== p);
+  if (bad !== undefined) return `created entry ${JSON.stringify(bad)} is not a file the note could make`;
+  for (const e of m.modified) {
+    if (!e || !isStr(e.path) || !MODIFIABLE.test(e.path) || path.posix.normalize(e.path) !== e.path || !isStr(e.copy) || !COPY_NAME.test(e.copy)) {
+      return `modified entry ${JSON.stringify(e)} is malformed`;
+    }
+  }
+  return null;
+}
+
+/** A project-relative path in the form the marker keeps, or an error for one outside `allowed`. */
+function relPath(projectDir: string, ref: string, allowed: RegExp): string {
+  const rel = path.relative(projectDir, path.resolve(projectDir, ref)).split(path.sep).join('/');
+  if (!allowed.test(rel)) throw new Error(`note journal: ${ref} is not a file a note may change`);
+  return rel;
+}
 
 export class NoteTransaction {
   private saving: Promise<void> = Promise.resolve();
+  private committed = false;
 
-  private constructor(private readonly projectDir: string, private readonly marker: Marker, private readonly store: StyleStore) {}
+  private constructor(private readonly projectDir: string, private readonly marker: Marker, private readonly store: StyleStore, private readonly log: Log) {}
 
   get txnId(): string { return this.marker.txnId; }
 
   /** Call before the note's first change, after recoverNote (a marker left by a dead note is never overwritten). */
-  static async begin(projectDir: string, store: StyleStore, txnId: string): Promise<NoteTransaction> {
+  static async begin(projectDir: string, store: StyleStore, txnId: string, log: Log = () => undefined): Promise<NoteTransaction> {
     const dir = at(projectDir, DIR);
     if (fs.existsSync(at(dir, MARKER))) throw new Error(`${dir} holds a note that did not finish: run recoverNote first`);
     const bytes = await fsp.readFile(at(projectDir, PROJECT_FILE));
     const projectId = JSON.parse(bytes.toString('utf8'))?.id;
-    if (typeof projectId !== 'string' || !projectId) throw new Error(`${projectDir}/project.json has no id`);
+    if (!isStr(projectId)) throw new Error(`${projectDir}/project.json has no id`);
     // the copies first: a marker on disk always has its copies beside it
     await writeFileAtomic(at(dir, PROJECT_FILE), bytes);
     const credits = await fsp.readFile(at(projectDir, CREDITS)).catch(() => null);
     if (credits) await writeFileAtomic(at(dir, 'credits.json'), credits);
     const marker: Marker = {
-      v: 2, txnId, projectId, sha256: sha256(bytes), startedAt: new Date().toISOString(),
-      created: [], styleRules: [], credits: credits ? 'saved' : 'absent', preview: 'untouched',
+      v: 3, txnId, projectId, folder: await fsp.realpath(projectDir), sha256: sha256(bytes), startedAt: new Date().toISOString(),
+      created: [], modified: [], styleRules: [], credits: credits ? 'saved' : 'absent', preview: 'untouched',
     };
     await writeFileAtomic(at(dir, MARKER), JSON.stringify(marker));
-    return new NoteTransaction(projectDir, marker, store);
+    return new NoteTransaction(projectDir, marker, store, log);
   }
 
   /** Marker writes in call order: parallel tools journal at once, and a later write must hold every earlier entry. */
@@ -76,9 +118,18 @@ export class NoteTransaction {
   /** What the note's tools record as they write (ToolContext.journal). */
   readonly journal: ToolJournal = {
     created: async (ref: string) => {
-      const rel = path.relative(this.projectDir, path.resolve(this.projectDir, ref));
-      if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(`note journal: ${ref} is outside the project`);
-      this.marker.created.push(rel.split(path.sep).join('/'));
+      this.marker.created.push(relPath(this.projectDir, ref, CREATABLE));
+      await this.save();
+    },
+    modified: async (ref: string) => {
+      const rel = relPath(this.projectDir, ref, MODIFIABLE);
+      const m = this.marker;
+      if (m.created.some((c) => rel === c || rel.startsWith(`${c}/`)) || m.modified.some((e) => e.path === rel)) return;
+      const bytes = await fsp.readFile(at(this.projectDir, rel)).catch(() => null);
+      if (!bytes) { m.created.push(rel); await this.save(); return; }
+      const copy = `modified-${m.modified.length}`;
+      await writeFileAtomic(at(this.projectDir, DIR, copy), bytes);
+      m.modified.push({ path: rel, copy });
       await this.save();
     },
     preview: async () => {
@@ -106,18 +157,22 @@ export class NoteTransaction {
   async restore(): Promise<void> {
     await this.saving;
     await undo(this.projectDir, this.marker, this.store);
-    this.marker.created = []; this.marker.styleRules = []; this.marker.preview = 'untouched';
+    Object.assign(this.marker, { created: [], modified: [], styleRules: [], preview: 'untouched' });
     await this.save();
   }
 
-  /** The note failed: put everything back and close. If this throws, the marker stays and the next start finishes the undo. */
+  /** The note failed: put everything back and close. A no-op once committed. If this throws, the marker
+   * stays and the next start finishes the undo. */
   async rollback(): Promise<void> {
+    if (this.committed) return;
     await this.saving;
     await undo(this.projectDir, this.marker, this.store);
-    await end(this.projectDir);
+    await fsp.rm(at(this.projectDir, DIR, MARKER), { force: true });
+    await this.cleanUp();
   }
 
-  /** The note is saved with its video: from here on it is the project. */
+  /** The note is saved with its video. Throws only before the commit point (the marker's deletion);
+   * after it the note stands, and cleanup failures are only logged. */
   async commit(): Promise<void> {
     await this.saving;
     // the preview from before the note comes back only when the note made none of its own
@@ -125,7 +180,14 @@ export class NoteTransaction {
     if (this.marker.preview === 'saved' && fs.existsSync(saved) && !fs.existsSync(at(this.projectDir, PREVIEW))) {
       await fsp.rename(saved, at(this.projectDir, PREVIEW));
     }
-    await end(this.projectDir);
+    await fsp.rm(at(this.projectDir, DIR, MARKER), { force: true });
+    this.committed = true;
+    await this.cleanUp();
+  }
+
+  private async cleanUp(): Promise<void> {
+    await fsp.rm(at(this.projectDir, DIR), { recursive: true, force: true })
+      .catch((e) => this.log(`note ${this.marker.txnId}: could not remove ${DIR} (${e?.message ?? e})`));
   }
 }
 
@@ -135,6 +197,7 @@ async function undo(projectDir: string, m: Marker, store: StyleStore): Promise<v
   // credits.json is written only by the note's own downloads and screenshots (engine fetch-image, register-capture)
   if (m.credits === 'saved') await writeFileAtomic(at(projectDir, CREDITS), await fsp.readFile(at(dir, 'credits.json')));
   else await fsp.rm(at(projectDir, CREDITS), { force: true });
+  for (const e of m.modified) await writeFileAtomic(at(projectDir, e.path), await fsp.readFile(at(dir, e.copy)));
   for (const rel of m.created) await fsp.rm(at(projectDir, rel), { recursive: true, force: true });
   const ours = new Set(m.styleRules);
   for (const rule of await store.list()) if (ours.has(rule.id)) await store.remove(rule.id);
@@ -144,16 +207,11 @@ async function undo(projectDir: string, m: Marker, store: StyleStore): Promise<v
   if (m.preview === 'saved' && fs.existsSync(saved)) await fsp.rename(saved, at(projectDir, PREVIEW));
 }
 
-async function end(projectDir: string): Promise<void> {
-  const dir = at(projectDir, DIR);
-  await fsp.rm(at(dir, MARKER), { force: true });   // the commit point
-  await fsp.rm(dir, { recursive: true, force: true });
-}
-
 /** Undoes a note the process died in the middle of. Run it while holding the project's edit lock,
- * before anything else changes the project. 'refused': the marker was not this project's own (a copied
- * project folder, or a copy that does not match its marker); it is removed and nothing is restored. */
-export async function recoverNote(projectDir: string, store: StyleStore): Promise<RecoverResult> {
+ * before anything else changes the project. 'refused': the marker was malformed or not this project's
+ * own (another project, a copied project folder, or a copy that does not match); it is removed, nothing
+ * is restored, and the reason is logged. */
+export async function recoverNote(projectDir: string, store: StyleStore, log: Log = () => undefined): Promise<RecoverResult> {
   const dir = at(projectDir, DIR);
   if (!fs.existsSync(at(dir, MARKER))) {
     await fsp.rm(dir, { recursive: true, force: true });   // copies whose marker was never written: the note had not started
@@ -162,11 +220,18 @@ export async function recoverNote(projectDir: string, store: StyleStore): Promis
   const m = await readJson<Marker>(at(dir, MARKER)).catch(() => null);
   const copy = await fsp.readFile(at(dir, PROJECT_FILE)).catch(() => null);
   const live = await readJson<{ id?: unknown }>(at(projectDir, PROJECT_FILE)).catch(() => null);
-  if (m?.v !== 2 || !copy || sha256(copy) !== m.sha256 || live?.id !== m.projectId) {
-    await end(projectDir);
+  const folder = await fsp.realpath(projectDir).catch(() => null);
+  const problem = markerProblem(m)
+    ?? (!copy || sha256(copy) !== m!.sha256 ? 'the project copy does not match the marker'
+      : live?.id !== m!.projectId ? 'the marker belongs to another project'
+        : folder !== m!.folder ? `the marker was written in another folder (${m!.folder})` : null);
+  if (problem) {
+    log(`unfinished note in ${projectDir} not undone: ${problem}. The marker was removed and nothing was restored.`);
+    await fsp.rm(dir, { recursive: true, force: true });
     return 'refused';
   }
-  await undo(projectDir, m, store);
-  await end(projectDir);
+  await undo(projectDir, m!, store);
+  await fsp.rm(at(dir, MARKER), { force: true });
+  await fsp.rm(dir, { recursive: true, force: true }).catch((e) => log(`could not remove ${dir} (${e?.message ?? e})`));
   return 'undone';
 }

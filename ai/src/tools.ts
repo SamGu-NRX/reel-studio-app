@@ -44,6 +44,8 @@ export interface ToolJournal {
   /** a file or folder inside the project this task creates; recorded before the write when the name is
    * ours, right after it when the engine picks the name (a crash in between leaves an unused file) */
   created(ref: string): Promise<void>;
+  /** an existing file this task is about to change (notes.md in a version folder it re-uses) */
+  modified(ref: string): Promise<void>;
   /** before a render that writes into versions/preview */
   preview(): Promise<void>;
 }
@@ -1362,6 +1364,7 @@ export type ToolResult = { content: string; images?: ImagePart[]; isError: boole
 export async function executeTool(ctx: ToolContext, name: string, rawArgs: unknown, callId?: string): Promise<ToolResult> {
   if (callId === undefined) return runTool(ctx, name, rawArgs);
   const calls = (ctx.state.calls ??= new Map());
+  name = toolByName(name)?.name ?? name;   // "reel_editor.set_cut" and "set_cut" are one call
   const args = JSON.stringify(rawArgs ?? {});
   const seen = calls.get(callId);
   if (!seen) {

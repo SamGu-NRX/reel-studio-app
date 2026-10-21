@@ -58,6 +58,40 @@ describe('note transaction', () => {
     expect(fs.existsSync(path.join(b.dir, marker))).toBe(false);
   });
 
+  it('a marker naming "work" or "../x" is refused and deletes nothing', async () => {
+    const { root, dir } = await makeProject();
+    const outside = path.join(dir, '..', 'x');
+    await fsp.writeFile(outside, 'not the note\'s');
+    await NoteTransaction.begin(dir, new StyleStore(() => root), 'n1');
+    const markerFile = path.join(dir, 'work', '.note-in-progress', 'note.json');
+    const marker = JSON.parse(await fsp.readFile(markerFile, 'utf8'));
+    await fsp.writeFile(markerFile, JSON.stringify({ ...marker, created: ['work', '../x'] }));
+    expect(await recoverNote(dir, new StyleStore(() => root))).toBe('refused');
+    expect(fs.existsSync(path.join(dir, 'work', 'transcript.json'))).toBe(true);
+    expect(fs.existsSync(outside)).toBe(true);
+  });
+
+  it('a failed note puts back notes.md in the version folder it re-used', async () => {
+    const { root, dir } = await makeProject();
+    const p = await loadProject(dir);
+    p.version = 1;
+    await fsp.writeFile(path.join(dir, 'project.json'), JSON.stringify(p));
+    const notes = path.join(dir, 'versions', 'v1', 'notes.md');
+    await fsp.mkdir(path.dirname(notes), { recursive: true });
+    await fsp.writeFile(notes, '# v1\n\nFirst edit.\n');
+    const host = new FakeHost(root);
+    const engine = host.runEngine.bind(host);
+    // the engine re-uses v1 for an edit that renders the same video (a post-only note)
+    host.runEngine = async (command, args, ...rest) => command === 'render' && !args.includes('--draft') ? { version: 1 } : engine(command, args, ...rest);
+    const m = new ScriptedModel([
+      { toolCalls: [call('write_post', { caption: 'Bread', hashtags: ['a', 'b', 'c', 'd', 'e'], keywords: [] }), call('finish', { summary_for_user: 'New caption.' })] },
+    ]);
+    // anything after the snapshot fails: here the last progress event
+    const onEvent = (e: { type: string; message?: string }) => { if (e.type === 'status' && e.message === 'Done') throw new Error('gone'); };
+    await expect(createAI({ host, settingsDir: tmpDir(), providerOverride: m }).applyNote(dir, 'new caption', onEvent)).rejects.toThrow('gone');
+    expect(await fsp.readFile(notes, 'utf8')).toBe('# v1\n\nFirst edit.\n');
+  });
+
   it('the app dying after a change: the next start puts back the exact project bytes', async () => {
     const { root, dir } = await makeProject();
     const before = await fsp.readFile(path.join(dir, 'project.json'));
