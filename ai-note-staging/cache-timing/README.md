@@ -1,5 +1,24 @@
 # Caption-only note timing
 
+## Current parity follow-up
+
+The timing comparison for restored draft previews at `692a537` is **deferred to the perf harness**.
+The machine's 1-minute load remained above Sam's limit of 8. Observed samples during
+verification on 2026-10-21 were 40.25 at 04:52, 66.50 at 04:54, 37.10 at 04:57,
+33.30 at 04:58, 15.58 at 05:04 and 22.91 at 05:06, local time. Tests ran one suite at a time. No new benchmark ran
+under that load, and the historical numbers below do not validate this follow-up.
+
+The pending comparison is three alternating main/branch runs after warming each
+side, using the generated 8-second fixture and the same model replay:
+`set_caption_style`, `render_draft`, then `finish`. Record draft and final stage
+medians separately, plus the complete note including begin, publish and cleanup.
+Use the bundled ffmpeg, reset the same project baseline outside the timer, and
+start only when the 1-minute load is below 8. Keep cache hit/miss traces per render.
+The scripts in `../parity-in-progress/` contain that replay; the earlier fast-note
+comparison below bypassed the preview and is not a substitute.
+
+## Historical performance patch at 2455531
+
 The final three-run medians meet the requested target on this APFS Mac. The 8-second note adds 0.031 s, or 7.1%. The 60-second note is within 0.072 s of main, or 0.7%. Three runs do not establish a speedup.
 
 ## Final measurements
