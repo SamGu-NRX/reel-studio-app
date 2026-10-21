@@ -1,0 +1,42 @@
+01-first-welcome.png	first launch
+02-first-model.png	speech model step
+03-first-connect.png	connect an AI step
+04-home-empty.png	home, no videos
+05-new-video.png	new video screen
+06-script.png	script helper with no AI
+07-working-start.png	right after picking the video
+08-working-mid.png	working, a few seconds in
+09-working-later.png	working, later
+10-reel-fresh.png	the finish moment
+11-reel-settled.png	reel screen settled
+12-reel-scrolled.png	reel screen scrolled down
+!! step "hover phone" failed: TimeoutError: locator.hover: Timeout 30000ms exceeded.
+13-drawer-cut.png	drawer: cut
+14-drawer-cut-changed.png	drawer: one word cut
+15-drawer-subtitles.png	drawer: subtitles
+16-drawer-subtitles-changed.png	drawer: subtitles big yellow
+17-drawer-music.png	drawer: music (empty library)
+18-drawer-pictures.png	drawer: pictures
+19-drawer-pictures-pick-word.png	drawer: pick the word for the picture
+20-drawer-pictures-added.png	drawer: picture placed
+21-drawer-cover.png	drawer: cover
+22-drawer-post.png	drawer: post caption
+23-reel-adding-song.png	add a song: making a new version
+24-reel-song-added.png	after the song version
+25-reel-post-editor.png	write a post caption inline
+26-reel-post-saved.png	post caption saved
+27-reel-note-typed.png	typing a note
+28-reel-note-answered.png	the no-AI answer
+29-reel-version-1.png	picked version 1
+30-export-busy.png	export: getting it ready
+31-export-done.png	export: saved
+32-send-to-phone.png	send to my phone
+33-send-to-phone-help.png	phone cannot open it
+34-home-one.png	home with one video
+35-home-hover.png	hover a card
+36-library.png	library
+37-my-style.png	my style
+38-settings.png	settings
+39-settings-scrolled.png	settings scrolled
+40-connect.png	connect screen
+41-home-two-working.png	home with a video working
