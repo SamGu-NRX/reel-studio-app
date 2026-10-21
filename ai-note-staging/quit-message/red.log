@@ -1,0 +1,47 @@
+
+> @reelstudio/app@0.1.2 test
+> vitest run test/live.test.ts -t records an interrupted note --maxWorkers=1
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+
+ ❯ test/live.test.ts (10 tests | 1 failed | 9 skipped) 27ms
+   ❯ job manager (main): the contract on the wire (4)
+     × records an interrupted note on quit while preserving a real Stop 25ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/live.test.ts > job manager (main): the contract on the wire > records an interrupted note on quit while preserving a real Stop
+AssertionError: expected [ Array(1) ] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+  [
+-   "Reel Studio closed before I finished that change. Send your note again and I will pick it up.",
++   "Stopped. Your video has not changed.",
+  ]
+
+ ❯ test/live.test.ts:129:82
+    127|     jobs.cancel(stopped.id)
+    128|     await jobs.cancelAll('quit')
+    129|     expect((await readAppState('app-quit')).chat.map((message) => mess…
+       |                                                                                  ^
+    130|       'Reel Studio closed before I finished that change. Send your not…
+    131|     ])
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 9 skipped (10)
+   Start at  07:12:29
+   Duration  285ms (transform 54%, import 27%, tests 16%, worker 2%)
+
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+npm error workspace @reelstudio/app@0.1.2
+npm error location /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+npm error command failed
+npm error command sh -c vitest run test/live.test.ts -t 'records an interrupted note' --maxWorkers=1

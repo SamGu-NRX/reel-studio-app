@@ -1,0 +1,66 @@
+
+> reel-studio@0.1.2 test
+> npm run test --workspaces --if-present -- --maxWorkers=1
+
+
+> @reelstudio/app@0.1.2 test
+> vitest run --maxWorkers=1
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+
+ ❯ test/store.test.ts (18 tests | 1 failed) 391ms
+   ❯ titles and slugs (3)
+     × makes a readable title from a file name 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/store.test.ts > titles and slugs > makes a readable title from a file name
+AssertionError: expected 'C:\a\why so many apps' to be 'Why so many apps' // Object.is equality
+
+Expected: "Why so many apps"
+Received: "C:\a\why so many apps"
+
+ ❯ test/store.test.ts:58:58
+     56|     expect(titleFromFile('/x/IMG_4412.MOV')).toBe('My video')
+     57|     expect(titleFromFile('/x/20261017_093015.mp4')).toBe('My video')
+     58|     expect(titleFromFile('C:\\a\\why so many apps.MOV')).toBe('Why so …
+       |                                                          ^
+     59|     expect(titleFromFile('/x/.mp4')).toBe('.mp4')
+     60|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 16 passed | 1 skipped (18)
+      Tests  1 failed | 219 passed | 3 skipped (223)
+   Start at  07:13:04
+   Duration  8.21s (tests 94%, import 3%, transform 3%, worker 1%)
+
+    Isolate  18 workers spawned · ~63ms startup each (spawn + environment, per file)
+             at least ~1.08s faster with isolate: false — reuses workers across files instead of one per file
+
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+npm error workspace @reelstudio/app@0.1.2
+npm error location /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+npm error command failed
+npm error command sh -c vitest run --maxWorkers=1
+
+
+> @reelstudio/ai@0.1.2 test
+> vitest run --maxWorkers=1
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/ai
+
+
+ Test Files  20 passed (20)
+      Tests  225 passed (225)
+   Start at  07:13:12
+   Duration  9.12s (tests 79%, import 18%, transform 3%)
+
+    Isolate  20 workers spawned · ~56ms startup each (spawn + environment, per file)
+             at least ~1.06s faster with isolate: false — reuses workers across files instead of one per file
+

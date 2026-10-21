@@ -1,0 +1,13 @@
+
+> @reelstudio/app@0.1.2 test
+> vitest run test/live.test.ts --maxWorkers=1
+
+
+ RUN  v5.0.5 /Users/samgu/Programming Projects/reel-studio-app-wt/ai-note-staging/app
+
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  07:12:42
+   Duration  220ms (tests 68%, transform 21%, import 10%, worker 1%)
+
