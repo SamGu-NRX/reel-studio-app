@@ -25,3 +25,9 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
   `<asset>.attach.json` next to it (`asset`, `name`, `kind` image|video, `bytes`, `width`, `height`,
   `duration`, `hasAudio`, `fromGif`, `thumb`, `createdAt`). The sidecar is not part of project.json. A note
   may have empty `text` when it has attachments.
+
+## 2026-10-21 (ai-note-transactions)
+
+- `notes[].txnId` (string, optional): the app's id for the note, also stored in the running job in
+  `app.json`. After a restart, a note job whose `txnId` is in `notes` was saved, so the app does not ask
+  for the note again.

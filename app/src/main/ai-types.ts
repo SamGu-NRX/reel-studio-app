@@ -67,22 +67,24 @@ export interface AI {
   signOutChatGPT(): Promise<void>
   setClaudeKey(key: string | null): Promise<ProviderStatus>
   firstEdit(projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<AgentResult>
-  /** `opts.attachments`: `work/assets/attach-*` refs main already checked (the AI checks them again). */
+  /** `opts.attachments`: `work/assets/attach-*` refs main already checked (the AI checks them again).
+   * `opts.txnId`: the note's id from its job record; the saved note carries it. */
   applyNote(
     projectDir: string,
     note: string,
     onEvent: (e: AgentEvent) => void,
     signal?: AbortSignal,
-    opts?: { attachments?: string[] }
+    opts?: { attachments?: string[]; txnId?: string }
   ): Promise<AgentResult>
   writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult>
   styleRules(): Promise<{ id: string; text: string; createdAt: string }[]>
   removeStyleRule(id: string): Promise<void>
   /** Saves one My style rule (after the user said Yes). Optional: older packages lack it. */
   addStyleRule?(text: string): Promise<{ id: string; text: string; createdAt: string }>
-  /** At startup, for a project whose note was cut off: puts it back as before the note. True when it did.
+  /** At startup, for a project whose note was cut off: 'undone' when it put the project back as before
+   * the note, 'refused' when the leftover marker was not this project's own (it is removed).
    * Optional: older packages and the mock lack it. */
-  recoverNote?(projectDir: string): Promise<boolean>
+  recoverNote?(projectDir: string): Promise<'undone' | 'refused' | 'none'>
   /** Optional extras from @reelstudio/ai. */
   cancelSignInChatGPT?(): void | Promise<void>
   /** A fresh look at the person's own Claude Code app (`bin` stays in main). Optional: older packages lack it. */

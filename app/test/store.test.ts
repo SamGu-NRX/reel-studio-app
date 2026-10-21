@@ -194,6 +194,20 @@ describe('project store', () => {
     expect(await recoverInterrupted()).toEqual([])
   })
 
+  it('a note saved just before the app closed is not asked for again', async () => {
+    setupPaths()
+    await ensureRoot()
+    const dir = fakeProject('epsilon', { versions: [1] })
+    const p = JSON.parse(await fs.readFile(join(dir, 'project.json'), 'utf8'))
+    p.notes = [{ version: 1, text: 'slower', applied: ['cut'], at: new Date().toISOString(), txnId: 'n1' }]
+    writeFileSync(join(dir, 'project.json'), JSON.stringify(p))
+    await updateAppState('epsilon', (s) => {
+      s.job = { id: 'j3', kind: 'note', startedAt: new Date().toISOString(), txnId: 'n1' }
+    })
+    await recoverInterrupted(async () => false)
+    expect((await readAppState('epsilon')).chat.at(-1)?.text).not.toMatch(/Send your note again/)
+  })
+
   it('writes json atomically (no temp files left behind)', async () => {
     const { home } = setupPaths()
     const f = join(home, 'a b.json')

@@ -43,7 +43,7 @@ export function createJobManager(broadcast: (e: JobEvent) => void, log: (s: stri
     return [...jobs.values()].find((j) => j.slug === slug)
   }
 
-  function start(slug: string | null, kind: JobKind, fn: JobFn, opts: { note?: string } = {}): string {
+  function start(slug: string | null, kind: JobKind, fn: JobFn, opts: { note?: string; txnId?: string } = {}): string {
     if (slug && forSlug(slug)) {
       throw { code: 'BUSY', userMessage: 'I am still working on this video. Give me a moment, or press Stop.' }
     }
@@ -77,7 +77,7 @@ export function createJobManager(broadcast: (e: JobEvent) => void, log: (s: stri
         // Inside the try: if even this fails, the user gets an error instead of a job that never ends.
         if (slug) {
           await updateAppState(slug, (s) => {
-            s.job = { id, kind, startedAt: new Date().toISOString(), note: opts.note }
+            s.job = { id, kind, startedAt: new Date().toISOString(), note: opts.note, ...(opts.txnId ? { txnId: opts.txnId } : {}) }
             s.lastError = null
             if (kind === 'first-edit') s.status = 'working'
           })

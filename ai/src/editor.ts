@@ -15,6 +15,7 @@ import {
 import { extractJson } from './providers/cli';
 import { NoteTransaction, recoverNote } from './noteTxn';
 import * as fsp from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 
 export interface EditorDeps {
   host: EngineHost;
@@ -140,6 +141,7 @@ async function refreshCredits(ctx: ToolContext): Promise<void> {
   if (caption === p.post.caption) return;
   p.post = { ...p.post, caption };
   await saveProject(ctx.projectDir, p);
+  (ctx.state.dirty ??= new Set()).add('post');   // a preview from before this no longer matches the project
   ctx.project = p;
 }
 
@@ -281,6 +283,9 @@ ${summary}
 export interface ApplyNoteOptions {
   /** files attached to this note: `work/assets/attach-*` refs (re-checked against the project's sidecars) */
   attachments?: string[];
+  /** the app's id for this note, kept in its job record: the saved note carries it (NoteEntry.txnId), so a
+   * restart can tell a note that was saved from one that was cut off */
+  txnId?: string;
 }
 
 /** What a note says in notes.md: its words, or what was attached when it has none. */
@@ -296,7 +301,7 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   // A note is all-or-nothing: it ends saved with its video, or with project.json, My style,
   // work/assets and versions/ as they were. One that died with the app is undone first.
   await recoverNote(projectDir, deps.style);
-  const txn = await NoteTransaction.begin(projectDir, deps.style);
+  const txn = await NoteTransaction.begin(projectDir, deps.style, opts.txnId ?? randomUUID());
   try {
     const r = await noteSteps(deps, provider, projectDir, note, attached, txn, onEvent, signal);
     await txn.commit();
@@ -319,7 +324,7 @@ async function noteVersion(deps: EditorDeps, ctx: ToolContext, onEvent: (e: Agen
 
 async function noteSteps(deps: EditorDeps, provider: ModelProvider, projectDir: string, note: string, attached: AttachmentInfo[], txn: NoteTransaction, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<EditResult> {
   const refs = attached.map((a) => a.asset);
-  const noteCtx = (): ToolContext => ({ ...newCtx(deps, projectDir, provider, onEvent, signal, 2), style: txn.style, userNote: note });
+  const noteCtx = (): ToolContext => ({ ...newCtx(deps, projectDir, provider, onEvent, signal, 2), style: txn.style, journal: txn.journal, userNote: note });
   let ctx = noteCtx();
   const { p: p0 } = await load(ctx);
   // "smaller captions", "quieter music": one direct change and the final render, no AI turns
@@ -336,7 +341,7 @@ async function noteSteps(deps: EditorDeps, provider: ModelProvider, projectDir: 
       onEvent({ type: 'reply', text: fast.summary });
       const version = await noteVersion(deps, ctx, onEvent);
       const p = await loadProject(projectDir);
-      p.notes = [...(p.notes ?? []), { version, text: note.trim(), applied: [...ctx.state.changed], at: new Date().toISOString() }];
+      p.notes = [...(p.notes ?? []), { version, text: note.trim(), applied: [...ctx.state.changed], at: new Date().toISOString(), txnId: txn.txnId }];
       await saveProject(projectDir, p);
       await snapshotVersion(projectDir, p, version, `# v${version}\n\nNote: ${note.trim()}\n\n${fast.summary}\n`);
       onEvent({ type: 'status', message: 'Done', pct: 100 });
@@ -370,7 +375,7 @@ async function noteSteps(deps: EditorDeps, provider: ModelProvider, projectDir: 
   // this note's files, plus files attached to an earlier note that THIS note put in the video ("when I say X")
   const placedNow = placedAssets(p);
   const recorded = [...refs, ...earlier.map((a) => a.asset).filter((r) => placedNow.has(r) && !refs.includes(r))];
-  p.notes = [...(p.notes ?? []), { version, text: note.trim(), applied: [...ctx.state.changed], at: new Date().toISOString(), ...(recorded.length ? { attachments: recorded } : {}) }];
+  p.notes = [...(p.notes ?? []), { version, text: note.trim(), applied: [...ctx.state.changed], at: new Date().toISOString(), txnId: txn.txnId, ...(recorded.length ? { attachments: recorded } : {}) }];
   await saveProject(projectDir, p);
   await snapshotVersion(projectDir, p, version, `# v${version}\n\nNote: ${label}\n\n${summary}\n`);
   onEvent({ type: 'status', message: 'Done', pct: 100 });

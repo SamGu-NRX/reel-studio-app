@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, promises as fs, appendFileSync, mkdirSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import {
   binDir,
   engineDir,
@@ -446,16 +447,17 @@ function registerIpc(): void {
       await addChat(slug, 'editor', reply.text, undefined, reply.actions)
       return { jobId: null }
     }
+    const txnId = randomUUID()
     const jobId = jobs.start(
       slug,
       'note',
       async (emit, signal) => {
-        const opts = files.length ? { attachments: files.map((f) => f.asset) } : undefined
+        const opts = { txnId, ...(files.length ? { attachments: files.map((f) => f.asset) } : {}) }
         const r: AgentResult = await ai.applyNote(dir, note, (e) => emit(e), signal, opts)
         const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
         return replyAskingAboutStyle(slug, r, r.summary + extra)
       },
-      { note: note || files.map((f) => f.name).join(', ') }
+      { note: note || files.map((f) => f.name).join(', '), txnId }
     )
     return { jobId }
   })
@@ -635,7 +637,12 @@ app.whenReady().then(async () => {
   ai = loaded.ai
   aiSource = loaded.source
   // after loadAI: a cut-off note is undone by the AI package, which knows what the note changed
-  const recovered = await recoverInterrupted((dir) => ai.recoverNote?.(dir) ?? Promise.resolve(false)).catch((e) => {
+  const undoNote = async (dir: string): Promise<boolean> => {
+    const r = await ai.recoverNote?.(dir)
+    if (r === 'refused') log(`[recover] ${dir}: the unfinished-note marker was not this project's own, so it was removed and nothing was restored`)
+    return r === 'undone'
+  }
+  const recovered = await recoverInterrupted(undoNote).catch((e) => {
     log(`[recover] ${String(e)}`)
     return []
   })

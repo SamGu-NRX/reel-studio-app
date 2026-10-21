@@ -56,7 +56,12 @@ Rules:
   edit, 2 per note).
 - After the agent calls `finish`, the loop runs one final `render`: that is the only step that adds a
   version.
-- A note is all-or-nothing. Before its first change the ai package copies `project.json` and writes a
-  marker into `work/.note-in-progress/`. A note that fails, or that the app closed in the middle of, is
-  undone from that copy: `project.json`, new `work/assets` files, new `vN` folders and the My style rules
-  it saved. The app calls `recoverNote` at startup for a cut-off note job; `applyNote` calls it too.
+- A note is all-or-nothing. Before its first change the ai package copies `project.json` and
+  `work/assets/credits.json` into `work/.note-in-progress/` beside a marker. As the note's tools create
+  files (downloads, screenshots, animations, the final render's `vN` folder) and My style rules, each is
+  recorded in the marker; the preview from before the note is moved beside it before the note's first
+  preview. A note that fails, or that the app closed in the middle of, is undone from exactly that record:
+  nothing else in the project is touched. The marker also holds the project id and the copy's sha256;
+  recovery removes a marker that does not match and restores nothing. The app calls `recoverNote` at
+  startup for a cut-off note job; `applyNote` calls it too. A note job whose `txnId` is already in
+  `project.json` `notes` was saved before the app closed and is not asked for again.

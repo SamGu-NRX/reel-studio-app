@@ -49,9 +49,9 @@ export class StyleStore {
     await writeFileAtomic(this.file, JSON.stringify({ version: 1, rules } satisfies StyleFile, null, 2) + '\n');
   }
 
-  /** Adds a rule unless an equivalent one already exists. */
-  async add(text: string): Promise<{ added: boolean; rule: StyleRule }> {
-    return this.serial(() => this.addNow(text));
+  /** Adds a rule unless an equivalent one already exists. `id` lets a note record the rule's id before it is saved. */
+  async add(text: string, id: string = randomUUID()): Promise<{ added: boolean; rule: StyleRule }> {
+    return this.serial(() => this.addNow(text, id));
   }
 
   /** The saved rule equivalent to `text`, if any. */
@@ -60,12 +60,12 @@ export class StyleStore {
     return (await this.list()).find((r) => normalize(r.text) === n);
   }
 
-  private async addNow(text: string): Promise<{ added: boolean; rule: StyleRule }> {
+  private async addNow(text: string, id: string): Promise<{ added: boolean; rule: StyleRule }> {
     const clean = cleanRuleText(text);
     const rules = await this.list();
     const dup = rules.find((r) => normalize(r.text) === normalize(clean));
     if (dup) return { added: false, rule: dup };
-    const rule: StyleRule = { id: randomUUID(), text: clean, createdAt: new Date().toISOString() };
+    const rule: StyleRule = { id, text: clean, createdAt: new Date().toISOString() };
     await this.write([...rules, rule]);
     return { added: true, rule };
   }

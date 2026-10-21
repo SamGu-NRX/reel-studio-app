@@ -23,7 +23,8 @@ export { keptIds, rangesFromKept, rangesKeepingOrder } from '../shared/cut'
 
 export interface AppState {
   chat: ChatMessage[]
-  job: { id: string; kind: JobKind; startedAt: string; note?: string } | null
+  /** `txnId`: a note's id, also written into the saved note (project.json notes[].txnId) */
+  job: { id: string; kind: JobKind; startedAt: string; note?: string; txnId?: string } | null
   status: ScreenStatus
   lastError: { code: string; userMessage: string } | null
   /** Title chosen at creation, shown until project.json exists. */
@@ -318,6 +319,8 @@ export async function recoverInterrupted(undoNote?: (dir: string) => Promise<boo
     if (!s.job) continue
     // a failed undo must not stop the other projects' recovery: its marker stays, and the next note retries it
     const undone = s.job.kind === 'note' && undoNote ? await undoNote(dir).catch(() => false) : false
+    // a note that was saved before the app closed: sending it again would apply it twice
+    const saved = !undone && s.job.kind === 'note' && !!s.job.txnId && (await savedNoteVersion(slug, s.job.txnId)) !== null
     await cleanPartialVersions(dir)
     await updateAppState(slug, (st) => {
       st.status = st.job?.kind === 'first-edit' || !existsSync(join(dir, 'versions')) ? 'interrupted' : 'ready'
@@ -325,9 +328,11 @@ export async function recoverInterrupted(undoNote?: (dir: string) => Promise<boo
         st.chat.push({
           id: randomUUID(),
           from: 'editor',
-          text: undone
-            ? 'Reel Studio closed before I finished your note, so I put your video back the way it was. Send the note again to try once more.'
-            : 'Reel Studio closed before I finished that change. Send your note again and I will pick it up.',
+          text: saved
+            ? 'Reel Studio closed just after I finished your note. Your change is saved in the newest version.'
+            : undone
+              ? 'Reel Studio closed before I finished your note, so I put your video back the way it was. Send the note again to try once more.'
+              : 'Reel Studio closed before I finished that change. Send your note again and I will pick it up.',
           at: new Date().toISOString()
         })
       }
@@ -336,6 +341,12 @@ export async function recoverInterrupted(undoNote?: (dir: string) => Promise<boo
     recovered.push(slug)
   }
   return recovered
+}
+
+/** The version a saved note made, found by the id its job record holds; null when no saved note has it. */
+async function savedNoteVersion(slug: string, txnId: string): Promise<number | null> {
+  const p = await readProject(slug).catch(() => null)
+  return p?.notes?.find((n) => n.txnId === txnId)?.version ?? null
 }
 
 // ---- transcript and cut ------------------------------------------------------------------------

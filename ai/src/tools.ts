@@ -35,8 +35,17 @@ export interface ToolState {
   previewSkipped?: boolean;
   /** raw-take times of the cover stills the model was shown (set_cover on one of them is exact) */
   coverCandidates?: number[];
-  /** each tool call id's result, so a repeated id never runs twice */
-  calls?: Map<string, Promise<ToolResult>>;
+  /** each tool call id's call and result, so a repeated id never runs twice */
+  calls?: Map<string, { name: string; args: string; run: Promise<ToolResult> }>;
+}
+
+/** What a note's tools record as they write, so a failed note undoes exactly that (noteTxn.ts). */
+export interface ToolJournal {
+  /** a file or folder inside the project this task creates; recorded before the write when the name is
+   * ours, right after it when the engine picks the name (a crash in between leaves an unused file) */
+  created(ref: string): Promise<void>;
+  /** before a render that writes into versions/preview */
+  preview(): Promise<void>;
 }
 
 export interface ToolContext {
@@ -59,6 +68,8 @@ export interface ToolContext {
   /** A render already running for this project (the first look). Every engine render waits for it:
    * two renders would share work/render/ and versions/preview/. */
   renderGate?: Promise<unknown>;
+  /** set while a note runs */
+  journal?: ToolJournal;
   /** cached; reloaded from disk by `load()` */
   project?: Project;
   transcript?: Transcript;
@@ -409,6 +420,12 @@ export function visibleChangeSinceRender(ctx: ToolContext): boolean {
 
 export async function doRender(ctx: ToolContext, draft: boolean): Promise<RenderInfo> {
   if (ctx.renderGate) await ctx.renderGate.catch(() => undefined);
+  if (draft) await ctx.journal?.preview();
+  else if (ctx.journal) {
+    // docs/versions.md: a final render writes v(version + 1), or re-uses vN for an unchanged edit
+    const next = `versions/v${(await loadProject(ctx.projectDir)).version + 1}`;
+    if (!fs.existsSync(path.join(ctx.projectDir, next))) await ctx.journal.created(next);
+  }
   ctx.state.dirty = new Set();
   const result = await engine(ctx, 'render', draft ? ['--draft'] : [], draft ? 'Making a preview' : 'Making the final video');
   const p = await loadProject(ctx.projectDir);
@@ -458,6 +475,7 @@ async function downloadImage(ctx: ToolContext, url: string, nameHint?: string): 
   let name = `${base}${ext}`; let n = 2;
   while (fs.existsSync(path.join(dir, name))) name = `${base}-${n++}${ext}`;
   const dest = safeResolve(ctx.projectDir, ctx.host.reelStudioRoot(), `work/assets/${name}`, 'write');
+  await ctx.journal?.created(`work/assets/${name}`);
   await fsp.writeFile(dest.abs, buf);
   return `work/assets/${name}`;
 }
@@ -519,6 +537,7 @@ async function captureSite(ctx: ToolContext, url: string, layout: 'phone' | 'des
   while (fs.existsSync(path.join(dir, name))) name = `${base}-${n++}.png`;
   const dest = safeResolve(ctx.projectDir, ctx.host.reelStudioRoot(), `work/assets/${name}`, 'write');
   let shot;
+  await ctx.journal?.created(`work/assets/${name}`);
   try {
     shot = await ctx.host.captureWebsite(url, dest.abs, { layout });
   } catch (e: any) {
@@ -527,7 +546,7 @@ async function captureSite(ctx: ToolContext, url: string, layout: 'phone' | 'des
   let thumb: string | undefined;
   try {
     const r = await engine(ctx, 'register-capture', ['--asset', `work/assets/${name}`, '--url', shot.url, ...(shot.title ? ['--title', shot.title] : [])], 'Saving the screenshot');
-    if (typeof r?.thumb === 'string') thumb = r.thumb;
+    if (typeof r?.thumb === 'string') { thumb = r.thumb; await ctx.journal?.created(r.thumb); }
   } catch { /* an older engine: the screenshot still works, without its credit entry */ }
   return { asset: `work/assets/${name}`, site: shot.site || host, ...(thumb ? { thumb } : {}) };
 }
@@ -546,6 +565,8 @@ async function fetchImageWithThumb(ctx: ToolContext, url: string, nameHint?: str
     const r = await engine(ctx, 'fetch-image', ['--url', url, ...(name ? ['--name', name] : [])], 'Downloading the picture');
     const asset = r?.asset;
     if (!asset || pathProblem(asset)) throw new ToolInputError('the picture could not be saved; try another result');
+    await ctx.journal?.created(asset);
+    if (typeof r?.thumb === 'string') await ctx.journal?.created(r.thumb);
     return { asset, ...(typeof r?.thumb === 'string' ? { thumb: r.thumb } : {}) };
   } catch (e: any) {
     if (e instanceof ToolInputError) throw e;
@@ -677,9 +698,12 @@ async function makeAnimation(ctx: ToolContext, template: string, raw: Record<str
   let n = 1;
   while (fs.existsSync(path.join(dir, `anim-${template}-${n}.mov`)) || fs.existsSync(path.join(dir, `anim-${template}-${n}.webm`))) n++;
   const out = path.join(dir, `anim-${template}-${n}.mov`);      // qtrle .mov + .anim.json sidecar
+  await ctx.journal?.created(out);
+  await ctx.journal?.created(path.join(dir, `anim-${template}-${n}.anim.json`));
   ctx.emit({ type: 'status', message: 'Making an animation' });
   const written = await ctx.host.renderAnimation(template, params, out);
   const abs = written && path.isAbsolute(written) ? written : out;
+  if (abs !== out) await ctx.journal?.created(abs);
   // project.json only holds paths inside the project: never an absolute one
   let asset: string;
   try { asset = safeResolve(ctx.projectDir, ctx.host.reelStudioRoot(), abs, 'read').ref; } catch {
@@ -1333,13 +1357,20 @@ export type ToolResult = { content: string; images?: ImagePart[]; isError: boole
 
 /** Validates + runs one tool call. Never throws for model mistakes: returns an error result the model can read.
  * A `callId` already seen in this task is the same call sent twice (audit: two add_broll calls with one id
- * made two b-roll items): it gets the first call's result and does not run again. */
-export function executeTool(ctx: ToolContext, name: string, rawArgs: unknown, callId?: string): Promise<ToolResult> {
+ * made two b-roll items): it gets the first call's result and does not run again. The same id on a
+ * different call is an error, never a silent skip. */
+export async function executeTool(ctx: ToolContext, name: string, rawArgs: unknown, callId?: string): Promise<ToolResult> {
   if (callId === undefined) return runTool(ctx, name, rawArgs);
   const calls = (ctx.state.calls ??= new Map());
-  let run = calls.get(callId);
-  if (!run) { run = runTool(ctx, name, rawArgs); calls.set(callId, run); }
-  return run;
+  const args = JSON.stringify(rawArgs ?? {});
+  const seen = calls.get(callId);
+  if (!seen) {
+    const run = runTool(ctx, name, rawArgs);
+    calls.set(callId, { name, args, run });
+    return run;
+  }
+  if (seen.name === name && seen.args === args) return seen.run;
+  return { content: JSON.stringify({ error: `call id "${callId}" was already used for a different ${seen.name} call, so this one did not run; give every call its own id` }), isError: true };
 }
 
 async function runTool(ctx: ToolContext, name: string, rawArgs: unknown): Promise<ToolResult> {

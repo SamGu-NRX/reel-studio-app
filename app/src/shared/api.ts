@@ -137,7 +137,7 @@ export interface ProjectJson {
   zooms?: unknown[]
   cover?: { atSourceTime: number; source: string; text: string | null }
   post?: { caption: string; hashtags: string[]; keywords: string[] }
-  notes?: { version: number; text: string; applied: string[]; at: string }[]
+  notes?: { version: number; text: string; applied: string[]; at: string; txnId?: string }[]
   [k: string]: unknown
 }
 

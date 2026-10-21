@@ -182,7 +182,8 @@
             "maxItems": 4,
             "description": "files the user attached to this note (work/assets/attach-*), placed by the AI with add_broll",
             "items": { "$ref": "#/$defs/relPath" }
-          }
+          },
+          "txnId": { "type": "string", "description": "the app's id for this note; its job record has the same id" }
         }
       }
     }

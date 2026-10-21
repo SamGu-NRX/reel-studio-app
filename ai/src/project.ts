@@ -50,6 +50,8 @@ export interface NoteEntry {
   version: number; text: string; applied: string[]; at: string;
   /** files the user attached to this note (`work/assets/attach-*`), 0.1.2 */
   attachments?: string[];
+  /** the app's id for this note (its job record has the same id) */
+  txnId?: string;
 }
 
 export interface Project {
