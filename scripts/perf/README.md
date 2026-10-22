@@ -61,3 +61,28 @@ JavaScript lock changes also fail comparison by default. For a whole-branch comp
 The measurement choices follow the T3 Code scout's separation of byte budgets, committed React work, allocated storage, and end-to-end timing. Its local research artifact is `/tmp/rs-eval/t3code-perf-lessons.md`. Playwright's [Electron API](https://playwright.dev/docs/api/class-electron) documents the launch and main-process evaluation used here.
 
 Run the statistics and replay-contract checks with `node --test scripts/perf/*.test.mjs`.
+
+## Player audit
+
+`player.mjs` measures the Reel screen's player in already-built apps, without rendering anything:
+
+```sh
+node scripts/perf/player.mjs \
+  --build main=/path/to/main/app --build candidate=/path/to/candidate/app \
+  --resources "/path/to/Reel Studio.app/Contents/Resources" \
+  --fixtures /path/to/fixtures --scratch /tmp/player-scratch --out /tmp/player-results --runs 5
+node scripts/perf/player-summary.mjs /tmp/player-results
+```
+
+Each `--build` is an app folder with a production `out/` (an `electron-vite build` checkout, or an extracted `app.asar`). Every build runs in this checkout's Electron, so both sides share one runtime. `--resources` supplies the engine, Python and FFmpeg; nothing renders during the audit. `--fixtures` holds `reel30.mp4` and `reel60.mp4` (the clips under test, 30 and 60 fps), `alt30.mp4` (the other version), `raw.mov` (the original footage), and a `.png` cover for each `.mp4`. Each run seeds two projects whose Version 2 is the clip under test.
+
+Runs alternate builds. Each run opens each project, plays it for `--seconds`, then times play, click-seek, a paced scrub drag, four version switches and Hold for original. A long session follows: `--long-switches` switches with memory sampled every 5 after a forced GC, 60 s idle, a simulated memory-pressure signal, then `--long-seconds` of playback. `--long-only` skips the per-project part. `--profile` adds a renderer CPU profile and a 5-second trace of playback, and a CPU profile of six switches. `--init-script` injects a script before the app loads, for experiments. `--switch-by-key` switches versions with the version picker's arrow keys where the build has one. `--seek-sweep` adds paused seeks at fixed distances after a keyframe. `--vmmap` (macOS) records the renderer's PartitionAlloc and shared memory from `vmmap` at the start and end of the long session; it counts swapped pages, which RSS misses.
+
+A run starts only while the 1-minute load is at or below `--max-load` (default 6), and a playback window during which the load rose above it is measured again, at most three times. Every reading is recorded.
+
+- Frame cadence comes from `requestVideoFrameCallback` on the visible player: presented frames per second, gaps between expected display times, and media-time jumps over 1.5 source frames. Dropped frames come from `getVideoPlaybackQuality`.
+- An action's latency runs from the input event to the first animation frame in which the visible player shows the expected picture: a new presented frame at the new position, or for a switch, the new version's decoded frame or decoded cover. "Fully shown" waits for the new video's opacity to reach 1.
+- A blank frame is an animation frame in which no visible video in the phone has a decoded frame or cover. Blank-check switches also read the composited window through `beginFrameSubscription` and count black frames.
+- CPU is the change in each process type's cumulative CPU time over the playback window, as a percentage of one core.
+
+`--preload` passes an Electron `-r` module (for example, one that keeps windows off screen) and `--preload-proof` names the file it appends `loaded pid=<pid>` to. The runner proves the preload loads on a windowless app before launching anything, and checks every launch's pid against the proof file.
