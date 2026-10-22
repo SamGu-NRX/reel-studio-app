@@ -72,6 +72,12 @@ const P: Record<string, ReactNode> = {
     </>
   ),
   up: <path d="m18 15-6-6-6 6" />,
+  'arrow-up': (
+    <>
+      <path d="m5 12 7-7 7 7" />
+      <path d="M12 19V5" />
+    </>
+  ),
   down: <path d="m6 9 6 6 6-6" />,
   back: (
     <>

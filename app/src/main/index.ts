@@ -1,5 +1,6 @@
 import { clipboardFiles, filesFromArgv } from './intake'
 import { accountName } from './account'
+import { versionRows, type VersionRow } from '../shared/version-diff'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent, Notification } from 'electron'
 import { existsSync, promises as fs, appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -495,6 +496,22 @@ async function readTimeline(slug: string, n: number): Promise<{ duration: number
   return { duration: r.duration, words: placeWords(r.segmentsDetail, words), segments: r.segmentsDetail }
 }
 
+// Before → after rows for version `n`: its saved project.json against the version before it, or for
+// Version 1 against the raw video. null when the version's own snapshot is gone.
+async function readVersionRows(slug: string, n: number): Promise<VersionRow[] | null> {
+  const dir = projectDir(slug)
+  const snap = (v: number) => readJson<ProjectJson | null>(join(dir, 'versions', `v${v}`, 'project.json'), null)
+  const length = async (v: number) => (await readJson<{ duration?: number }>(join(dir, 'versions', `v${v}`, 'render.json'), {})).duration ?? null
+  const after = await snap(n)
+  if (!after) return null
+  if (n === 1) {
+    const raw = (after.sources ?? []).reduce((t, s) => t + (s.duration ?? 0), 0)
+    return versionRows(null, after, { before: raw > 0 ? raw : null, after: await length(1) })
+  }
+  const before = await snap(n - 1)
+  return before ? versionRows(before, after, { before: await length(n - 1), after: await length(n) }) : null
+}
+
 function registerIpc(): void {
   handle('app:info', () => appInfo())
   handle('app:setFasterExports', async (_e, on: boolean) => {
@@ -719,6 +736,10 @@ function registerIpc(): void {
     }
     const seen = Number.isInteger(onVersion) ? Number(onVersion) : (moment?.version ?? (await readProject(slug)).version ?? 0)
     return noteQueue.send(slug, { text: note, attachments: files.map(forChat), ...(moment ? { moment } : {}) }, seen)
+  })
+  handle('projects:versionRows', async (_e, slug: string, n: number) => {
+    if (!Number.isInteger(n) || n < 1) throw { code: 'BAD_VERSION', userMessage: 'Pick a version of your video first.' }
+    return readVersionRows(slug, n)
   })
   handle('projects:timeline', async (_e, slug: string, n: number) => {
     if (!Number.isInteger(n) || n < 0) throw { code: 'BAD_VERSION', userMessage: 'Pick a version of your video first.' }

@@ -1,0 +1,258 @@
+/* The Reel screen (screens/Reel.tsx): the reel on a phone with every way out under it, a line, and the
+   notes for your editor with the note box. The page never scrolls; the notes do. */
+
+.reel-page { height: 100%; display: flex; flex-direction: column; padding: 0 28px 20px; min-width: 0; }
+.reel-h { display: flex; align-items: center; gap: 10px; height: 44px; margin: 4px 0 12px; flex: none; min-width: 0; }
+.reel-title { font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -.014em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; cursor: text; border-radius: 6px; padding: 0 4px; margin-left: -4px; }
+@media (hover: hover) and (pointer: fine) { .reel-title:hover { background: rgba(29, 27, 24, .05); } }
+.reel-title-input { font-size: 20px; font-weight: 700; min-height: 36px; padding: 2px 8px; max-width: 520px; }
+.reel-h .btn { min-height: 34px; padding: 0 12px; font-size: 14px; }
+.reel-h .btn.small { min-height: 28px; font-size: 13px; }
+.reel-h .icon-btn { width: 34px; height: 34px; }
+
+/* the version on screen; amber while it is not the newest */
+.vpick-wrap { flex: none; }
+.vpick {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 10px; border: 0; border-radius: 8px;
+  background: var(--panel); box-shadow: var(--e1); font: inherit; font-size: 13px; font-weight: 650; color: var(--ink); cursor: pointer; white-space: nowrap;
+}
+.vpick .w { font-weight: 500; color: var(--ink-3); }
+.vpick .icon { color: var(--ink-3); }
+.vpick.open { box-shadow: 0 0 0 1.5px var(--ink); }
+.vpick.older { background: var(--amber-soft); box-shadow: 0 0 0 1px rgba(110, 75, 12, .25); }
+.vpick.older .w { color: var(--amber-ink); }
+
+/* the phone column takes its width from the height the window leaves the phone */
+.reel-b { flex: 1; min-height: 0; display: grid; grid-template-columns: auto 1px minmax(0, 1fr); position: relative; }
+.pcol {
+  --phone-h: calc(100vh - var(--titlebar) - 80px - 150px);
+  width: clamp(254px, calc((var(--phone-h) - 24px) * 9 / 16 + 24px), 420px);
+  min-height: 0; display: flex; flex-direction: column; align-items: center; margin-right: 28px;
+}
+.pcol .phone-slot { flex: 1 1 0; min-height: 0; align-self: stretch; container-type: size; display: flex; justify-content: center; }
+.pcol .phone-slot > * { --frame-h: 100cqh; }
+.pcol .phone-slot .phone { width: min(100cqw, calc(var(--screen-h, calc(100cqh - 24px)) * var(--dev-ratio, 9 / 16) + 24px)); }
+.pcol .device-frame { height: fit-content; }
+.rdiv { background: var(--line-2); }
+.ncol { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding-left: 28px; position: relative; }
+
+/* drag the file out from here, not from anywhere on the phone */
+.draghandle {
+  position: absolute; right: -14px; top: 50%; translate: 0 -50%; z-index: 12; width: 28px; height: 64px; border: 0; border-radius: 14px; padding: 0;
+  background: var(--panel); color: var(--ink-2); box-shadow: var(--e2); display: grid; place-items: center; cursor: grab; transition: scale 150ms var(--ease-out);
+}
+.draghandle:active { cursor: grabbing; scale: .96; }
+.draghandle-tip {
+  position: absolute; left: 36px; top: 50%; translate: 0 -50%; white-space: nowrap; background: var(--ink); color: #fff; font-size: 12px; font-weight: 600;
+  padding: 5px 9px; border-radius: 7px; opacity: 0; pointer-events: none; transition: opacity 150ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .draghandle:hover { color: var(--ink); }
+  .draghandle:hover .draghandle-tip { opacity: 1; transition-delay: 300ms; }
+}
+.draghandle:focus-visible .draghandle-tip { opacity: 1; }
+
+/* playback speed in the player's row: 1×, 1.5×, 2× */
+.scrub-speed {
+  flex: none; height: 22px; min-width: 34px; padding: 0 6px; border: 0; border-radius: 6px; background: rgba(255, 255, 255, .18); color: #fff;
+  font: inherit; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.scrub-speed.on { background: #fff; color: var(--ink); }
+
+/* compare two versions at the same moment */
+.abswitch {
+  position: absolute; top: 22px; left: 50%; translate: -50% 0; z-index: 8; display: flex; padding: 3px; border-radius: 999px;
+  background: rgba(0, 0, 0, .6); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+.abswitch button { border: 0; background: transparent; color: #fff; font: inherit; font-size: 12px; font-weight: 650; padding: 5px 11px; border-radius: 999px; white-space: nowrap; cursor: pointer; }
+.abswitch button.on { background: #fff; color: var(--ink); }
+
+.under { display: flex; gap: 2px; justify-content: center; align-items: center; margin-top: 10px; flex: none; min-height: 30px; width: 100%; }
+.under .btn.small { min-height: 30px; padding: 0 9px; font-size: 13px; gap: 6px; color: var(--ink-2); }
+.under .btn.on { background: var(--panel); color: var(--ink); box-shadow: var(--e1); }
+.under .device-pick { margin: 0; }
+.under .device-select { min-height: 30px; padding: 0 24px 0 9px; font-size: 13px; gap: 6px; background-position: right 7px center; }
+.under .device-select .see { display: none; }
+.under .device-select b { font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.under .device-fit { display: none; }
+
+/* Export, then the places it can go */
+.outs { width: 100%; display: grid; gap: 8px; margin-top: 10px; flex: none; position: relative; }
+.outs .btn.big { width: 100%; min-height: 44px; font-size: 15px; }
+.outs .row { gap: 8px; }
+.outs .btn { min-height: 38px; padding: 0 14px; font-size: 14px; }
+.outs .btn.grow { flex: 1; min-width: 0; }
+.outs .btn.icon-only { width: 40px; padding: 0; flex: none; }
+
+/* the small panel that says what a cloud save did */
+.helper { width: auto; padding: 12px 12px 12px 14px; display: grid; gap: 10px; }
+.helper .hh { display: flex; align-items: center; gap: 10px; }
+.helper .hh .ic { width: 30px; height: 30px; border-radius: 8px; background: var(--paper-2); box-shadow: var(--e1); display: grid; place-items: center; flex: none; }
+.helper .hh b { font-size: 13.5px; font-weight: 650; display: block; }
+.helper .hh span:not(.ic) { font-size: 12.5px; color: var(--ink-3); }
+.helper .hb { height: 4px; border-radius: 4px; background: var(--soft); overflow: hidden; }
+.helper .hb i { display: block; height: 100%; width: 40%; background: var(--ink); border-radius: 4px; animation: helper-run 1.1s ease-in-out infinite; }
+@keyframes helper-run { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+/* ---------- Notes for your editor ---------- */
+.notes-h { height: 28px; display: flex; align-items: center; margin-bottom: 8px; flex: none; }
+.notes-h h2 { font-size: 16px; line-height: 20px; font-weight: 650; }
+/* a short log starts at the top; a long one folds its oldest entries behind one line */
+.log { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 14px; padding: 4px 4px 16px; margin: 0 -4px; }
+.fold {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 28px; border: 0; background: none; padding: 0 8px 0 4px;
+  border-radius: 7px; font: inherit; color: var(--ink-2); font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.fold .icon { color: var(--ink-3); }
+@media (hover: hover) and (pointer: fine) { .fold:hover { background: rgba(29, 27, 24, .05); color: var(--ink); } }
+.nday { font-size: 11.5px; font-weight: 650; letter-spacing: .02em; color: var(--ink-3); padding-left: 32px; margin-bottom: 2px; }
+.nt { position: relative; display: grid; gap: 6px; min-width: 0; }
+/* a thin line joins each note to what came of it */
+.nt::before { content: ''; position: absolute; left: 10px; top: 24px; bottom: 10px; width: 1.5px; background: var(--line-2); }
+.nday ~ .nt-ask { margin-top: 0; }
+.nt:has(> .nday)::before { top: 44px; }
+.nt-ask, .nt-res { display: flex; align-items: center; gap: 10px; min-height: 22px; min-width: 0; }
+.nk { width: 22px; height: 22px; border-radius: 50%; flex: none; display: grid; place-items: center; position: relative; z-index: 1; background: var(--bg); align-self: flex-start; margin-top: 0; }
+.nk.dot::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+.nk.you { background: var(--soft); color: var(--ink-2); }
+.nk.ok { background: var(--green-soft); color: var(--green-ink); }
+.nk.err { background: var(--red-soft); color: var(--red-ink); }
+.nk.stop { background: var(--soft); color: var(--ink-2); }
+.q { font-size: 15px; line-height: 22px; color: var(--ink); font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
+.q-att { display: inline-flex; gap: 6px; vertical-align: middle; margin-left: 8px; }
+/* a note about a moment: the time, in marker yellow */
+.tm {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 5px; background: var(--marker-soft); color: var(--marker-ink);
+  font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; margin-right: 8px; vertical-align: 1px;
+}
+.nt-res { font-size: 14px; line-height: 20px; color: var(--ink-2); border-radius: 8px; margin: -2px -6px; padding: 2px 6px; }
+.nt-res .v { border: 0; background: none; padding: 0; font: inherit; color: var(--ink); font-weight: 650; white-space: nowrap; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .nt-res .v:hover { text-decoration: underline; text-underline-offset: 3px; } }
+.nt-res .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.nt-res .t.wrap { white-space: normal; overflow-wrap: anywhere; }
+.nt-res .lk, .reply-acts .lk {
+  flex: none; border: 0; background: none; padding: 0; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink-2);
+  text-decoration: underline; text-decoration-color: rgba(29, 27, 24, .3); text-underline-offset: 3px; white-space: nowrap; cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) { .nt-res .lk:hover, .reply-acts .lk:hover { color: var(--ink); text-decoration-color: currentColor; } }
+.nt-res .lk:disabled { opacity: .5; cursor: default; }
+.nt-res .onscreen { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--amber-ink); white-space: nowrap; }
+.nt-res.cur .v { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.nt-res.quiet { color: var(--ink-3); }
+.nt-res.quiet .nk { background: transparent; }
+.nt-res .btn.small { min-height: 28px; padding: 0 10px; font-size: 13px; gap: 5px; flex: none; }
+.nt-res .spin { width: 13px; height: 13px; border-width: 1.75px; }
+.reply { align-items: flex-start; }
+.reply-acts { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; }
+.nt-res + .acc .detail .said { font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+/* a note waiting its turn: a dashed line, quieter words */
+.nt.queued::before { background: transparent; border-left: 1.5px dashed var(--line-2); width: 0; }
+.nt.queued .q { color: var(--ink-2); }
+.nt.queued .grip { border: 0; cursor: grab; color: var(--ink-3); }
+.nt.queued.over .nt-ask { box-shadow: 0 -2px 0 var(--ink); }
+.nt.queued .btn.ghost.small { min-height: 26px; padding: 0 8px; }
+.q-edit { min-height: 32px; padding: 4px 10px; font-size: 14px; }
+
+/* What changed: before → after rows that open under a result */
+.acc { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms var(--ease-out); }
+.acc > div { overflow: hidden; min-height: 0; }
+.acc.open { grid-template-rows: 1fr; }
+.detail { padding: 4px 0 6px 32px; display: grid; gap: 4px; max-width: 480px; }
+.drow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; font-size: 13px; color: var(--ink-2); align-items: baseline; }
+.drow .ba { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.drow .ba s { color: var(--ink-3); text-decoration: none; }
+.drow .ba b { color: var(--ink); font-weight: 650; }
+.drow .ba .arr { color: var(--ink-3); margin: 0 6px; }
+.asked { font-size: 13px; color: var(--ink-3); }
+
+/* the note box, with the progress strip on its top edge */
+.cwrap { position: relative; flex: none; }
+.cbox { border-radius: 14px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line-2); }
+.cbox.focus { box-shadow: inset 0 0 0 1.5px var(--ink), 0 0 0 3px rgba(29, 27, 24, .08); }
+.cbox .att-chips { padding: 10px 10px 0; margin: 0; }
+.stripwrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms var(--ease-out); }
+.stripwrap > div { overflow: hidden; min-height: 0; }
+.stripwrap.on { grid-template-rows: 1fr; }
+.strip { position: relative; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 12px; background: var(--ink); color: #fff; border-radius: 14px 14px 0 0; font-size: 13px; }
+.strip .bar { position: absolute; left: 12px; right: 12px; top: 0; height: 2px; border-radius: 2px; background: rgba(255, 255, 255, .22); overflow: hidden; }
+.strip .bar i { position: absolute; inset: 0; background: #fff; transform-origin: left; transition: transform .6s var(--ease); }
+.strip b { font-weight: 650; white-space: nowrap; }
+.strip .m { color: rgba(255, 255, 255, .78); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.strip .sp { flex: 1; }
+.strip .sbtn { height: 28px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: rgba(255, 255, 255, .92); font: inherit; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .strip .sbtn:hover { background: rgba(255, 255, 255, .14); color: #fff; } }
+.strip :focus-visible, .steps :focus-visible { outline-color: #fff; }
+.strip.wait { background: var(--soft); color: var(--ink); }
+.strip.wait .m { color: var(--ink-2); }
+.strip.wait .sbtn { color: var(--ink); }
+.strip.wait .sbtn:last-child { background: var(--ink); color: #fff; }
+.strip.wait :focus-visible { outline-color: var(--focus); }
+.spin.light { border-color: rgba(255, 255, 255, .28); border-top-color: #fff; width: 13px; height: 13px; }
+.steps { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms var(--ease-out); background: var(--ink); color: rgba(255, 255, 255, .8); border-radius: 14px 14px 0 0; }
+.steps > ul { overflow: hidden; min-height: 0; list-style: none; margin: 0; padding: 0 12px; font-size: 13px; }
+.steps.on { grid-template-rows: 1fr; }
+.steps.on > ul { padding: 10px 12px 6px; border-bottom: 1px solid rgba(255, 255, 255, .12); }
+.steps.on + .strip { border-radius: 0; }
+.steps li { display: flex; align-items: center; gap: 8px; min-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.steps li.cur { color: #fff; font-weight: 600; }
+.steps .ok { width: 13px; height: 13px; border-radius: 50%; background: var(--green); color: #fff; display: grid; place-items: center; flex: none; }
+.cin { display: flex; align-items: flex-end; gap: 4px; padding: 7px; }
+.cin .att { width: 34px; height: 34px; border: 0; border-radius: 9px; background: transparent; color: var(--ink-3); display: grid; place-items: center; flex: none; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .cin .att:not(:disabled):hover { background: var(--soft); color: var(--ink); } }
+.cfield { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px; }
+.cfield textarea {
+  flex: 1 1 160px; min-width: 120px; border: 0; resize: none; background: transparent; padding: 6px 2px; font: inherit; font-size: 15px; line-height: 21px;
+  color: var(--ink); max-height: 132px; field-sizing: content; min-height: 34px; outline: none;
+}
+.tchip {
+  display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; border-radius: 7px; border: 0; background: var(--marker-soft); color: var(--marker-ink);
+  font: inherit; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; flex: none;
+}
+@starting-style { .tchip:not(.suggest) { opacity: 0; scale: .96; } }
+.tchip { transition: opacity 150ms ease, scale 150ms var(--ease-out); }
+.tchip.suggest { background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); color: var(--ink-2); font-weight: 600; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .tchip.suggest:not(:disabled):hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink-3); } }
+.tchip .x { width: 18px; height: 18px; margin-right: -4px; border: 0; background: none; border-radius: 5px; color: var(--marker-ink); display: grid; place-items: center; padding: 0; cursor: pointer; }
+.send { width: 36px; height: 36px; border-radius: 10px; border: 0; display: grid; place-items: center; background: var(--soft); color: var(--ink-3); flex: none; transition: transform 120ms var(--ease-out), background-color 120ms ease; }
+.send.ready { background: var(--primary); color: #fff; cursor: pointer; }
+.send.ready:active { transform: scale(.94); }
+.noai-cin { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; color: var(--ink-2); font-size: 14px; }
+.noai-cin span { flex: 1; }
+.cin-alert { margin: 8px 10px 0; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--red-soft); color: var(--red-ink); font-size: 13.5px; }
+
+/* "Stop and keep Version 3?" */
+.confirm { width: 300px; padding: 16px; display: grid; gap: 4px; }
+.confirm h3 { font-size: 14.5px; font-weight: 650; }
+.confirm p { font-size: 13px; color: var(--ink-2); }
+.confirm .row { justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+/* ---------- Versions: a sheet that grows from the indicator ---------- */
+.vsheet { left: 0; top: calc(100% + 6px); width: 390px; max-height: min(600px, calc(100vh - 140px)); overflow-y: auto; padding: 0; border-radius: 16px; z-index: 40; }
+.vpick-wrap { position: relative; }
+.vs-h { display: flex; align-items: center; gap: 8px; padding: 10px 8px 4px 16px; position: sticky; top: 0; background: var(--panel); z-index: 2; }
+.vs-h b { font-size: 14.5px; font-weight: 650; }
+.vs-day { font-size: 11.5px; font-weight: 650; letter-spacing: .02em; color: var(--ink-3); padding: 10px 16px 4px; }
+.vrow { box-shadow: inset 0 1px 0 var(--line); }
+.vr { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 10px 10px 14px; border: 0; background: none; text-align: left; font: inherit; font-size: 13.5px; color: var(--ink); cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .vr:hover { background: var(--paper-2); } }
+.vr:focus-visible { outline-offset: -2px; }
+.vnum { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; box-shadow: inset 0 0 0 1.5px var(--ink-4); color: var(--ink-2); flex: none; }
+.vrow.cur .vnum { background: var(--ink); color: #fff; box-shadow: none; }
+.vr .vt { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.vr .by { font-size: 12px; color: var(--ink-3); display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.vr .tmx { margin-left: auto; font-size: 12.5px; color: var(--ink-3); flex: none; font-variant-numeric: tabular-nums; }
+.vr .chev { color: var(--ink-3); transition: transform 200ms var(--ease-out); flex: none; }
+.vrow.open .vr .chev { transform: rotate(180deg); }
+.vrow .detail { padding: 0 14px 8px 46px; }
+.dacts { display: flex; gap: 8px; padding: 2px 14px 12px 40px; }
+.dacts .btn.small { min-height: 30px; padding: 0 10px; font-size: 13px; gap: 6px; }
+
+/* the finish moment: the phone slides in once */
+.fresh .pcol .device-frame { animation: phone-in .6s var(--ease) both; }
+
+html.kb .acc, html.kb .stripwrap, html.kb .steps, html.kb .vr .chev, html.kb .tchip { transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .acc, .stripwrap, .steps { transition: none !important; }
+  .helper .hb i { animation: none; width: 100%; opacity: .5; }
+  .fresh .pcol .device-frame { animation: fade .3s ease-out both !important; }
+}

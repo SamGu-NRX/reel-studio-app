@@ -4,10 +4,10 @@ import type { DropResult, ProjectJson } from './api'
 
 type Style = Record<string, unknown>
 
-const size = (s: Style): number => Number(s.size ?? 105)
-const pos = (s: Style): number => Number(s.position ?? 0.75)
-const look = (s: Style): string => (s.box ? 'box' : String(s.color ?? '#FFFFFF').toUpperCase() === '#FFFFFF' ? 'white' : 'yellow')
-const name = (p: string | null | undefined): string =>
+export const size = (s: Style): number => Number(s.size ?? 105)
+export const pos = (s: Style): number => Number(s.position ?? 0.75)
+export const look = (s: Style): string => (s.box ? 'box' : String(s.color ?? '#FFFFFF').toUpperCase() === '#FFFFFF' ? 'white' : 'yellow')
+export const name = (p: string | null | undefined): string =>
   (p ?? '').split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() ?? ''
 
 function subtitles(before: ProjectJson['captions'], after: ProjectJson['captions']): string[] {

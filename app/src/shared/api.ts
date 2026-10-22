@@ -4,6 +4,8 @@ import type { ChatAction } from './notes'
 import type { UpdateActionResult, UpdateBusy, UpdateState } from './update'
 import type { CoverCandidate } from './cover'
 import type { RenderSegment } from './moments'
+import type { VersionRow } from './version-diff'
+export type { VersionRow } from './version-diff'
 export type { ChatAction } from './notes'
 export type { CoverCandidate } from './cover'
 
@@ -480,6 +482,8 @@ export interface ReelApi {
      * fresh from that render's manifest each call, with the segments it was cut from. null when the render
      * left no timeline to read. */
     timeline(slug: string, n: number): Promise<{ duration: number; words: PlacedWord[]; segments: RenderSegment[] } | null>
+    /** What version `n` changed, as before → after rows. null when its saved copy is gone. */
+    versionRows(slug: string, n: number): Promise<VersionRow[] | null>
     update(slug: string, patch: Partial<ProjectJson>): Promise<ProjectDetail>
     /** `change`: what changed, in plain words ("bigger yellow subtitles"), for the chat and the version button.
      * `label`: what to call the work while it runs ("Updating your subtitles"). Render only, never the AI. */

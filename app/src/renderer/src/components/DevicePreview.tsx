@@ -49,68 +49,82 @@ function frameVars(d: Device): CSSProperties {
 
 const ZONE_LABEL = { top: 'Top bar', buttons: 'Buttons', caption: 'Name and caption' } as const
 
-export function DevicePreview({ instagram, caption, children }: { instagram?: boolean; caption?: string; children: ReactNode }) {
+/** The phone chosen in "See it on", remembered. */
+export function useDevice(): [string, (id: string) => void] {
   const [id, setId] = useState(remembered)
+  return [
+    id,
+    (next: string) => {
+      localStorage.setItem(KEY, next)
+      setId(next)
+    }
+  ]
+}
+
+export function DevicePreview({ id, instagram, caption, children }: { id: string; instagram?: boolean; caption?: string; children: ReactNode }) {
   const device = DEVICES.find((d) => d.id === id)
 
   return (
-    <>
-      <div className="phone-slot">
-      <div className="device-frame" data-device={id} style={device ? frameVars(device) : undefined} data-testid="device-frame">
-        {children}
-        {device && (
-          <div className="device-layer" data-testid="device-layer" aria-hidden>
-            <div className="ig-menu" style={box(menuBar(device), device)}>
-              {[0, 1, 2, 3, 4].map((i) => (
-                <i key={i} />
+    <div className="phone-slot">
+    <div className="device-frame" data-device={id} style={device ? frameVars(device) : undefined} data-testid="device-frame">
+      {children}
+      {device && (
+        <div className="device-layer" data-testid="device-layer" aria-hidden>
+          <div className="ig-menu" style={box(menuBar(device), device)}>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <i key={i} />
+            ))}
+          </div>
+          {instagram && (
+            <div className="device-covered" data-testid="device-covered">
+              {coveredZones(device).map((z) => (
+                <div key={z.kind} className={`zone zone-${z.kind}`} style={box(z.rect, device)} data-testid={`zone-${z.kind}`}>
+                  <span>{ZONE_LABEL[z.kind]}</span>
+                  {z.kind === 'caption' && caption?.trim() && <em>{caption.trim()}</em>}
+                </div>
               ))}
             </div>
-            {instagram && (
-              <div className="device-covered" data-testid="device-covered">
-                {coveredZones(device).map((z) => (
-                  <div key={z.kind} className={`zone zone-${z.kind}`} style={box(z.rect, device)} data-testid={`zone-${z.kind}`}>
-                    <span>{ZONE_LABEL[z.kind]}</span>
-                    {z.kind === 'caption' && caption?.trim() && <em>{caption.trim()}</em>}
-                  </div>
-                ))}
-              </div>
-            )}
-            {device.island && <div className="island" style={box(device.island, device)} />}
-          </div>
-        )}
-        {device?.homeButton && <div className="home-button" aria-hidden />}
-      </div>
-      </div>
-      <div className="device-pick">
-        <div className="device-select">
-          <PhoneIcon />
-          <span aria-hidden>
-            See it on <b>{device?.label ?? 'Any phone'}</b>
-          </span>
-          <select
-            aria-label="See it on"
-            value={id}
-            onChange={(e) => {
-              localStorage.setItem(KEY, e.target.value)
-              setId(e.target.value)
-            }}
-            aria-describedby={device ? 'device-fit' : undefined}
-            data-testid="device-pick"
-          >
-            <option value={ANY}>Any phone</option>
-            {DEVICES.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.label}
-              </option>
-            ))}
-          </select>
+          )}
+          {device.island && <div className="island" style={box(device.island, device)} />}
         </div>
-        {device && (
-          <p className="device-fit" id="device-fit" data-testid="device-fit">
-            {fitWords(device)}
-          </p>
-        )}
+      )}
+      {device?.homeButton && <div className="home-button" aria-hidden />}
+    </div>
+    </div>
+  )
+}
+
+/** "See it on": which phone the reel is drawn in. */
+export function DevicePick({ id, onPick }: { id: string; onPick: (id: string) => void }) {
+  const device = DEVICES.find((d) => d.id === id)
+  return (
+    <div className="device-pick">
+      <div className="device-select">
+        <PhoneIcon />
+        <span aria-hidden>
+          <span className="see">See it on </span>
+          <b>{device?.label ?? 'Any phone'}</b>
+        </span>
+        <select
+          aria-label="See it on"
+          value={id}
+          onChange={(e) => onPick(e.target.value)}
+          aria-describedby={device ? 'device-fit' : undefined}
+          data-testid="device-pick"
+        >
+          <option value={ANY}>Any phone</option>
+          {DEVICES.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.label}
+            </option>
+          ))}
+        </select>
       </div>
-    </>
+      {device && (
+        <p className="device-fit" id="device-fit" data-testid="device-fit">
+          {fitWords(device)}
+        </p>
+      )}
+    </div>
   )
 }

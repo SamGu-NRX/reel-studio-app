@@ -249,9 +249,6 @@ export function PickFiles({ label, accept, onFiles, className, icon }: { label: 
   )
 }
 
-export function Check({ done }: { done: boolean }) {
-  return <span className={`check${done ? ' done' : ''}`}>{done ? <Icon name="check" size={14} stroke={2.5} /> : null}</span>
-}
 
 /** Platform words, switched once: Finder/Dock on a Mac, Explorer/taskbar on Windows. Getting a video to a phone is the "Send to my phone" button (components/SendToPhone.tsx), the same on both. */
 export const IS_MAC = /Mac/i.test(navigator.platform)

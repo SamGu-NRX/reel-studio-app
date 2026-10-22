@@ -207,6 +207,9 @@ function ScrubTime({ playhead, dur }: { playhead: Playhead; dur: number }) {
   return <span className="scrub-time" ref={span} />
 }
 
+const RATES = [1, 1.5, 2]
+const RATE_KEY = 'rs.speed'
+
 const MARK_STATE: Record<NoteMark['state'], string> = { making: 'Being made', done: 'Done', failed: "Didn't work", stopped: 'Stopped' }
 
 const typing = (t: EventTarget | null): boolean => {
@@ -242,6 +245,8 @@ export function PhonePlayer({
   playhead,
   onShown,
   onFailed,
+  keepTime,
+  onZoom,
   className,
   testid = 'player',
   children
@@ -284,6 +289,10 @@ export function PhonePlayer({
   onShown?: (src: string | null) => void
   /** A new `src` would not play. The video before it stays on screen and stays the one reported. */
   onFailed?: () => void
+  /** A new `src` takes over at the same moment and keeps playing (comparing two versions). */
+  keepTime?: boolean
+  /** Shows a Zoom in button in the controls. */
+  onZoom?: () => void
   className?: string
   /** The video's test id. The Working screen's first look uses its own, so "player" means the Reel screen. */
   testid?: string
@@ -308,6 +317,10 @@ export function PhonePlayer({
   const [full, setFull] = useState<HTMLVideoElement | null>(null)
   const closeFull = useCallback(() => setFull(null), [])
   const dragOrigin = useRef<EventTarget | null>(null)
+  const [rate, setRate] = useState(() => {
+    const r = Number(localStorage.getItem(RATE_KEY))
+    return RATES.includes(r) ? r : 1
+  })
 
   const toggle = useCallback(() => {
     const v = video.current
@@ -362,8 +375,16 @@ export function PhonePlayer({
   useLayoutEffect(() => {
     const v = (video.current = layers.shown ? (els.current.get(layers.shown.id) ?? null) : null)
     onShown?.(layers.shown?.src ?? null)
-    if (layers.leaving) els.current.get(layers.leaving.id)?.pause()
+    const before = layers.leaving ? els.current.get(layers.leaving.id) : undefined
+    const wasPlaying = !!before && !before.paused
+    before?.pause()
     if (!v) return
+    v.playbackRate = rate
+    if (keepTime && before) {
+      v.muted = before.muted
+      if (wasPlaying) void v.play().catch(() => {})
+      return
+    }
     ph.set(v.currentTime)
     if (v.readyState >= HTMLMediaElement.HAVE_METADATA) {
       setDur(v.duration || 0)
@@ -409,6 +430,15 @@ export function PhonePlayer({
   useEffect(() => {
     if (asking) video.current?.pause()
   }, [asking])
+
+  useEffect(() => {
+    if (video.current) video.current.playbackRate = rate
+  }, [rate, shownId])
+  const nextRate = () => {
+    const r = RATES[(RATES.indexOf(rate) + 1) % RATES.length]
+    localStorage.setItem(RATE_KEY, String(r))
+    setRate(r)
+  }
 
   // A picked version plays with sound once its own video is on screen (it loads under the old one first).
   useEffect(() => {
@@ -520,6 +550,23 @@ export function PhonePlayer({
       data-testid="phone"
     >
       {/* tabIndex -1: a click on the video focuses the player, so its keys work without a Tab stop of its own */}
+      {dragFile && (
+        <button
+          className="draghandle"
+          draggable
+          aria-label="Drag the video out"
+          onDragStart={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            markDraggingOut()
+            reel.app.startDrag(dragFile)
+          }}
+          data-testid="drag-handle"
+        >
+          <Icon name="grip" size={16} stroke={2} />
+          <span className="draghandle-tip" aria-hidden>Drag the video into any app</span>
+        </button>
+      )}
       <div className="phone-screen" ref={screenRef} tabIndex={src ? -1 : undefined} onKeyDown={src ? onKey : undefined}>
         {src ? (
           <>
@@ -563,7 +610,12 @@ export function PhonePlayer({
                       }
                     : loading && {
                         onLoadedData: (e: React.SyntheticEvent<HTMLVideoElement>) => {
-                          void frameReady(e.currentTarget, l.poster).then(() => dispatch({ type: 'ready', id: l.id }))
+                          const v = e.currentTarget
+                          const show = () => void frameReady(v, l.poster).then(() => dispatch({ type: 'ready', id: l.id }))
+                          const at = ph.get()
+                          if (!keepTime || at <= 0) return show()
+                          v.addEventListener('seeked', show, { once: true })
+                          v.currentTime = Math.min(at, v.duration || at)
                         },
                         onError: () => {
                           dispatch({ type: 'failed', id: l.id })
@@ -658,6 +710,16 @@ export function PhonePlayer({
                 })}
               </span>
               <ScrubTime playhead={ph} dur={dur} />
+              {!instagram && (
+                <button className={`scrub-speed${rate !== 1 ? ' on' : ''}`} onClick={nextRate} aria-label={`Playback speed ${rate}×`} title="Playback speed" data-testid="speed">
+                  {rate}×
+                </button>
+              )}
+              {onZoom && (
+                <button className="scrub-btn" onClick={onZoom} aria-label="Zoom in" title="Zoom in" data-testid="zoom-in-player">
+                  <Icon name="zoom-in" size={15} stroke={2} />
+                </button>
+              )}
               <button
                 className="scrub-btn"
                 onClick={() => {

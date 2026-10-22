@@ -65,6 +65,7 @@ const api: ReelApi = {
     resume: (slug) => call('projects:resume', slug),
     note: (slug, text, attachments, moment, onVersion) => call('projects:note', slug, text, attachments, moment, onVersion),
     timeline: (slug, n) => call('projects:timeline', slug, n),
+    versionRows: (slug, n) => call('projects:versionRows', slug, n),
     update: (slug, patch) => call('projects:update', slug, patch),
     rerender: (slug, change, label) => call('projects:rerender', slug, change, label),
     exportVersion: (slug, n) => call('projects:export', slug, n),
