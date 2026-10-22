@@ -105,7 +105,7 @@ function SaveHelper({ saving, name, onClose }: { saving: Saving | null; name: st
         </div>
         <span className="spacer" />
         {s.kind !== 'saving' && (
-          <button className="icon-btn small" aria-label="Close" onClick={onClose}>
+          <button className="icon-btn" aria-label="Close" onClick={onClose}>
             <Icon name="x" size={14} />
           </button>
         )}

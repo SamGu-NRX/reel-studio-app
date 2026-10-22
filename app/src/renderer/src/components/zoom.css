@@ -1,7 +1,7 @@
 /* The zoomed view (ZoomView.tsx): the reel big, the notes beside it, and pins on the picture. */
 
 .zoom {
-  position: fixed; inset: 0; z-index: 60; background: var(--bg); display: flex; flex-direction: column;
+  position: fixed; inset: 0; z-index: 60; background: var(--paper); display: flex; flex-direction: column;
   transition: opacity 200ms ease, transform 200ms var(--ease-out);
 }
 @starting-style { .zoom { opacity: 0; transform: scale(.985); } }
@@ -17,7 +17,7 @@ html.zoomed .titlebar .sbt, html.zoomed .titlebar .wordmark { visibility: hidden
 .stage {
   min-height: 0; display: flex; flex-direction: column; border-radius: 16px; overflow: hidden;
   background: radial-gradient(120% 70% at 50% 38%, #f3f0ea 0%, transparent 62%), linear-gradient(180deg, #f3f0ea 0%, #ddd6cb 100%);
-  box-shadow: inset 0 0 0 1px rgba(29, 27, 24, .05);
+  box-shadow: inset 0 0 0 1px rgba(22, 30, 26, .05);
 }
 .stage-v { flex: 1; min-height: 0; display: flex; justify-content: center; gap: 20px; padding: 16px 16px 0; position: relative; }
 .zv { height: 100%; aspect-ratio: 9 / 16; position: relative; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 20px 40px -20px rgba(10, 20, 15, .5); }
@@ -38,7 +38,7 @@ html.zoomed .titlebar .sbt, html.zoomed .titlebar .wordmark { visibility: hidden
   background: linear-gradient(90deg, var(--ink) var(--pct, 0%), #9c958c var(--pct, 0%));
 }
 .ztrack::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 3px #ddd6cb; }
-.scrub-speed.zs { background: var(--panel); color: var(--ink); box-shadow: var(--e1); }
+.scrub-speed.zs { background: var(--surface); color: var(--ink); box-shadow: var(--e1); }
 .scrub-speed.zs.on { background: var(--ink); color: #fff; }
 .ztrans .btn.small { min-height: 30px; padding: 0 10px; font-size: 13px; gap: 6px; }
 .cbtn.on, .ztrans .btn.on { background: var(--ink); color: #fff; }
@@ -61,15 +61,15 @@ html.zoomed .titlebar .sbt, html.zoomed .titlebar .wordmark { visibility: hidden
 @starting-style { .pin.drop { opacity: 0; transform: translateY(-6px) scale(.9); } }
 .pin.away { opacity: 0; transform: scale(.9); }
 .pin-lab {
-  position: absolute; left: 30px; top: -2px; background: rgba(29, 27, 24, .9); color: #fff; font-size: 12.5px; padding: 5px 9px; border-radius: 9px;
+  position: absolute; left: 30px; top: -2px; background: rgba(22, 30, 26, .9); color: #fff; font-size: 12.5px; padding: 5px 9px; border-radius: 9px;
   max-width: 220px; width: max-content; white-space: normal; text-align: left; line-height: 1.35; font-weight: 500;
 }
 .pin.flip .pin-lab { left: auto; right: 30px; }
-.pinpop { position: absolute; z-index: 20; width: 320px; background: var(--panel); border-radius: 14px; box-shadow: var(--e3); transition: opacity 150ms ease, transform 150ms var(--ease-out); }
+.pinpop { position: absolute; z-index: 20; width: 320px; background: var(--surface); border-radius: 14px; box-shadow: var(--e3); transition: opacity 150ms ease, transform 150ms var(--ease-out); }
 @starting-style { .pinpop { opacity: 0; transform: scale(.97); } }
-.zpanel { min-height: 0; display: flex; flex-direction: column; background: var(--panel); border-radius: 16px; box-shadow: var(--e1); padding: 14px 14px 12px; }
+.zpanel { min-height: 0; display: flex; flex-direction: column; background: var(--surface); border-radius: 16px; box-shadow: var(--e1); padding: 14px 14px 12px; }
 .zpanel .log { margin: 0 -6px; padding: 4px 6px 12px; }
-.zpanel .nk { background: var(--panel); }
+.zpanel .nk { background: var(--surface); }
 .zpanel .q { font-size: 14px; }
 .zpanel .nt-res { font-size: 13px; }
 

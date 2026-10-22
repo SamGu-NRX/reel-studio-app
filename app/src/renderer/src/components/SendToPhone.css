@@ -1,21 +1,23 @@
 /* "Send to my phone" panel (components/SendToPhone.tsx). Same tokens as styles.css. */
-.send-phone h3 { font-size: 15px; display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
+.send-phone h3 { font-size: var(--fs-section); line-height: var(--lh-section); display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
 .phone-main { display: grid; grid-template-columns: 196px 1fr; gap: 20px; align-items: center; }
-.phone-qr-box { width: 196px; height: 196px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 6px; display: grid; place-items: center; }
+.phone-qr-box { width: 196px; height: 196px; background: #fff; border: 1px solid var(--line); border-radius: var(--r-lg); padding: 6px; display: grid; place-items: center; }
 .phone-qr { width: 100%; height: 100%; display: block; }
 .phone-qr-wait { display: grid; place-items: center; width: 100%; height: 100%; }
-.phone-lead { font-size: 16px; font-weight: 600; line-height: 1.4; }
-.phone-note { background: var(--amber-soft); color: var(--amber-ink); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 14px; }
-.phone-sent { display: flex; align-items: center; gap: 8px; color: var(--green-ink); background: var(--green-soft); border-radius: var(--radius-sm); padding: 10px 12px; font-weight: 650; }
-.phone-steps { display: flex; flex-direction: column; gap: 8px; }
-.phone-steps > div { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.phone-lead { font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 600; }
+.phone-note { color: var(--amber); font-weight: 560; }
+.phone-sent { display: flex; align-items: center; gap: 8px; color: var(--green-ink); font-weight: 620; }
+.phone-steps { display: flex; flex-direction: column; }
+.phone-steps > div { padding: 12px 0; }
+.phone-steps > div + div { box-shadow: inset 0 1px 0 var(--line); }
 .phone-steps details ol { margin-top: 4px; }
-.phone-steps ol { margin: 0; padding-left: 20px; color: var(--ink-2); font-size: 14px; }
+.phone-steps ol { margin: 0; padding-left: 20px; color: var(--ink-2); }
 .phone-steps li { margin: 3px 0; }
 .phone-more summary { cursor: pointer; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; padding: 4px 0; }
 .phone-more[open] summary { margin-bottom: 6px; }
 .phone-net { gap: 8px; cursor: pointer; }
-.phone-fallbacks { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
-.phone-way { display: grid; grid-template-columns: 22px 1fr auto; gap: 12px; align-items: start; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.phone-fallbacks { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.phone-way { display: grid; grid-template-columns: 22px 1fr auto; gap: 12px; align-items: start; padding: 12px 0; }
+.phone-way + .phone-way { box-shadow: inset 0 1px 0 var(--line); }
 .phone-way > .icon { margin-top: 2px; color: var(--ink-2); }
 .phone-way p { margin-top: 2px; }

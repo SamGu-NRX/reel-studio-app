@@ -115,7 +115,7 @@ export function VersionPicker({
             <b>Versions</b>
             <span className="muted-sm">{versions.length}</span>
             <span className="spacer" />
-            <button className="icon-btn small" aria-label="Close" onClick={() => close(() => {})}>
+            <button className="icon-btn" aria-label="Close" onClick={() => close(() => {})}>
               <Icon name="x" size={16} />
             </button>
           </div>

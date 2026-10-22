@@ -6,7 +6,7 @@
   background: transparent; color: var(--ink-2); display: grid; place-items: center; cursor: pointer;
 }
 .platform-win32 .titlebar .sbt, .platform-linux .titlebar .sbt { margin-left: 8px; }
-@media (hover: hover) and (pointer: fine) { .titlebar .sbt:hover { background: rgba(29, 27, 24, .07); color: var(--ink); } }
+@media (hover: hover) and (pointer: fine) { .titlebar .sbt:hover { background: rgba(22, 30, 26, .07); color: var(--ink); } }
 .wordmark { display: flex; align-items: center; gap: 8px; margin-left: 8px; font-size: 14px; letter-spacing: -.005em; white-space: nowrap; transition: opacity 120ms ease; pointer-events: none; }
 .wordmark b { font-weight: 700; }
 .wordmark > span:not(.logo) { font-weight: 450; color: var(--ink-2); margin-left: -4px; }
@@ -18,13 +18,13 @@
 .shell > .main { flex: 1; }
 
 /* The column changes width at once; only its paper (scaleX) and the labels move. */
-.side { width: var(--sidew); flex: none; position: relative; z-index: 5; display: flex; flex-direction: column; padding: calc(var(--titlebar) + 8px) 12px 12px; }
+.side { width: var(--side-open); flex: none; position: relative; z-index: 5; display: flex; flex-direction: column; padding: calc(var(--titlebar) + 8px) 12px 12px; }
 .side::before {
-  content: ''; position: absolute; inset: 0; width: 216px; z-index: -1; background: var(--side); box-shadow: inset -1px 0 0 var(--line);
+  content: ''; position: absolute; inset: 0; width: var(--side-open); z-index: -1; background: var(--side); box-shadow: inset -1px 0 0 var(--line);
   transform-origin: 0 0; transition: transform 200ms var(--ease-out);
 }
-.rail { --sidew: 64px; }
-.rail .side::before { transform: scaleX(.2963); }
+.rail .side { width: 64px; }
+.rail .side::before { transform: scaleX(var(--rail-scale)); }
 .side .lbl { transition: opacity 120ms ease; }
 .rail .side .lbl { opacity: 0; pointer-events: none; }
 
@@ -34,9 +34,9 @@
   font: inherit; font-size: 14px; font-weight: 500; color: var(--ink-2); text-align: left; white-space: nowrap; overflow: hidden; cursor: pointer;
 }
 .nav button .icon { color: var(--ink-3); }
-.nav button.on { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: var(--e1); }
+.nav button.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--e1); }
 .nav button.on .icon { color: var(--ink); }
-@media (hover: hover) and (pointer: fine) { .nav button:not(.on):hover { background: rgba(29, 27, 24, .05); color: var(--ink); } }
+@media (hover: hover) and (pointer: fine) { .nav button:not(.on):hover { background: rgba(22, 30, 26, .05); color: var(--ink); } }
 .rail .nav button { width: 40px; }
 
 .side-foot { margin-top: auto; position: relative; display: grid; gap: 8px; }
@@ -48,9 +48,9 @@
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 12px; background: transparent;
   font: inherit; color: inherit; text-align: left; overflow: hidden; cursor: pointer;
 }
-.acct.open { background: var(--panel); box-shadow: var(--e1); }
-@media (hover: hover) and (pointer: fine) { .acct:not(.open):hover { background: rgba(29, 27, 24, .05); } }
-.av { width: 30px; height: 30px; border-radius: 50%; flex: none; background: var(--line-2); color: var(--ink); display: grid; place-items: center; font-weight: 700; font-size: 13px; position: relative; }
+.acct.open { background: var(--surface); box-shadow: var(--e1); }
+@media (hover: hover) and (pointer: fine) { .acct:not(.open):hover { background: rgba(22, 30, 26, .05); } }
+.av { width: 30px; height: 30px; border-radius: 50%; flex: none; background: var(--line-strong); color: var(--ink); display: grid; place-items: center; font-weight: 700; font-size: 13px; position: relative; }
 .av .st { position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 2px var(--side); }
 .av .st.off { background: var(--ink-4); }
 .who { min-width: 0; display: grid; }
@@ -61,7 +61,7 @@
 
 /* Menus: grow from their trigger (--o), leave faster than they came. */
 .pop {
-  position: absolute; z-index: 50; background: var(--panel); border-radius: 12px; box-shadow: var(--e3); padding: 6px;
+  position: absolute; z-index: 50; background: var(--surface); border-radius: 12px; box-shadow: var(--e3); padding: 6px;
   transform-origin: var(--o, top left); transition: opacity 150ms ease, transform 150ms var(--ease-out);
 }
 @starting-style { .pop { opacity: 0; transform: scale(.97); } }
@@ -72,10 +72,10 @@
 }
 .mi > .icon { color: var(--ink-3); }
 .mi .r { margin-left: auto; padding-left: 12px; font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
-.mi.danger { color: var(--red-ink); }
+.mi.danger { color: var(--pencil); }
 .mi[disabled] { color: var(--ink-4); cursor: default; }
-@media (hover: hover) and (pointer: fine) { .mi:not([disabled]):hover { background: var(--soft); } }
-.mi:focus-visible { background: var(--soft); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .mi:not([disabled]):hover { background: var(--sunk); } }
+.mi:focus-visible { background: var(--sunk); outline-offset: -2px; }
 .pop hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
 .brandmark { flex: none; display: block; }
 

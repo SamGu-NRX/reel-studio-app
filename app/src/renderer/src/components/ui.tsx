@@ -1,10 +1,47 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { droppedPaths } from '../api'
-import { Icon } from './icons'
+import { Icon, type IconName } from './icons'
 
-export function Progress({ pct, done, paused, label }: { pct: number; done?: boolean; paused?: boolean; label?: string }) {
+/**
+ * The app's three text buttons (spec section 1): primary (ink pill, at most one per view), secondary (hairline pill)
+ * and tertiary (text, underlined on hover). `small` is for dense rows, `big` for onboarding. Styles: styles.css `.btn`.
+ */
+export function Button({
+  kind = 'secondary',
+  size,
+  danger,
+  className,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { kind?: 'primary' | 'secondary' | 'tertiary'; size?: 'small' | 'big'; danger?: boolean }) {
+  const cls = ['btn', kind === 'primary' && 'primary', kind === 'tertiary' && 'ghost', size, danger && 'danger', className].filter(Boolean).join(' ')
+  return <button type="button" {...rest} className={cls} />
+}
+
+/** An icon button: bare, 28 px, a wash on hover. The label is its name for screen readers and, with its shortcut, its tooltip. */
+export function IconButton({
+  icon,
+  label,
+  shortcut,
+  onDark,
+  className,
+  ...rest
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label' | 'title'> & { icon: IconName; label: string; shortcut?: string; onDark?: boolean }) {
   return (
-    <div className={`progress${done ? ' done' : ''}${paused ? ' paused' : ''}`} role="progressbar" aria-label={label ?? 'Progress'} aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
+    <button
+      type="button"
+      {...rest}
+      className={['icon-btn', onDark && 'on-dark', className].filter(Boolean).join(' ')}
+      aria-label={label}
+      title={shortcut ? `${label} (${shortcut})` : label}
+    >
+      <Icon name={icon} size={16} stroke={1.75} />
+    </button>
+  )
+}
+
+export function Progress({ pct, done, label }: { pct: number; done?: boolean; label?: string }) {
+  return (
+    <div className={`progress${done ? ' done' : ''}`} role="progressbar" aria-label={label ?? 'Progress'} aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
       <div style={{ transform: `translateX(${Math.max(3, Math.min(100, pct)) - 100}%)` }} />
     </div>
   )
@@ -38,11 +75,7 @@ export function Toast({ text, kind, onClose }: { text: string; kind?: 'error' | 
   return (
     <div className={`toast${kind === 'error' ? ' error' : ''}`} role={kind === 'error' ? 'alert' : 'status'} data-testid="toast">
       <span>{text}</span>
-      {kind === 'error' && (
-        <button className="icon-btn on-dark" onClick={onClose} aria-label="Close" title="Close">
-          <Icon name="x" />
-        </button>
-      )}
+      {kind === 'error' && <IconButton icon="x" label="Close" onDark onClick={onClose} />}
     </div>
   )
 }
@@ -118,12 +151,12 @@ export function Confirm(props: { title: string; body: string; yes: string; no: s
       <h2 id={titleId}>{props.title}</h2>
       <p className="muted">{props.body}</p>
       <div className="row" style={{ justifyContent: 'flex-end' }}>
-        <button className="btn ghost" onClick={props.onNo} data-autofocus data-testid="confirm-no">
+        <Button kind="tertiary" onClick={props.onNo} data-autofocus data-testid="confirm-no">
           {props.no}
-        </button>
-        <button className={`btn ${props.danger ? 'danger-solid' : 'primary'}`} onClick={props.onYes} data-testid="confirm-yes">
+        </Button>
+        <Button kind="primary" danger={props.danger} onClick={props.onYes} data-testid="confirm-yes">
           {props.yes}
-        </button>
+        </Button>
       </div>
     </Modal>
   )
