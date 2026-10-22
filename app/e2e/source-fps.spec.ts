@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { BASE, ROOT, launch, passFirstRun } from './helpers'
+import { BASE, ROOT, launch, passFirstRun, openSettings } from './helpers'
 
 test('fails if the faster exports setting is not saved or applied to new projects', async () => {
   test.skip(!process.env.REELSTUDIO_PYTHON, 'set REELSTUDIO_PYTHON to a Python with engine dependencies')
@@ -13,7 +13,7 @@ test('fails if the faster exports setting is not saved or applied to new project
   let running = await launch(env)
   try {
     await passFirstRun(running.page)
-    await running.page.getByTestId('nav-settings').click()
+    await openSettings(running.page)
     const toggle = running.page.getByTestId('faster-exports')
     await expect(toggle).not.toBeChecked()
     await toggle.focus()
@@ -21,7 +21,7 @@ test('fails if the faster exports setting is not saved or applied to new project
     await expect(toggle).toBeChecked()
     await running.app.close()
     running = await launch(env)
-    await running.page.getByTestId('nav-settings').click()
+    await openSettings(running.page)
     await expect(running.page.getByTestId('faster-exports')).toBeChecked()
     const created = await running.page.evaluate((file) => window.reel.projects.create([file]), video)
     const file = join(ROOT, 'Projects', created.slug, 'project.json')

@@ -1,6 +1,7 @@
 // The shape of T3 Code's WelcomeWizard: a welcome, then named stages with one action each.
 import { useCallback, useMemo, useState } from 'react'
 import { Icon } from '../components/icons'
+import { Logo } from '../components/brand'
 import { MacStage } from './setup/MacStage'
 import { ListeningStage } from './setup/ListeningStage'
 import { ConnectStage } from './setup/ConnectStage'
@@ -28,7 +29,7 @@ export function FirstRun({ onDone, platform }: { onDone: () => void; platform: s
       <main className="first">
         <div className="first-card">
           <div className="hero-mark">
-            <Icon name="play" size={32} stroke={1.75} />
+            <Logo size={44} />
           </div>
           <h1>Welcome to Reel Studio</h1>
           <p className="muted" style={{ fontSize: 17, maxWidth: 440 }}>
@@ -47,8 +48,8 @@ export function FirstRun({ onDone, platform }: { onDone: () => void; platform: s
     <main className="first setup-view">
       <div className="setup" role="group" aria-labelledby="setup-title">
         <div className="setup-head">
-          <span className="brand-mark" aria-hidden>
-            <Icon name="play" size={12} stroke={2} />
+          <span className="logo" aria-hidden>
+            <Logo />
           </span>
           <span id="setup-title">Set up Reel Studio</span>
         </div>

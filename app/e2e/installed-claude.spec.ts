@@ -6,7 +6,7 @@
 import { test, expect } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { CLAUDE_CODE_LABEL, CLAUDE_CODE_MISNAMED, SHOTS, USE_CLAUDE_CODE, launch, passFirstRun, shot } from './helpers'
+import { CLAUDE_CODE_LABEL, CLAUDE_CODE_MISNAMED, SHOTS, USE_CLAUDE_CODE, launch, passFirstRun, shot, openSettings } from './helpers'
 
 const EXE = !!process.env.REELSTUDIO_E2E_EXE
 test.skip(!EXE && process.env.REELSTUDIO_E2E_AI !== 'package', 'set REELSTUDIO_E2E_EXE (or REELSTUDIO_E2E_AI=package)')
@@ -34,7 +34,7 @@ test('installed app: the Claude choice, in this computer\'s real state', async (
     expect(JSON.stringify([st, providers])).not.toMatch(/\w@\w/) // no e-mail address reaches the page
     expect((await page.evaluate(() => (window as any).reel.ai.active())).id).toBe('none') // never picked on its own
 
-    await page.getByTestId('nav-settings').click()
+    await openSettings(page)
     await expect(page.getByTestId('signin-chatgpt')).toBeVisible()
     await expect(page.getByTestId('claude-key-toggle')).toBeVisible()
     const panel = page.locator('.panel').first()
@@ -61,7 +61,7 @@ test('installed app: the Claude choice, in this computer\'s real state', async (
       await page.getByTestId('use-claude-code').click()
       await expect(page.getByTestId('ai-connected')).toHaveText('Using Claude through your Claude Code app.')
       await page.getByTestId('nav-home').click() // the sidebar re-reads the AI editor on every screen change
-    await expect(page.getByTestId('ai-status')).toContainText(`AI editor: ${CLAUDE_CODE_LABEL}`)
+    await expect(page.getByTestId('ai-status')).toHaveText('AI editor: Claude')
       expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)
       await shot(page, 'installed/connect-using-claude')
     }

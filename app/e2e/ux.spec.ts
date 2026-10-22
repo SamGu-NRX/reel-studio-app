@@ -6,7 +6,7 @@
 import { test, expect, type ElectronApplication } from '@playwright/test'
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, CLAUDE_CODE_LABEL, CLAUDE_CODE_MISNAMED, USE_CLAUDE_CODE, launch, makeMedia, passFirstRun, shot } from './helpers'
+import { BASE, CLAUDE_CODE_LABEL, CLAUDE_CODE_MISNAMED, USE_CLAUDE_CODE, launch, makeMedia, passFirstRun, shot, openSettings } from './helpers'
 
 // Its own Reel Studio folder: the smoke test leaves a song in the shared Library, and this test
 // needs the "No music yet" state.
@@ -40,7 +40,7 @@ test('no AI: honest checklist, one connect prompt, caption controls, add song + 
   await passFirstRun(page)
 
   // Sidebar says plainly that no AI is on, and is a way in.
-  await expect(page.getByTestId('sidebar-connect')).toBeVisible()
+  await expect(page.getByTestId('ai-status')).toHaveText('No AI editor')
 
   await page.getByTestId('new-video').click()
   await page.getByTestId('file-input').setInputFiles([media.video])
@@ -168,7 +168,7 @@ test('no AI: honest checklist, one connect prompt, caption controls, add song + 
   await shot(page, 'ux-13-library')
 
   // ---- 9. Settings uses the same simple connect panel ----
-  await page.getByTestId('nav-settings').click()
+  await openSettings(page)
   await expect(page.getByTestId('signin-chatgpt')).toBeVisible()
   await shot(page, 'ux-14-settings')
   await app.close()
@@ -188,7 +188,7 @@ async function claudeScreen(state: string) {
   const info = await page.evaluate(() => window.reel.app.info())
   // one build: no flavour field, just these
   expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'firstRunDone', 'platform', 'root', 'rootDisplay', 'test', 'version'])
-  await page.getByTestId('nav-settings').click()
+  await openSettings(page)
   await expect(page.getByTestId('signin-chatgpt')).toBeVisible()
   return { app, page, info, userData, panel: page.locator('.panel').first() }
 }
@@ -206,7 +206,7 @@ test('Claude Code app ready: "Use Claude (your Claude Code app)" comes first, bu
   await page.getByTestId('use-claude-code').click()
   await expect(page.getByTestId('ai-connected')).toHaveText('Using Claude through your Claude Code app.')
   await page.getByTestId('nav-home').click() // the sidebar re-reads the AI editor on every screen change
-  await expect(page.getByTestId('ai-status')).toContainText(`AI editor: ${CLAUDE_CODE_LABEL}`)
+  await expect(page.getByTestId('ai-status')).toHaveText('AI editor: Claude')
   expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)
   expect(await page.locator('body').innerText()).not.toContain('—')
   await shot(page, 'ux-16-connect-claude-using')

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AppInfo, PermissionStatus } from '../../../shared/api'
 import { RELEASES_URL } from '../../../shared/config'
 import { reel, userMessage } from '../api'
-import type { Go } from '../nav'
+import type { Go, SettingsSection } from '../nav'
 import { ConnectAI, DevProviders, ModelDownload, USING_CLAUDE_CODE } from '../components/connect'
 import { usePermissionStatus } from '../components/permissions'
 import { FOLDER_APP } from '../components/ui'
@@ -11,7 +11,7 @@ import { useUpdateState } from '../components/update'
 import { UpdateSettingsRow } from '../components/UpdateSettings'
 import { useNotify } from '../App'
 
-export function Settings({ info, onInfo }: { info: AppInfo; onInfo: (i: AppInfo) => void; go?: Go }) {
+export function Settings({ info, onInfo }: { info: AppInfo; onInfo: (i: AppInfo) => void; go?: Go; section?: SettingsSection }) {
   const notify = useNotify()
   const update = useUpdateState()
   const [savingExports, setSavingExports] = useState(false)

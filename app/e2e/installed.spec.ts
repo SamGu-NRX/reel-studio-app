@@ -20,7 +20,7 @@ import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, dirname } from 'node:path'
-import { attachMemeFlow, chooseClaudeCode, dropFiles, listeningState, passMacStage } from './helpers'
+import { attachMemeFlow, chooseClaudeCode, dropFiles, listeningState, passMacStage, openSettings } from './helpers'
 import { installedRuntime } from './runtime'
 
 const EXE = process.env.REELSTUDIO_E2E_INSTALLED
@@ -133,7 +133,7 @@ test('first run: speech model + AI', async () => {
       if (!picked) await page.getByTestId('skip').click()
     }
     await expect(page.getByText('Your videos')).toBeVisible()
-    await page.getByTestId('nav-settings').click()
+    await openSettings(page)
     const c = page.getByTestId('ai-connected')
     await c.waitFor({ timeout: 10_000 }).catch(() => {})
     info.settingsAi = (await c.isVisible()) ? await c.innerText() : 'none'

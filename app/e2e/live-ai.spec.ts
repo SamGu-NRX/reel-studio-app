@@ -5,7 +5,7 @@
 import { test, expect } from '@playwright/test'
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, SHOTS, launch, makeMedia, passFirstRun, shot } from './helpers'
+import { BASE, SHOTS, launch, makeMedia, passFirstRun, shot, openSettings } from './helpers'
 
 const PROVIDER = process.env.REELSTUDIO_E2E_LIVE_AI
 
@@ -23,7 +23,7 @@ test('first edit and a note with a live AI provider', async () => {
     if (m.text().startsWith('JOB ')) appendFileSync(events, `${new Date().toISOString()} ${m.text().slice(4)}\n`)
   })
 
-  await page.getByTestId('nav-settings').click()
+  await openSettings(page)
   await page.getByTestId(`provider-${PROVIDER}`).click()
   await expect(page.getByTestId(`provider-${PROVIDER}`)).toHaveClass(/active/)
   await shot(page, 'live/01-settings-dev-provider')

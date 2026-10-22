@@ -6,7 +6,7 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, dropFiles, launch, makeMedia, passFirstRun, shot } from './helpers'
+import { BASE, dropFiles, launch, makeMedia, passFirstRun, shot, openSettings } from './helpers'
 
 const MINE = mkdtempSync(join(BASE, 'design-'))
 const ROOT = join(MINE, 'Documents', 'Reel Studio')
@@ -166,7 +166,7 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   const st = JSON.parse(readFileSync(appJson, 'utf8'))
   st.aiEdited = true
   writeFileSync(appJson, JSON.stringify(st, null, 2))
-  await page.getByTestId('nav-settings').click()
+  await openSettings(page)
   await expect(page.getByTestId('ai-connected-banner')).toContainText('Connected to ChatGPT')
   await expect(page.getByTestId('signin-chatgpt')).toHaveCount(0) // folded away
   await expect(page.getByTestId('use-different-ai')).toBeVisible()

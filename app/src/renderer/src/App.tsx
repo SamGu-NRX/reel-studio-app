@@ -4,9 +4,10 @@ import { reel, userMessage } from './api'
 import type { Screen } from './nav'
 import { IS_MAC, Toast } from './components/ui'
 import { draggingOut } from './components/Player'
-import { Icon, type IconName } from './components/icons'
+import { Icon } from './components/icons'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { UpdateButton } from './components/UpdateButton'
+import { Sidebar, TitleBar, useRail } from './components/Sidebar'
+import { useInputMode } from './components/motion'
 import { Home } from './screens/Home'
 import { NewVideo } from './screens/NewVideo'
 import { Working } from './screens/Working'
@@ -29,13 +30,6 @@ export const NOTE_DROP_DONE = 'reel:note-drop-done'
 /** Fired on window by Cmd/Ctrl+E or the File menu; the Reel screen listens. */
 export const EXPORT_EVENT = 'reel:export'
 
-const NAV: { key: Screen['name']; label: string; icon: IconName }[] = [
-  { key: 'home', label: 'My videos', icon: 'film' },
-  { key: 'library', label: 'Library', icon: 'folder' },
-  { key: 'style', label: 'My style', icon: 'sparkles' },
-  { key: 'settings', label: 'Settings', icon: 'settings' }
-]
-
 const hasFiles = (e: DragEvent): boolean => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')
 
 export function App() {
@@ -55,6 +49,8 @@ export function App() {
   }, [])
   const screenRef = useRef(screen)
   screenRef.current = screen
+  useInputMode()
+  const [rail, toggleRail] = useRail()
 
   useEffect(() => {
     reel.app.info().then(setInfo)
@@ -196,7 +192,7 @@ export function App() {
     return (
       <NotifyCtx.Provider value={notify}>
         <div className={`first-shell ${platform}`}>
-          <div className="titlebar" aria-hidden />
+          <div className="titlebar first-titlebar" aria-hidden />
           <FirstRun
             platform={info.platform}
             onDone={async () => {
@@ -212,53 +208,12 @@ export function App() {
 
   const shown = screen.name === 'connect' ? (screen.back ?? { name: 'home' }) : screen
   const section = shown.name === 'new' || shown.name === 'working' || shown.name === 'reel' || shown.name === 'script' ? 'home' : shown.name
-  const aiOn = !!provider && provider.connected && provider.id !== 'none'
 
   return (
     <NotifyCtx.Provider value={notify}>
-      <div className={`shell ${platform}`}>
-        <div className="titlebar" aria-hidden />
-        <aside className="sidebar">
-          <div className="brand">
-            <span className="brand-mark">
-              <Icon name="play" size={14} stroke={2} />
-            </span>
-            Reel Studio
-          </div>
-          <nav aria-label="Main">
-            {NAV.map((n) => (
-              <button
-                key={n.key}
-                className={`nav-item${section === n.key ? ' active' : ''}`}
-                aria-current={section === n.key ? 'page' : undefined}
-                onClick={() => go({ name: n.key } as Screen)}
-                data-testid={`nav-${n.key}`}
-              >
-                <Icon name={n.icon} />
-                {n.label}
-              </button>
-            ))}
-          </nav>
-          <UpdateButton />
-          <div className="sidebar-foot" data-testid="ai-status">
-            {provider &&
-              (aiOn ? (
-                <span className="ai-on">
-                  <span className="dot-on" aria-hidden /> AI editor: {provider.id === 'claude-cli' ? 'Claude (your Claude Code app)' : provider.label}
-                </span>
-              ) : (
-                <>
-                  <div className="muted-sm">No AI editor connected.</div>
-                  {/* the Reel screen has its own, on the change button under the player */}
-                  {shown.name !== 'reel' && (
-                    <button className="link" style={{ padding: '4px 0' }} onClick={() => go({ name: 'connect', back: shown })} data-testid="sidebar-connect">
-                      Connect one
-                    </button>
-                  )}
-                </>
-              ))}
-          </div>
-        </aside>
+      <div className={`shell ${platform}${rail ? ' rail' : ''}`}>
+        <TitleBar rail={rail} onToggle={toggleRail} />
+        <Sidebar section={section} go={go} provider={provider} userName={info.userName} shown={shown} />
         <main className="main">
           <ErrorBoundary resetKey={JSON.stringify(screen)} onReset={() => go({ name: 'home' })}>
             {screen.name === 'home' && <Home go={go} />}
@@ -268,7 +223,7 @@ export function App() {
             {screen.name === 'reel' && <Reel key={screen.slug} slug={screen.slug} go={go} fresh={screen.fresh} />}
             {screen.name === 'library' && <Library refreshKey={libraryTick} />}
             {screen.name === 'style' && <MyStyle />}
-            {screen.name === 'settings' && <Settings info={info} onInfo={setInfo} go={go} />}
+            {screen.name === 'settings' && <Settings key={screen.section ?? ''} info={info} onInfo={setInfo} go={go} section={screen.section} />}
             {screen.name === 'connect' && <Connect back={screen.back} go={go} />}
           </ErrorBoundary>
         </main>
