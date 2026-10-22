@@ -8,6 +8,8 @@ import { FOLDER_APP } from './ui'
 import { FullScreenReel } from './FullScreenReel'
 import { createPlayhead, followVideo, useFollowPlayhead, type Playhead } from './playhead'
 import { NO_LAYERS, layersReducer, type Layer } from './videoLayers'
+import { InstagramChrome, PhoneFill, SafeBand } from './Phone'
+import type { PhoneView } from '../../../shared/api'
 
 /**
  * While our own reel is being dragged out, the window must not treat it as a new video dropped in.
@@ -84,8 +86,7 @@ export function SubtitleSample({ look, text, width, testid }: { look: SubtitleLo
   const outline = look.box ? Math.max(look.outline, BOX_PAD) : look.outline
   const fit = fitCaption(shown, look.size, ENGINE_WIDTH * (1 - 2 * MARGIN_FRAC), outline, measure)
   const style: React.CSSProperties = {
-    // On a phone shape (DevicePreview.css) the reel is drawn in only part of the screen: --sub-top and --sub-h say which.
-    top: `calc(var(--sub-top, 0%) + ${look.position} * var(--sub-h, 100%))`,
+    top: `${look.position * 100}%`,
     fontSize: (fit.size / SIZE_PER_EM) * k,
     lineHeight: SIZE_PER_EM,
     color: look.color,
@@ -274,7 +275,7 @@ export function PhonePlayer({
   playRequest,
   onPlayRequestHandled,
   subtitle,
-  instagram,
+  view,
   caption,
   original,
   originalAt,
@@ -293,6 +294,7 @@ export function PhonePlayer({
   keepTime,
   onZoom,
   className,
+  over,
   testid = 'player',
   children
 }: {
@@ -306,8 +308,9 @@ export function PhonePlayer({
   onPlayRequestHandled?: () => void
   /** Live preview of the subtitle style (the drawer). */
   subtitle?: { look: SubtitleLook; text: string } | null
-  /** Faint Instagram buttons + caption area over the video. */
-  instagram?: boolean
+  /** Instagram's Reels screen over the reel, or the reel alone. */
+  view: PhoneView
+  /** The post's caption, on Instagram's caption line. */
   caption?: string
   /** The raw footage, shown while "Original" is held down. */
   original?: string | null
@@ -341,6 +344,8 @@ export function PhonePlayer({
   /** Shows a Zoom in button in the controls. */
   onZoom?: () => void
   className?: string
+  /** Drawn on the screen over the reel and Instagram's screen (the compare switch). */
+  over?: ReactNode
   /** The video's test id. The Working screen's first look uses its own, so "player" means the Reel screen. */
   testid?: string
   children?: ReactNode
@@ -572,7 +577,7 @@ export function PhonePlayer({
 
   const holdTag = { off: null, loading: null, slow: 'Loading the original', on: 'Original', start: 'Original (from the start)', failed: "Couldn't load the original" }[hold]
 
-  return (
+  const phone = (
     <div
       className={`phone${className ? ` ${className}` : ''}`}
       draggable={!!dragFile}
@@ -697,12 +702,15 @@ export function PhonePlayer({
                 src={src}
                 poster={poster}
                 from={full}
-                overlay={instagram ? <InstagramOverlay caption={caption} /> : null}
+                view={view}
+                caption={caption}
                 onClosed={closeFull}
               />
             )}
             {subtitle && !holdingOriginal && <SubtitleSample look={subtitle.look} text={subtitle.text} width={width} testid="sub-preview" />}
-            {instagram && !holdingOriginal && <InstagramOverlay caption={caption} />}
+            <InstagramChrome on={view === 'instagram' && !holdingOriginal} caption={caption} playing={playing} />
+            {subtitle && !holdingOriginal && <SafeBand />}
+            {over}
             {!playing && !holdingOriginal && !(still && subtitle) && (
               <button className="big-play" onClick={toggle} aria-label="Play" data-testid="play">
                 <Icon name="play" size={30} stroke={1.5} />
@@ -753,7 +761,7 @@ export function PhonePlayer({
                 })}
               </span>
               <ScrubTime playhead={ph} dur={dur} />
-              {!instagram && (
+              {view === 'clean' && (
                 <button className={`scrub-speed${rate !== 1 ? ' on' : ''}`} onClick={nextRate} aria-label={`Playback speed ${rate}×`} title="Playback speed" data-testid="speed">
                   {rate}×
                 </button>
@@ -781,24 +789,5 @@ export function PhonePlayer({
       </div>
     </div>
   )
-}
-
-/** A faint stand-in for Instagram's buttons and caption, so you can see what they cover. */
-export function InstagramOverlay({ caption }: { caption?: string }) {
-  return (
-    <div className="ig" data-testid="ig-overlay" aria-hidden>
-      <div className="ig-side">
-        <Icon name="heart" size={22} />
-        <Icon name="comment" size={22} />
-        <Icon name="send" size={22} />
-        <Icon name="bookmark" size={22} />
-      </div>
-      <div className="ig-bottom">
-        <div className="ig-user">
-          <span className="ig-avatar" /> yourname
-        </div>
-        <div className="ig-caption">{caption?.trim() || 'Your post caption shows here'}</div>
-      </div>
-    </div>
-  )
+  return <PhoneFill>{phone}</PhoneFill>
 }

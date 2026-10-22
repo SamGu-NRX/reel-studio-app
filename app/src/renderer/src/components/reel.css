@@ -22,17 +22,9 @@
 .vpick.older { background: var(--amber-soft); box-shadow: 0 0 0 1px rgba(110, 75, 12, .25); }
 .vpick.older .w { color: var(--amber-ink); }
 
-/* the phone column takes its width from the height the window leaves the phone */
+/* The phone takes the column's full height (Phone.tsx PhoneFill) and the column takes the phone's width. */
 .reel-b { flex: 1; min-height: 0; display: grid; grid-template-columns: auto 1px minmax(0, 1fr); position: relative; }
-.pcol {
-  --phone-h: calc(100vh - var(--titlebar) - 80px - 150px);
-  width: clamp(254px, calc((var(--phone-h) - 24px) * 9 / 16 + 24px), 420px);
-  min-height: 0; display: flex; flex-direction: column; align-items: center; margin-right: 28px;
-}
-.pcol .phone-slot { flex: 1 1 0; min-height: 0; align-self: stretch; container-type: size; display: flex; justify-content: center; }
-.pcol .phone-slot > * { --frame-h: 100cqh; }
-.pcol .phone-slot .phone { width: min(100cqw, calc(var(--screen-h, calc(100cqh - 24px)) * var(--dev-ratio, 9 / 16) + 24px)); }
-.pcol .device-frame { height: fit-content; }
+.pcol { min-width: 254px; min-height: 0; display: flex; flex-direction: column; align-items: center; margin-right: 28px; }
 .rdiv { background: var(--line-2); }
 .ncol { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding-left: 28px; position: relative; }
 
@@ -73,10 +65,7 @@ html.kb .draghandle { transition: none; }
 
 .under { container-type: inline-size; display: flex; gap: 2px; justify-content: center; align-items: center; margin-top: 10px; flex: none; min-height: 30px; width: 100%; }
 .under > * { flex: none; }
-.under .device-pick { flex: 0 1 auto; min-width: 0; }
-.under .device-select { max-width: 100%; }
-.under .device-select > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* The phone column is 254-420 px wide. Short labels fit from 400 px; below that the three toggles are icons, each
+/* The phone column is as wide as the phone, at least 254 px. Short labels fit from 400 px; below that the toggles are icons, each
    with its name on hover and on keyboard focus. */
 @container (max-width: 399px) {
   .under .btn .lbl { display: none; }
@@ -93,11 +82,6 @@ html.kb .draghandle { transition: none; }
 .under .btn[data-tip]:first-child::after { left: 0; translate: 0 0; }
 .under .btn.small { min-height: 30px; padding: 0 9px; font-size: 13px; gap: 6px; color: var(--ink-2); }
 .under .btn.on { background: var(--panel); color: var(--ink); box-shadow: var(--e1); }
-.under .device-pick { margin: 0; }
-.under .device-select { min-height: 30px; padding: 0 24px 0 9px; font-size: 13px; gap: 6px; background-position: right 7px center; }
-.under .device-select .see { display: none; }
-.under .device-select b { font-weight: 600; color: var(--ink-2); white-space: nowrap; }
-.under .device-fit { display: none; }
 
 /* Export, then the places it can go */
 .outs { width: 100%; display: grid; gap: 8px; margin-top: 10px; flex: none; position: relative; }
@@ -272,11 +256,11 @@ html.kb .draghandle { transition: none; }
 .dacts .btn.small { min-height: 30px; padding: 0 10px; font-size: 13px; gap: 6px; }
 
 /* the finish moment: the phone slides in once */
-.fresh .pcol .device-frame { animation: phone-in .6s var(--ease) both; }
+.fresh .pcol .phone { animation: phone-in .6s var(--ease) both; }
 
 html.kb .acc, html.kb .stripwrap, html.kb .steps, html.kb .vr .chev, html.kb .tchip { transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
   .acc, .stripwrap, .steps { transition: none !important; }
   .helper .hb i { animation: none; width: 100%; opacity: .5; }
-  .fresh .pcol .device-frame { animation: fade .3s ease-out both !important; }
+  .fresh .pcol .phone { animation: fade .3s ease-out both !important; }
 }

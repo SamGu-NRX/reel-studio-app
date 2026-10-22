@@ -4,6 +4,7 @@ import type { Go } from '../nav'
 import { Confirm, Progress, Spinner, Thinking } from '../components/ui'
 import { Icon } from '../components/icons'
 import { PhonePlayer } from '../components/Player'
+import { Phone, usePhoneView } from '../components/Phone'
 import { useNotify } from '../App'
 import { ModelDownload } from '../components/connect'
 import { STEP_LABEL, stepNote, type Step } from '../../../shared/steps'
@@ -31,6 +32,7 @@ export function Working({ slug, go }: { slug: string; go: Go }) {
   const [live, setLive] = useState<LiveState>(EMPTY_LIVE)
   const [confirmStop, setConfirmStop] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [view] = usePhoneView()
 
   // The raw take's first frame, once it is copied in (the words I heard come as a `heard` event).
   const refresh = useRef<() => void>(() => {})
@@ -126,33 +128,31 @@ export function Working({ slug, go }: { slug: string; go: Go }) {
           {preview ? (
             <>
               {/* key: a new preview is a new video element (autoplays muted from the start) */}
-              <PhonePlayer key={preview.video} src={preview.video} autoPlayMuted testid="first-look-video" />
+              <PhonePlayer key={preview.video} src={preview.video} view={view} autoPlayMuted testid="first-look-video" />
               <p className="muted-sm center" data-testid="first-look" data-kind={preview.kind}>{PREVIEW_LABEL[preview.kind]}</p>
             </>
           ) : (
-            <div className={`phone${running ? ' working' : ''}`}>
-              {/* Paper until the take's first frame is decoded, then the frame fades in: never a black screen. */}
-              <div className={`phone-screen${frameShown ? '' : ' waiting'}`} data-testid="working-screen">
-                {source && (
-                  <video
-                    className={`still${mirrored ? ' mirrored' : ''}${frameShown ? ' shown' : ''}`}
-                    src={`${source}#t=0.5`}
-                    preload="auto"
-                    muted
-                    playsInline
-                    disablePictureInPicture
-                    onLoadedData={() => setFrameShown(true)}
-                    data-testid="working-frame"
-                  />
-                )}
-                {!source && running && (
-                  <div className="phone-empty" data-testid="working-spinner">
-                    <Spinner />
-                  </div>
-                )}
-                {running && <div className="phone-scan" aria-hidden />}
-              </div>
-            </div>
+            // Paper until the take's first frame is decoded, then the frame fades in: never a black screen.
+            <Phone view={frameShown ? view : 'clean'} className={`${running ? 'working' : ''}${frameShown ? '' : ' waiting'}`} testid="working-screen">
+              {source && (
+                <video
+                  className={`still${mirrored ? ' mirrored' : ''}${frameShown ? ' shown' : ''}`}
+                  src={`${source}#t=0.5`}
+                  preload="auto"
+                  muted
+                  playsInline
+                  disablePictureInPicture
+                  onLoadedData={() => setFrameShown(true)}
+                  data-testid="working-frame"
+                />
+              )}
+              {!source && running && (
+                <div className="phone-empty" data-testid="working-spinner">
+                  <Spinner />
+                </div>
+              )}
+              {running && <div className="phone-scan" aria-hidden />}
+            </Phone>
           )}
         </div>
 
