@@ -186,8 +186,8 @@ export const createMockAI: CreateAI = ({ host }) => {
 
       return {
         summary: track
-          ? 'Your video is ready. I cut out the pauses, added subtitles, music and a cover. Connect ChatGPT and I can also pick your best takes and add pictures.'
-          : 'Your video is ready. I cut out the pauses and added subtitles and a cover. Add a song for music, and connect ChatGPT so I can pick your best takes and add pictures.',
+          ? 'Your video is ready. I cut out the pauses, added subtitles, music and a cover. Connect an AI editor and I can also pick your best takes and add pictures.'
+          : 'Your video is ready. I cut out the pauses and added subtitles and a cover. Add a song for music, and connect an AI editor so I can pick your best takes and add pictures.',
         version,
         styleRulesAdded: [],
         changed
@@ -211,8 +211,8 @@ export const createMockAI: CreateAI = ({ host }) => {
       onEvent({ type: 'status', message: 'Done', pct: 100 })
       return {
         summary: added.length
-          ? 'I saved that to My style. Connect ChatGPT in Settings and I can change this video from your notes too.'
-          : 'I saved your note. Connect ChatGPT in Settings and I can change the video from notes like this one. You can also tweak it yourself under "Show me how".',
+          ? 'I saved that to My style. Connect an AI editor in Settings and I can change this video from your notes too.'
+          : 'I saved your note. Connect an AI editor in Settings and I can change the video from notes like this one. You can also tweak it yourself under "Show me how".',
         version: p.version ?? 0,
         styleRulesAdded: added,
         changed: []
@@ -225,7 +225,7 @@ export const createMockAI: CreateAI = ({ host }) => {
     },
 
     async writeScript(): Promise<ScriptResult> {
-      throw { code: 'NO_AI', userMessage: 'Connect ChatGPT or Claude in Settings and I can help you write a script.' }
+      throw { code: 'NO_AI', userMessage: 'Connect an AI editor in Settings and I can help you write a script.' }
     },
 
     async styleRules() {

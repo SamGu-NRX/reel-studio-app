@@ -161,7 +161,7 @@ describe('no AI connected', () => {
     const r = await ai.firstEdit(dir, () => undefined);
     // the face track is found beside the transcription (analyze --faces-only), then the rest in order
     expect(host.calls.map((c) => c.command + (c.args.includes('--faces-only') ? ':faces' : ''))).toEqual(['analyze:faces', 'transcribe', 'analyze', 'autocut', 'render']);
-    expect(r.summary).toMatch(/Connect ChatGPT/);
+    expect(r.summary).toMatch(/Connect an AI editor/);
     expect(r.summary).toMatch(/"a song"/);
     expect(r.summary).not.toMatch(/—/);
     expect((await loadProject(dir)).music.track).toBe('Library/Music/a song.mp3');

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { AIError, claudeCandidates, claudeFromLoginShell, createAI, detectLocalClaude, findClaude } from '../src';
 import type { Runner } from '../src/providers/localClaude';
@@ -29,6 +30,13 @@ function cli(o: { version?: { code: number; stdout: string } | Error; auth?: { c
 const signedIn = cli({});
 const signedOut = cli({ auth: { code: 1, stdout: authJson(false) } });
 const noProvider = () => ({ host: new FakeHost(tmpDir()), settingsDir: tmpDir() });
+/** A stand-in `claude` that answers one stream-json turn with `result`. */
+function fakeClaude(result: Record<string, unknown>): string {
+  const bin = path.join(tmpDir(), 'claude');
+  fs.writeFileSync(bin, `#!/bin/sh\ncat >/dev/null\necho '${JSON.stringify({ type: 'result', ...result })}'\n`, { mode: 0o755 });
+  return bin;
+}
+const answers = () => fakeClaude({ result: 'OK', is_error: false });
 
 describe('where the Claude Code app is looked for', () => {
   it('macOS: PATH, the native installer, Homebrew, npm-global, nvm (newest first), volta, bun', () => {
@@ -148,7 +156,7 @@ describe('what detection reports', () => {
   });
 
   it('never keeps the e-mail, the organization or anything that is not a plain plan word', async () => {
-    const r = await detectLocalClaude({ bin: '/x/claude', run: signedIn });
+    const r = await detectLocalClaude({ bin: answers(), run: signedIn });
     const s = JSON.stringify(r);
     for (const secret of [EMAIL, ORG_ID, ORG_NAME, 'firstParty', '@']) expect(s).not.toContain(secret);
     const odd = await detectLocalClaude({ bin: '/x/claude', run: cli({ auth: { code: 0, stdout: authJson(true, { subscriptionType: EMAIL, authMethod: 'a b c' }) } }) });
@@ -180,7 +188,7 @@ describe('the Claude Code choice in the provider list', () => {
   });
 
   it('dev mode adds codex-cli and replay with their dev labels', async () => {
-    const ai = createAI({ ...noProvider(), dev: true, localClaude: { bin: '/x/claude', run: signedIn } });
+    const ai = createAI({ ...noProvider(), dev: true, localClaude: { bin: answers(), run: signedIn } });
     const list = await ai.providers();
     expect(list.map((p) => p.id)).toEqual(['chatgpt', 'claude', 'claude-cli', 'codex-cli', 'replay', 'none']);
     expect(list.find((p) => p.id === 'codex-cli')!.label).toBe('Codex CLI (dev)');
@@ -189,7 +197,7 @@ describe('the Claude Code choice in the provider list', () => {
   });
 
   it('no e-mail or organization in any ProviderStatus (detail is the version at most)', async () => {
-    const ai = createAI({ ...noProvider(), localClaude: { bin: '/x/claude', run: signedIn } });
+    const ai = createAI({ ...noProvider(), localClaude: { bin: answers(), run: signedIn } });
     const st = (await ai.providers()).find((p) => p.id === 'claude-cli')!;
     expect(st.detail).toBe('2.1.304');
     await ai.setActive('claude-cli');
@@ -204,13 +212,22 @@ describe('the Claude Code choice in the provider list', () => {
     await expect(missing.setActive('claude-cli')).rejects.toMatchObject({ code: 'not_available' });
     const broken = createAI({ ...noProvider(), localClaude: { bin: '/x/claude', run: cli({ version: { code: 2, stdout: '' } }) } });
     await expect(broken.setActive('claude-cli')).rejects.toMatchObject({ code: 'not_available' });
-    const ready = createAI({ ...noProvider(), localClaude: { bin: '/x/claude', run: signedIn } });
+    const ready = createAI({ ...noProvider(), localClaude: { bin: answers(), run: signedIn } });
     await ready.setActive('claude-cli');
     expect(await ready.active()).toMatchObject({ id: 'claude-cli', connected: true, label: 'Claude (your Claude Code app)' });
   });
 
+  it('fails if Claude Code is saved as the AI editor when its test call does not answer', async () => {
+    const dir = tmpDir();
+    const limited = fakeClaude({ is_error: true, result: 'Claude usage limit reached' });
+    const ai = createAI({ host: new FakeHost(tmpDir()), settingsDir: dir, localClaude: { bin: limited, run: signedIn } });
+    await expect(ai.setActive('claude-cli')).rejects.toMatchObject({ code: 'cli_limited' });
+    expect((await ai.active()).id).toBe('none');
+    expect(fs.existsSync(path.join(dir, 'ai-settings.json'))).toBe(false);
+  });
+
   it('never picks claude-cli on its own, even when it is the only thing ready', async () => {
-    const ai = createAI({ ...noProvider(), localClaude: { bin: '/x/claude', run: signedIn } });
+    const ai = createAI({ ...noProvider(), localClaude: { bin: answers(), run: signedIn } });
     expect((await ai.providers()).find((p) => p.id === 'claude-cli')!.connected).toBe(true);
     expect((await ai.active()).id).toBe('none');
   });
@@ -218,9 +235,9 @@ describe('the Claude Code choice in the provider list', () => {
   it('a saved choice of claude-cli keeps working, and falls back to No AI when the app signs out', async () => {
     const dir = tmpDir();
     const host = new FakeHost(tmpDir());
-    await createAI({ host, settingsDir: dir, localClaude: { bin: '/x/claude', run: signedIn } }).setActive('claude-cli');
+    await createAI({ host, settingsDir: dir, localClaude: { bin: answers(), run: signedIn } }).setActive('claude-cli');
     // a later start (new process) with the same settings: still Claude through the person's Claude Code app
-    expect((await createAI({ host, settingsDir: dir, localClaude: { bin: '/x/claude', run: signedIn } }).active()).id).toBe('claude-cli');
+    expect((await createAI({ host, settingsDir: dir, localClaude: { bin: answers(), run: signedIn } }).active()).id).toBe('claude-cli');
     expect((await createAI({ host, settingsDir: dir, localClaude: { bin: '/x/claude', run: signedOut } }).active()).id).toBe('none');
   });
 
