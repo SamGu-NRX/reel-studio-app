@@ -41,3 +41,26 @@ export function useFollowPlayhead(p: Playhead, write: (seconds: number) => void)
     return p.subscribe(() => write(p.get()))
   }, [p, write])
 }
+
+/**
+ * Moves the playhead with a playing video, once per frame the video presents. An animation-frame loop would set
+ * it on every display refresh (120 a second on a 120 Hz screen) for a 30 fps video, and every follower would
+ * restyle and repaint each time. `get` is read on every frame, so a video swapped for another is followed.
+ * Returns a stop function.
+ */
+export function followVideo(get: () => HTMLVideoElement | null, p: Playhead): () => void {
+  let stopped = false
+  let raf = 0
+  const frame = (): void => {
+    if (stopped) return
+    const v = get()
+    if (v) p.set(v.currentTime)
+    if (v && 'requestVideoFrameCallback' in v) v.requestVideoFrameCallback(frame)
+    else raf = requestAnimationFrame(frame)
+  }
+  frame()
+  return () => {
+    stopped = true
+    cancelAnimationFrame(raf)
+  }
+}

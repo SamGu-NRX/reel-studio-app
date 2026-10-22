@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { clock } from '../../../shared/progress'
 import { Icon } from './icons'
-import { useFollowPlayhead, type Playhead } from './playhead'
+import { followVideo, useFollowPlayhead, type Playhead } from './playhead'
 import { byKeyboard } from './motion'
 import './zoom.css'
 
@@ -132,14 +132,7 @@ export function ZoomView({
 
   useEffect(() => {
     if (!playing) return
-    let frame = 0
-    const tick = () => {
-      const v = a.current
-      if (v) playhead.set(v.currentTime)
-      frame = requestAnimationFrame(tick)
-    }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
+    return followVideo(() => a.current, playhead)
   }, [playing, playhead])
   const follow = useCallback(
     (s: number) => {

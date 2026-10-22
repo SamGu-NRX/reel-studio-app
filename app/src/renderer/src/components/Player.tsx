@@ -6,7 +6,7 @@ import { Icon } from './icons'
 import { reel } from '../api'
 import { FOLDER_APP } from './ui'
 import { FullScreenReel } from './FullScreenReel'
-import { createPlayhead, useFollowPlayhead, type Playhead } from './playhead'
+import { createPlayhead, followVideo, useFollowPlayhead, type Playhead } from './playhead'
 import { NO_LAYERS, layersReducer, type Layer } from './videoLayers'
 
 /**
@@ -158,26 +158,69 @@ function frameReady(v: HTMLVideoElement, poster: string | null): Promise<void> {
     else requestAnimationFrame(() => done())
   })
   if (!poster) return frame
-  const cover = new Image()
-  cover.src = poster
-  return Promise.all([frame, cover.decode().catch(() => {})]).then(() => {})
+  return Promise.all([frame, decodedCover(poster)]).then(() => {})
+}
+
+/**
+ * Each cover is decoded once. A full-size cover is about 8 MiB of pixels, and a new Image().decode() per version
+ * switch kept about 2 MiB more each time (notes/perf/player-audit.md finding 2). The images stay referenced so
+ * their decoded pixels can be reused; the oldest is dropped past COVERS_KEPT.
+ */
+const covers = new Map<string, { img: HTMLImageElement; ready: Promise<void> }>()
+const COVERS_KEPT = 8
+function decodedCover(url: string): Promise<void> {
+  const hit = covers.get(url)
+  if (hit) {
+    covers.delete(url)
+    covers.set(url, hit)
+    return hit.ready
+  }
+  const img = new Image()
+  img.src = url
+  const ready = img.decode().catch(() => {})
+  covers.set(url, { img, ready })
+  if (covers.size > COVERS_KEPT) covers.delete(covers.keys().next().value!)
+  return ready
 }
 
 // Matches the opacity transition on .phone-screen > video.layer.
 const FADE_MS = 140
 
-/** Follows the playhead every frame by writing to its own input, so playing the video renders nothing. */
+/**
+ * Follows the playhead by writing to its own input, so playing the video renders nothing. A write restyles,
+ * lays out and repaints the bar, so it happens only when the thumb would move at least one device pixel.
+ */
 function ScrubRange({ playhead, dur, onSeek }: { playhead: Playhead; dur: number; onSeek: (seconds: number) => void }) {
   const input = useRef<HTMLInputElement>(null)
+  const width = useRef(0)
+  const lastPx = useRef<number | null>(null)
   const write = useCallback(
     (t: number) => {
       const el = input.current
       if (!el) return
+      const frac = dur ? Math.min(1, Math.max(0, t / dur)) : 0
+      const px = Math.round(frac * width.current * window.devicePixelRatio)
+      if (px === lastPx.current) return
+      lastPx.current = px
       el.value = String(Math.min(t, dur || 1))
-      el.style.setProperty('--pct', `${dur ? (t / dur) * 100 : 0}%`)
+      el.style.setProperty('--pct', `${frac * 100}%`)
     },
     [dur]
   )
+  // a new length or a new width moves every pixel: the next write always lands
+  useLayoutEffect(() => {
+    lastPx.current = null
+    const el = input.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      width.current = el.clientWidth
+      lastPx.current = null
+      write(playhead.get())
+    })
+    ro.observe(el)
+    width.current = el.clientWidth
+    return () => ro.disconnect()
+  }, [write, playhead])
   useFollowPlayhead(playhead, write)
   return (
     <input
@@ -418,17 +461,11 @@ export function PhonePlayer({
     void video.current.play().catch(() => {})
   }, [autoPlayMuted, shownId])
 
-  // While playing, move the playhead every frame (timeupdate fires only about four times a second).
+  // While playing, move the playhead with each presented video frame (timeupdate fires only about four times a second).
   useEffect(() => {
     const v = video.current
     if (!playing || !v) return
-    let frame = 0
-    const tick = () => {
-      ph.set(v.currentTime)
-      frame = requestAnimationFrame(tick)
-    }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
+    return followVideo(() => v, ph)
   }, [playing, shownId, ph])
 
   useEffect(() => {
