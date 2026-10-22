@@ -6,7 +6,7 @@ import { performance } from 'node:perf_hooks'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { JobEvent } from '../src/shared/api'
-import { EMPTY_LIVE, PREVIEW_LABEL, liveFromDetail, reduceLive, timeLeftWords, type LiveState } from '../src/shared/live'
+import { EMPTY_LIVE, PREVIEW_LABEL, STILL_WORKING, liveFromDetail, reduceLive, timeLeftWords, type LiveState } from '../src/shared/live'
 import { createLiveVideos, LIVE_DIR } from '../src/main/live-video'
 import { createJobManager } from '../src/main/jobs'
 import { pathFromMediaUrl } from '../src/main/media-url'
@@ -140,35 +140,36 @@ describe('job manager (main): the contract on the wire', () => {
     expect(existsSync(projectDir(slug))).toBe(true)
   })
 
-  it('fails if reopening an overrunning job discards the displayed estimate', async () => {
+  it('fails if a reopened screen and the open one disagree, or an overrun keeps an old estimate', async () => {
     setupPaths()
     const slug = 'eta-reopen'
     mkdirSync(projectDir(slug), { recursive: true })
     let now = 0
     const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
     const wall = vi.spyOn(Date, 'now').mockImplementation(() => now)
-    const jobs = createJobManager(() => undefined, () => undefined, {
+    let open = EMPTY_LIVE
+    const jobs = createJobManager((e) => { open = reduceLive(open, e) }, () => undefined, {
       loadHistory: async () => ({ v: 1, phases: {} }), saveHistory: async () => undefined,
       mediaSeconds: async () => 60
     })
-    let shown: string | null = null
-    let reopened: string | null = null
+    const seen: { open: string | null; reopened: string | null }[] = []
     jobs.start(slug, 'rerender', async (emit) => {
       const status = () => emit({ type: 'status', message: 'Updating your video', phase: 'final', pct: 0 })
+      const look = () => seen.push({ open: timeLeftWords(open), reopened: timeLeftWords(liveFromDetail(jobs.forSlug(slug)!)) })
       status()
       await Promise.resolve()
       status()
-      const running = jobs.forSlug(slug)!
-      shown = timeLeftWords(liveFromDetail(running))
+      look()
       now = 120_000
       status()
-      reopened = timeLeftWords(liveFromDetail(running))
+      look()
       return { summary: 'ok', quiet: true }
     })
     try {
       await jobs.forSlug(slug)!.done
-      expect(shown).not.toBeNull()
-      expect(reopened).toBe(shown)
+      expect(seen[0].open).toMatch(/left/)
+      for (const s of seen) expect(s.reopened).toBe(s.open)
+      expect(seen[1].open).toBe(STILL_WORKING)
     } finally {
       clock.mockRestore()
       wall.mockRestore()

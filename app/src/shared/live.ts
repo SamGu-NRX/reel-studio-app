@@ -63,7 +63,7 @@ export function reduceLive(s: LiveState, e: JobEvent): LiveState {
         ...base,
         message: e.message || base.message,
         overall: Math.max(base.overall, e.overall),
-        secondsLeft: e.secondsLeft ?? base.secondsLeft,
+        secondsLeft: e.secondsLeft,
         overdue: e.overdue,
         thinking: e.thinking
       }

@@ -161,7 +161,7 @@ export class ProgressTracker {
       if (aiElapsed > aiBudget) return { ...out, etaSec: null, overdue: true }
       return { ...out, etaSec: displayRemaining, overdue: false }
     }
-    if (elapsed > current) return { ...out, etaSec: null, overdue: !approximate && remaining < 30 }
+    if (elapsed > current) return { ...out, etaSec: null, overdue: true }
     if (approximate && !observed && this.kind !== 'note' && this.kind !== 'rerender') return { ...out, etaSec: null, overdue: false }
     return { ...out, etaSec: Math.max(1, remaining), overdue: false }
   }

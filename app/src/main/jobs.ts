@@ -126,8 +126,7 @@ export function createJobManager(
       // later: wait for duration before showing a number. Waiting for another reel's render: no
       // estimate covers that wait, so say none.
       const secondsLeft = job.waitingForRender || (slug && progress && !mediaSec) ? null : snap.etaSec
-      // Project-detail hydration must retain the same estimate as an already-open screen.
-      if (secondsLeft !== null || job.waitingForRender) job.secondsLeft = secondsLeft
+      job.secondsLeft = secondsLeft
       job.overdue = !job.waitingForRender && snap.overdue
       send({ jobId: id, slug, type: 'status', message: shown(job), pct: job.pct, ...(phase ? { phase } : {}), overall: snap.overall, secondsLeft: job.secondsLeft, overdue: job.overdue, thinking: job.thinking, ...(job.steps ? { steps: job.steps } : {}) })
     }
