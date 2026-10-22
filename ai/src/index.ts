@@ -19,9 +19,11 @@ import { CONNECTION_KINDS, ConnectionKind, listConnectionModels, noRedirectFetch
 import { OpenAICompatibleProvider } from './providers/openaiCompatible';
 import { detectLocalClaude, DetectOptions, LocalClaude } from './providers/localClaude';
 import * as editor from './editor';
+import { refuseIfOpen } from './owner';
 
 export * from './types';
 export * from './project';
+export { refuseIfOpen, OWNER_LOCK } from './owner';
 export { TOOLS, TOOL_NAMES, toolSchemas, executeTool, newToolState } from './tools';
 export type { ToolContext, ToolDef } from './tools';
 export { runAgent } from './agent';
@@ -133,13 +135,17 @@ export function createAI(opts: CreateAIOptions) {
   const prompts = new Prompts(opts.promptsDir ?? defaultPromptsDir());
   const style = new StyleStore(() => opts.host.reelStudioRoot());
   const siwc = new SiwcAuth({ settingsDir: opts.settingsDir, secretStore: opts.secretStore, fetch: opts.fetch, issuer: opts.siwcIssuer, allowPlaintextSecrets: opts.allowPlaintextSecrets });
-  // One edit at a time per project (the app may double-click; the CLI may race).
+  // One edit at a time per project (the app may double-click; the CLI may race). `owner`: the token of
+  // the app job that has the project (owner.ts); without one (the dev CLI) the edit refuses while
+  // the app has the project open.
   const locks = new Map<string, Promise<unknown>>();
-  function exclusive<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+  function exclusive<T>(dir: string, owner: string | undefined, fn: () => Promise<T>): Promise<T> {
     const key = path.resolve(dir).toLowerCase();
     const prev = locks.get(key) ?? Promise.resolve();
-    // in-process queue, plus a lock FILE so the dev CLI and the app cannot edit one project at once
-    const run = prev.catch(() => undefined).then(() => withEditLock(dir, fn));
+    const run = prev.catch(() => undefined).then(() => {
+      if (!owner) refuseIfOpen(dir);
+      return fn();
+    });
     // The lock's copy of the run must never reject on its own: the caller gets `run` and handles
     // its error; an unobserved rejected `finally` copy is an unhandled rejection in Node.
     const tail: Promise<unknown> = run.finally(() => { if (locks.get(key) === tail) locks.delete(key); })
@@ -147,7 +153,7 @@ export function createAI(opts: CreateAIOptions) {
     locks.set(key, tail);
     return run;
   }
-  const deps = (): editor.EditorDeps => ({ host: opts.host, prompts, style, fetchImpl: opts.fetch, finalRender: opts.finalRender, maxSteps: opts.maxSteps, tokenBudget: opts.tokenBudget, lookup: opts.lookup });
+  const deps = (owner?: string): editor.EditorDeps => ({ host: owner ? ownedHost(opts.host, owner) : opts.host, owner, prompts, style, fetchImpl: opts.fetch, finalRender: opts.finalRender, maxSteps: opts.maxSteps, tokenBudget: opts.tokenBudget, lookup: opts.lookup });
 
   async function settings(): Promise<AISettings> {
     try { return JSON.parse(await fsp.readFile(settingsFile, 'utf8')); } catch { return {}; }
@@ -484,11 +490,11 @@ export function createAI(opts: CreateAIOptions) {
       const r = await p.complete({ system: 'Reply with exactly the word OK.', messages: [{ role: 'user', content: [{ type: 'text', text: 'Say OK.' }] }], tools: [], jsonOnly: true, signal });
       return { provider: p.id, model: p.model, reply: r.text.trim() };
     },
-    async firstEdit(projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<AgentResult & { notice?: any }> {
-      return exclusive(projectDir, async () => editor.firstEdit(deps(), await modelProvider(), projectDir, onEvent, signal));
+    async firstEdit(projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: { owner?: string } = {}): Promise<AgentResult & { notice?: any }> {
+      return exclusive(projectDir, opts.owner, async () => editor.firstEdit(deps(opts.owner), await modelProvider(), projectDir, onEvent, signal));
     },
-    async applyNote(projectDir: string, note: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts?: editor.ApplyNoteOptions): Promise<AgentResult> {
-      return exclusive(projectDir, async () => editor.applyNote(deps(), await modelProvider(), projectDir, note, onEvent, signal, opts));
+    async applyNote(projectDir: string, note: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: editor.ApplyNoteOptions & { owner?: string } = {}): Promise<AgentResult> {
+      return exclusive(projectDir, opts.owner, async () => editor.applyNote(deps(opts.owner), await modelProvider(), projectDir, note, onEvent, signal, opts));
     },
     /** True when applyNote would take the no-model fast path for these words ("smaller captions"):
      * a setting for the whole reel. The app asks before adding a moment, which would hide it. */
@@ -507,35 +513,14 @@ export function createAI(opts: CreateAIOptions) {
 
 export type ReelStudioAI = ReturnType<typeof createAI>;
 
-const LOCK_STALE_MS = 3 * 60 * 60 * 1000;
-
-function alive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch (e: any) { return e?.code === 'EPERM'; }
+/** Every engine command an app job's edit runs carries the job's token (engine/reelengine/owner.py). */
+function ownedHost(host: EngineHost, owner: string): EngineHost {
+  return {
+    runEngine: (command, args, onProgress, signal) => host.runEngine(command, [...args, '--owner', owner], onProgress, signal),
+    renderAnimation: (template, params, outPath) => host.renderAnimation(template, params, outPath),
+    reelStudioRoot: () => host.reelStudioRoot(),
+    ...(host.captureWebsite ? { captureWebsite: host.captureWebsite.bind(host) } : {}),
+  };
 }
 
-/** <project>/work/.ai-edit.lock holds {pid, at}. Another LIVE process holding it = AIError busy; a
- * dead or 3-hour-old holder is taken over. */
-export async function withEditLock<T>(dir: string, fn: () => Promise<T>): Promise<T> {
-  const lock = path.join(dir, 'work', '.ai-edit.lock');
-  await fsp.mkdir(path.dirname(lock), { recursive: true });
-  for (let attempt = 0; ; attempt++) {
-    try {
-      const fh = await fsp.open(lock, 'wx');
-      await fh.writeFile(JSON.stringify({ pid: process.pid, at: Date.now() }));
-      await fh.close();
-      break;
-    } catch (e: any) {
-      if (e?.code !== 'EEXIST' || attempt > 0) {
-        if (e?.code === 'EEXIST') throw new AIError('busy', 'This video is being edited somewhere else right now. Try again when that finishes.');
-        throw e;
-      }
-      let held: { pid?: number; at?: number } = {};
-      try { held = JSON.parse(await fsp.readFile(lock, 'utf8')); } catch { /* unreadable = stale */ }
-      const live = held.pid && held.pid !== process.pid && alive(held.pid) && Date.now() - (held.at ?? 0) < LOCK_STALE_MS;
-      if (live) throw new AIError('busy', 'This video is being edited somewhere else right now. Try again when that finishes.');
-      await fsp.rm(lock, { force: true });
-    }
-  }
-  try { return await fn(); } finally { await fsp.rm(lock, { force: true }).catch(() => undefined); }
-}
 export { PythonEngineHost, defaultRoot } from './engineHost';

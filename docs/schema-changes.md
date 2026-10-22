@@ -32,3 +32,13 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
   engine renders that exact frame and does no search around it. The app clears it when the slider moves,
   and the AI's `set_cover` clears it. `cover.exact` (the AI looked at this frame; search 0.2 s around it)
   is unchanged.
+
+## 2026-10-21 (all-or-nothing notes)
+
+- `notes[].id` (string): the app's job id for the note. `notes[].reply` (string): what the editor told the
+  user. `notes[].styleRulesAdded`, `notes[].styleSuggestions` (string arrays, only when non-empty): My style
+  rules the note asked to remember or the AI proposed. They are saved with the note so that, if the app
+  closes right after a note is saved, the next start posts the reply and asks about the rules once
+  (`app/src/main/store.ts` `recoverInterrupted`).
+- `version` is also what makes a `versions/vN` folder count: a folder above it is a note that was never
+  saved (docs/versions.md).
