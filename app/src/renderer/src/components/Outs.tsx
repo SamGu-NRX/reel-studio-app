@@ -6,7 +6,8 @@ import { BrandMark } from './brand'
 import { FOLDER_APP } from './ui'
 import { usePresence } from './motion'
 
-type Saving = { drive: CloudDrive; state: 'saving' } | { drive: CloudDrive; state: 'saved'; path: string } | { drive: CloudDrive; state: 'error'; message: string }
+type Saving =
+  { drive: CloudDrive; state: 'saving' } | { drive: CloudDrive; state: 'saved'; path: string } | { drive: CloudDrive; state: 'error'; message: string }
 
 /**
  * Every way out of the app in one place: Export, then Send to my phone, with iCloud Drive and Google Drive
@@ -40,7 +41,8 @@ export function Outs({
       live = false
     }
   }, [])
-  const label2 = (d: CloudDrive) => (drives.filter((x) => x.label === d.label).length > 1 ? `${d.label} · ${d.folder.match(/GoogleDrive-([^/\\]+)/)?.[1] ?? ''}` : d.label)
+  const label2 = (d: CloudDrive) =>
+    drives.filter((x) => x.label === d.label).length > 1 ? `${d.label} · ${d.folder.match(/GoogleDrive-([^/\\]+)/)?.[1] ?? ''}` : d.label
   const save = async (d: CloudDrive) => {
     setSaving({ drive: d, state: 'saving' })
     try {
@@ -93,7 +95,12 @@ function SaveHelper({ saving, name, onClose }: { saving: Saving | null; name: st
   if (!mounted || !s) return null
   const mark = s.drive.label === 'iCloud Drive' ? 'icloud' : 'gdrive'
   return (
-    <div className={`pop helper${leaving ? ' leave' : ''}`} role="status" style={{ left: 0, right: 0, bottom: 'calc(100% + 8px)', ['--o' as string]: 'bottom right' }} data-testid="cloud-helper">
+    <div
+      className={`pop helper${leaving ? ' leave' : ''}`}
+      role="status"
+      style={{ left: 0, right: 0, bottom: 'calc(100% + 8px)', ['--o' as string]: 'bottom right' }}
+      data-testid="cloud-helper"
+    >
       <div className="hh">
         <span className="ic">
           <BrandMark name={mark} size={16} />
@@ -108,9 +115,7 @@ function SaveHelper({ saving, name, onClose }: { saving: Saving | null; name: st
           {s.state === 'saved' && (
             <>
               <b>Saved</b>
-              <span>
-                In {name} › Reel Studio
-              </span>
+              <span>In {name} › Reel Studio</span>
             </>
           )}
           {s.state === 'error' && (

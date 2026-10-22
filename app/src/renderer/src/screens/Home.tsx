@@ -87,8 +87,12 @@ export function Home({ go }: { go: Go }) {
     const top =
       now_.length && needs.length && now_.length + needs.length <= 5 ? (
         <div className="grid top">
-          <h2 className="sec-h" style={{ gridColumn: `1 / span ${now_.length}` }}>Making now</h2>
-          <h2 className="sec-h" style={{ gridColumn: `${now_.length + 1} / span ${needs.length}` }}>Needs you</h2>
+          <h2 className="sec-h" style={{ gridColumn: `1 / span ${now_.length}` }}>
+            Making now
+          </h2>
+          <h2 className="sec-h" style={{ gridColumn: `${now_.length + 1} / span ${needs.length}` }}>
+            Needs you
+          </h2>
           {now_.map(card)}
           {needs.map(card)}
         </div>
@@ -169,10 +173,23 @@ function Card({ p, live, now, onOpen }: { p: ProjectSummary; live?: Live; now: D
   const first = busy && p.version === 0
   const waiting = p.waiting > 0 ? ` · ${p.waiting} ${p.waiting === 1 ? 'note' : 'notes'} waiting` : ''
   let meta: React.ReactNode
-  if (busy) meta = <>{first ? 'Making' : `Making Version ${p.version + 1}`}{live?.left ? ` · ${live.left}` : ''}{waiting}</>
+  if (busy)
+    meta = (
+      <>
+        {first ? 'Making' : `Making Version ${p.version + 1}`}
+        {live?.left ? ` · ${live.left}` : ''}
+        {waiting}
+      </>
+    )
   else if (p.status === 'interrupted') meta = <span className="amber">Paused · Resume</span>
   else if (p.status === 'failed') meta = <span className="red">Didn't finish · Try again</span>
-  else meta = <>{`Version ${p.version} · ${dayLabel(p.updatedAt, now)}`}{waiting}</>
+  else
+    meta = (
+      <>
+        {`Version ${p.version} · ${dayLabel(p.updatedAt, now)}`}
+        {waiting}
+      </>
+    )
   const state = busy ? 'making' : p.status === 'ready' ? 'ready' : p.status === 'interrupted' ? 'paused' : 'failed'
   return (
     <button className={`hcard st-${state}`} onClick={onOpen} title={p.title} data-testid="project-card">

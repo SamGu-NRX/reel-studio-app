@@ -342,7 +342,7 @@ export function PhonePlayer({
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       // defaultPrevented: the player's own keys already took it
-      if (e.code !== 'Space' || e.defaultPrevented || typing(e.target) || document.querySelector('.modal-backdrop')) return
+      if (e.code !== 'Space' || e.defaultPrevented || typing(e.target) || document.querySelector('.modal-backdrop, .zoom')) return
       e.preventDefault()
       toggle()
     }

@@ -66,7 +66,15 @@ export function TitleBar({ rail, onToggle }: { rail: boolean; onToggle: () => vo
   const label = rail ? 'Show the sidebar' : 'Collapse the sidebar'
   return (
     <div className="titlebar">
-      <button className="sbt" onClick={onToggle} aria-label={label} title={`${label} (${MOD}\\)`} aria-expanded={!rail} aria-controls="sidebar" data-testid="sidebar-toggle">
+      <button
+        className="sbt"
+        onClick={onToggle}
+        aria-label={label}
+        title={`${label} (${MOD}\\)`}
+        aria-expanded={!rail}
+        aria-controls="sidebar"
+        data-testid="sidebar-toggle"
+      >
         <Icon name="sidebar" size={16} stroke={1.75} />
       </button>
       <div className="wordmark" aria-hidden>
@@ -80,7 +88,19 @@ export function TitleBar({ rail, onToggle }: { rail: boolean; onToggle: () => vo
   )
 }
 
-export function Sidebar({ section, go, provider, userName, shown }: { section: string; go: Go; provider: ProviderInfo | null; userName: string | null; shown: Screen }) {
+export function Sidebar({
+  section,
+  go,
+  provider,
+  userName,
+  shown
+}: {
+  section: string
+  go: Go
+  provider: ProviderInfo | null
+  userName: string | null
+  shown: Screen
+}) {
   const [menu, setMenu] = useState(false)
   const acct = useRef<HTMLButtonElement>(null)
   const name = providerName(provider)
@@ -90,7 +110,14 @@ export function Sidebar({ section, go, provider, userName, shown }: { section: s
     run()
   }
   const who = userName?.trim() || 'You'
-  const mark = !provider || !name ? null : provider.id === 'claude-cli' || provider.id === 'claude' ? 'claude' : provider.id === 'chatgpt' || provider.id === 'codex-cli' ? 'openai' : null
+  const mark =
+    !provider || !name
+      ? null
+      : provider.id === 'claude-cli' || provider.id === 'claude'
+        ? 'claude'
+        : provider.id === 'chatgpt' || provider.id === 'codex-cli'
+          ? 'openai'
+          : null
 
   return (
     <aside className="side" id="sidebar" aria-label="Sidebar">
@@ -135,8 +162,27 @@ export function Sidebar({ section, go, provider, userName, shown }: { section: s
             <Icon name="updown" size={14} />
           </span>
         </button>
-        <PopMenu open={menu} onClose={close} anchor={acct} label="Account" style={{ left: 12, bottom: 64, width: 252 }} origin="bottom left" testid="account-menu">
-          <button className="mi" role="menuitem" onClick={pick(() => go(name ? { name: 'settings', section: 'ai' } : { name: 'connect', back: shown.name === 'connect' ? undefined : (shown as Exclude<Screen, { name: 'connect' }>) }))} data-testid="sidebar-connect">
+        <PopMenu
+          open={menu}
+          onClose={close}
+          anchor={acct}
+          label="Account"
+          style={{ left: 12, bottom: 64, width: 252 }}
+          origin="bottom left"
+          testid="account-menu"
+        >
+          <button
+            className="mi"
+            role="menuitem"
+            onClick={pick(() =>
+              go(
+                name
+                  ? { name: 'settings', section: 'ai' }
+                  : { name: 'connect', back: shown.name === 'connect' ? undefined : (shown as Exclude<Screen, { name: 'connect' }>) }
+              )
+            )}
+            data-testid="sidebar-connect"
+          >
             {mark ? <BrandMark name={mark} size={14} /> : <Icon name="sparkles" size={16} />}
             AI editor
             <span className="r">{name ?? 'Connect one'}</span>

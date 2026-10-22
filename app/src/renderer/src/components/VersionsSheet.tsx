@@ -103,7 +103,14 @@ export function VersionPicker({
       </button>
       <span className="sr-only" aria-live="polite">{`Showing Version ${shown}${older ? ', an older version' : ''}`}</span>
       {mounted && (
-        <div ref={sheet} className={`pop vsheet${leaving ? ' leave' : ''}`} role="dialog" aria-label="Versions" inert={leaving || undefined} data-testid="version-menu">
+        <div
+          ref={sheet}
+          className={`pop vsheet${leaving ? ' leave' : ''}`}
+          role="dialog"
+          aria-label="Versions"
+          inert={leaving || undefined}
+          data-testid="version-menu"
+        >
           <div className="vs-h">
             <b>Versions</b>
             <span className="muted-sm">{versions.length}</span>
@@ -142,7 +149,11 @@ export function VersionPicker({
                         <VersionRows rows={rows.rows.get(v.n)} />
                         <div className="dacts">
                           {v.n > versions[0].n && (
-                            <button className="btn small" onClick={() => close(() => onCompare(v.n, versions[versions.findIndex((x) => x.n === v.n) - 1].n))} data-testid={`compare-${v.n}`}>
+                            <button
+                              className="btn small"
+                              onClick={() => close(() => onCompare(v.n, versions[versions.findIndex((x) => x.n === v.n) - 1].n))}
+                              data-testid={`compare-${v.n}`}
+                            >
                               <Icon name="compare" size={14} /> Compare with Version {versions[versions.findIndex((x) => x.n === v.n) - 1].n}
                             </button>
                           )}

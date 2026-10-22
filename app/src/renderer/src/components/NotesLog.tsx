@@ -36,7 +36,9 @@ export function VersionRows({ rows, asked }: { rows: VersionRow[] | null | undef
             {r.before && (
               <>
                 <s>{r.before}</s>
-                <span className="arr" aria-label="changed to">→</span>
+                <span className="arr" aria-label="changed to">
+                  →
+                </span>
               </>
             )}
             <b>{r.after}</b>
@@ -135,7 +137,9 @@ export function NotesLog({
               <button className="v" onClick={() => onPlay(r.v)} aria-label={`Play Version ${r.v}`} data-testid={`log-play-${r.v}`}>
                 Version {r.v}
               </button>
-              <span className="t" title={r.text}>{r.text}</span>
+              <span className="t" title={r.text}>
+                {r.text}
+              </span>
               <button className="lk" aria-expanded={on} onClick={() => toggle(r.v)} data-testid={`what-changed-${r.v}`}>
                 What changed
               </button>
@@ -243,7 +247,19 @@ export function NotesLog({
   )
 }
 
-function Reply({ text, actions, id, busy, onAction }: { text: string; actions: ChatAction[]; id: string; busy: boolean; onAction: (a: ChatAction, id: string) => void }) {
+function Reply({
+  text,
+  actions,
+  id,
+  busy,
+  onAction
+}: {
+  text: string
+  actions: ChatAction[]
+  id: string
+  busy: boolean
+  onAction: (a: ChatAction, id: string) => void
+}) {
   const shown = actions.filter((a) => a !== 'connect')
   return (
     <div className="nt-res quiet reply" data-testid="bubble-editor">
@@ -265,7 +281,23 @@ function Reply({ text, actions, id, busy, onAction }: { text: string; actions: C
 }
 
 /** A note waiting its turn: its words can change, it can go, and with others waiting it can move (grip, or arrow keys on it). */
-function QueuedRow({ slug, q, i, count, held, on, onError }: { slug: string; q: QueuedNote; i: number; count: number; held: boolean; on: number; onError: (m: string) => void }) {
+function QueuedRow({
+  slug,
+  q,
+  i,
+  count,
+  held,
+  on,
+  onError
+}: {
+  slug: string
+  q: QueuedNote
+  i: number
+  count: number
+  held: boolean
+  on: number
+  onError: (m: string) => void
+}) {
   const [draft, setDraft] = useState<string | null>(null)
   const [over, setOver] = useState(false)
   const act = (p: Promise<unknown>) => void p.catch((e) => onError(userMessage(e)))

@@ -108,7 +108,11 @@ export function Composer({
                 </span>
                 <span className="spin light" aria-hidden />
                 <b>{making ? `Making Version ${making}` : job.message}</b>
-                {left && <span className="m" data-testid="note-time-left">· {left}</span>}
+                {left && (
+                  <span className="m" data-testid="note-time-left">
+                    · {left}
+                  </span>
+                )}
                 <span className="sp" />
                 <button className="sbtn" aria-expanded={stepsOpen} onClick={() => setStepsOpen((o) => !o)} data-testid="steps">
                   Steps <Icon name={stepsOpen ? 'chevron-down' : 'up'} size={12} stroke={2} />
@@ -141,7 +145,14 @@ export function Composer({
         </p>
       )}
       <div className="cin">
-        <button className="att" onClick={att.choose} disabled={checking} aria-label="Attach a picture or a clip" title="Attach a picture or a clip" data-testid="note-attach">
+        <button
+          className="att"
+          onClick={att.choose}
+          disabled={checking}
+          aria-label="Attach a picture or a clip"
+          title="Attach a picture or a clip"
+          data-testid="note-attach"
+        >
           <Icon name="paperclip" size={17} />
         </button>
         <div className="cfield">
