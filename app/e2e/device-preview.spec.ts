@@ -93,18 +93,18 @@ test('see it on: phone shapes, Instagram view on each, remembered', async () => 
     await expect(page.getByTestId('device-layer')).toHaveCount(0)
 
     // The phone column fits the window: Send to my phone in view, and nothing in the column makes the page scroll.
+    const pad = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.reel-page')!).paddingBottom))
     for (const [width, height] of [[1280, 820], [1024, 700]]) {
       await page.setViewportSize({ width, height })
       for (const id of ['any', ...DEVICES.map((d) => d.id)]) {
         await page.getByTestId('device-pick').selectOption(id)
         const send = (await page.getByTestId('send-to-phone-reel').boundingBox())!
-        expect(send.y + send.height, `${width}x${height} ${id}`).toBeLessThanOrEqual(height - 24) // the page's bottom padding
+        expect(send.y + send.height, `${width}x${height} ${id}`).toBeLessThanOrEqual(height - pad) // above the page's bottom padding
       }
     }
     await page.setViewportSize({ width: 1280, height: 820 })
     await page.getByTestId('device-pick').selectOption('any')
-    // With the right column short enough too (the "No AI editor yet" banner put away), the page does not scroll.
-    await page.getByTestId('banner-close').click()
+    // The page itself never scrolls: the notes column scrolls inside its own box.
     expect(await page.evaluate(() => { const m = document.querySelector('.main')!; return m.scrollHeight - m.clientHeight })).toBe(0)
 
     // Big subtitles: the preview breaks lines only between words, as the export does.

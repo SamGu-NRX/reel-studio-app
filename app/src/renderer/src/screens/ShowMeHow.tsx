@@ -746,7 +746,9 @@ export function ShowMeHow({
               <p className="muted-sm">The text under your post on Instagram. It is not in the video.</p>
               <textarea
                 className="textarea"
+                aria-label="Post caption"
                 value={p.post?.caption ?? ''}
+                data-testid="post-input"
                 onChange={(e) => set('post', { ...(p.post ?? { hashtags: [], keywords: [] }), caption: e.target.value } as ProjectJson['post'])}
               />
               <div className="row">

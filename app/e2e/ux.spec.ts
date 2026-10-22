@@ -1,6 +1,6 @@
-// Grandma-test fixes, end to end with NO AI connected: honest "What I did", a note that answers
-// plainly with the matching button, the caption controls, one-click "Add a song" / "Add pictures",
-// the simple Connect screen, and "where did my video go?" after Export.
+// Grandma-test fixes, end to end with NO AI connected: an honest Version 1, no AI offer except one connect
+// line, the caption controls, a song and a picture under Edit it myself, the simple Connect screen, and
+// "where did my video go?" after Export.
 //
 // Run: npm run e2e (or `npx playwright test e2e/ux.spec.ts` after a build). Same env as smoke.spec.ts.
 import { test, expect, type ElectronApplication } from '@playwright/test'
@@ -33,7 +33,7 @@ function projectJson(): any {
   return JSON.parse(readFileSync(join(dir, slug, 'project.json'), 'utf8'))
 }
 
-test('no AI: honest checklist, one connect prompt, caption controls, add song + picture, export', async () => {
+test('no AI: honest first version, one connect prompt, caption controls, a song and a picture, export', async () => {
   test.setTimeout(20 * 60_000)
   const media = makeMedia()
   const { app, page } = await launch({ REELSTUDIO_ROOT: ROOT, REELSTUDIO_USER_DATA: join(MINE, 'user data') })
@@ -49,33 +49,32 @@ test('no AI: honest checklist, one connect prompt, caption controls, add song + 
   const noAi = aiSource === 'mock' || !(await page.evaluate(() => window.reel.ai.active().then((a) => a.connected && a.id !== 'none')))
   expect(noAi).toBe(true)
 
-  // ---- 1. honest "What I did" ----
-  await expect(page.getByTestId('did-cut')).toContainText('Cut the pauses and repeated starts')
-  await expect(page.getByTestId('did-post')).toHaveCount(0) // not done: an optional extra, not an empty circle
-  await expect(page.getByTestId('extras')).toContainText('Write a post caption')
-  await expect(page.getByTestId('what-i-did')).not.toContainText('best takes')
-  await expect(page.getByTestId('what-i-did')).not.toContainText('Wrote your post caption')
-  await expect(page.getByTestId('add-song')).toBeVisible()
-  await expect(page.getByTestId('add-pictures')).toBeVisible()
-  await expect(page.getByTestId('edit-myself')).toHaveText('Edit it myself')
-  await expect(page.getByTestId('versions')).toContainText('Version 1')
+  // ---- 1. honest: Version 1 says it is a simple cut, and its rows say what changed ----
+  await expect(page.getByTestId('log-video')).toContainText('Your video')
+  await page.getByTestId('what-changed-1').click()
+  await expect(page.locator('.detail').first()).toContainText('No AI editor yet, so I made a simple cut.')
+  // it offers what an AI would add, and never claims to have done it
+  await expect(page.getByTestId('chat')).not.toContainText(/Kept your best takes|picked your best takes/i)
+  await expect(page.getByTestId('chat')).not.toContainText('Wrote your post caption')
+  await expect(page.getByTestId('edit-myself')).toContainText('Edit it myself')
+  await expect(page.getByTestId('version-switch')).toContainText('Version 1')
   await shot(page, 'ux-01-reel-no-ai')
 
-  // ---- 2. the post caption: an edit box, never "written" for you ----
-  await page.getByTestId('write-post').click()
-  await expect(page.getByTestId('post-editor')).toBeVisible()
-  await shot(page, 'ux-02-post-editor')
+  // ---- 2. the post caption: typed by you under Edit it myself, never "written" for you; no new version ----
+  await page.getByTestId('edit-myself').click()
+  await page.getByTestId('tab-post').click()
   await page.getByTestId('post-input').fill('Why mornings make me a better editor')
-  await page.getByTestId('post-save').click()
-  await expect(page.getByTestId('did-post')).toContainText('Your post caption')
-  expect(projectJson().post.caption).toBe('Why mornings make me a better editor')
+  await shot(page, 'ux-02-post-editor')
+  await page.getByTestId('make-version').click()
+  await expect.poll(() => projectJson().post?.caption).toBe('Why mornings make me a better editor')
+  await expect(page.getByTestId('version-switch')).toContainText('Version 1')
+  if (await page.getByTestId('drawer').isVisible()) await page.getByTestId('drawer-close').click()
 
-  // ---- 3. no AI: nothing offers an AI change; one line in the Notes panel is the way to connect ----
-  await expect(page.getByTestId('change-at')).toHaveCount(0)
+  // ---- 3. no AI: nothing offers an AI change; one line in the note box is the way to connect ----
   await expect(page.getByTestId('note-input')).toHaveCount(0)
+  await expect(page.getByTestId('moment-suggest')).toHaveCount(0)
   await page.keyboard.press('n') // the shortcut opens nothing either
-  await expect(page.getByTestId('change-pop')).toHaveCount(0)
-  await expect(page.getByTestId('sidebar-connect')).toHaveCount(0)
+  await expect(page.getByTestId('note-input')).toHaveCount(0)
   await shot(page, 'ux-03-no-ai-connect')
   await page.getByTestId('composer-connect').click()
   await expect(page.getByTestId('connect-screen')).toBeVisible()
@@ -89,8 +88,9 @@ test('no AI: honest checklist, one connect prompt, caption controls, add song + 
   await page.getByText('Back to my video').click()
   await expect(page.getByTestId('player')).toBeVisible()
 
-  // ---- 4. caption controls, opened from "What I did" ----
-  await page.getByTestId('change-captions').click()
+  // ---- 4. subtitles under Edit it myself: a quick preview first, then the version, said in plain words ----
+  await page.getByTestId('edit-myself').click()
+  await page.getByTestId('tab-captions').click()
   await expect(page.getByTestId('caption-controls')).toBeVisible()
   await expect(page.getByTestId('cap-size-medium')).toHaveAttribute('aria-checked', 'true') // 105 px default
   await expect(page.getByTestId('cap-pos-lower')).toHaveAttribute('aria-checked', 'true')
@@ -100,38 +100,40 @@ test('no AI: honest checklist, one connect prompt, caption controls, add song + 
   await page.getByTestId('cap-pos-higher').click()
   await page.getByTestId('cap-look-yellow').click()
   await shot(page, 'ux-08-captions-picked')
-  await expect(page.getByTestId('sub-preview')).toBeVisible()
   await page.getByTestId('make-version').click()
   await expect(page.getByTestId('note-progress')).toBeVisible()
   await expect(page.getByTestId('note-progress')).toBeInViewport() // never scrolled out of sight
   // a manual change says what it is (grandma 2: "Adding pictures" for a colour change) and shows a quick preview first
-  await expect(page.getByTestId('note-progress')).toContainText('Updating your subtitles')
+  await expect(page.getByTestId('note-progress')).toContainText(/Updating your subtitles|Making Version 2/)
   await expect(page.getByTestId('change-preview')).toBeVisible({ timeout: 60_000 })
-  await expect(page.getByTestId('export-wait')).toBeVisible() // says why Export is greyed
+  await expect(page.getByTestId('export')).toBeDisabled() // and Export waits for it
   await shot(page, 'ux-09-new-version-working')
-  await expect(page.getByTestId('versions').getByText('Version 2')).toBeVisible({ timeout: 10 * 60_000 })
+  await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 })
   const style = projectJson().captions.style
   expect([style.size, style.position, style.color, !!style.box]).toEqual([126, 0.66, '#FFD60A', false])
-  // The chat and the version menu say what changed (critique 1.8).
-  await expect(page.getByTestId('bubble-editor').last()).toHaveText('Version 2: bigger yellow subtitles, moved up.')
+  // The notes log and the Versions sheet say what changed (critique 1.8).
+  await expect(page.getByTestId('log-hand').last()).toContainText('You changed')
+  await page.getByTestId('what-changed-2').click()
+  await expect(page.locator('.nt-res[data-v="2"] + .acc')).toContainText(/Subtitle/)
   await page.getByTestId('version-switch').click()
-  await expect(page.getByTestId('version-item-2')).toContainText('Bigger yellow subtitles, moved up')
-  await expect(page.getByTestId('version-item-1')).toContainText('First edit')
+  await expect(page.getByTestId('version-item-2')).toContainText(/bigger yellow subtitles, moved up/i)
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('version-menu')).toHaveCount(0)
-  await expect(page.getByTestId('export')).toHaveText('Export Version 2')
 
-  // ---- 5. "Add a song": one click, the picker, a new version with the song ----
+  // ---- 5. a song: Music under Edit it myself, the picker, a new version with the song ----
   await answerFilePicker(app, media.song)
-  await page.getByTestId('add-song').click()
-  await expect(page.getByTestId('versions').getByText('Version 3')).toBeVisible({ timeout: 10 * 60_000 })
-  await expect(page.getByTestId('did-music')).toContainText('Added music')
+  await page.getByTestId('edit-myself').click()
+  await page.getByTestId('tab-music').click()
+  await page.getByTestId('music-add').click()
+  await page.getByTestId('make-version').click()
+  await expect(page.getByTestId('log-play-3')).toBeVisible({ timeout: 10 * 60_000 })
   // project.json only takes Library-relative paths (secfix): never the picked file's own path.
   expect(projectJson().music.track).toBe('Library/Music/happy song.mp3')
 
-  // ---- 6. "Add pictures": pick a picture, click the word ----
+  // ---- 6. pictures: pick a picture, click the word ----
   await answerFilePicker(app, media.picture)
-  await page.getByTestId('add-pictures').click()
+  await page.getByTestId('edit-myself').click()
+  await page.getByTestId('tab-broll').click()
   await page.getByTestId('picture-add').click()
   await expect(page.getByTestId('pick-word')).toBeVisible()
   await shot(page, 'ux-10-pick-word')
@@ -140,14 +142,14 @@ test('no AI: honest checklist, one connect prompt, caption controls, add song + 
   await expect(page.getByTestId('broll-thumb')).toBeVisible() // a small picture, not a file name (grandma 2)
   await shot(page, 'ux-10b-pictures-list')
   await page.getByTestId('make-version').click()
-  await expect(page.getByTestId('versions').getByText('Version 4')).toBeVisible({ timeout: 10 * 60_000 })
+  await expect(page.getByTestId('log-play-4')).toBeVisible({ timeout: 10 * 60_000 })
   const broll = projectJson().broll
   expect(broll).toHaveLength(1)
   expect(broll[0].asset).toBe('Library/Images/logo.png')
-  await expect(page.getByTestId('did-broll')).toContainText('Added 1 picture')
   await shot(page, 'ux-11-reel-after-edits')
 
   // ---- 7. export: the file name, Show in Explorer/Finder with visible feedback ----
+  await expect(page.getByTestId('export')).toBeEnabled({ timeout: 10 * 60_000 })
   await page.getByTestId('export').click()
   await expect(page.getByText('Saved to your computer')).toBeVisible({ timeout: 10 * 60_000 })
   await expect(page.getByTestId('export-name')).toContainText(' - Version 4.mp4')

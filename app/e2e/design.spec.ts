@@ -50,7 +50,8 @@ function projectDir(): string {
 test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, connected states', async () => {
   test.setTimeout(15 * 60_000)
   const media = makeMedia()
-  const { app, page } = await launch({ REELSTUDIO_ROOT: ROOT, REELSTUDIO_USER_DATA: join(MINE, 'user data') })
+  // a slow stand-in transcribe keeps the Working screen up long enough to look at it (the default 3 s raced the toast)
+  const { app, page } = await launch({ REELSTUDIO_ROOT: ROOT, REELSTUDIO_USER_DATA: join(MINE, 'user data'), FAKE_ENGINE_SLOW: '15' })
   await passFirstRun(page)
 
   // ---- the whole window is a drop target ----
@@ -63,12 +64,12 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
 
   // ---- Working: first frame, time left, a quiet Stop that asks first ----
   await expect(page.getByText('Making your reel')).toBeVisible()
+  await expect(page.getByTestId('working-frame')).toBeVisible({ timeout: 60_000 })
   // The picture went to the Library; that success toast leaves by itself and has no button.
   const toast = page.getByTestId('toast')
   await expect(toast).toContainText('Added 1 picture to your Library.')
   await expect(toast.locator('button')).toHaveCount(0)
   await expect(toast).toHaveCount(0, { timeout: 7000 })
-  await expect(page.getByTestId('working-frame')).toBeVisible({ timeout: 60_000 })
   await page.getByTestId('stop').click()
   await expect(page.getByTestId('confirm')).toContainText('Stop making this reel?')
   await shot(page, 'd-02-stop-confirm')
@@ -157,7 +158,6 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
     await expect(page.getByTestId('export-dialog')).toHaveCount(0)
     // The caption typed in the export box is saved with the video.
     await expect.poll(() => JSON.parse(readFileSync(join(projectDir(), 'project.json'), 'utf8')).post.caption).toBe('Three things I wish I knew')
-    await expect(page.getByTestId('did-post')).toContainText('Your post caption')
   }
 
   // ---- connected states (AI stubbed as signed in; nothing runs) ----
@@ -178,14 +178,14 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await page.evaluate(() => {
     ;(window as any).__sawNoAi = false
     new MutationObserver(() => {
-      if (document.querySelector('[data-testid=composer-connect],[data-testid=ai-banner]')) (window as any).__sawNoAi = true
+      if (document.querySelector('[data-testid=composer-connect]')) (window as any).__sawNoAi = true
     }).observe(document.body, { subtree: true, childList: true })
   })
   await page.getByTestId('project-card').first().click()
   await expect(page.getByTestId('player')).toBeVisible()
   expect(await page.evaluate(() => (window as any).__sawNoAi)).toBe(false)
-  await expect(page.getByTestId('did-cut')).toContainText('Kept your best takes')
-  await expect(page.getByTestId('change-at')).toContainText('Change something at')
+  await expect(page.getByTestId('note-input')).toBeEnabled()
+  await expect(page.getByTestId('moment-suggest')).toBeVisible()
   await shot(page, 'd-12-reel-with-ai')
 
   // ---- an AI check that has not answered: the reel still opens at once; only the change button waits ----
@@ -206,11 +206,9 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await page.keyboard.press('Space') // plays or pauses, like on a reel opened normally
   await expect.poll(paused, { timeout: 1000 }).toBe(!wasPaused)
   expect(Date.now() - opened).toBeLessThan(1000)
-  await expect(page.getByTestId('change-checking')).toBeDisabled()
-  await expect(page.getByTestId('change-checking')).toHaveText('Checking for your AI editor…')
   await expect(page.getByTestId('note-input')).toBeDisabled()
+  await expect(page.getByTestId('note-input')).toHaveAttribute('placeholder', 'Checking for your AI editor…')
   await expect(page.getByTestId('composer-connect')).toHaveCount(0)
-  await expect(page.getByTestId('ai-banner')).toHaveCount(0)
   // A picture dropped on the note box meanwhile is held: nothing can be sent until the check answers... (polish-pass)
   await dropFiles(page, 'note-drop', [media.picture])
   await expect(page.getByTestId('note-attachment-busy')).toBeVisible()
@@ -221,7 +219,6 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
     for (const answer of (globalThis as { __aiWaiting?: ((v: unknown) => void)[] }).__aiWaiting ?? [])
       answer({ ok: true, value: { id: 'chatgpt', connected: true, label: 'ChatGPT', detail: '' } })
   })
-  await expect(page.getByTestId('change-at')).toBeEnabled()
   await expect(page.getByTestId('note-input')).toBeEnabled()
   // ...then it is attached like any drop.
   await expect(page.getByTestId('note-attachment')).toHaveCount(1)
