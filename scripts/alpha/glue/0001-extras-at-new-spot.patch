@@ -1,0 +1,34 @@
+From 1622544e1c8a50c4751730143323e5880efc692c Mon Sep 17 00:00:00 2001
+From: SamGu-NRX <sgu07966@gmail.com>
+Date: Wed, 21 Oct 2026 04:42:00 -0500
+Subject: [PATCH] fix(alpha): apply polish-pass and #19 extras rules at #18's
+ new spot
+
+change-at-moment moved "Optional extras" to the bottom of the notes panel. polish-pass greys them while a version is made instead of hiding them, and version-switcher makes them act on the latest version when an older one is on screen. Both edits were at the old spot, so the merge dropped them without a conflict.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ app/src/renderer/src/screens/Reel.tsx | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/app/src/renderer/src/screens/Reel.tsx b/app/src/renderer/src/screens/Reel.tsx
+index 309bb55..6037759 100644
+--- a/app/src/renderer/src/screens/Reel.tsx
++++ b/app/src/renderer/src/screens/Reel.tsx
+@@ -567,10 +567,11 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
+                 <Progress pct={job.overall} label={job.message} />
+               </div>
+             )}
+-            {extras.length > 0 && !job && (
++            {/* greyed, not removed, while working (polish-pass); on an older version they act on the latest (version-switcher) */}
++            {extras.length > 0 && (
+               <div className="extras" data-testid="extras">
+                 {extras.map((x) => (
+-                  <button key={x.key} className="extra" onClick={x.run} data-testid={x.testid}>
++                  <button key={x.key} className="extra" onClick={onLatest(x.run)} disabled={!!job} data-testid={x.testid}>
+                     <Icon name="plus" size={14} stroke={2} /> {x.label}
+                   </button>
+                 ))}
+-- 
+2.53.0
+

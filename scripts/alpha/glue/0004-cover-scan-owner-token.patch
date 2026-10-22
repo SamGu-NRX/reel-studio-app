@@ -1,0 +1,99 @@
+From 2d0a7b95dd33fa38597d98889328fc856afd3e68 Mon Sep 17 00:00:00 2001
+From: SamGu-NRX <sgu07966@gmail.com>
+Date: Wed, 21 Oct 2026 20:43:59 -0500
+Subject: [PATCH] fix(alpha): the cover picker's scan joins a running job with
+ its owner token
+
+note-atomic's engine refuses a project command without --owner while a job holds work/.owner.lock, and cover-reasons' picker scan runs beside jobs without one, so the Cover tab showed no suggestions during a note. The job manager now keeps the token of whichever job or manual edit has each project open (ownerToken), and the scan passes it with note-atomic's owned(). With nothing open there is no lock and no token, and the scan runs as before. cover-candidates stays under note-atomic's ownership rule.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ app/src/main/index.ts        |  3 ++-
+ app/src/main/jobs.ts         | 16 +++++++++++++++-
+ app/test/owner-token.test.ts | 25 +++++++++++++++++++++++++
+ 3 files changed, 42 insertions(+), 2 deletions(-)
+ create mode 100644 app/test/owner-token.test.ts
+
+diff --git a/app/src/main/index.ts b/app/src/main/index.ts
+index d1d6b30..5030559 100644
+--- a/app/src/main/index.ts
++++ b/app/src/main/index.ts
+@@ -763,7 +763,8 @@ function registerIpc(): void {
+   handle('projects:coverCandidates', async (_e, slug: string, moments: number[], source: string): Promise<CoverCandidate[]> => {
+     const at = moments.filter((t) => Number.isFinite(t) && t >= 0).slice(0, COVER_SUGGESTIONS)
+     if (!at.length) return []
+-    const r = await coverScans.scan(slug, ['--project', projectDir(slug), '--at', at.join(','), '--source', source])
++    // During a note the project's job holds work/.owner.lock; the scan joins it with that job's token (note-atomic)
++    const r = await coverScans.scan(slug, owned(['--project', projectDir(slug), '--at', at.join(','), '--source', source], jobs.ownerToken(slug)))
+     return parseCoverCandidates(r, source, projectDir(slug))
+   })
+   handle('projects:stopCoverCandidates', (_e, slug: string) => coverScans.stop(slug))
+diff --git a/app/src/main/jobs.ts b/app/src/main/jobs.ts
+index 9245e83..02ce3b2 100644
+--- a/app/src/main/jobs.ts
++++ b/app/src/main/jobs.ts
+@@ -229,8 +229,19 @@ export function createJobManager(
+   }
+ 
+   /** Marks the project open, then finishes a job app.json still records, before anything else writes. */
++  /** The token of the job or manual edit that has each project open (`ownerToken`). */
++  const tokens = new Map<string, string>()
++
+   async function enter(slug: string): Promise<ProjectOwner> {
+-    const owner = await claimProject(projectDir(slug))
++    const claimed = await claimProject(projectDir(slug))
++    tokens.set(slug, claimed.token)
++    const owner: ProjectOwner = {
++      token: claimed.token,
++      release: async () => {
++        if (tokens.get(slug) === claimed.token) tokens.delete(slug)
++        await claimed.release()
++      }
++    }
+     try {
+       if ((await settleInterrupted(slug)) === 'unreadable') {
+         throw { code: 'PROJECT_UNREADABLE', userMessage: 'I could not read this video right now. Try again in a moment.' }
+@@ -267,6 +278,9 @@ export function createJobManager(
+   return {
+     start,
+     hold,
++    /** The owner token of the job or manual edit that has `slug` open, or null. Work that runs beside it on the
++     * same project (the cover picker's scan) passes it as `--owner`, as the job's own engine commands do. */
++    ownerToken: (slug: string): string | null => tokens.get(slug) ?? null,
+     keepClosed,
+     forSlug,
+     get: (id: string) => jobs.get(id),
+diff --git a/app/test/owner-token.test.ts b/app/test/owner-token.test.ts
+new file mode 100644
+index 0000000..bdd8f2d
+--- /dev/null
++++ b/app/test/owner-token.test.ts
+@@ -0,0 +1,25 @@
++// The cover picker's scan runs beside a job on the same project and joins it with the job's owner token
++// (index.ts projects:coverCandidates): the token must be the one in the project's lock while it is held.
++import { expect, it } from 'vitest'
++import { mkdirSync, readFileSync } from 'node:fs'
++import { join } from 'node:path'
++import { createJobManager } from '../src/main/jobs'
++import { projectDir } from '../src/main/store'
++import { setupPaths } from './helpers'
++
++it('fails if ownerToken is not the token in the lock while a project is held, or outlives it', async () => {
++  setupPaths()
++  const slug = 'scan-joins'
++  mkdirSync(projectDir(slug), { recursive: true })
++  const jobs = createJobManager(() => undefined, () => undefined)
++  expect(jobs.ownerToken(slug)).toBeNull()
++  let during: string | null = null
++  let lock: { token?: string } = {}
++  await jobs.hold(slug, async () => {
++    during = jobs.ownerToken(slug)
++    lock = JSON.parse(readFileSync(join(projectDir(slug), 'work', '.owner.lock'), 'utf8'))
++  })
++  expect(during).toBe(lock.token)
++  expect(during).toBeTruthy()
++  expect(jobs.ownerToken(slug)).toBeNull()
++})
+-- 
+2.53.0
+

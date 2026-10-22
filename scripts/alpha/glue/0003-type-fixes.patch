@@ -1,0 +1,73 @@
+From 3646b54206a0fcd4bd612426f27bd215a5912436 Mon Sep 17 00:00:00 2001
+From: SamGu-NRX <sgu07966@gmail.com>
+Date: Wed, 21 Oct 2026 20:43:59 -0500
+Subject: [PATCH] fix(alpha): type fixes the combined branches need
+
+- index.ts: updater's update environment reads mac-install's SELF_TEST.selfTest (the merge keeps mac-install's selfTestArgs object, not updater's boolean).
+- updater.test.ts: createJobManager takes first-run-setup's work gate 5th and updater's assertCanStart 6th.
+- media.ts: Readable.toWeb(stream) is cast to ReadableStream for Response, as main did; with the updater's dependencies the global stream types differ and security-fixes' uncast call no longer typechecks.
+- App.tsx: "Connect one" is hidden on the Reel screen (change-at-moment), so custom-server's reel branch inside its click handler could never run and failed the typecheck.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ app/src/main/index.ts        | 2 +-
+ app/src/main/media.ts        | 2 +-
+ app/src/renderer/src/App.tsx | 2 +-
+ app/test/updater.test.ts     | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/app/src/main/index.ts b/app/src/main/index.ts
+index beb7608..d1d6b30 100644
+--- a/app/src/main/index.ts
++++ b/app/src/main/index.ts
+@@ -239,7 +239,7 @@ const updateFeed = app.isPackaged || TEST_FEED ? readUpdateFeed() : null
+ const updateEnv = {
+   platform: process.platform,
+   isPackaged: app.isPackaged || !!TEST_FEED,
+-  test: (TEST && !TEST_FEED) || SELF_TEST,
++  test: (TEST && !TEST_FEED) || SELF_TEST.selfTest,
+   hasFeed: updateFeed !== null,
+   inApplications: !!TEST_FEED || (app.isPackaged && process.platform === 'darwin' && app.isInApplicationsFolder())
+ }
+diff --git a/app/src/main/media.ts b/app/src/main/media.ts
+index a1c8d57..2503177 100644
+--- a/app/src/main/media.ts
++++ b/app/src/main/media.ts
+@@ -96,7 +96,7 @@ export function handleMediaProtocol(allowedRoots: () => string[]): void {
+       }
+       // FileHandle streams retain this descriptor and close it on end, error or cancellation.
+       const stream = handle.createReadStream(status === 206 ? { start, end } : {})
+-      const response = new Response(Readable.toWeb(stream), { status, headers })
++      const response = new Response(Readable.toWeb(stream) as ReadableStream, { status, headers })
+       streaming = true
+       return response
+     } catch {
+diff --git a/app/src/renderer/src/App.tsx b/app/src/renderer/src/App.tsx
+index 7907393..f662d32 100644
+--- a/app/src/renderer/src/App.tsx
++++ b/app/src/renderer/src/App.tsx
+@@ -225,7 +225,7 @@ export function App() {
+                   <div className="muted-sm">No AI editor connected.</div>
+                   {/* the Reel screen has its own, on the change button under the player */}
+                   {shown.name !== 'reel' && (
+-                    <button className="link" style={{ padding: '4px 0' }} onClick={() => go({ name: 'connect', back: shown.name === 'reel' ? { name: 'reel', slug: shown.slug } /* not fresh: going back must not replay the finish moment */ : shown })} data-testid="sidebar-connect">
++                    <button className="link" style={{ padding: '4px 0' }} onClick={() => go({ name: 'connect', back: shown })} data-testid="sidebar-connect">
+                       Connect one
+                     </button>
+                   )}
+diff --git a/app/test/updater.test.ts b/app/test/updater.test.ts
+index 74db018..105ffb0 100644
+--- a/app/test/updater.test.ts
++++ b/app/test/updater.test.ts
+@@ -244,7 +244,7 @@ it('fails if new work is allowed during restart preparation or remains blocked a
+   releaseRead()
+   await enabling
+   expect(u.state().status).toBe('installing')
+-  const jobs = createJobManager(() => {}, () => {}, undefined, undefined, () => u.assertCanStartWork())
++  const jobs = createJobManager(() => {}, () => {}, undefined, undefined, undefined, () => u.assertCanStartWork())
+   expect(() => jobs.start(null, 'rerender', async () => ({ summary: '' }))).toThrow(expect.objectContaining({ code: 'UPDATING' }))
+   expect(jobs.runningCount()).toBe(0)
+   fail(new Error('shutdown failed'))
+-- 
+2.53.0
+

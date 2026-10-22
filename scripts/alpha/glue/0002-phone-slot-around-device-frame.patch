@@ -1,0 +1,58 @@
+From 7d3fc7f06fc549d52cc94081d300f8e726d3cb18 Mon Sep 17 00:00:00 2001
+From: SamGu-NRX <sgu07966@gmail.com>
+Date: Wed, 21 Oct 2026 06:37:28 -0500
+Subject: [PATCH] fix(alpha): put #18's phone slot around #3's device frame
+ only
+
+change-at-moment gives the phone the height the rows under it leave (.phone-slot). device-previews renders a frame and then its device picker. The slot belongs around the frame only, so the picker stays a row below it (the .phone-slot comment in styles.css, from 3a815d5). DevicePreview.tsx merges without a conflict, so this cannot be a recorded resolution. Patch from /tmp/rs-evidence/change-at-moment/merge-device-previews-slot-placement.patch.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ app/src/renderer/src/components/DevicePreview.tsx | 2 ++
+ app/src/renderer/src/screens/Reel.tsx             | 3 ---
+ 2 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/app/src/renderer/src/components/DevicePreview.tsx b/app/src/renderer/src/components/DevicePreview.tsx
+index b2dfd76..93d072f 100644
+--- a/app/src/renderer/src/components/DevicePreview.tsx
++++ b/app/src/renderer/src/components/DevicePreview.tsx
+@@ -55,6 +55,7 @@ export function DevicePreview({ instagram, caption, children }: { instagram?: bo
+ 
+   return (
+     <>
++      <div className="phone-slot">
+       <div className="device-frame" data-device={id} style={device ? frameVars(device) : undefined} data-testid="device-frame">
+         {children}
+         {device && (
+@@ -79,6 +80,7 @@ export function DevicePreview({ instagram, caption, children }: { instagram?: bo
+         )}
+         {device?.homeButton && <div className="home-button" aria-hidden />}
+       </div>
++      </div>
+       <div className="device-pick">
+         <div className="device-select">
+           <PhoneIcon />
+diff --git a/app/src/renderer/src/screens/Reel.tsx b/app/src/renderer/src/screens/Reel.tsx
+index de0075c..12f23fa 100644
+--- a/app/src/renderer/src/screens/Reel.tsx
++++ b/app/src/renderer/src/screens/Reel.tsx
+@@ -319,8 +319,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
+     <div className={`page reel-page${fresh ? ' fresh' : ''}`}>
+       <div className="reel">
+         <div className="reel-left">
+-          {/* the phone gets the height the rows under it leave (styles.css .phone-slot) */}
+-          <div className="phone-slot">
+           <DevicePreview instagram={igOverlay && !holding} caption={d.project.post?.caption}>
+             <PhonePlayer
+               src={changePreview ?? version?.video ?? null}
+@@ -353,7 +351,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
+               }}
+             />
+           </DevicePreview>
+-          </div>
+           <ChangeAt
+             slug={slug}
+             playhead={playhead}
+-- 
+2.53.0
+
