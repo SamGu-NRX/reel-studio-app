@@ -1,0 +1,9 @@
+{
+  "check": "safety",
+  "config": "Queue.cfg",
+  "exit": 0,
+  "generated": 17966187,
+  "distinct": 3025520,
+  "expected": "Model checking completed. No error has been found.",
+  "model_sha256": "ea9345e611e0bd132b7f2034a98805d7c8ca92071a503299837ce6b681ef4ab1"
+}

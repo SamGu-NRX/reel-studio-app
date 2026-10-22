@@ -1,0 +1,261 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 0 and seed 1 with 1 worker on 12 cores with 683MB heap and 64MB offheap memory [pid: 64285] (Mac OS X 26.6.2 aarch64, Eclipse Adoptium 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file <worktree>/formal/queue/Queue.tla
+Parsing file <java-tmp>/Naturals.tla
+Parsing file <java-tmp>/Sequences.tla
+Parsing file <java-tmp>/FiniteSets.tla
+Parsing file <java-tmp>/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Queue
+Starting... (2026-10-22 01:29:08)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-10-22 01:29:08.
+Error: Invariant NoDoubleCommit is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+s = [ queue |-> <<<<>>, <<>>>>,
+  pending |-> {},
+  requested |-> {},
+  admitted |-> {},
+  persisted |-> {},
+  job |-> <<0, 0>>,
+  phase |-> <<"idle", "idle">>,
+  renderWait |-> <<>>,
+  alive |-> {},
+  permit |-> 0,
+  held |-> <<FALSE, FALSE>>,
+  blocked |-> <<FALSE, FALSE>>,
+  text |-> <<0, 0, 0>>,
+  count |-> <<0, 0, 0>>,
+  failed |-> {},
+  cancelled |-> {},
+  mode |-> "up",
+  badStart |-> FALSE ]
+
+State 2: <Submit line 32, col 3 to line 34, col 69 of module Queue>
+s = [ queue |-> <<<<>>, <<>>>>,
+  pending |-> {1},
+  requested |-> {1},
+  admitted |-> {},
+  persisted |-> {},
+  job |-> <<0, 0>>,
+  phase |-> <<"idle", "idle">>,
+  renderWait |-> <<>>,
+  alive |-> {},
+  permit |-> 0,
+  held |-> <<FALSE, FALSE>>,
+  blocked |-> <<FALSE, FALSE>>,
+  text |-> <<0, 0, 0>>,
+  count |-> <<0, 0, 0>>,
+  failed |-> {},
+  cancelled |-> {},
+  mode |-> "up",
+  badStart |-> FALSE ]
+
+State 3: <Persist line 37, col 3 to line 41, col 45 of module Queue>
+s = [ queue |-> <<<<1>>, <<>>>>,
+  pending |-> {1},
+  requested |-> {1},
+  admitted |-> {},
+  persisted |-> {1},
+  job |-> <<0, 0>>,
+  phase |-> <<"idle", "idle">>,
+  renderWait |-> <<>>,
+  alive |-> {},
+  permit |-> 0,
+  held |-> <<FALSE, FALSE>>,
+  blocked |-> <<FALSE, FALSE>>,
+  text |-> <<0, 0, 0>>,
+  count |-> <<0, 0, 0>>,
+  failed |-> {},
+  cancelled |-> {},
+  mode |-> "up",
+  badStart |-> FALSE ]
+
+State 4: <Start line 69, col 3 to line 76, col 64 of module Queue>
+s = [ queue |-> <<<<1>>, <<>>>>,
+  pending |-> {1},
+  requested |-> {1},
+  admitted |-> {},
+  persisted |-> {1},
+  job |-> <<1, 0>>,
+  phase |-> <<"plan", "idle">>,
+  renderWait |-> <<>>,
+  alive |-> {},
+  permit |-> 0,
+  held |-> <<FALSE, FALSE>>,
+  blocked |-> <<FALSE, FALSE>>,
+  text |-> <<0, 0, 0>>,
+  count |-> <<0, 0, 0>>,
+  failed |-> {},
+  cancelled |-> {},
+  mode |-> "up",
+  badStart |-> FALSE ]
+
+State 5: <NoRender line 85, col 3 to line 87, col 41 of module Queue>
+s = [ queue |-> <<<<1>>, <<>>>>,
+  pending |-> {1},
+  requested |-> {1},
+  admitted |-> {},
+  persisted |-> {1},
+  job |-> <<1, 0>>,
+  phase |-> <<"ready", "idle">>,
+  renderWait |-> <<>>,
+  alive |-> {},
+  permit |-> 0,
+  held |-> <<FALSE, FALSE>>,
+  blocked |-> <<FALSE, FALSE>>,
+  text |-> <<0, 0, 0>>,
+  count |-> <<0, 0, 0>>,
+  failed |-> {},
+  cancelled |-> {},
+  mode |-> "up",
+  badStart |-> FALSE ]
+
+State 6: <Commit line 124, col 3 to line 127, col 32 of module Queue>
+s = [ queue |-> <<<<1>>, <<>>>>,
+  pending |-> {1},
+  requested |-> {1},
+  admitted |-> {},
+  persisted |-> {1},
+  job |-> <<1, 0>>,
+  phase |-> <<"committed", "idle">>,
+  renderWait |-> <<>>,
+  alive |-> {},
+  permit |-> 0,
+  held |-> <<FALSE, FALSE>>,
+  blocked |-> <<FALSE, FALSE>>,
+  text |-> <<0, 0, 0>>,
+  count |-> <<1, 0, 0>>,
+  failed |-> {},
+  cancelled |-> {},
+  mode |-> "up",
+  badStart |-> FALSE ]
+
+State 7: <Crash line 148, col 3 to line 153, col 89 of module Queue>
+s = [ queue |-> <<<<1>>, <<>>>>,
+  pending |-> {},
+  requested |-> {1},
+  admitted |-> {},
+  persisted |-> {1},
+  job |-> <<0, 0>>,
+  phase |-> <<"idle", "idle">>,
+  renderWait |-> <<>>,
+  alive |-> {},
+  permit |-> 0,
+  held |-> <<FALSE, FALSE>>,
+  blocked |-> <<FALSE, FALSE>>,
+  text |-> <<0, 0, 0>>,
+  count |-> <<1, 0, 0>>,
+  failed |-> {},
+  cancelled |-> {},
+  mode |-> "down",
+  badStart |-> FALSE ]
+
+State 8: <Restart line 156, col 3 to line 163, col 45 of module Queue>
+s = [ queue |-> <<<<1>>, <<>>>>,
+  pending |-> {},
+  requested |-> {1},
+  admitted |-> {},
+  persisted |-> {1},
+  job |-> <<0, 0>>,
+  phase |-> <<"idle", "idle">>,
+  renderWait |-> <<>>,
+  alive |-> {},
+  permit |-> 0,
+  held |-> <<TRUE, TRUE>>,
+  blocked |-> <<TRUE, TRUE>>,
+  text |-> <<0, 0, 0>>,
+  count |-> <<1, 0, 0>>,
+  failed |-> {},
+  cancelled |-> {},
+  mode |-> "up",
+  badStart |-> FALSE ]
+
+State 9: <Resume line 142, col 3 to line 145, col 60 of module Queue>
+s = [ queue |-> <<<<1>>, <<>>>>,
+  pending |-> {},
+  requested |-> {1},
+  admitted |-> {},
+  persisted |-> {1},
+  job |-> <<0, 0>>,
+  phase |-> <<"idle", "idle">>,
+  renderWait |-> <<>>,
+  alive |-> {},
+  permit |-> 0,
+  held |-> <<FALSE, TRUE>>,
+  blocked |-> <<FALSE, TRUE>>,
+  text |-> <<0, 0, 0>>,
+  count |-> <<1, 0, 0>>,
+  failed |-> {},
+  cancelled |-> {},
+  mode |-> "up",
+  badStart |-> FALSE ]
+
+State 10: <Start line 69, col 3 to line 76, col 64 of module Queue>
+s = [ queue |-> <<<<1>>, <<>>>>,
+  pending |-> {},
+  requested |-> {1},
+  admitted |-> {},
+  persisted |-> {1},
+  job |-> <<1, 0>>,
+  phase |-> <<"plan", "idle">>,
+  renderWait |-> <<>>,
+  alive |-> {},
+  permit |-> 0,
+  held |-> <<FALSE, TRUE>>,
+  blocked |-> <<FALSE, TRUE>>,
+  text |-> <<0, 0, 0>>,
+  count |-> <<1, 0, 0>>,
+  failed |-> {},
+  cancelled |-> {},
+  mode |-> "up",
+  badStart |-> FALSE ]
+
+State 11: <NoRender line 85, col 3 to line 87, col 41 of module Queue>
+s = [ queue |-> <<<<1>>, <<>>>>,
+  pending |-> {},
+  requested |-> {1},
+  admitted |-> {},
+  persisted |-> {1},
+  job |-> <<1, 0>>,
+  phase |-> <<"ready", "idle">>,
+  renderWait |-> <<>>,
+  alive |-> {},
+  permit |-> 0,
+  held |-> <<FALSE, TRUE>>,
+  blocked |-> <<FALSE, TRUE>>,
+  text |-> <<0, 0, 0>>,
+  count |-> <<1, 0, 0>>,
+  failed |-> {},
+  cancelled |-> {},
+  mode |-> "up",
+  badStart |-> FALSE ]
+
+State 12: <Commit line 124, col 3 to line 127, col 32 of module Queue>
+s = [ queue |-> <<<<1>>, <<>>>>,
+  pending |-> {},
+  requested |-> {1},
+  admitted |-> {},
+  persisted |-> {1},
+  job |-> <<1, 0>>,
+  phase |-> <<"committed", "idle">>,
+  renderWait |-> <<>>,
+  alive |-> {},
+  permit |-> 0,
+  held |-> <<FALSE, TRUE>>,
+  blocked |-> <<FALSE, TRUE>>,
+  text |-> <<0, 0, 0>>,
+  count |-> <<2, 0, 0>>,
+  failed |-> {},
+  cancelled |-> {},
+  mode |-> "up",
+  badStart |-> FALSE ]
+
+82167 states generated, 26262 distinct states found, 12809 states left on queue.
+The depth of the complete state graph search is 12.
+The average outdegree of the complete state graph is 2 (minimum is 0, the maximum 7 and the 95th percentile is 5).
+Finished in 01s at (2026-10-22 01:29:09)

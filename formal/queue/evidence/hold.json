@@ -1,0 +1,9 @@
+{
+  "check": "hold",
+  "config": "Queue-hold.cfg",
+  "exit": 12,
+  "generated": 292,
+  "distinct": 192,
+  "expected": "Invariant HoldUntilResume is violated",
+  "model_sha256": "ea9345e611e0bd132b7f2034a98805d7c8ca92071a503299837ce6b681ef4ab1"
+}

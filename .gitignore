@@ -13,3 +13,6 @@ packaging/cache/
 packaging/runtime/
 *.log
 .DS_Store
+
+# Local formal-verification tools and state files
+.tools/

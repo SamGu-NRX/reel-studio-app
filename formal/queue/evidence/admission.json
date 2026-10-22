@@ -1,0 +1,9 @@
+{
+  "check": "admission",
+  "config": "Queue-admission.cfg",
+  "exit": 12,
+  "generated": 7,
+  "distinct": 7,
+  "expected": "Invariant AdmissionBeforeAck is violated",
+  "model_sha256": "ea9345e611e0bd132b7f2034a98805d7c8ca92071a503299837ce6b681ef4ab1"
+}

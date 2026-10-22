@@ -1,0 +1,28 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 0 and seed 1 with 1 worker on 12 cores with 683MB heap and 64MB offheap memory [pid: 41739] (Mac OS X 26.6.2 aarch64, Eclipse Adoptium 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file <worktree>/formal/queue/Queue.tla
+Parsing file <java-tmp>/Naturals.tla
+Parsing file <java-tmp>/Sequences.tla
+Parsing file <java-tmp>/FiniteSets.tla
+Parsing file <java-tmp>/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Queue
+Starting... (2026-10-22 01:25:19)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-10-22 01:25:19.
+Progress(14) at 2026-10-22 01:25:22: 439,028 states generated (439,028 s/min), 114,290 distinct states found (114,290 ds/min), 45,768 states left on queue.
+Progress(23) at 2026-10-22 01:26:22: 8,292,408 states generated (7,853,380 s/min), 1,576,518 distinct states found (1,462,228 ds/min), 257,184 states left on queue.
+Progress(25) at 2026-10-22 01:27:22: 12,180,567 states generated (3,888,159 s/min), 2,201,624 distinct states found (625,106 ds/min), 230,091 states left on queue.
+Progress(28) at 2026-10-22 01:28:22: 15,207,109 states generated (3,026,542 s/min), 2,659,301 distinct states found (457,677 ds/min), 154,598 states left on queue.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 2.5E-6
+  based on the actual fingerprints:  val = 1.7E-7
+17966187 states generated, 3025520 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 39.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 8 and the 95th percentile is 4).
+Finished in 03min 42s at (2026-10-22 01:29:01)
