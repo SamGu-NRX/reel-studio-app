@@ -4,13 +4,14 @@ import { reel, userMessage } from '../api'
 import { Icon } from './icons'
 import { FOLDER_APP, Spinner } from './ui'
 
-type SaveState =
+export type SaveState =
   | { kind: 'idle' }
   | { kind: 'saving'; drive: CloudDrive }
   | { kind: 'saved'; drive: CloudDrive; path: string }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; drive: CloudDrive; message: string }
 
-export function CloudSave({ video, fallback = false }: { video: string; fallback?: boolean }) {
+/** The cloud drives on this computer and one save at a time into a "Reel Studio" folder on one of them. */
+export function useCloudSave() {
   const [drives, setDrives] = useState<CloudDrive[]>([])
   const [state, setState] = useState<SaveState>({ kind: 'idle' })
   useEffect(() => {
@@ -18,22 +19,28 @@ export function CloudSave({ video, fallback = false }: { video: string; fallback
     void reel.cloud.drives().then((drives) => { if (live) setDrives(drives) }).catch(() => {})
     return () => { live = false }
   }, [])
-
-  if (!drives.length) return null
   const label = (drive: CloudDrive) => {
     if (drives.filter((other) => other.label === drive.label).length === 1) return drive.label
     const account = drive.folder.match(/GoogleDrive-([^/\\]+)/)?.[1] ?? drive.folder
     return `${drive.label} · ${account}`
   }
-  const save = async (drive: CloudDrive) => {
+  /** `video` is the exported file, or a step that exports it first. */
+  const save = async (drive: CloudDrive, video: string | (() => Promise<string>)) => {
     setState({ kind: 'saving', drive })
     try {
-      const path = await reel.cloud.save(video, drive.folder)
+      const path = await reel.cloud.save(typeof video === 'string' ? video : await video(), drive.folder)
       setState({ kind: 'saved', drive, path })
     } catch (error) {
-      setState({ kind: 'error', message: userMessage(error) })
+      setState({ kind: 'error', drive, message: userMessage(error) })
     }
   }
+  return { drives, label, state, save, reset: () => setState({ kind: 'idle' }) }
+}
+
+export function CloudSave({ video, fallback = false }: { video: string; fallback?: boolean }) {
+  const { drives, label, state, save: saveTo } = useCloudSave()
+  if (!drives.length) return null
+  const save = (drive: CloudDrive) => saveTo(drive, video)
   const actions = (
     <div className="stack cloud-save" style={{ gap: 8 }} data-testid="cloud-save">
       <div className="stack" style={{ gap: 8 }}>

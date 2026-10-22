@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
-import type { CloudDrive, ExportResult } from '../../../shared/api'
-import { reel, userMessage } from '../api'
+import type { ExportResult } from '../../../shared/api'
+import { reel } from '../api'
+import { useCloudSave, type SaveState } from './CloudSave'
 import { Icon } from './icons'
 import { BrandMark } from './brand'
 import { FOLDER_APP } from './ui'
 import { usePresence } from './motion'
 
-type Saving =
-  { drive: CloudDrive; state: 'saving' } | { drive: CloudDrive; state: 'saved'; path: string } | { drive: CloudDrive; state: 'error'; message: string }
+type Saving = Exclude<SaveState, { kind: 'idle' }>
 
 /**
  * Every way out of the app in one place: Export, then Send to my phone, with iCloud Drive and Google Drive
@@ -29,35 +29,13 @@ export function Outs({
   /** exports the version on screen without the dialog, for a cloud save */
   exportFile: () => Promise<ExportResult>
 }) {
-  const [drives, setDrives] = useState<CloudDrive[]>([])
-  const [saving, setSaving] = useState<Saving | null>(null)
+  const { drives, label: driveName, state, save, reset } = useCloudSave()
+  const saving = state.kind === 'idle' ? null : state
   useEffect(() => {
-    let live = true
-    reel.cloud
-      .drives()
-      .then((d) => live && setDrives(d))
-      .catch(() => {})
-    return () => {
-      live = false
-    }
-  }, [])
-  const label2 = (d: CloudDrive) =>
-    drives.filter((x) => x.label === d.label).length > 1 ? `${d.label} · ${d.folder.match(/GoogleDrive-([^/\\]+)/)?.[1] ?? ''}` : d.label
-  const save = async (d: CloudDrive) => {
-    setSaving({ drive: d, state: 'saving' })
-    try {
-      const file = await exportFile()
-      const path = await reel.cloud.save(file.video, d.folder)
-      setSaving({ drive: d, state: 'saved', path })
-    } catch (e) {
-      setSaving({ drive: d, state: 'error', message: userMessage(e) })
-    }
-  }
-  useEffect(() => {
-    if (saving?.state !== 'saved') return
-    const t = window.setTimeout(() => setSaving(null), 4000)
+    if (state.kind !== 'saved') return
+    const t = window.setTimeout(reset, 4000)
     return () => window.clearTimeout(t)
-  }, [saving])
+  }, [state])
 
   return (
     <div className="outs">
@@ -72,17 +50,17 @@ export function Outs({
           <button
             key={d.folder}
             className="btn icon-only"
-            disabled={disabled || saving?.state === 'saving'}
-            aria-label={`Save to ${label2(d)}`}
-            title={`Save to ${label2(d)}`}
-            onClick={() => void save(d)}
+            disabled={disabled || state.kind === 'saving'}
+            aria-label={`Save to ${driveName(d)}`}
+            title={`Save to ${driveName(d)}`}
+            onClick={() => void save(d, async () => (await exportFile()).video)}
             data-testid={`save-${d.label === 'iCloud Drive' ? 'icloud' : 'gdrive'}`}
           >
             <BrandMark name={d.label === 'iCloud Drive' ? 'icloud' : 'gdrive'} size={17} />
           </button>
         ))}
       </div>
-      <SaveHelper saving={saving} name={saving ? label2(saving.drive) : ''} onClose={() => setSaving(null)} />
+      <SaveHelper saving={saving} name={saving ? driveName(saving.drive) : ''} onClose={reset} />
     </div>
   )
 }
@@ -106,19 +84,19 @@ function SaveHelper({ saving, name, onClose }: { saving: Saving | null; name: st
           <BrandMark name={mark} size={16} />
         </span>
         <div>
-          {s.state === 'saving' && (
+          {s.kind === 'saving' && (
             <>
               <b>Saving to {name}</b>
               <span>Into a “Reel Studio” folder</span>
             </>
           )}
-          {s.state === 'saved' && (
+          {s.kind === 'saved' && (
             <>
               <b>Saved</b>
               <span>In {name} › Reel Studio</span>
             </>
           )}
-          {s.state === 'error' && (
+          {s.kind === 'error' && (
             <>
               <b>Not saved</b>
               <span>{s.message}</span>
@@ -126,18 +104,18 @@ function SaveHelper({ saving, name, onClose }: { saving: Saving | null; name: st
           )}
         </div>
         <span className="spacer" />
-        {s.state !== 'saving' && (
+        {s.kind !== 'saving' && (
           <button className="icon-btn small" aria-label="Close" onClick={onClose}>
             <Icon name="x" size={14} />
           </button>
         )}
       </div>
-      {s.state === 'saving' && (
+      {s.kind === 'saving' && (
         <div className="hb">
           <i />
         </div>
       )}
-      {s.state === 'saved' && (
+      {s.kind === 'saved' && (
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button className="btn ghost small" onClick={() => void reel.app.openFolder(s.path)}>
             Show in {FOLDER_APP}
