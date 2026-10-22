@@ -192,7 +192,7 @@ function Card({ p, live, now, onOpen }: { p: ProjectSummary; live?: Live; now: D
     )
   const state = busy ? 'making' : p.status === 'ready' ? 'ready' : p.status === 'interrupted' ? 'paused' : 'failed'
   return (
-    <button className={`hcard st-${state}`} onClick={onOpen} title={p.title} data-testid="project-card">
+    <button className={`hcard st-${state}`} onClick={onOpen} title={p.title} data-testid="project-card" data-state={state}>
       <span className="im">
         {p.thumbnail ? <img src={p.thumbnail} alt="" loading="lazy" decoding="async" /> : <Icon name="video" size={30} className="placeholder" />}
         {state !== 'ready' && (
