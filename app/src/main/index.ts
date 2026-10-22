@@ -57,7 +57,9 @@ import { loadSettings, saveSettings } from './settings'
 import { createPidRegistry } from './orphans'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
-import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, SettingsPane } from '../shared/api'
+import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate } from '../shared/api'
+import { COVER_SUGGESTIONS } from '../shared/cover'
+import { createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
 import { versionMessage } from '../shared/describe'
 import { displayPath } from '../shared/display-path'
@@ -208,6 +210,7 @@ const models = createModelManager({
   checkDeadlineMs: 60_000,
   log
 })
+const coverScans = createCoverScans(runEngine)
 // ---- updates (main/updater.ts) -------------------------------------------------------------------
 // Test runs never touch the network, except the update e2e, which points a dev build at a local server
 // (REELSTUDIO_UPDATE_FEED, honoured only in an unpackaged test run: app/e2e/update.spec.ts).
@@ -690,7 +693,15 @@ function registerIpc(): void {
       exportsWriting--
     }
   })
+  handle('projects:coverCandidates', async (_e, slug: string, moments: number[], source: string): Promise<CoverCandidate[]> => {
+    const at = moments.filter((t) => Number.isFinite(t) && t >= 0).slice(0, COVER_SUGGESTIONS)
+    if (!at.length) return []
+    const r = await coverScans.scan(slug, ['--project', projectDir(slug), '--at', at.join(','), '--source', source])
+    return parseCoverCandidates(r, source, projectDir(slug))
+  })
+  handle('projects:stopCoverCandidates', (_e, slug: string) => coverScans.stop(slug))
   handle('projects:remove', async (_e, slug: string) => {
+    await coverScans.stop(slug)
     const running = jobs.forSlug(slug)
     if (running) {
       jobs.cancel(running.id)
