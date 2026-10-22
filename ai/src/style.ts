@@ -1,10 +1,35 @@
 // "My style": durable user preferences, persisted in <Reel Studio root>/My style.json.
-import * as fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { readJson, styleFile, writeFileAtomic } from './project';
 
-export interface StyleRule { id: string; text: string; createdAt: string }
-export interface StyleFile { version: 1; rules: StyleRule[] }
+/** A rule the app applies itself, through the caption tool, when a new video is made. Only lowercase for now:
+ * the caption tool and the engine schema agree on `lower`, but not on sentence case. */
+export interface CaptionCaseRule { kind: 'caption-case'; case: 'lower' }
+/** The video and version whose note the rule came from. */
+export interface StyleSource { project: string; title: string; version: number }
+/** "Remember this for next time?" for a typed rule. Saved only when the person says Yes to exactly this. */
+export interface StyleProposal { id: string; text: string; payload: CaptionCaseRule; source: StyleSource }
+
+export interface StyleRule {
+  id: string; text: string; createdAt: string;
+  payload?: CaptionCaseRule;
+  paused?: boolean;
+  source?: StyleSource;
+  /** the question the person said Yes to */
+  consent?: { proposal: string; at: string };
+}
+/** `forgotten`: questions whose rule was removed, so answering one again cannot bring it back. IDs only. */
+export interface StyleFile { version: 1; rules: StyleRule[]; forgotten?: string[] }
+export type Approval = { status: 'saved' | 'exists'; rule: StyleRule } | { status: 'forgotten' };
+
+export const LOWERCASE_CAPTIONS = 'Use lowercase captions.';
+const isCaptionCase = (x: unknown): x is CaptionCaseRule => (x as CaptionCaseRule)?.kind === 'caption-case' && (x as CaptionCaseRule).case === 'lower';
+
+const CAPTION_CASE_PROMPT = 'New videos start with lowercase captions (the app sets this). Use another case only when the note asks for it.';
+
+export function captionCaseProposal(source: StyleSource): StyleProposal {
+  return { id: randomUUID(), text: LOWERCASE_CAPTIONS, payload: { kind: 'caption-case', case: 'lower' }, source };
+}
 
 const normalize = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, '').replace(/\s+/g, ' ').trim();
 
@@ -37,16 +62,19 @@ export class StyleStore {
 
   get file(): string { return styleFile(this.rootDir()); }
 
-  async list(): Promise<StyleRule[]> {
-    if (!fs.existsSync(this.file)) return [];
+  private async read(): Promise<StyleFile> {
     try {
       const data = await readJson<StyleFile>(this.file);
-      return Array.isArray(data?.rules) ? data.rules.filter((r) => r && typeof r.text === 'string') : [];
-    } catch { return []; }
+      const rules = Array.isArray(data?.rules) ? data.rules.filter((r) => r && typeof r.text === 'string') : [];
+      const forgotten = Array.isArray(data?.forgotten) ? data.forgotten.filter((x) => typeof x === 'string') : [];
+      return { version: 1, rules, ...(forgotten.length ? { forgotten } : {}) };
+    } catch { return { version: 1, rules: [] }; }
   }
 
-  private async write(rules: StyleRule[]): Promise<void> {
-    await writeFileAtomic(this.file, JSON.stringify({ version: 1, rules } satisfies StyleFile, null, 2) + '\n');
+  async list(): Promise<StyleRule[]> { return (await this.read()).rules; }
+
+  private async write(data: StyleFile): Promise<void> {
+    await writeFileAtomic(this.file, JSON.stringify(data, null, 2) + '\n');
   }
 
   /** Adds a rule unless an equivalent one already exists. */
@@ -62,23 +90,77 @@ export class StyleStore {
 
   private async addNow(text: string): Promise<{ added: boolean; rule: StyleRule }> {
     const clean = cleanRuleText(text);
-    const rules = await this.list();
-    const dup = rules.find((r) => normalize(r.text) === normalize(clean));
+    const data = await this.read();
+    const dup = data.rules.find((r) => normalize(r.text) === normalize(clean));
     if (dup) return { added: false, rule: dup };
     const rule: StyleRule = { id: randomUUID(), text: clean, createdAt: new Date().toISOString() };
-    await this.write([...rules, rule]);
+    await this.write({ ...data, rules: [...data.rules, rule] });
     return { added: true, rule };
+  }
+
+  /** The person said Yes to `p`: the rule and its consent are saved in one write. Answering the same question
+   * again returns the same rule, and the question of a rule they removed cannot bring it back. */
+  async approve(p: StyleProposal): Promise<Approval> {
+    return this.serial(async () => {
+      if (!p?.id || p.text !== LOWERCASE_CAPTIONS || !isCaptionCase(p.payload)) throw new Error('the question does not match the rule it would save');
+      const data = await this.read();
+      if (data.forgotten?.includes(p.id)) return { status: 'forgotten' };
+      const same = data.rules.find((r) => r.consent?.proposal === p.id);
+      if (same) return { status: 'saved', rule: same };
+      const typed = data.rules.find((r) => isCaptionCase(r.payload));
+      if (typed) return { status: 'exists', rule: typed };
+      const at = new Date().toISOString();
+      const fields = {
+        text: LOWERCASE_CAPTIONS, payload: { kind: 'caption-case', case: 'lower' } as const,
+        source: { project: String(p.source?.project ?? ''), title: String(p.source?.title ?? '').slice(0, 120), version: Number(p.source?.version) || 0 },
+        consent: { proposal: p.id, at },
+      };
+      // The same words saved as a plain sentence give way to the typed rule. It gets a new ID: a running note
+      // that saved that sentence removes it by ID if the note fails, and must not take the approved rule with it.
+      const rule: StyleRule = { id: randomUUID(), createdAt: at, ...fields };
+      const rest = data.rules.filter((r) => normalize(r.text) !== normalize(LOWERCASE_CAPTIONS));
+      await this.write({ ...data, rules: [...rest, rule] });
+      return { status: 'saved', rule };
+    });
+  }
+
+  /** New words make a typed rule a plain one: the app cannot apply "lowercase captions for tutorials" itself. */
+  async update(id: string, patch: { text?: string; paused?: boolean }): Promise<StyleRule> {
+    return this.serial(async () => {
+      const data = await this.read();
+      const rule = data.rules.find((r) => r.id === id);
+      if (!rule) throw new Error('that rule is not in My style any more');
+      if (patch.text !== undefined) {
+        rule.text = cleanRuleText(patch.text);
+        if (rule.payload && rule.text !== LOWERCASE_CAPTIONS) delete rule.payload;
+      }
+      if (patch.paused === true) rule.paused = true;
+      if (patch.paused === false) delete rule.paused;
+      await this.write(data);
+      return rule;
+    });
   }
 
   async remove(id: string): Promise<void> {
     return this.serial(async () => {
-      const rules = await this.list();
-      await this.write(rules.filter((r) => r.id !== id));
+      const data = await this.read();
+      const asked = data.rules.find((r) => r.id === id)?.consent?.proposal;
+      await this.write({ ...data, rules: data.rules.filter((r) => r.id !== id), ...(asked ? { forgotten: [...(data.forgotten ?? []), asked] } : {}) });
     });
   }
 
+  /** The caption case an active typed rule asks for. Only this checked value leaves the store. */
+  async captionCase(): Promise<'lower' | null> {
+    return (await this.list()).some((r) => !r.paused && isCaptionCase(r.payload)) ? 'lower' : null;
+  }
+
+  /** A typed lowercase rule is already in My style, paused or not. */
+  async hasCaptionCase(): Promise<boolean> {
+    return (await this.list()).some((r) => isCaptionCase(r.payload));
+  }
+
   async asPromptText(): Promise<string> {
-    const rules = await this.list();
-    return rules.length ? rules.map((r) => `- ${r.text}`).join('\n') : '(none yet)';
+    const rules = (await this.list()).filter((r) => !r.paused);
+    return rules.length ? rules.map((r) => `- ${isCaptionCase(r.payload) ? CAPTION_CASE_PROMPT : r.text}`).join('\n') : '(none yet)';
   }
 }

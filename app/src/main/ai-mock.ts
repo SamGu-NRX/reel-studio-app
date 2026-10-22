@@ -6,7 +6,7 @@ import { join, extname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { writeJson } from './store'
 import type { AgentEvent, AgentResult, AI, ClaudeCodeStatus, CreateAI, ProviderStatus, ScriptResult } from './ai-types'
-import type { Phase } from '../shared/api'
+import type { Phase, StyleProposal, StyleRule } from '../shared/api'
 
 const MUSIC_EXT = new Set(['.mp3', '.m4a', '.wav', '.aac', '.flac', '.ogg'])
 
@@ -30,7 +30,7 @@ const span = (lo: number, hi: number, pct: number): number => Math.round(lo + ((
 export const createMockAI: CreateAI = ({ host }) => {
   const styleFile = (): string => join(host.reelStudioRoot(), 'My style.json')
 
-  async function readRules(): Promise<{ id: string; text: string; createdAt: string }[]> {
+  async function readRules(): Promise<StyleRule[]> {
     try {
       const j = JSON.parse(await fs.readFile(styleFile(), 'utf8'))
       return Array.isArray(j.rules) ? j.rules : []
@@ -38,9 +38,11 @@ export const createMockAI: CreateAI = ({ host }) => {
       return []
     }
   }
-  async function writeRules(rules: { id: string; text: string; createdAt: string }[]): Promise<void> {
+  async function writeRules(rules: StyleRule[]): Promise<void> {
     await fs.mkdir(host.reelStudioRoot(), { recursive: true })
-    await fs.writeFile(styleFile(), JSON.stringify({ rules }, null, 2) + '\n', 'utf8')
+    // keep what the real package also stores there (`version`, `forgotten`)
+    const file = await fs.readFile(styleFile(), 'utf8').then(JSON.parse).catch(() => ({}))
+    await fs.writeFile(styleFile(), JSON.stringify({ ...file, rules }, null, 2) + '\n', 'utf8')
   }
 
   async function readProject(dir: string): Promise<any> {
@@ -145,6 +147,8 @@ export const createMockAI: CreateAI = ({ host }) => {
         onEvent({ type: 'tool', name: 'choose_music', summary: `Picked a song: ${track.split('/').pop()}` })
       }
       // No post caption here: nothing smart ran, so the user writes it ("Post caption: add your own").
+      const lower = (await readRules()).some((r) => r.payload?.case === 'lower' && !r.paused)
+      if (lower) p.captions = { ...p.captions, style: { ...p.captions?.style, case: 'lower' } }
       await writeProject(projectDir, p)
 
       status('Making your cover', 60)
@@ -155,16 +159,18 @@ export const createMockAI: CreateAI = ({ host }) => {
       status('Done', 100)
 
       return {
-        summary: track
-          ? 'Your video is ready. I cut out the pauses, added subtitles, music and a cover. Connect ChatGPT and I can also pick your best takes and add pictures.'
-          : 'Your video is ready. I cut out the pauses and added subtitles and a cover. Add a song for music, and connect ChatGPT so I can pick your best takes and add pictures.',
+        summary:
+          (track
+            ? 'Your video is ready. I cut out the pauses, added subtitles, music and a cover. Connect ChatGPT and I can also pick your best takes and add pictures.'
+            : 'Your video is ready. I cut out the pauses and added subtitles and a cover. Add a song for music, and connect ChatGPT so I can pick your best takes and add pictures.') +
+          (lower ? ' I used lowercase captions from your My style.' : ''),
         version,
         styleRulesAdded: [],
         changed
       }
     },
 
-    async applyNote(projectDir, note, onEvent, _signal, opts): Promise<AgentResult> {
+    async applyNote(projectDir, note, onEvent, signal, opts): Promise<AgentResult> {
       onEvent({ type: 'status', message: 'Reading your note', pct: 10, phase: 'edit' })
       const p = await readProject(projectDir)
       const added: string[] = []
@@ -173,6 +179,20 @@ export const createMockAI: CreateAI = ({ host }) => {
         rules.push({ id: randomUUID(), text: note.trim(), createdAt: new Date().toISOString() })
         await writeRules(rules)
         added.push(note.trim())
+      }
+      // Tests only, with the mock Claude Code app connected: act like the real package on a lowercase note
+      // (change the captions, make a new version, ask to remember it).
+      if (/\blower ?case\b/i.test(note) && p.captions?.style?.case !== 'lower') {
+        p.captions = { ...p.captions, style: { ...p.captions?.style, case: 'lower' } }
+        await writeProject(projectDir, p)
+        const r = await host.runEngine('render', ['--project', projectDir], undefined, signal)
+        const version = Number(r?.version ?? 0)
+        onEvent({ type: 'render', version, draft: false })
+        const rules = await readRules()
+        const styleProposal: StyleProposal | undefined = rules.some((x) => x.payload)
+          ? undefined
+          : { id: randomUUID(), text: 'Use lowercase captions.', payload: { kind: 'caption-case', case: 'lower' }, source: { project: p.id, title: p.title, version } }
+        return { summary: 'I made the captions lowercase.', version, styleRulesAdded: added, changed: ['captions'], ...(styleProposal ? { styleProposal } : {}) }
       }
       const attachments = opts?.attachments?.length ? { attachments: opts.attachments } : {}
       p.notes = [...(p.notes ?? []), { version: p.version ?? 0, text: note, applied: [], at: new Date().toISOString(), ...attachments }]
@@ -198,6 +218,25 @@ export const createMockAI: CreateAI = ({ host }) => {
     async addStyleRule(text) {
       const rule = { id: randomUUID(), text, createdAt: new Date().toISOString() }
       await writeRules([...(await readRules()), rule])
+      return rule
+    },
+    async approveStyleProposal(proposal) {
+      const rules = await readRules()
+      if (rules.some((r) => r.payload)) return { status: 'exists' as const }
+      const at = new Date().toISOString()
+      await writeRules([...rules, { id: randomUUID(), text: proposal.text, createdAt: at, payload: proposal.payload, source: proposal.source, consent: { proposal: proposal.id, at } }])
+      return { status: 'saved' as const }
+    },
+    async updateStyleRule(id, patch) {
+      const rules = await readRules()
+      const rule = rules.find((r) => r.id === id)
+      if (!rule) throw { code: 'NOT_FOUND', userMessage: 'That rule is not in My style any more.' }
+      if (patch.text !== undefined) {
+        rule.text = patch.text.trim()
+        if (rule.text !== 'Use lowercase captions.') delete rule.payload
+      }
+      if (patch.paused !== undefined) rule.paused = patch.paused || undefined
+      await writeRules(rules)
       return rule
     },
     async removeStyleRule(id) {
