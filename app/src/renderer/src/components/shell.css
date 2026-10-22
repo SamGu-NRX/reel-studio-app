@@ -1,24 +1,28 @@
-/* The window: one title-bar row (traffic lights, sidebar toggle, wordmark), the sidebar, the page. */
+/* The window (spec section 2): one title-bar row across the top, the sidebar, the page. */
 
+/* ---- the title-bar row: the sidebar's part (after the traffic lights on a Mac), then the screen's part ---- */
 .titlebar { display: flex; align-items: center; z-index: 30; }
-.titlebar .sbt {
-  -webkit-app-region: no-drag; margin-left: 84px; width: 28px; height: 28px; border: 0; border-radius: 7px; padding: 0;
-  background: transparent; color: var(--ink-2); display: grid; place-items: center; cursor: pointer;
-}
-.platform-win32 .titlebar .sbt, .platform-linux .titlebar .sbt { margin-left: 8px; }
-@media (hover: hover) and (pointer: fine) { .titlebar .sbt:hover { background: rgba(22, 30, 26, .07); color: var(--ink); } }
-.wordmark { display: flex; align-items: center; gap: 8px; margin-left: 8px; font-size: 14px; letter-spacing: -.005em; white-space: nowrap; transition: opacity 120ms ease; pointer-events: none; }
-.wordmark b { font-weight: 700; }
-.wordmark > span:not(.logo) { font-weight: 450; color: var(--ink-2); margin-left: -4px; }
+.titlebar :is(button, a, input, textarea, select, [role="button"], [contenteditable="true"]) { -webkit-app-region: no-drag; pointer-events: auto; }
+.tb-side { width: var(--side-open); flex: none; height: 100%; display: flex; align-items: center; gap: 8px; padding-left: 84px; overflow: hidden; }
+.platform-win32 .tb-side, .platform-linux .tb-side { padding-left: 12px; }
+.rail .tb-side { width: 124px; }
+.platform-win32.rail .tb-side, .platform-linux.rail .tb-side { width: 64px; }
+.wordmark { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 600; letter-spacing: -.005em; white-space: nowrap; transition: opacity 120ms ease; pointer-events: none; }
 .logo { width: 22px; height: 22px; border-radius: 6px; background: var(--ink); color: #fff; display: grid; place-items: center; flex: none; }
 .rail .wordmark { opacity: 0; }
+.tb-main { flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 12px; padding: 0 var(--gutter); }
+.platform-win32 .tb-main { padding-right: 150px; }
+.tb-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.tb-h { font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 620; letter-spacing: 0; font-stretch: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-actions { flex: none; display: flex; align-items: center; gap: 8px; }
+.tb-actions:empty { display: none; }
 .first-titlebar { pointer-events: auto; }
 
 .shell { display: flex; height: 100%; }
 .shell > .main { flex: 1; }
 
 /* The column changes width at once; only its paper (scaleX) and the labels move. */
-.side { width: var(--side-open); flex: none; position: relative; z-index: 5; display: flex; flex-direction: column; padding: calc(var(--titlebar) + 8px) 12px 12px; }
+.side { width: var(--side-open); flex: none; position: relative; z-index: 5; display: flex; flex-direction: column; padding: calc(var(--titlebar) + 4px) 12px 12px; }
 .side::before {
   content: ''; position: absolute; inset: 0; width: var(--side-open); z-index: -1; background: var(--side); box-shadow: inset -1px 0 0 var(--line);
   transform-origin: 0 0; transition: transform 200ms var(--ease-out);
@@ -28,54 +32,63 @@
 .side .lbl { transition: opacity 120ms ease; }
 .rail .side .lbl { opacity: 0; pointer-events: none; }
 
+/* The sidebar's edge: drag to resize (Sidebar.tsx). The line shows only while you can grab it. */
+.side-resize { position: absolute; top: 0; bottom: 0; right: -4px; width: 8px; cursor: col-resize; z-index: 2; touch-action: none; }
+.side-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: var(--line-strong); opacity: 0; transition: opacity 120ms ease; }
+@media (hover: hover) and (pointer: fine) { .side-resize:hover::after { opacity: 1; transition-delay: 150ms; } }
+.side-resize:focus-visible::after, html.side-resizing .side-resize::after { opacity: 1; }
+.side-resize:focus-visible { outline: none; }
+.rail .side-resize { display: none; }
+html.side-resizing, html.side-resizing * { cursor: col-resize !important; user-select: none; }
+
+/* Nav rows: the chosen one is a soft wash, never a card. */
 .nav { display: grid; gap: 2px; }
 .nav button {
-  display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 11px; border: 0; border-radius: 9px; background: transparent;
-  font: inherit; font-size: 14px; font-weight: 500; color: var(--ink-2); text-align: left; white-space: nowrap; overflow: hidden; cursor: pointer;
+  display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: transparent;
+  font: inherit; font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 540; color: var(--ink-2); text-align: left; white-space: nowrap; overflow: hidden; cursor: pointer;
 }
 .nav button .icon { color: var(--ink-3); }
-.nav button.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--e1); }
+.nav button.on { background: rgba(22, 30, 26, .07); color: var(--ink); font-weight: 600; }
 .nav button.on .icon { color: var(--ink); }
-@media (hover: hover) and (pointer: fine) { .nav button:not(.on):hover { background: rgba(22, 30, 26, .05); color: var(--ink); } }
-.rail .nav button { width: 40px; }
+@media (hover: hover) and (pointer: fine) { .nav button:not(.on):hover { background: rgba(22, 30, 26, .04); color: var(--ink); } }
+.rail .nav button { width: 40px; padding: 0 12px; }
 
-.side-foot { margin-top: auto; position: relative; display: grid; gap: 8px; }
+.side-foot { margin-top: auto; position: relative; display: grid; gap: 4px; }
 .side-update:empty { display: none; }
 .rail .side-update { display: none; }
 
-/* Account row: who you are and whether an AI editor is on. */
+/* Account row: who you are and whether an AI editor is on; it opens Settings. */
 .acct {
-  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 12px; background: transparent;
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: var(--r-md); background: transparent;
   font: inherit; color: inherit; text-align: left; overflow: hidden; cursor: pointer;
 }
-.acct.open { background: var(--surface); box-shadow: var(--e1); }
-@media (hover: hover) and (pointer: fine) { .acct:not(.open):hover { background: rgba(22, 30, 26, .05); } }
-.av { width: 30px; height: 30px; border-radius: 50%; flex: none; background: var(--line-strong); color: var(--ink); display: grid; place-items: center; font-weight: 700; font-size: 13px; position: relative; }
+.acct.on { background: rgba(22, 30, 26, .07); }
+@media (hover: hover) and (pointer: fine) { .acct:not(.on):hover { background: rgba(22, 30, 26, .04); } }
+.av { width: 30px; height: 30px; border-radius: 50%; flex: none; background: var(--line-strong); color: var(--ink); display: grid; place-items: center; font-weight: 700; font-size: var(--fs-base); position: relative; }
 .av .st { position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 2px var(--side); }
 .av .st.off { background: var(--ink-4); }
 .who { min-width: 0; display: grid; }
-.who b { font-size: 13px; font-weight: 600; line-height: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.who span { font-size: 12px; line-height: 16px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.acct .chev { margin-left: auto; color: var(--ink-3); }
+.who b { font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.who span { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rail .acct { width: 46px; }
 
 /* Menus: grow from their trigger (--o), leave faster than they came. */
 .pop {
-  position: absolute; z-index: 50; background: var(--surface); border-radius: 12px; box-shadow: var(--e3); padding: 6px;
+  position: absolute; z-index: 50; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--e3); padding: 6px;
   transform-origin: var(--o, top left); transition: opacity 150ms ease, transform 150ms var(--ease-out);
 }
 @starting-style { .pop { opacity: 0; transform: scale(.97); } }
 .pop.leave { opacity: 0; transform: scale(.98); transition-duration: 120ms; pointer-events: none; }
 .mi {
   display: flex; align-items: center; gap: 10px; width: 100%; min-height: 32px; padding: 0 10px; border: 0; background: none; border-radius: 7px;
-  font: inherit; font-size: 13px; font-weight: 500; color: var(--ink); text-align: left; white-space: nowrap; cursor: pointer;
+  font: inherit; font-size: var(--fs-base); font-weight: 500; color: var(--ink); text-align: left; white-space: nowrap; cursor: pointer;
 }
 .mi > .icon { color: var(--ink-3); }
-.mi .r { margin-left: auto; padding-left: 12px; font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
+.mi .r { margin-left: auto; padding-left: 12px; font-size: var(--fs-sm); color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
 .mi.danger { color: var(--pencil); }
 .mi[disabled] { color: var(--ink-4); cursor: default; }
-@media (hover: hover) and (pointer: fine) { .mi:not([disabled]):hover { background: var(--sunk); } }
-.mi:focus-visible { background: var(--sunk); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .mi:not([disabled]):hover { background: var(--sunk-2); } }
+.mi:focus-visible { background: var(--sunk-2); outline-offset: -2px; }
 .pop hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
 .brandmark { flex: none; display: block; }
 

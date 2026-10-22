@@ -75,10 +75,9 @@ export async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: join(SHOTS, `${name}.png`) })
 }
 
-/** Settings sits in the account menu at the bottom of the sidebar. */
+/** The account row at the bottom of the sidebar opens Settings. */
 export async function openSettings(page: Page): Promise<void> {
   await page.getByTestId('account').click()
-  await page.getByTestId('nav-settings').click()
 }
 
 /** Other systems skip the "Your Mac" stage. */

@@ -119,7 +119,6 @@ test('make a reel end to end', async () => {
     await expect(page.getByText('Connect an AI editor to ask for changes.')).toBeVisible()
     await expect(page.getByTestId('note-input')).toHaveCount(0)
     await expect(page.getByTestId('change-at')).toHaveCount(0)
-    await expect(page.getByTestId('sidebar-connect')).toHaveCount(0)
   }
   await shot(page, '12-reel-no-ai')
 

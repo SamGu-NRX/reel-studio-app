@@ -5,7 +5,8 @@ import type { Screen } from './nav'
 import { IS_MAC, Toast } from './components/ui'
 import { draggingOut } from './components/Player'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { Sidebar, TitleBar, useRail } from './components/Sidebar'
+import { Sidebar, useRail } from './components/Sidebar'
+import { TitleBar, TitleBarProvider } from './components/titlebar'
 import { useInputMode } from './components/motion'
 import { Home } from './screens/Home'
 import { NewVideo } from './screens/NewVideo'
@@ -13,6 +14,7 @@ import { Working } from './screens/Working'
 import { Reel } from './screens/Reel'
 import { Library } from './screens/Library'
 import { MyStyle } from './screens/MyStyle'
+import { Insights } from './screens/Insights'
 import { Settings } from './screens/Settings'
 import { FirstRun } from './screens/FirstRun'
 import { Script } from './screens/Script'
@@ -236,23 +238,26 @@ export function App() {
 
   return (
     <NotifyCtx.Provider value={notify}>
-      <div className={`shell ${platform}${rail ? ' rail' : ''}`}>
-        <TitleBar rail={rail} onToggle={toggleRail} />
-        <Sidebar section={section} go={go} provider={provider} userName={info.userName} shown={shown} />
-        <main className="main">
-          <ErrorBoundary resetKey={JSON.stringify(screen)} onReset={() => go({ name: 'home' })}>
-            {screen.name === 'home' && <Home go={go} />}
-            {screen.name === 'new' && <NewVideo key={screen.files?.join('\n') ?? ''} go={go} files={screen.files} />}
-            {screen.name === 'script' && <Script go={go} />}
-            {screen.name === 'working' && <Working key={screen.slug} slug={screen.slug} go={go} />}
-            {screen.name === 'reel' && <Reel key={screen.slug} slug={screen.slug} go={go} fresh={screen.fresh} />}
-            {screen.name === 'library' && <Library refreshKey={libraryTick} />}
-            {screen.name === 'style' && <MyStyle />}
-            {screen.name === 'settings' && <Settings key={screen.section ?? ''} info={info} onInfo={setInfo} go={go} section={screen.section} />}
-            {screen.name === 'connect' && <Connect back={screen.back} go={go} />}
-          </ErrorBoundary>
-        </main>
-      </div>
+      <TitleBarProvider>
+        <div className={`shell ${platform}${rail ? ' rail' : ''}`}>
+          <TitleBar rail={rail} onToggle={toggleRail} />
+          <Sidebar section={section} go={go} provider={provider} userName={info.userName} />
+          <main className="main">
+            <ErrorBoundary resetKey={JSON.stringify(screen)} onReset={() => go({ name: 'home' })}>
+              {screen.name === 'home' && <Home go={go} />}
+              {screen.name === 'new' && <NewVideo key={screen.files?.join('\n') ?? ''} go={go} files={screen.files} />}
+              {screen.name === 'script' && <Script go={go} />}
+              {screen.name === 'working' && <Working key={screen.slug} slug={screen.slug} go={go} />}
+              {screen.name === 'reel' && <Reel key={screen.slug} slug={screen.slug} go={go} fresh={screen.fresh} />}
+              {screen.name === 'library' && <Library refreshKey={libraryTick} />}
+              {screen.name === 'style' && <MyStyle />}
+              {screen.name === 'insights' && <Insights />}
+              {screen.name === 'settings' && <Settings key={screen.section ?? ''} info={info} onInfo={setInfo} go={go} section={screen.section} />}
+              {screen.name === 'connect' && <Connect back={screen.back} go={go} />}
+            </ErrorBoundary>
+          </main>
+        </div>
+      </TitleBarProvider>
       <DropVeil veil={veil} />
       {toastEl}
     </NotifyCtx.Provider>
