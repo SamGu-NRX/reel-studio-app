@@ -117,10 +117,6 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await page.mouse.up()
   await expect(page.getByTestId('original-video')).not.toHaveClass(/on/)
 
-  // The banner can be put away, for this video.
-  await page.getByTestId('banner-close').click()
-  await expect(page.getByTestId('ai-banner')).toHaveCount(0)
-
   // ---- drawer: Esc closes, Ctrl/Cmd+Z undoes ----
   await page.getByTestId('edit-myself').click()
   await expect(page.getByTestId('tab-cut')).toBeFocused() // not Close
@@ -193,16 +189,15 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await expect(page.getByTestId('player')).toBeVisible()
   expect(await page.evaluate(() => (window as any).__sawNoAi)).toBe(false)
   await expect(page.getByTestId('did-cut')).toContainText('Kept your best takes')
-  await expect(page.getByTestId('ai-banner')).toHaveCount(0)
-  await expect(page.getByTestId('note-input')).toHaveAttribute('placeholder', 'Tell your editor what to change…')
+  await expect(page.getByTestId('change-at')).toContainText('Change something at')
   await shot(page, 'd-12-reel-with-ai')
 
-  // ---- AI detection that has not answered: the reel still opens at once, only the note box waits ----
+  // ---- an AI check that has not answered: the reel still opens at once; only the change button waits ----
   await app.evaluate(({ ipcMain }) => {
     ipcMain.removeHandler('ai:active')
-    const g = globalThis as any
-    g.__aiWaiting = []
-    ipcMain.handle('ai:active', () => new Promise((answer) => g.__aiWaiting.push(answer)))
+    const waiting: ((v: unknown) => void)[] = []
+    ;(globalThis as { __aiWaiting?: typeof waiting }).__aiWaiting = waiting
+    ipcMain.handle('ai:active', () => new Promise((answer) => waiting.push(answer)))
   })
   await page.getByTestId('nav-home').click()
   const opened = Date.now()
@@ -215,19 +210,24 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await page.keyboard.press('Space') // plays or pauses, like on a reel opened normally
   await expect.poll(paused, { timeout: 1000 }).toBe(!wasPaused)
   expect(Date.now() - opened).toBeLessThan(1000)
+  await expect(page.getByTestId('change-checking')).toBeDisabled()
+  await expect(page.getByTestId('change-checking')).toHaveText('Checking for your AI editor…')
   await expect(page.getByTestId('note-input')).toBeDisabled()
-  await expect(page.getByTestId('ai-banner')).toHaveCount(0)
   await expect(page.getByTestId('composer-connect')).toHaveCount(0)
-  // A picture dropped on the note box meanwhile is held: nothing can be sent until the check answers...
+  await expect(page.getByTestId('ai-banner')).toHaveCount(0)
+  // A picture dropped on the note box meanwhile is held: nothing can be sent until the check answers... (polish-pass)
   await dropFiles(page, 'note-drop', [media.picture])
   await expect(page.getByTestId('note-attachment-busy')).toBeVisible()
   await page.waitForTimeout(2000) // a picture copies in about 0.2 s, so an early attach would have landed by now
   await expect(page.getByTestId('note-attachment')).toHaveCount(0)
   await expect(page.getByTestId('send')).toBeDisabled()
-  // ...then it is attached like any drop.
   await app.evaluate(() => {
-    for (const answer of (globalThis as any).__aiWaiting) answer({ ok: true, value: { id: 'chatgpt', connected: true, label: 'ChatGPT', detail: '' } })
+    for (const answer of (globalThis as { __aiWaiting?: ((v: unknown) => void)[] }).__aiWaiting ?? [])
+      answer({ ok: true, value: { id: 'chatgpt', connected: true, label: 'ChatGPT', detail: '' } })
   })
+  await expect(page.getByTestId('change-at')).toBeEnabled()
+  await expect(page.getByTestId('note-input')).toBeEnabled()
+  // ...then it is attached like any drop.
   await expect(page.getByTestId('note-attachment')).toHaveCount(1)
   await expect(page.getByTestId('send')).toBeEnabled()
   await page.getByTestId('note-attachment-remove').click()

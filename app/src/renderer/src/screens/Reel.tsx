@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatAction, ChecklistItem, ExportResult, ProjectDetail, ProviderInfo } from '../../../shared/api'
+import type { ChatAction, ChecklistItem, ExportResult, PlacedWord, ProjectDetail, ProviderInfo } from '../../../shared/api'
 import { ACTION_LABELS } from '../../../shared/notes'
 import { clock } from '../../../shared/progress'
 import { EMPTY_LIVE, liveFromDetail, reduceLive, timeLeftWords, type LiveState } from '../../../shared/live'
@@ -13,6 +13,8 @@ import { DevicePreview } from '../components/DevicePreview'
 import { EXPORT_EVENT, NOTE_DROP_DONE, useNotify } from '../App'
 import { ShowMeHow, type Tab } from './ShowMeHow'
 import { AttachmentChips, AttachmentThumb, useNoteAttachments } from '../components/NoteAttachments'
+import { ChangeAt } from '../components/ChangeAt'
+import { noteMarks, typedMoment } from '../../../shared/moments'
 
 const ACTION_TAB: Partial<Record<ChatAction, Tab>> = {
   'open-cut': 'cut',
@@ -68,6 +70,8 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   // Files dropped on the note box before the AI check answers: attached once it does, as any drop is.
   const heldDrops = useRef<{ files: File[]; types: string[] }[]>([])
   const [held, setHeld] = useState(0)
+  const [playhead, setPlayhead] = useState(0)
+  const [asking, setAsking] = useState(false)
 
   const load = useCallback(
     async (selectLatest = false) => {
@@ -126,6 +130,29 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const version = d ? (d.versions.find((v) => v.n === selected) ?? d.versions[d.versions.length - 1]) : undefined
   // while a change is being made: its quick preview (a draft render), until the new version is done
   const changePreview = job?.preview?.video ?? null
+  // Where the shown version plays each word, for the marks. Keyed on its video URL, which changes
+  // with every render of it (the file's mtime is in the URL).
+  const [timeline, setTimeline] = useState<{ video: string; words: PlacedWord[] } | null>(null)
+  const shownN = version?.n
+  const shownVideo = version?.video
+  useEffect(() => {
+    if (shownN === undefined || !shownVideo) return
+    let live = true
+    reel.projects
+      .timeline(slug, shownN)
+      .then((t) => {
+        if (live) setTimeline({ video: shownVideo, words: t?.words ?? [] })
+      })
+      .catch((e) => notify(userMessage(e), 'error'))
+    return () => {
+      live = false
+    }
+  }, [slug, shownN, shownVideo, notify])
+  // The player starts over at 0:00 on every new video (it is keyed on it): so does the change button.
+  const playerSrc = changePreview ?? shownVideo ?? 'none'
+  useEffect(() => {
+    setPlayhead(0)
+  }, [playerSrc])
 
   useEffect(() => {
     if (!providerChecked || !heldDrops.current.length) return
@@ -180,6 +207,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
       notify(userMessage(e), 'error')
     }
   }
+  // the AI check must answer first: until then a note could go out as if no editor were connected
   const canSend = (!!note.trim() || att.chips.length > 0) && !job && !att.busy && providerChecked
   // Files dropped on the note box are attached to the note. The window-wide drop (App.tsx: a video makes
   // a new reel) must not see them, so the drop stops here; App clears its overlay on NOTE_DROP_DONE.
@@ -268,6 +296,13 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     }
   }
 
+  // none over a change's quick preview: it is cut differently from the saved version they are placed on
+  const marks = !changePreview && timeline && timeline.video === version?.video ? noteMarks(d.chat, job?.jobId ?? null, timeline.words) : []
+  const sent = async (jobId: string | null) => {
+    if (jobId) setJob((cur) => (cur?.jobId === jobId ? cur : { ...EMPTY_LIVE, jobId, message: 'Reading your note' }))
+    await load()
+  }
+
   const runAction = (a: ChatAction, messageId: string) => {
     if (a === 'remember-yes' || a === 'remember-no') {
       reel.style
@@ -319,9 +354,11 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     <div className={`page reel-page${fresh ? ' fresh' : ''}`}>
       <div className="reel">
         <div className="reel-left">
+          {/* the phone gets the height the rows under it leave (styles.css .phone-slot) */}
+          <div className="phone-slot">
           <DevicePreview instagram={igOverlay && !holding} caption={d.project.post?.caption}>
             <PhonePlayer
-              key={changePreview ?? version?.video ?? 'none'}
+              key={playerSrc}
               src={changePreview ?? version?.video ?? null}
               poster={version?.cover}
               autoPlayMuted={!!changePreview || (fresh && version?.n === d.versions[d.versions.length - 1]?.n)}
@@ -333,8 +370,22 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               holdingOriginal={holding}
               onDuration={setDuration}
               dragFile={version && !version.draft ? version.videoPath : null}
+              marks={marks}
+              asking={asking}
+              onTime={setPlayhead}
             />
           </DevicePreview>
+          </div>
+          <ChangeAt
+            slug={slug}
+            at={playhead}
+            shown={version ? { n: version.n, latest: version.n === d.versions[d.versions.length - 1].n } : null}
+            aiOn={!aiOff}
+            checking={!providerChecked}
+            busy={!!job}
+            onOpenChange={setAsking}
+            onSent={(id) => void sent(id)}
+          />
           {changePreview && (
             <p className="muted-sm center" data-testid="change-preview">Here's your change. I'm making the full-quality version.</p>
           )}
@@ -441,11 +492,9 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
           </div>
 
           {aiOff && !bannerHidden && (
+            // Why the reel is simpler, and that nothing is locked. The way to connect is the button under the player.
             <div className="banner" data-testid="ai-banner">
-              <span>No AI editor yet, so I made a simple cut. Connect one and I can pick your best takes, add pictures and change the video from your notes.</span>
-              <button className="btn small" onClick={connect} data-testid="banner-connect">
-                Connect
-              </button>
+              <span>No AI editor yet, so I made a simple cut. You can still change anything under Edit it myself.</span>
               <button
                 className="icon-btn"
                 aria-label="Hide this"
@@ -483,16 +532,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                 )
               })}
             </ul>
-            {extras.length > 0 && (
-              <div className="extras" data-testid="extras">
-                <span className="muted-sm">Optional extras:</span>
-                {extras.map((x) => (
-                  <button key={x.key} className="extra" onClick={x.run} disabled={!!job} data-testid={x.testid}>
-                    <Icon name="plus" size={14} stroke={2} /> {x.label}
-                  </button>
-                ))}
-              </div>
-            )}
             {postDraft !== null && (
               <div className="stack" style={{ marginTop: 14 }} data-testid="post-editor">
                 <label className="muted-sm" htmlFor="post-draft">
@@ -527,11 +566,9 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
           </section>
 
           <section className="panel notes-panel">
-            <h2>Notes for your editor</h2>
+            <h2>Your notes</h2>
             <div className="chat" data-testid="chat">
-              {d.chat.length === 0 && !job && (
-                <p className="muted-sm">Watch your reel, then tell me what to change. For example: "music too loud at the start".</p>
-              )}
+              {d.chat.length === 0 && !job && <p className="muted-sm">Changes you ask for show up here.</p>}
               {d.chat.map((m) => (
                 <div key={m.id} className={`bubble ${m.from}`} data-testid={`bubble-${m.from}`}>
                   {m.attachments?.length ? (
@@ -541,15 +578,18 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                       ))}
                     </div>
                   ) : null}
+                  {m.moment && !typedMoment(m.text) && <><span className="bubble-moment">{clock(m.moment.at)}</span> </>}
                   {m.text}
-                  {m.from === 'editor' && m.actions?.length ? (
+                  {m.moment && <span className="bubble-quote" title={m.moment.quote}>"{m.moment.quote}"</span>}
+                  {/* "Connect" is the change button under the player, once; not in every old reply */}
+                  {m.from === 'editor' && m.actions?.some((a) => a !== 'connect') ? (
                     <div className="bubble-actions">
-                      {m.actions.map((a) => (
+                      {m.actions.filter((a) => a !== 'connect').map((a) => (
                         <button
                           key={a}
-                          className={`btn small${a === 'connect' ? '' : ' primary'}`}
+                          className="bubble-link"
                           onClick={() => runAction(a, m.id)}
-                          disabled={!!job && a !== 'connect'}
+                          disabled={!!job}
                           data-testid={`action-${a}`}
                         >
                           {ACTION_LABELS[a]}
@@ -571,7 +611,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               // Outside the scrolling chat, so the progress can never be scrolled or cut out of sight.
               <div className="job-progress" ref={progressRef} data-testid="note-progress">
                 <div className="row" style={{ marginBottom: 8 }}>
-                  {job.thinking ? <Thinking /> : <Spinner />} <span>{job.message}</span>
+                  {job.thinking ? <Thinking /> : <Spinner />} <span className="job-message">{job.message}</span>
                   <span className="spacer" />
                   <span className="muted-sm" data-testid="note-time-left">{timeLeftWords(job) ?? ''}</span>
                   <button className="link" onClick={() => job.jobId && reel.jobs.cancel(job.jobId)} style={{ padding: 0, marginLeft: 12 }}>
@@ -581,10 +621,25 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                 <Progress pct={job.overall} label={job.message} />
               </div>
             )}
+            {extras.length > 0 && !job && (
+              <div className="extras" data-testid="extras">
+                {extras.map((x) => (
+                  <button key={x.key} className="extra" onClick={x.run} data-testid={x.testid}>
+                    <Icon name="plus" size={14} stroke={2} /> {x.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {aiOff ? (
+              // the one connect prompt on this screen: notes go to an AI editor (Sam), none is connected
+              <button className="link left" onClick={connect} data-testid="composer-connect">
+                Connect an AI editor to ask for changes
+              </button>
+            ) : (
             <div className={`note-drop${noteDrop ? ' over' : ''}`} {...noteDropProps} data-testid="note-drop">
             {noteDrop && <div className="note-drop-hint">Drop to attach it to your note</div>}
             <AttachmentChips chips={att.chips} busy={att.busy + held} onRemove={(a) => void att.remove(a)} />
-            <div className={`composer${aiOff ? ' no-ai' : ''}`} ref={composerRef}>
+            <div className="composer" ref={composerRef}>
               <button
                 className="btn attach-btn"
                 onClick={att.choose}
@@ -599,9 +654,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               <textarea
                 className="input composer-input"
                 rows={1}
-                placeholder={
-                  !providerChecked ? 'Checking for your AI editor…' : aiOff ? 'Connect an AI editor to change things by typing' : 'Tell your editor what to change…'
-                }
+                placeholder={providerChecked ? 'Tell your editor what to change…' : 'Checking for your AI editor…'}
                 aria-label="Note for your editor"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
@@ -615,17 +668,13 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                 disabled={!!job || !providerChecked}
                 data-testid="note-input"
               />
-              {aiOff && !note.trim() && (
-                <button className="btn small in-box" onClick={connect} data-testid="composer-connect">
-                  Connect
-                </button>
-              )}
               </div>
               <button className={`btn${canSend ? ' primary' : ''}`} onClick={() => void send()} disabled={!canSend} data-testid="send" aria-label="Send">
                 <Icon name="send" size={16} /> Send
               </button>
             </div>
             </div>
+            )}
           </section>
         </div>
       </div>
