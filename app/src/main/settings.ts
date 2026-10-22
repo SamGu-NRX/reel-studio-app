@@ -13,6 +13,7 @@ export interface Settings {
   updateDismissed: Dismissal | null
   firstRunDone: boolean
   root: string | null
+  fasterExports: boolean
   /** Written by the 0.1.0/0.1.1 local-Claude-Code builds (a one-time automatic AI pick); read once by ai-carryover.ts. */
   aiAutoPicked: boolean
   /** ai-carryover.ts already ran (it kept, or left alone, what an old local-Claude-Code install was using) */
@@ -25,6 +26,7 @@ export interface Settings {
 const DEFAULTS: Settings = {
   firstRunDone: false,
   root: null,
+  fasterExports: false,
   aiAutoPicked: false,
   aiCarriedOver: false,
   notifications: null,

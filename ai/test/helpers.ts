@@ -92,7 +92,7 @@ function editSignature(p: Record<string, unknown>): string {
 /** Fake engine: enough of docs/architecture.md section 4 for the AI layer. Records every call. */
 export class FakeHost implements EngineHost {
   calls: { command: string; args: string[] }[] = [];
-  animations: { template: string; params: any; out: string }[] = [];
+  animations: { template: string; params: any; out: string; fps?: number }[] = [];
   failRender = false;
   searchResults: any[] = [];
   /** set to make `fetch-image` / `analyze-music` behave like a current engine (else: unknown command) */
@@ -103,8 +103,8 @@ export class FakeHost implements EngineHost {
   afterRenderFiles?: (r: { draft: boolean; dir: string }) => Promise<void> | void;
   constructor(private readonly root: string, private readonly lines = SAMPLE_LINES) {}
   reelStudioRoot(): string { return this.root; }
-  async renderAnimation(template: string, params: Record<string, unknown>, outPath: string): Promise<string> {
-    this.animations.push({ template, params, out: outPath });
+  async renderAnimation(template: string, params: Record<string, unknown>, outPath: string, fps?: number): Promise<string> {
+    this.animations.push({ template, params, out: outPath, fps });
     await fsp.writeFile(outPath, 'fake animation');
     return outPath;
   }
