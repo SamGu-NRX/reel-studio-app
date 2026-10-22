@@ -93,20 +93,6 @@ export async function exportPlatforms({ source, video, chosenCover, folder, name
 /** Staging folders left by a crash or a force quit during an export. */
 export async function sweepExportStaging(folder: string): Promise<void> {
   const names = await fs.readdir(folder).catch(() => [])
-  await Promise.all(names.filter((n) => n.startsWith(STAGE_PREFIX)).map(async (name) => {
-    // A just-exited ffmpeg can keep a handle briefly on Windows; retry before giving up.
-    let lastError: unknown
-    for (let attempt = 0; attempt < 6; attempt++) {
-      try {
-        await fs.rm(join(folder, name), { recursive: true, force: true, maxRetries: 1, retryDelay: 200 })
-        lastError = undefined
-        break
-      } catch (error) {
-        lastError = error
-        if (attempt === 5) throw error
-        await new Promise((resolve) => setTimeout(resolve, 200))
-      }
-    }
-    void lastError
-  }))
+  // Same retries as the export's own cleanup: on Windows a just-exited ffmpeg can hold a file for a moment (EBUSY).
+  await Promise.all(names.filter((n) => n.startsWith(STAGE_PREFIX)).map((n) => fs.rm(join(folder, n), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })))
 }

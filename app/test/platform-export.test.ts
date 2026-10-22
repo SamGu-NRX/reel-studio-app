@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, promises as fs, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -72,24 +72,18 @@ describe('platform files through the real engine', () => {
     expect(await fs.readdir(folder)).toEqual(['earlier export.mp4'])
   })
 
-  it('retries staging cleanup after a Windows file lock is released', async () => {
-    const folder = join(scratch, 'sweep-retry')
+  // A real lock, not a mock: PowerShell opens the file with FileShare.None for 600 ms, as a stopped ffmpeg can.
+  it.runIf(process.platform === 'win32')('removes a staging folder whose file is still locked for a moment', async () => {
+    const folder = join(scratch, 'sweep-locked')
     const stage = join(folder, '.platform-export-locked')
+    const file = join(stage, 'video.mp4')
     await fs.mkdir(stage, { recursive: true })
-    await fs.writeFile(join(stage, 'video.mp4'), 'leftover')
-    let attempts = 0
-    const originalRm = fs.rm
-    const rmSpy = (async (...args: Parameters<typeof fs.rm>) => {
-      if (++attempts === 1) throw Object.assign(new Error('busy'), { code: 'EBUSY' })
-      return originalRm(...args)
-    }) as typeof fs.rm
-    ;(fs as unknown as { rm: typeof fs.rm }).rm = rmSpy
-    try {
-      await sweepExportStaging(folder)
-    } finally {
-      ;(fs as unknown as { rm: typeof fs.rm }).rm = originalRm
-    }
-    expect(attempts).toBe(2)
+    await fs.writeFile(file, 'leftover')
+    const holder = spawn('powershell.exe', ['-NoProfile', '-Command',
+      `$f = [IO.File]::Open('${file}', 'Open', 'ReadWrite', 'None'); 'locked'; Start-Sleep -Milliseconds 600; $f.Close()`])
+    await new Promise<void>((ok) => holder.stdout.on('data', (d: Buffer) => d.toString().includes('locked') && ok()))
+    await expect(fs.rm(stage, { recursive: true, force: true })).rejects.toMatchObject({ code: 'EBUSY' })
+    await sweepExportStaging(folder)
     expect(await fs.readdir(folder)).toEqual([])
   })
 })
