@@ -2,9 +2,9 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
 import { App } from './App'
-import { TITLEBAR_HEIGHT } from '../../shared/chrome'
+import { titlebarHeight } from '../../shared/chrome'
 
-document.documentElement.style.setProperty('--titlebar', `${TITLEBAR_HEIGHT}px`)
+document.documentElement.style.setProperty('--titlebar', `${titlebarHeight(/Mac/.test(navigator.platform) ? 'darwin' : 'win32')}px`)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

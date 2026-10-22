@@ -6,7 +6,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import type { AppCommand, JobEvent } from '../shared/api'
 import { RELEASES_REPO } from '../shared/config'
-import { TITLEBAR_HEIGHT } from '../shared/chrome'
+import { titlebarHeight } from '../shared/chrome'
 
 const PAPER = '#F1F2EF'
 const INK = '#161917'
@@ -67,8 +67,8 @@ export function createMainWindow(opts: { preload: string; stateFile: string; tes
     // system's window buttons drawn on top, so there is no grey strip and no stray menu bar.
     titleBarStyle: 'hidden',
     ...(mac
-      ? { trafficLightPosition: { x: 16, y: (TITLEBAR_HEIGHT - MAC_BUTTON) / 2 } }
-      : { titleBarOverlay: { color: PAPER, symbolColor: INK, height: TITLEBAR_HEIGHT } }),
+      ? { trafficLightPosition: { x: 16, y: (titlebarHeight('darwin') - MAC_BUTTON) / 2 } }
+      : { titleBarOverlay: { color: PAPER, symbolColor: INK, height: titlebarHeight(process.platform) } }),
     webPreferences: {
       preload: opts.preload,
       contextIsolation: true,

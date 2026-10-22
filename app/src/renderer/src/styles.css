@@ -14,17 +14,17 @@
   font-display: block;
 }
 
-/* The prototype's tokens (redesign-prototype/site/app.css), with the spec's two changes: the primary colour is
-   ink, and green means only "done or ready". */
+/* The prototype's tokens (redesign-prototype/site/app.css). Green is the one primary button per screen and done or
+   ready, never decoration (ux-foundation-b.md section 9). */
 :root {
   --paper: #F1F2EF; --paper-2: #F7F8F6; --side: #E9EBE6; --surface: #FFFFFF; --sunk: #E8EAE6; --sunk-2: #F6F7F5;
   --line: #E0E2DD; --line-strong: #CBCFC9;
   --ink: #161917; --ink-2: #474D49; --ink-3: #626963; --ink-4: #9CA29D;
-  --green: #1E5E4B; --green-tint: #E2EDE7; --green-ink: #164A3B;
+  --green: #1E5E4B; --green-hover: #184F3F; --green-press: #133F33; --green-tint: #E2EDE7; --green-ink: #164A3B;
   --marker: #F4DF6E; --marker-soft: #FAEFB4; --marker-ink: #4A3E00;
   --pencil: #BF3626; --pencil-tint: #FBEAE6; --amber: #8A5A00; --amber-tint: #FBF0D9;
   --stage-hi: #F0F1EE; --stage-lo: #D9DCD6; --bezel: #121413;
-  --primary: var(--ink); --primary-hover: #2A2F2C; --primary-press: #000;
+  --primary: var(--green); --primary-hover: var(--green-hover); --primary-press: var(--green-press);
   --wash: rgba(22, 30, 26, .06);
   --e1: 0 1px 2px rgba(22, 30, 26, .06), 0 0 0 1px rgba(22, 30, 26, .06);
   --e2: 0 10px 28px -12px rgba(22, 30, 26, .22), 0 0 0 1px rgba(22, 30, 26, .07);
@@ -175,7 +175,7 @@ html.kb :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* ---- buttons (spec section 1): four kinds, nothing else ----
    .btn            secondary: a pill with a hairline border
-   .btn.primary    primary: a pill filled with ink, at most one per view
+   .btn.primary    primary: a green pill, at most one per view
    .btn.ghost      tertiary: text only, ink-2, underlined on hover
    .icon-btn       an icon, bare, 28 px, a wash on hover
    Sizes: 36 px; .big is onboarding's 44 px; .small is 28 px for dense rows (a note's receipt, a list row).

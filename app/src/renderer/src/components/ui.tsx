@@ -3,7 +3,7 @@ import { droppedPaths } from '../api'
 import { Icon, type IconName } from './icons'
 
 /**
- * The app's three text buttons (spec section 1): primary (ink pill, at most one per view), secondary (hairline pill)
+ * The app's three text buttons (spec section 1): primary (green pill, at most one per view), secondary (hairline pill)
  * and tertiary (text, underlined on hover). `small` is for dense rows, `big` for onboarding. Styles: styles.css `.btn`.
  */
 export function Button({
