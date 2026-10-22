@@ -6,7 +6,7 @@ import { Icon } from '../components/icons'
 import { PhonePlayer } from '../components/Player'
 import { useNotify } from '../App'
 import { ModelDownload } from '../components/connect'
-import { STAGES, stageIndex } from '../../../shared/progress'
+import { STEP_LABEL, stepNote, type Step } from '../../../shared/steps'
 import { EMPTY_LIVE, PREVIEW_LABEL, liveFromDetail, reduceLive, timeLeftWords, type LiveState } from '../../../shared/live'
 
 type State =
@@ -15,15 +15,13 @@ type State =
   | { kind: 'stopped' }
   | { kind: 'failed'; message: string; code?: string }
 
-const LISTEN = 1 // index of "Listening to your video"
-
 export function Working({ slug, go }: { slug: string; go: Go }) {
   const notify = useNotify()
   const [title, setTitle] = useState('')
   const [state, setState] = useState<State>({ kind: 'loading' })
-  const [stage, setStage] = useState(0)
-  const stageRef = useRef(0)
+  const [steps, setSteps] = useState<Step[]>([])
   const jobRef = useRef<string | null>(null)
+  const stepsRef = useRef<Step[]>([])
   const [source, setSource] = useState<string | null>(null)
   const [frameShown, setFrameShown] = useState(false)
   // the take is flipped at render (it was mirrored): its first frame here is shown flipped too
@@ -60,8 +58,10 @@ export function Working({ slug, go }: { slug: string; go: Go }) {
         if (d.job) {
           jobRef.current = d.job.id
           setState({ kind: 'running', jobId: d.job.id, message: d.job.message, pct: d.job.pct })
-          stageRef.current = stageIndex(d.job.message, stageRef.current)
-          setStage(stageRef.current)
+          if (d.job.steps) {
+            stepsRef.current = d.job.steps
+            setSteps(d.job.steps)
+          }
           setLive(liveFromDetail(d.job))
         } else if (d.versions.length) go({ name: 'reel', slug })
         else if (d.status === 'failed')
@@ -77,11 +77,12 @@ export function Working({ slug, go }: { slug: string; go: Go }) {
       if (e.type === 'heard') setHeard(e.words)
       if (e.type === 'status') {
         setState({ kind: 'running', jobId: e.jobId, message: e.message, pct: e.pct })
-        const before = stageRef.current
-        stageRef.current = stageIndex(e.message, stageRef.current)
-        setStage(stageRef.current)
-        // A new step: the copy, then the transcript, are now on disk.
-        if (stageRef.current !== before) refresh.current()
+        if (e.steps) {
+          // A new step: the copy, then the transcript, are now on disk.
+          if (e.steps.findIndex((s) => s.state === 'now') !== stepsRef.current.findIndex((s) => s.state === 'now')) refresh.current()
+          stepsRef.current = e.steps
+          setSteps(e.steps)
+        }
       } else if (e.type === 'done') go({ name: 'reel', slug, fresh: true })
       else if (e.type === 'error') setState({ kind: 'failed', message: e.userMessage, code: e.code })
       else if (e.type === 'cancelled') setState({ kind: 'stopped' })
@@ -94,8 +95,8 @@ export function Working({ slug, go }: { slug: string; go: Go }) {
 
   const resume = async () => {
     try {
-      setStage(0)
-      stageRef.current = 0
+      setSteps([])
+      stepsRef.current = []
       setLive(EMPTY_LIVE)
       setState({ kind: 'running', jobId: '', message: 'Getting started', pct: 0 })
       const r = await reel.projects.resume(slug)
@@ -116,7 +117,7 @@ export function Working({ slug, go }: { slug: string; go: Go }) {
   // the job flow's own honest estimate (main/progress.ts): a number, "almost there" when past it, or nothing yet
   const left = timeLeftWords(live)
   const preview = live.preview
-  const showWords = heard.length > 0 && stage > LISTEN
+  const showWords = heard.length > 0 && steps.some((s) => s.id === 'listen' && s.state === 'done')
 
   return (
     <div className="page reel-page">
@@ -176,10 +177,11 @@ export function Working({ slug, go }: { slug: string; go: Go }) {
               </div>
 
               <ol className="stages" data-testid="stages">
-                {STAGES.map((s, i) => (
-                  <li key={s.label} className={`stage${i < stage ? ' done' : i === stage ? ' current' : ''}`}>
-                    <span className="dot">{i < stage ? <Icon name="check" size={14} stroke={2.5} /> : i === stage ? (live.thinking ? <Thinking /> : <Spinner />) : null}</span>
-                    {s.label}
+                {steps.map((s) => (
+                  <li key={s.id} className={`wstep ${s.state}`} data-state={s.state}>
+                    <span className="dot">{s.state === 'done' ? <Icon name="check" size={14} stroke={2.5} /> : s.state === 'now' ? (live.thinking ? <Thinking /> : <Spinner />) : null}</span>
+                    {STEP_LABEL[s.id]}
+                    {stepNote(s) && <span className="wstep-note">{stepNote(s)}</span>}
                   </li>
                 ))}
               </ol>

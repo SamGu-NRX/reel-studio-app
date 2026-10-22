@@ -236,12 +236,14 @@ a { color: inherit; }
 .progress-block { margin-top: 22px; }
 .time-left { font-weight: 600; color: var(--ink); }
 .stages { list-style: none; padding: 0; margin: 18px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
-.stage { display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: var(--radius-sm); color: var(--ink-3); font-size: 15px; }
-.stage.current { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
-.stage.done { color: var(--ink-2); }
+.wstep { display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: var(--radius-sm); color: var(--ink-3); font-size: 15px; }
+.wstep.now { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
+.wstep.done { color: var(--ink-2); }
+.wstep-note { margin-left: auto; font-size: 13px; color: var(--ink-3); }
 .dot { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line-2); flex: none; display: grid; place-items: center; }
-.stage.done .dot { background: var(--green); border-color: var(--green); color: #fff; }
-.stage.current .dot { border-color: var(--ink); }
+.wstep.done .dot { background: var(--green); border-color: var(--green); color: #fff; }
+.wstep.now .dot { border-color: var(--ink); }
+.wstep.skipped .dot, .wstep.stopped .dot { border-style: dashed; }
 .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--ink); animation: spin .8s linear infinite; display: inline-block; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .thinking { display: inline-flex; gap: 3px; align-items: center; flex: none; }

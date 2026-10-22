@@ -8,6 +8,7 @@ import type { ChatLine } from './style-consent'
 import { toUserError } from './engine'
 import { learn, ProgressTracker, type SpeedHistory, parseHistory, type ProgressKind } from './progress'
 import type { WorkGate } from './work-gate'
+import { createFirstEditSteps, type Step } from '../shared/steps'
 
 /** A job reports with the shared contract. A render's `file` becomes a playable `video` via `toVideo`. */
 export type Emit = (e: JobUpdate) => void
@@ -55,6 +56,7 @@ interface Running {
   secondsLeft: number | null
   overdue: boolean
   thinking: boolean
+  steps?: Step[]
   /** The project owner token its engine commands carry (owner.ts); null until the project is claimed. */
   owner: string | null
   /** Waiting for the render slot another reel holds (render-slot.ts). */
@@ -114,6 +116,8 @@ export function createJobManager(
     let open = true
     let owner: ProjectOwner | null = null
     let phase: Phase | undefined
+    const rows = kind === 'first-edit' ? createFirstEditSteps() : null
+    if (rows) job.steps = rows.steps()
     // `thinking` is state, not a one-off: the once-a-second repeats keep saying it until the AI answers
     const status = (): void => {
       const snap = tracker.snapshot()
@@ -125,7 +129,7 @@ export function createJobManager(
       // Project-detail hydration must retain the same estimate as an already-open screen.
       if (secondsLeft !== null || job.waitingForRender) job.secondsLeft = secondsLeft
       job.overdue = !job.waitingForRender && snap.overdue
-      send({ jobId: id, slug, type: 'status', message: shown(job), pct: job.pct, ...(phase ? { phase } : {}), overall: snap.overall, secondsLeft: job.secondsLeft, overdue: job.overdue, thinking: job.thinking })
+      send({ jobId: id, slug, type: 'status', message: shown(job), pct: job.pct, ...(phase ? { phase } : {}), overall: snap.overall, secondsLeft: job.secondsLeft, overdue: job.overdue, thinking: job.thinking, ...(job.steps ? { steps: job.steps } : {}) })
     }
     job.report = status
     // re-broadcast once a second: time moves the bar and the estimate even while the AI thinks
@@ -175,6 +179,10 @@ export function createJobManager(
             }
             tracker.update(e.phase, e.pct, e.aggregate === true)
             if (e.phase) phase = e.phase
+            if (rows) {
+              rows.update({ message: e.message, phase, noAI: e.noAI })
+              job.steps = rows.steps()
+            }
             job.thinking = !!e.thinking
             status()
           } else if (e.type === 'tool') {
@@ -187,7 +195,13 @@ export function createJobManager(
             const video = slug && toVideo ? toVideo(slug, r).catch(() => null) : Promise.resolve(null)
             pending.push(video.then((v) => { if (open) send({ jobId: id, slug, type: 'render', version: r.version, draft: r.draft, firstLook: !!r.firstLook, video: v }) }))
           } else if (e.type === 'reply') send({ jobId: id, slug, type: 'reply', text: e.text })
-          else send({ jobId: id, slug, type: 'heard', words: e.words })
+          else {
+            if (rows) {
+              rows.result('listen', `${e.words.length} words`)
+              job.steps = rows.steps()
+            }
+            send({ jobId: id, slug, type: 'heard', words: e.words })
+          }
         }, abort.signal, { id, owner: owner?.token ?? null })
         await Promise.all(pending) // a render's event before `done`, never after
         if (progress && mediaSec > 0) {

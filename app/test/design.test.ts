@@ -1,7 +1,7 @@
 // Design critique helpers: progress + time left, "Version 3: bigger yellow subtitles", friendly
 // folder names, and the Library summary line.
 import { describe, expect, it } from 'vitest'
-import { STAGES, clock, estimateSecondsLeft, overallProgress, stageIndex, timeLeftText } from '../src/shared/progress'
+import { clock, estimateSecondsLeft, timeLeftText } from '../src/shared/progress'
 import { describeChange, describeSorted, versionMessage } from '../src/shared/describe'
 import { displayPath } from '../src/shared/display-path'
 import type { DropResult, ProjectJson } from '../src/shared/api'
@@ -23,18 +23,6 @@ const base = (extra: Partial<ProjectJson> = {}): ProjectJson =>
   }) as ProjectJson
 
 describe('progress', () => {
-  it('weights steps by their usual share of the time and never goes backwards', () => {
-    const listen = stageIndex('Listening to your video', 0)
-    expect(STAGES[listen].label).toBe('Listening to your video')
-    const a = overallProgress(listen, 50, 0)
-    expect(a).toBeGreaterThan(15) // copying (4) + half of listening (30)
-    expect(a).toBeLessThan(25)
-    expect(overallProgress(listen, 10, a)).toBe(a)
-    expect(overallProgress(STAGES.length - 1, 100, 0)).toBeLessThanOrEqual(99)
-    expect(stageIndex('something unknown', 3)).toBe(3)
-    expect(stageIndex('Copying your video', 4)).toBe(4) // never back to an earlier step
-  })
-
   it('says time left in round, calm words', () => {
     expect(estimateSecondsLeft(3, 30)).toBeNull() // too early to say
     expect(estimateSecondsLeft(50, 60)).toBe(60)
