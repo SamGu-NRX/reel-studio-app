@@ -75,6 +75,7 @@ function copyJSON(src,dst) {
   }
 }
 const {ignored,substantive,check:scopeCheck}=require('./scope.cjs');
+const {checkNoteBaseline}=require('./baseline.cjs');
 function manifest(file) {
   const m=read(file),base=path.dirname(file),ids=new Set();
   if(m.schemaVersion!==1||!Array.isArray(m.clips)||!m.clips.length)throw Error('manifest requires schemaVersion 1 and clips');
@@ -86,6 +87,8 @@ function manifest(file) {
     const notes=new Set();for(const n of c.notes) {
       slug(n.id);if(notes.has(n.id))throw Error('duplicate note id');notes.add(n.id);
       if(typeof n.text!=='string'||!n.text||!Array.isArray(n.allowPaths)||!n.allowPaths.length)throw Error(`${c.id}/${n.id}: text and allowPaths required`);
+      if(n.targetPhrase!==undefined&&typeof n.targetPhrase!=='string')throw Error(`${c.id}/${n.id}: targetPhrase must be a string`);
+      if(n.targetWords!==undefined&&(!Array.isArray(n.targetWords)||n.targetWords.some(id=>typeof id!=='string')))throw Error(`${c.id}/${n.id}: targetWords must be string ids`);
       if(n.allowPaths.some(p=>typeof p!=='string'||!p.startsWith('/')||ignored(p)))throw Error('allowPaths must be substantive JSON pointers');
     }
   }
@@ -186,6 +189,15 @@ async function main() {
           const r={id,status:'FAIL',editorCompleted:false,reliabilityStatus:'FAIL',qualityStatus:'UNAVAILABLE',quality:'UNAVAILABLE',metrics:m};
           process.stderr.write(`${clip.id}/${id}: started\n`);
           try {
+            if (note) {
+              const transcript=read(path.join(project,before.transcript.file));
+              const validity=checkNoteBaseline(before,transcript.words,note);
+              if (!validity.valid) {
+                r.status='INVALID-TASK';r.reliabilityStatus='INVALID-TASK';r.invalidTaskReason=validity.reason;r.editorCompleted=true;
+                write(path.join(recordDir,'project-before.json'),before);
+                return r;
+              }
+            }
             if(raw.select) {
               let calls=note?.mockTools;
               if(!note) {const t=read(path.join(project,'work/transcript.json'));calls=[{name:'set_cut',args:{keep:[{from:t.words[0].id,to:t.words.at(-1).id}]}},{name:'set_caption_style',args:{enabled:true,size:105,position:0.75}},{name:'set_cover',args:{atSourceTime:t.words[0].s,source:'s1',text:null}},{name:'write_post',args:{caption:'Eval corpus example.',hashtags:['synthetic','editing','speech','captions','example'],keywords:['generated speech']}}];}
@@ -200,7 +212,7 @@ async function main() {
             else r.diff=substantive(before,after);
             guard();const q=JSON.parse(run(py,[path.join(here,'quality.py'),project],{env:{...Object.fromEntries(Object.entries(process.env).filter(([k])=>!/KEY|TOKEN|SECRET|PASSWORD|AUTHORIZATION/i.test(k))),PYTHONPATH:path.join(source,'engine')}}));
             write(path.join(recordDir,'quality.json'),q);write(path.join(recordDir,'project-before.json'),before);write(path.join(recordDir,'project-after.json'),after);
-            r.quality=q.status;r.qualityStatus=q.status;r.notice=result.notice||null;r.fast=result.fast||null;r.reliabilityStatus=!r.notice&&m.stoppedByCaps===0&&m.validationErrors.length===0&&m.executionErrors.length===0&&(m.agentRuns.length>0||Boolean(result.fast))&&m.agentRuns.every(run=>!run.error)&&(!note||(r.changed&&!r.scope.unexpected.length))?'PASS':'FAIL';r.status=r.reliabilityStatus==='PASS'&&r.qualityStatus==='PASS'?'PASS':'FAIL';
+            r.quality=q.status;r.qualityStatus=q.status;r.notice=result.notice||null;r.fast=result.fast||null;r.reliabilityStatus=!r.notice&&m.stoppedByCaps===0&&m.validationErrors.length===0&&m.executionErrors.length===0&&m.unrepairedGuardrailErrors.length===0&&(m.agentRuns.length>0||Boolean(result.fast))&&m.agentRuns.every(run=>!run.error)&&(!note||(r.changed&&!r.scope.unexpected.length))?'PASS':'FAIL';r.status=r.reliabilityStatus==='PASS'&&r.qualityStatus==='PASS'?'PASS':'FAIL';
           }catch(e){r.error={code:e.code||null,message:String(e.userMessage||e.message||e)};r.editorCompleted=true;
             if(m.providerErrors.length&&m.agentRuns.some(r=>r.error))laneBlocked=true;}
           finally{r.wallMs=performance.now()-started;process.stderr.write(`${clip.id}/${id}: reliability ${r.reliabilityStatus}, quality ${r.qualityStatus}\n`);write(path.join(recordDir,'evidence.json'),{...r,events});cleanupMedia(project);}
@@ -209,7 +221,7 @@ async function main() {
         cr.tasks.push(await task('firstEdit',null,path.join(dir,'firstEdit')));
         const baseline=path.join(scratch,clip.id+'-baseline');copyJSON(project,baseline);
         for(const note of clip.notes) {if(laneBlocked)break;cr.tasks.push(await task(note.id,note,path.join(dir,note.id)));}
-        if(!laneBlocked && cr.tasks[0].editorCompleted && !cr.tasks[0].notice) {
+        if(!laneBlocked && cr.tasks[0].editorCompleted && !cr.tasks[0].notice && cr.tasks[1]?.reliabilityStatus!=='INVALID-TASK') {
           const hashes=[];const repeats=[];const originalProject=project;
           for(let i=0;i<3;i++) {
             project=path.join(scratch,clip.id+'-repeat-'+i);copyJSON(baseline,project);
@@ -219,7 +231,7 @@ async function main() {
           }
           project=originalProject;cr.determinism={status:repeats.length===3&&repeats.every(r=>r.reliabilityStatus==='PASS')&&new Set(hashes).size===1?'PASS':'FAIL',runs:repeats};
         }
-        cr.status=laneBlocked?'BLOCKED':cr.tasks.length===4&&cr.tasks.every(r=>r.status==='PASS')&&cr.determinism.status==='PASS'?'PASS':'FAIL';
+        cr.status=laneBlocked?'BLOCKED':cr.tasks.length===4&&cr.tasks.every(r=>r.status==='PASS'||r.status==='INVALID-TASK')&&(cr.determinism.status==='PASS'||cr.tasks.some(r=>r.status==='INVALID-TASK'))?'PASS':'FAIL';
       }catch(e){cr.reason=String(e.userMessage||e.message||e);cr.status='UNAVAILABLE';if(clip.expectedOutcome==='no_audio'&&e.code==='NO_AUDIO'){const probe=read(path.join(dir,'probe.json'));if(!probe.streams.some(s=>s.codec_type==='audio')){cr.status='EXPECTED_REJECTION';cr.engineCode='NO_AUDIO';cr.quality='UNAVAILABLE';}}if(creatingAdapter){cr.status='BLOCKED';laneBlocked=true;}}
       finally{cleanupMedia(project);write(path.join(dir,'clip.json'),cr);for(const own of [project,path.join(scratch,clip.id+'-baseline'),path.join(scratch,'generated-'+clip.id)])fs.rmSync(own,{recursive:true,force:true});}
     }
@@ -232,12 +244,13 @@ async function main() {
     const allTasks=report.clips.flatMap(c=>[...(c.tasks||[]),...(c.determinism?.runs||[])]);
     for(const status of ['PASS','FAIL','UNAVAILABLE']){report.summary.reliability[status]=allTasks.filter(t=>t.reliabilityStatus===status).length;report.summary.quality[status]=allTasks.filter(t=>t.qualityStatus===status).length;report.summary.determinism[status]=report.clips.filter(c=>c.determinism?.status===status).length;}
     for(const name of ['parseFailures','retries','stoppedByCaps'])report.summary[name]=allTasks.reduce((sum,t)=>sum+(t.metrics[name]||0),0);
-    for(const name of ['validationErrors','executionErrors','environmentErrors','providerErrors'])report.summary[name]=allTasks.reduce((sum,t)=>sum+t.metrics[name].length,0);
+    for(const name of ['validationErrors','executionErrors','environmentErrors','providerErrors','repairedGuardrailErrors','unrepairedGuardrailErrors'])report.summary[name]=allTasks.reduce((sum,t)=>sum+(t.metrics[name]?.length||0),0);
+    report.summary.invalidTasks=allTasks.filter(t=>t.reliabilityStatus==='INVALID-TASK').length;
     report.summary.wallMs=allTasks.reduce((sum,t)=>sum+t.wallMs,0);
     report.summary.tasks=allTasks.length;report.summary.modelTurns=allTasks.reduce((sum,t)=>sum+t.metrics.modelTurns,0);report.summary.reportedTokens=allTasks.some(t=>t.metrics.reportedTokens!==null)?allTasks.reduce((sum,t)=>sum+(t.metrics.reportedTokens||0),0):null;
     write(path.join(runDir,'report.json'),report);
     const table=['| Clip | Reliability (first edit + notes) | Quality | Determinism | Outcome |','| --- | --- | --- | --- | --- |',...report.clips.map(c=>`| ${c.id} | ${(c.tasks||[]).length?c.tasks.every(t=>t.reliabilityStatus==='PASS')?'PASS':'FAIL':'UNAVAILABLE'} | ${(c.tasks||[]).length?c.tasks.every(t=>t.qualityStatus==='PASS')?'PASS':c.tasks.some(t=>t.qualityStatus==='FAIL')?'FAIL':'UNAVAILABLE':'UNAVAILABLE'} | ${c.determinism?.status||'UNAVAILABLE'} | ${c.status} |`)].join('\n');
-    fs.writeFileSync(path.join(runDir,'report.md'),`# Eval run\n\nStatus: ${report.status}\n\nBuild: ${report.build.sha||'UNAVAILABLE'} (dirty: ${report.build.dirty})\n\n${table}\n\nTasks including repeats: ${report.summary.tasks}; reliability PASS ${report.summary.reliability.PASS}, FAIL ${report.summary.reliability.FAIL}; quality PASS ${report.summary.quality.PASS}, FAIL ${report.summary.quality.FAIL}, UNAVAILABLE ${report.summary.quality.UNAVAILABLE}. Expected no-audio rejections: ${report.summary.expectedRejections}. Tool calls the harness could not serve (no animation renderer): ${report.summary.environmentErrors}.\n\nLive no-regression: UNAVAILABLE. Human 1-5 and pairwise judging: not run.\n`);
+    fs.writeFileSync(path.join(runDir,'report.md'),`# Eval run\n\nStatus: ${report.status}\n\nBuild: ${report.build.sha||'UNAVAILABLE'} (dirty: ${report.build.dirty})\n\n${table}\n\nTasks including repeats: ${report.summary.tasks}; reliability PASS ${report.summary.reliability.PASS}, FAIL ${report.summary.reliability.FAIL}, INVALID-TASK ${report.summary.invalidTasks}; quality PASS ${report.summary.quality.PASS}, FAIL ${report.summary.quality.FAIL}, UNAVAILABLE ${report.summary.quality.UNAVAILABLE}. Repaired guardrail rejections: ${report.summary.repairedGuardrailErrors}; unrepaired guardrail rejections: ${report.summary.unrepairedGuardrailErrors}. Expected no-audio rejections: ${report.summary.expectedRejections}. Tool calls the harness could not serve (no animation renderer): ${report.summary.environmentErrors}.\n\nLive no-regression: UNAVAILABLE. Human 1-5 and pairwise judging: not run.\n`);
     fs.rmSync(scratch,{recursive:true,force:true});
     console.log(JSON.stringify({runDir,status:report.status}));if(report.status!=='PASS')process.exitCode=1;
   }

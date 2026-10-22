@@ -1,4 +1,8 @@
 'use strict';
+function isGuardrail(item) {
+  return /stat-count-up:|no more previews for this task/i.test(item.reason);
+}
+
 function instrument(agent, tools) {
   let current = null;
   const run = agent.runAgent, execute = tools.executeTool;
@@ -14,11 +18,27 @@ function instrument(agent, tools) {
   tools.executeTool = async (...args) => {
     const m = current, r = await execute(...args);
     m.toolCalls++;
-    if (r.isError) {let body;try{body=JSON.parse(r.content);}catch{body={error:r.content};}const item={name:args[1],reason:body.error||r.content,code:body.code||null};if(item.code==='NO_ANIMATION_RENDERER')m.environmentErrors.push(item);else if(!body.code&&!item.reason.startsWith(args[1]+' failed:'))m.validationErrors.push(item);else m.executionErrors.push(item);}
+    const name = args[1];
+    if (r.isError) {
+      let body;try{body=JSON.parse(r.content);}catch{body={error:r.content};}
+      const item={name,reason:body.error||r.content,code:body.code||null};
+      if(item.code==='NO_ANIMATION_RENDERER')m.environmentErrors.push(item);
+      else if(!body.code&&!item.reason.startsWith(name+' failed:'))m.validationErrors.push(item);
+      else m.executionErrors.push(item);
+      if (isGuardrail(item)) m.unrepairedGuardrailErrors.push(item);
+    } else {
+      const pending = m.unrepairedGuardrailErrors.findIndex(item => item.name === name);
+      if (pending >= 0) {
+        const [item] = m.unrepairedGuardrailErrors.splice(pending, 1);
+        const remove = list => { const i = list.indexOf(item); if (i >= 0) list.splice(i, 1); };
+        remove(m.validationErrors); remove(m.executionErrors);
+        m.repairedGuardrailErrors.push({...item, repairedBy: name});
+      }
+    }
     return r;
   };
   return {
-    start(id) { current = {id, modelTurns: 0, parseFailures: 0, emptyToolReplies: 0, retries: 0, toolCalls: 0, validationErrors: [], executionErrors: [], environmentErrors: [], stoppedByCaps: 0, reportedTokens: null, reportedUsage: [], providerErrors: [], agentRuns: []}; return current; },
+    start(id) { current = {id, modelTurns: 0, parseFailures: 0, emptyToolReplies: 0, retries: 0, toolCalls: 0, validationErrors: [], executionErrors: [], environmentErrors: [], repairedGuardrailErrors: [], unrepairedGuardrailErrors: [], stoppedByCaps: 0, reportedTokens: null, reportedUsage: [], providerErrors: [], agentRuns: []}; return current; },
     wrap(provider) {
       return {id: provider.id, model: provider.model, supportsImages: provider.supportsImages,
         dispose: () => provider.dispose?.(),
@@ -28,7 +48,7 @@ function instrument(agent, tools) {
             const r = await provider.complete(req);
             if (r.malformed) m.parseFailures++;
             if (!r.toolCalls?.length) m.emptyToolReplies++;
-            if (r.usage && ['totalTokens','input','output'].some(k=>Number.isFinite(r.usage[k]))) { m.reportedUsage.push(r.usage); m.reportedTokens = (m.reportedTokens ?? 0) + (Number.isFinite(r.usage.totalTokens)?r.usage.totalTokens:(Number.isFinite(r.usage.input)?r.usage.input:0)+(Number.isFinite(r.usage.output)?r.usage.output:0)); }
+            if (r.usage && ['totalTokens','input','output'].some(k => Number.isFinite(r.usage[k]))) { m.reportedUsage.push(r.usage); m.reportedTokens = (m.reportedTokens ?? 0) + (Number.isFinite(r.usage.totalTokens)?r.usage.totalTokens:(Number.isFinite(r.usage.input)?r.usage.input:0)+(Number.isFinite(r.usage.output)?r.usage.output:0)); }
             return r;
           } catch (e) { m.providerErrors.push({code: e.code || null, message: String(e.userMessage || e.message || e)}); if(/quota|usage[_ .-]?limit|cli_limited|insufficient[_ .-]?credit/i.test(String(e.code||'')+' '+String(e.userMessage||e.message||'')))e.retryable=false;throw e; }
         }

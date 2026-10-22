@@ -18,7 +18,9 @@ isolated in empty scratch and a missing model fails explicitly. Paths in the man
 relative to that file. The runner never discovers old ASR fixtures or invents spoken words.
 
 Each speech clip runs real init, analyze and autocut, then firstEdit and three sequential
-notes. Notes declare allowed project JSON pointers in `allowPaths`. Every changed leaf
+notes. Notes declare allowed project JSON pointers in `allowPaths`. A note with quoted
+words, `targetPhrase`, or `targetWords` must target words still kept by the baseline edit.
+Otherwise the runner records `INVALID-TASK` and does not score the model. Every changed leaf
 outside those paths fails scope; only notes, version and updatedAt are ignored. Arrays whose
 items all carry an `id` are compared by id, so removing one b-roll does not report the
 items after it as changed. One exception is recorded under `scope.consequences`: when the

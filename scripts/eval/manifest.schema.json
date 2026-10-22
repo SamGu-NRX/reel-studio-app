@@ -60,6 +60,20 @@
                   "type": "string",
                   "minLength": 1
                 },
+                "targetPhrase": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "targetWords": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "category": {
                   "type": "string"
                 },
