@@ -1,6 +1,7 @@
 export type Screen =
   | { name: 'home' }
-  | { name: 'new' }
+  /** `files`: opened with Reel Studio, waiting for Make my reel */
+  | { name: 'new'; files?: string[] }
   | { name: 'script' }
   | { name: 'working'; slug: string }
   | { name: 'reel'; slug: string; fresh?: boolean }

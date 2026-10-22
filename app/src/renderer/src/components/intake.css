@@ -1,0 +1,36 @@
+/* Bringing a video in (Intake.tsx): the veil over the window while a file is dragged, dropped or pasted. */
+
+.dropveil {
+  position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; pointer-events: none;
+  background: rgba(247, 245, 241, .8); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); transition: opacity 150ms ease;
+}
+@starting-style { .dropveil { opacity: 0; } }
+.dropveil.leave, html.over-note .dropveil { opacity: 0; }
+.dropveil .target {
+  width: min(520px, 70%); padding: 44px 24px; border-radius: 22px; border: 2px dashed var(--ink-3); background: rgba(255, 255, 255, .88);
+  text-align: center; display: grid; justify-items: center; gap: 10px; transition: transform 200ms var(--ease-out), border-color 150ms ease;
+}
+@starting-style { .dropveil .target { transform: scale(.97); } }
+.dropveil .target h2 { font-size: 21px; font-weight: 650; overflow-wrap: anywhere; }
+.dropveil .target p { color: var(--ink-3); font-size: 14.5px; }
+.dropveil .ic { width: 46px; height: 46px; border-radius: 12px; background: var(--soft); color: var(--ink-2); display: grid; place-items: center; }
+/* the check grows in once: the file is in */
+.dropveil .ic.done { border-radius: 50%; background: var(--green); color: #fff; transition: transform 200ms var(--ease-out), opacity 200ms ease; }
+@starting-style { .dropveil .ic.done { transform: scale(.9); opacity: 0; } }
+.dropveil .target.ok { border-style: solid; border-color: var(--green); }
+.dropveil .target.bad { border-color: var(--red-ink); }
+.dropveil .target.bad h2 { color: var(--red-ink); }
+.dropveil .target.bad .ic { background: var(--red-soft); color: var(--red-ink); }
+
+/* New video with a file that was opened with Reel Studio: the file, and one button to start */
+.filecard { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 16px; background: var(--panel); box-shadow: var(--e2); text-align: left; width: min(480px, 100%); transition: transform 220ms var(--ease-out), opacity 220ms ease; }
+@starting-style { .filecard { opacity: 0; transform: translateY(8px) scale(.98); } }
+.filecard .th { width: 46px; height: 64px; border-radius: 8px; flex: none; display: grid; place-items: center; background: var(--soft); color: var(--ink-3); }
+.filecard b { display: block; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+.filecard span { font-size: 13px; color: var(--ink-3); }
+.filecard .spacer { flex: 1; }
+
+html.kb .dropveil, html.kb .dropveil .target, html.kb .filecard { transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .dropveil .target, .dropveil .ic.done, .filecard { transform: none !important; transition-property: opacity !important; }
+}

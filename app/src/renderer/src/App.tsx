@@ -4,7 +4,6 @@ import { reel, userMessage } from './api'
 import type { Screen } from './nav'
 import { IS_MAC, Toast } from './components/ui'
 import { draggingOut } from './components/Player'
-import { Icon } from './components/icons'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Sidebar, TitleBar, useRail } from './components/Sidebar'
 import { useInputMode } from './components/motion'
@@ -19,6 +18,8 @@ import { FirstRun } from './screens/FirstRun'
 import { Script } from './screens/Script'
 import { Connect } from './screens/Connect'
 import { createFromFiles, describeSorted } from './screens/create'
+import { DropVeil, HANDOFF_MS, HANDOFF_QUICK_MS, VIDEO_EXT, whatItIs, type Veil } from './components/Intake'
+import { byKeyboard, reducedMotion } from './components/motion'
 
 type Notify = (text: string, kind?: 'error' | 'info') => void
 const NotifyCtx = createContext<Notify>(() => {})
@@ -37,8 +38,7 @@ export function App() {
   const [screen, setScreen] = useState<Screen>({ name: 'home' })
   const [toast, setToast] = useState<{ text: string; kind?: 'error' | 'info'; id: number } | null>(null)
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
-  const [dragging, setDragging] = useState(false)
-  const [overNote, setOverNote] = useState(false) // a drag over the note box (Reel.tsx): it attaches, no overlay
+  const [veil, setVeil] = useState<Veil | null>(null)
   const [libraryTick, setLibraryTick] = useState(0)
   const notify = useCallback<Notify>((text, kind) => setToast({ text, kind, id: Date.now() }), [])
   const closeToast = useCallback(() => setToast(null), [])
@@ -92,25 +92,43 @@ export function App() {
     return () => window.removeEventListener('keydown', key)
   }, [go])
 
-  const intake = useCallback((paths: string[]) => {
-    if (!paths.length) return
-    if (screenRef.current.name === 'library') {
-      reel.library
-        .add(paths)
-        .then((r) => {
-          notify(describeSorted(r) || 'Done.')
-          setLibraryTick((t) => t + 1)
-        })
-        .catch((err) => notify(userMessage(err), 'error'))
-    } else void createFromFiles(paths, go, notify)
-  }, [go, notify])
+  // A drop or a paste: the veil turns into a check with the file name, holds a moment, then Working takes over.
+  const intake = useCallback(
+    async (paths: string[], how: 'drop' | 'paste') => {
+      if (!paths.length) return setVeil(null)
+      if (screenRef.current.name === 'library') {
+        setVeil(null)
+        reel.library
+          .add(paths)
+          .then((r) => {
+            notify(describeSorted(r) || 'Done.')
+            setLibraryTick((t) => t + 1)
+          })
+          .catch((err) => notify(userMessage(err), 'error'))
+        return
+      }
+      const video = paths.find((p) => VIDEO_EXT.test(p))
+      if (!video) {
+        // Reel Studio still sorts it into the Library; the veil says what it was and what happened to it
+        await createFromFiles(paths, go, notify, (detail) => setVeil({ kind: 'bad', what: whatItIs(paths[0]), detail }))
+        window.setTimeout(() => setVeil((v) => (v?.kind === 'bad' ? null : v)), 2200)
+        return
+      }
+      setVeil({ kind: 'ok', name: video, how })
+      await new Promise((r) => window.setTimeout(r, byKeyboard() || reducedMotion() ? HANDOFF_QUICK_MS : HANDOFF_MS))
+      await createFromFiles(paths, go, notify)
+      setVeil(null)
+    },
+    [go, notify]
+  )
 
   const firstRunDone = !!info?.firstRunDone
   useEffect(() => {
     if (!firstRunDone) return
     const open = () => {
+      // A file opened with Reel Studio (AirDrop's "Opens with", Finder's Open With): New video, ready to start.
       void reel.app.takeOpenFiles().then((paths) => {
-        if (paths.length) void createFromFiles(paths, go, notify)
+        if (paths.length) go({ name: 'new', files: paths })
       }).catch((err) => notify(userMessage(err), 'error'))
     }
     const off = reel.app.onFilesAvailable(open)
@@ -118,7 +136,7 @@ export function App() {
     const paste = (event: ClipboardEvent) => {
       const target = event.target
       if (event.defaultPrevented || (target instanceof Element && target.closest('input, textarea, [contenteditable], [data-note-drop]'))) return
-      void reel.app.clipboardFiles().then(intake).catch((err) => notify(userMessage(err), 'error'))
+      void reel.app.clipboardFiles().then((paths) => intake(paths, 'paste')).catch((err) => notify(userMessage(err), 'error'))
     }
     window.addEventListener('paste', paste)
     return () => {
@@ -135,40 +153,47 @@ export function App() {
       e.preventDefault()
       if (!hasFiles(e) || !firstRunDone || draggingOut()) return
       depth++
-      setDragging(true)
+      const where = screenRef.current.name
+      setVeil((v) =>
+        v && v.kind !== 'over'
+          ? v
+          : where === 'library'
+            ? { kind: 'over', label: 'Drop to add to your Library', sub: 'Songs, pictures and clips each go in the right place.' }
+            : where === 'reel'
+              ? { kind: 'over', label: 'Drop here to make a new reel', sub: 'Or drop it on your note to attach it.' }
+              : { kind: 'over', label: 'Drop to make a reel', sub: 'Your video stays on this computer.' }
+      )
     }
     const over = (e: DragEvent) => {
-      // the note box (Reel.tsx) sets its own drop effect: a file dropped there is attached to the note
-      setOverNote(!!(e.target as Element | null)?.closest?.('[data-note-drop]'))
+      // over the note box (Reel.tsx) a file attaches to the note: no veil there
+      const onNote = !!(e.target as Element | null)?.closest?.('[data-note-drop]')
+      document.documentElement.classList.toggle('over-note', onNote)
       if (e.defaultPrevented) return
       e.preventDefault()
       if (e.dataTransfer) e.dataTransfer.dropEffect = firstRunDone && hasFiles(e) ? 'copy' : 'none'
     }
+    const clear = () => {
+      document.documentElement.classList.remove('over-note')
+      setVeil((v) => (v?.kind === 'over' ? null : v))
+    }
     const noteDropDone = () => {
       depth = 0
-      setDragging(false)
-      setOverNote(false)
+      clear()
     }
     const leave = () => {
       depth = Math.max(0, depth - 1)
-      if (!depth) {
-        setDragging(false)
-        setOverNote(false)
-      }
+      if (!depth) clear()
     }
     const drop = (e: DragEvent) => {
       e.preventDefault()
       depth = 0
-      setDragging(false)
-      setOverNote(false)
+      document.documentElement.classList.remove('over-note')
       if (draggingOut()) {
         ;(window as { __rsDraggingOut?: boolean }).__rsDraggingOut = false
-        return
+        return clear()
       }
-      if (!firstRunDone || !e.dataTransfer) return
-      const paths = Array.from(e.dataTransfer.files).map((f) => reel.app.pathForFile(f)).filter(Boolean)
-      if (!paths.length) return
-      intake(paths)
+      if (!firstRunDone || !e.dataTransfer) return clear()
+      void intake(Array.from(e.dataTransfer.files).map((f) => reel.app.pathForFile(f)).filter(Boolean), 'drop')
     }
     window.addEventListener('dragenter', enter)
     window.addEventListener('dragover', over)
@@ -217,7 +242,7 @@ export function App() {
         <main className="main">
           <ErrorBoundary resetKey={JSON.stringify(screen)} onReset={() => go({ name: 'home' })}>
             {screen.name === 'home' && <Home go={go} />}
-            {screen.name === 'new' && <NewVideo go={go} />}
+            {screen.name === 'new' && <NewVideo key={screen.files?.join('\n') ?? ''} go={go} files={screen.files} />}
             {screen.name === 'script' && <Script go={go} />}
             {screen.name === 'working' && <Working key={screen.slug} slug={screen.slug} go={go} />}
             {screen.name === 'reel' && <Reel key={screen.slug} slug={screen.slug} go={go} fresh={screen.fresh} />}
@@ -228,18 +253,7 @@ export function App() {
           </ErrorBoundary>
         </main>
       </div>
-      {dragging && !overNote && (
-        <div className={`drop-overlay${screen.name === 'reel' ? ' light' : ''}`} data-testid="drop-overlay">
-          <div>
-            <Icon name="upload" size={28} />
-            {screen.name === 'library'
-              ? 'Drop to add to your Library'
-              : screen.name === 'reel'
-                ? 'Drop on your note to attach it, or here to make a new reel'
-                : 'Drop to make a reel'}
-          </div>
-        </div>
-      )}
+      <DropVeil veil={veil} />
       {toastEl}
     </NotifyCtx.Provider>
   )

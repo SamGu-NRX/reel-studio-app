@@ -42,7 +42,6 @@ html.zoomed .titlebar .sbt, html.zoomed .titlebar .wordmark { visibility: hidden
 .scrub-speed.zs.on { background: var(--ink); color: #fff; }
 .ztrans .btn.small { min-height: 30px; padding: 0 10px; font-size: 13px; gap: 6px; }
 .cbtn.on, .ztrans .btn.on { background: var(--ink); color: #fff; }
-.kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 4px; background: var(--soft); font-size: 11px; font-weight: 650; color: var(--ink-3); }
 .cbtn.on .kbd, .hint .kbd { background: rgba(255, 255, 255, .18); color: #fff; }
 
 /* pointing: a ring follows the pointer, a click drops a numbered pin */
