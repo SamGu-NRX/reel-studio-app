@@ -41,10 +41,12 @@ export async function launch(
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
   delete env.ELECTRON_RUN_AS_NODE
+  delete env.CLIPROXY_API_KEY
   Object.assign(env, {
     REELSTUDIO_TEST: '1',
     REELSTUDIO_USER_DATA: USER_DATA,
     REELSTUDIO_ROOT: ROOT,
+    REELENGINE_CACHE: join(BASE, 'engine cache'),
     REELSTUDIO_MODELS_DIR: process.env.REELSTUDIO_MODELS_DIR ?? join(BASE, 'models'),
     // An empty Hugging Face cache: a listening model on this computer must never be reused into a test profile.
     HF_HUB_CACHE: join(BASE, 'hf-cache'),
@@ -62,8 +64,8 @@ export async function launch(
       if (!(k in extraEnv)) delete env[k]
   } else if (!env.REELSTUDIO_ENGINE_DIR) env.REELSTUDIO_ENGINE_DIR = join(APP_DIR, 'dev', 'fake-engine')
   const app = exe
-    ? await electron.launch({ executablePath: exe, args: [], cwd: BASE, env })
-    : await electron.launch({ args: [APP_DIR], cwd: APP_DIR, env })
+    ? await electron.launch({ executablePath: exe, args: ['-r', join(__dirname, 'hidden-bootstrap.cjs')], cwd: BASE, env })
+    : await electron.launch({ args: ['-r', join(__dirname, 'hidden-bootstrap.cjs'), APP_DIR], cwd: APP_DIR, env })
   const page = await app.firstWindow()
   if (!realViewport) await page.setViewportSize({ width: 1280, height: 820 })
   await page.waitForLoadState('domcontentloaded')
