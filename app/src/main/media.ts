@@ -27,6 +27,14 @@ export function registerMediaScheme(): void {
   ])
 }
 
+export function isMediaPathAllowed(file: string, root: string): boolean {
+  const normalizedRoot = resolve(root)
+  const [candidate, base] = process.platform === 'win32'
+    ? [file.replaceAll('/', '\\').toLowerCase(), normalizedRoot.replaceAll('/', '\\').toLowerCase()]
+    : [file, normalizedRoot]
+  return candidate === base || candidate.startsWith(base.endsWith(sep) ? base : base + sep)
+}
+
 export function handleMediaProtocol(allowedRoots: () => string[]): void {
   protocol.handle(MEDIA_SCHEME, async (req) => {
     let file: string
@@ -35,10 +43,7 @@ export function handleMediaProtocol(allowedRoots: () => string[]): void {
     } catch {
       return new Response('bad url', { status: 400 })
     }
-    const ok = allowedRoots().some((r) => {
-      const root = resolve(r)
-      return file === root || file.startsWith(root.endsWith(sep) ? root : root + sep)
-    })
+    const ok = allowedRoots().some((r) => isMediaPathAllowed(file, r))
     if (!ok) return new Response('forbidden', { status: 403 })
     let size: number
     try {
