@@ -85,6 +85,7 @@ async function firstRun(page: Page): Promise<Record<string, unknown>> {
   const picked = USE_CLAUDE && (await chooseClaudeCode(page))
   info.connectAi = picked ? (await page.evaluate(() => (window as any).reel.ai.active())).label : 'none'
   if (!picked) await page.getByTestId('skip').click()
+  await page.getByTestId('share-no').click()
   await expect(page.getByText('Your videos')).toBeVisible()
   return info
 }

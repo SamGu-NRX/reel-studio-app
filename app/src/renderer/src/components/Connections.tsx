@@ -98,7 +98,7 @@ export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) =>
           </button>
         </div>
       ) : (
-        <button className="link center" onClick={() => setEditing('new')} data-testid="own-server-toggle">
+        <button className="link left" onClick={() => setEditing('new')} data-testid="own-server-toggle">
           Use your own AI server (advanced)
         </button>
       )}

@@ -1,0 +1,20 @@
+/* The AI editor picker (connect.tsx ConnectAI): each editor with its mark, its state and one action.
+   Used in Settings, the first run and the Connect screen. */
+
+.prov { display: grid; gap: 6px; }
+.pv { border-radius: 12px; background: var(--panel); box-shadow: var(--e1); }
+.pv.on { box-shadow: inset 0 0 0 1.5px var(--green), var(--e1); }
+.pv-main { display: flex; align-items: center; gap: 12px; padding: 12px; }
+.pv .lg { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--line); flex: none; color: var(--ink-2); }
+.pv .tx { min-width: 0; flex: 1; }
+.pv .tx b { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 14.5px; font-weight: 650; }
+.pv .tx > span { display: block; font-size: 13px; color: var(--ink-3); margin-top: 1px; }
+.pv .pv-on { color: var(--green-ink); font-weight: 600; }
+.pv .btn.small { min-height: 32px; flex: none; }
+.pv-more { display: grid; gap: 8px; padding: 0 12px 12px 60px; }
+.pv-steps { margin: 0; padding-left: 20px; }
+.stat { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11.5px; font-weight: 650; white-space: nowrap; }
+.stat.ok { background: var(--green-soft); color: var(--green-ink); }
+.stat.need { background: var(--amber-soft); color: var(--amber-ink); }
+.stat.off { background: var(--soft); color: var(--ink-2); }
+.noai-line { font-size: 13px; line-height: 1.45; color: var(--ink-3); padding-top: 10px; box-shadow: inset 0 1px 0 var(--line); }

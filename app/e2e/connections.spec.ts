@@ -94,7 +94,6 @@ test('add your own AI server from Settings', async () => {
     expect(files.some((f) => /^connection-c_[a-f0-9]{8}\.bin$/.test(f))).toBe(true)
     for (const f of files) expect(readFileSync(join(aiDir, f)).toString('utf8')).not.toContain(KEY)
 
-    await page.getByTestId('use-different-ai').click()
     const card = page.getByTestId('connection-card')
     await expect(card).toContainText('In use')
     await card.getByTestId('more').click()

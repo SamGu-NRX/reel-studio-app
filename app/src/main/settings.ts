@@ -5,6 +5,7 @@ import { settingsFile } from './paths'
 import { writeJson } from './store'
 import type { SpeechCheckResult } from './models'
 import type { Dismissal, RememberedRelease } from './update-machine'
+import type { DataSharing, ModelChoice } from '../shared/api'
 
 export interface Settings {
   checkUpdates: boolean
@@ -21,6 +22,8 @@ export interface Settings {
   /** null = never chosen (main/permissions.ts notificationsWanted) */
   notifications: boolean | null
   speechCheck: SpeechCheckResult | null
+  models: ModelChoice
+  sharing: DataSharing
 }
 
 const DEFAULTS: Settings = {
@@ -34,7 +37,9 @@ const DEFAULTS: Settings = {
   checkUpdates: true,
   updateCheckedAt: null,
   updateLatest: null,
-  updateDismissed: null
+  updateDismissed: null,
+  models: { editor: 'auto', checker: 'auto', writer: 'auto' },
+  sharing: { asked: false, on: false, usage: true, quality: true, posts: true }
 }
 
 export async function loadSettings(): Promise<Settings> {

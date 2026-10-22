@@ -45,6 +45,7 @@ for (const source of ['paste', 'open-file before ready', 'second-instance argv']
         await expect(next.or(page.getByTestId('download-model'))).toBeVisible()
         await ((await next.isVisible()) ? next : page.getByTestId('later')).click()
         await page.getByTestId('skip').click()
+        await page.getByTestId('share-no').click()
       } else await passFirstRun(page)
       if (source === 'paste') {
         await app.evaluate(async ({ clipboard, ClipboardItem }, url) => {

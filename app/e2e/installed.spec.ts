@@ -131,6 +131,7 @@ test('first run: speech model + AI', async () => {
       const c = page.getByTestId('ai-connected')
       info.connectAi = picked ? 'claude-cli' : (await c.isVisible()) ? await c.innerText() : 'none'
       if (!picked) await page.getByTestId('skip').click()
+      await page.getByTestId('share-no').click()
     }
     await expect(page.getByText('Your videos')).toBeVisible()
     await openSettings(page)

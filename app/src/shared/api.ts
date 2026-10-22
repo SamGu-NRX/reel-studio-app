@@ -335,6 +335,22 @@ export interface AppInfo {
   dev: boolean
   /** The computer account's name, for the sidebar. null in tests or when it cannot be read. */
   userName: string | null
+  /** Settings › Your AI editor › Models: 'auto' or a model the person picked, per role. */
+  models: ModelChoice
+  /** Settings › Privacy. Nothing is sent anywhere: there is no place to send it yet. */
+  sharing: DataSharing
+}
+
+export type ModelRole = 'editor' | 'checker' | 'writer'
+export type ModelChoice = Record<ModelRole, string>
+
+/** Anonymous data sharing. `asked`: the first run asked once; until then nothing is on. */
+export interface DataSharing {
+  asked: boolean
+  on: boolean
+  usage: boolean
+  quality: boolean
+  posts: boolean
 }
 
 /** The person's own Claude Code app: not found / found but will not start / not signed in / ready. */
@@ -432,6 +448,8 @@ export interface ReelApi {
     chooseFolder(): Promise<string | null>
     setRoot(path: string): Promise<AppInfo>
     setFasterExports(on: boolean): Promise<AppInfo>
+    setModels(models: ModelChoice): Promise<AppInfo>
+    setSharing(sharing: DataSharing): Promise<AppInfo>
     /** Menu items, keyboard shortcuts handled by the menu, and notification clicks. */
     onCommand(cb: (c: AppCommand) => void): () => void
     /** Drag a finished file out of the app (desktop, folder, browser upload box). Call from dragstart. */

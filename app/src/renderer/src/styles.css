@@ -582,6 +582,9 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
 .stage-body { margin-top: 20px; }
 .stage-foot { margin-top: 22px; display: flex; align-items: center; justify-content: flex-end; gap: 16px; }
 .stage-note { margin-right: auto; color: var(--ink-3); font-size: 13.5px; }
+.share-q { width: min(520px, 100%); }
+.share-q .btn { min-width: 120px; }
+.share-never { display: flex; align-items: center; gap: 6px; margin-top: 12px; color: var(--green-ink); font-weight: 600; font-size: 14px; }
 
 /* Permission rows (components/permissions.tsx): what it is for on the left, one button on the right. */
 .perm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }

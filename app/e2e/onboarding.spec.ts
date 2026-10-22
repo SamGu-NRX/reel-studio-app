@@ -73,10 +73,13 @@ test('a fresh first run walks every stage, and the folder waits for Allow', asyn
     await expect(page.getByText('Connect your AI editor')).toBeVisible()
     await expect(page.getByTestId('setup-step-ai')).toHaveAttribute('aria-current', 'step')
     await page.getByTestId('skip').click()
+    await page.getByTestId('share-no').click()
 
     await expect(page.getByText('Your videos')).toBeVisible()
     const settings = JSON.parse(readFileSync(join(d.userData, 'settings.json'), 'utf8'))
     expect(settings.firstRunDone).toBe(true)
+    // asked once, nothing preselected: Don't share stores exactly that, and nothing is on
+    expect(settings.sharing).toMatchObject({ asked: true, on: false })
     expect(settings.notifications).toBe(MAC ? true : null)
     expect(existsSync(join(d.root, 'Projects'))).toBe(true)
   } finally {

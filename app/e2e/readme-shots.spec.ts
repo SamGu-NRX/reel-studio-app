@@ -151,6 +151,7 @@ test('public: first-run connect screen and the script screen', async () => {
     await expect(page.getByTestId('skip')).toBeVisible()
     await snap(page, 'connect-ai')
     await page.getByTestId('skip').click()
+    await page.getByTestId('share-no').click()
     await expect(page.getByText('Your videos')).toBeVisible()
     await snap(page, 'home-empty')
     await page.getByTestId('new-video').click()
