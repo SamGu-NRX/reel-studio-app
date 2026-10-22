@@ -37,8 +37,8 @@ export function withRenderSlot(run: RunEngine, onWait: (owner: string, waiting: 
     waiters.shift()?.()
   }
 
-  return async (command, args, onProgress, signal) => {
-    if (command !== 'render') return run(command, args, onProgress, signal)
+  return async (command, args, onProgress, signal, onExit) => {
+    if (command !== 'render') return run(command, args, onProgress, signal, onExit)
     const at = args.indexOf('--owner')
     const owner = at >= 0 ? args[at + 1] : null
     const queued = busy >= RENDER_SLOTS
@@ -52,7 +52,7 @@ export function withRenderSlot(run: RunEngine, onWait: (owner: string, waiting: 
     // included. A group that would not die may still be encoding, so it keeps the slot until restart.
     let drained = true
     try {
-      return await run(command, args, onProgress, signal)
+      return await run(command, args, onProgress, signal, onExit)
     } catch (e) {
       drained = !(isEngineError(e) && e.code === 'ENGINE_STUCK')
       throw e
