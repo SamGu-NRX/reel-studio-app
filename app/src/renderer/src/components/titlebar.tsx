@@ -50,7 +50,7 @@ export function TitleBar({ rail, onToggle }: { rail: boolean; onToggle: () => vo
           label={label}
           className="sbt"
           shortcut={`${MOD}\\`}
-          onClick={onToggle}
+          onClick={() => onToggle()}
           aria-expanded={!rail}
           aria-controls="sidebar"
           aria-keyshortcuts={IS_MAC ? 'Meta+\\' : 'Control+\\'}

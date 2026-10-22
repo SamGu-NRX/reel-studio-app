@@ -28,12 +28,13 @@ export const providerName = (p: ProviderInfo | null): string | null => {
  * The sidebar folds to a 64 px rail (Cmd/Ctrl+\, remembered). The column takes its new width at once and the
  * page and the title row slide from where they were, so nothing reflows while it moves; from the keyboard it just changes.
  */
-export function useRail(): [boolean, () => void] {
+export function useRail(): [boolean, (byShortcut?: boolean) => void] {
   const [rail, setRail] = useState(() => localStorage.getItem(RAIL_KEY) === '1')
-  const toggle = useCallback(() => {
+  // byKeyboard() does not count Cmd/Ctrl shortcuts (motion.ts), so the shortcut says so itself
+  const toggle = useCallback((byShortcut = false) => {
     const moving = Array.from(document.querySelectorAll<HTMLElement>('.main, .tb-main'))
     const before = moving.map((el) => el.getBoundingClientRect().left)
-    const instant = byKeyboard() || reducedMotion()
+    const instant = byShortcut || byKeyboard() || reducedMotion()
     document.documentElement.classList.toggle('rail-instant', instant)
     setRail((r) => {
       localStorage.setItem(RAIL_KEY, r ? '0' : '1')
@@ -54,7 +55,7 @@ export function useRail(): [boolean, () => void] {
     const key = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
         e.preventDefault()
-        toggle()
+        toggle(true)
       }
     }
     window.addEventListener('keydown', key)
@@ -86,16 +87,20 @@ function SideResizer() {
     const w0 = width
     document.documentElement.classList.add('side-resizing')
     const move = (m: PointerEvent) => setWidth(sideWidth(w0 + m.clientX - x0))
-    const up = (u: PointerEvent) => {
+    // A released drag keeps its width; a cancelled one (capture lost, the system took the pointer) goes back.
+    const end = (e: PointerEvent) => {
       el.removeEventListener('pointermove', move)
-      el.removeEventListener('pointerup', up)
-      el.removeEventListener('pointercancel', up)
+      el.removeEventListener('pointerup', end)
+      el.removeEventListener('pointercancel', end)
+      el.removeEventListener('lostpointercapture', end)
       document.documentElement.classList.remove('side-resizing')
-      commit(sideWidth(w0 + u.clientX - x0))
+      if (e.type === 'pointerup') commit(sideWidth(w0 + e.clientX - x0))
+      else setWidth(w0)
     }
     el.addEventListener('pointermove', move)
-    el.addEventListener('pointerup', up)
-    el.addEventListener('pointercancel', up)
+    el.addEventListener('pointerup', end)
+    el.addEventListener('pointercancel', end)
+    el.addEventListener('lostpointercapture', end)
   }
   const key = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     const step = e.key === 'ArrowLeft' ? -8 : e.key === 'ArrowRight' ? 8 : 0
