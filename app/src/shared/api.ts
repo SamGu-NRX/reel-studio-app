@@ -410,6 +410,11 @@ export interface UserError {
   link?: string
 }
 
+export interface CloudDrive {
+  folder: string
+  label: 'iCloud Drive' | 'Google Drive'
+}
+
 export interface ReelApi {
   app: {
     info(): Promise<AppInfo>
@@ -509,6 +514,10 @@ export interface ReelApi {
     clear(slug: string): Promise<void>
     /** Something about a reel's queue changed. */
     onChange(cb: (slug: string) => void): () => void
+  }
+  cloud: {
+    drives(): Promise<CloudDrive[]>
+    save(video: string, folder: string): Promise<string>
   }
   phone: {
     /** Start (or restart, e.g. on another network) the link for one exported video. */

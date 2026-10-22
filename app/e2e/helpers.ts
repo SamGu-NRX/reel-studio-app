@@ -41,6 +41,7 @@ export async function launch(
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
   delete env.ELECTRON_RUN_AS_NODE
+  delete env.CLIPROXY_API_KEY
   Object.assign(env, {
     REELSTUDIO_TEST: '1',
     REELSTUDIO_USER_DATA: USER_DATA,
@@ -50,7 +51,8 @@ export async function launch(
     HF_HUB_CACHE: join(BASE, 'hf-cache'),
     // REELSTUDIO_E2E_AI=package runs against the installed @reelstudio/ai instead of the mock.
     REELSTUDIO_MOCK_AI: process.env.REELSTUDIO_E2E_AI === 'package' ? '0' : '1',
-    FAKE_ENGINE_SLOW: '3'
+    FAKE_ENGINE_SLOW: '3',
+    REELENGINE_CACHE: join(BASE, 'engine-cache')
   })
   Object.assign(env, extraEnv)
   // REELSTUDIO_E2E_EXE=<installed app binary> drives a PACKAGED app (e.g. ".../Reel Studio.app/Contents/MacOS/Reel Studio").
@@ -63,7 +65,7 @@ export async function launch(
   } else if (!env.REELSTUDIO_ENGINE_DIR) env.REELSTUDIO_ENGINE_DIR = join(APP_DIR, 'dev', 'fake-engine')
   const app = exe
     ? await electron.launch({ executablePath: exe, args: [], cwd: BASE, env })
-    : await electron.launch({ args: [APP_DIR], cwd: APP_DIR, env })
+    : await electron.launch({ args: ['-r', join(APP_DIR, 'e2e', 'hidden-bootstrap.cjs'), APP_DIR], cwd: APP_DIR, env })
   const page = await app.firstWindow()
   if (!realViewport) await page.setViewportSize({ width: 1280, height: 820 })
   await page.waitForLoadState('domcontentloaded')
