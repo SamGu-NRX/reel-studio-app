@@ -7,6 +7,7 @@ export type Screen =
   | { name: 'reel'; slug: string; fresh?: boolean }
   | { name: 'library' }
   | { name: 'style' }
+  | { name: 'insights' }
   | { name: 'settings'; section?: SettingsSection }
   | { name: 'connect'; back?: Exclude<Screen, { name: 'connect' }> }
 

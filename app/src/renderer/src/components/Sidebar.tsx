@@ -1,21 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { ProviderInfo } from '../../../shared/api'
-import { reel } from '../api'
-import type { Go, Screen } from '../nav'
+import type { Go } from '../nav'
 import { Icon, type IconName } from './icons'
-import { BrandMark, Logo } from './brand'
-import { PopMenu } from './PopMenu'
 import { UpdateButton } from './UpdateButton'
-import { IS_MAC, MOD } from './ui'
 import { byKeyboard, reducedMotion } from './motion'
+import { SIDE, sideWidth } from './side-width'
 import './shell.css'
 
 const RAIL_KEY = 'rs.sidebar-rail'
+const WIDTH_KEY = 'rs.sidebar-width'
+const RAIL_W = 64
 
-const NAV: { key: 'home' | 'library' | 'style'; label: string; icon: IconName }[] = [
+const NAV: { key: 'home' | 'library' | 'style' | 'insights'; label: string; icon: IconName }[] = [
   { key: 'home', label: 'My videos', icon: 'film' },
   { key: 'library', label: 'Library', icon: 'folder' },
-  { key: 'style', label: 'My style', icon: 'layers' }
+  { key: 'style', label: 'My style', icon: 'layers' },
+  { key: 'insights', label: 'Insights', icon: 'chart' }
 ]
 
 export const providerName = (p: ProviderInfo | null): string | null => {
@@ -26,33 +26,36 @@ export const providerName = (p: ProviderInfo | null): string | null => {
 
 /**
  * The sidebar folds to a 64 px rail (Cmd/Ctrl+\, remembered). The column takes its new width at once and the
- * page slides from where it was, so nothing reflows while it moves; from the keyboard it just changes.
+ * page and the title row slide from where they were, so nothing reflows while it moves; from the keyboard it just changes.
  */
-export function useRail(): [boolean, () => void] {
+export function useRail(): [boolean, (byShortcut?: boolean) => void] {
   const [rail, setRail] = useState(() => localStorage.getItem(RAIL_KEY) === '1')
-  const toggle = useCallback(() => {
-    const main = document.querySelector<HTMLElement>('.main')
-    const before = main?.getBoundingClientRect().left ?? 0
-    const instant = byKeyboard() || reducedMotion()
+  // byKeyboard() does not count Cmd/Ctrl shortcuts (motion.ts), so the shortcut says so itself
+  const toggle = useCallback((byShortcut = false) => {
+    const moving = Array.from(document.querySelectorAll<HTMLElement>('.main, .tb-main'))
+    const before = moving.map((el) => el.getBoundingClientRect().left)
+    const instant = byShortcut || byKeyboard() || reducedMotion()
     document.documentElement.classList.toggle('rail-instant', instant)
     setRail((r) => {
       localStorage.setItem(RAIL_KEY, r ? '0' : '1')
       return !r
     })
-    if (instant || !main) {
+    if (instant) {
       requestAnimationFrame(() => document.documentElement.classList.remove('rail-instant'))
       return
     }
-    requestAnimationFrame(() => {
-      const dx = before - main.getBoundingClientRect().left
-      main.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 200, easing: 'cubic-bezier(.23, 1, .32, 1)' })
-    })
+    requestAnimationFrame(() =>
+      moving.forEach((el, i) => {
+        const dx = before[i] - el.getBoundingClientRect().left
+        el.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 200, easing: 'cubic-bezier(.23, 1, .32, 1)' })
+      })
+    )
   }, [])
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
         e.preventDefault()
-        toggle()
+        toggle(true)
       }
     }
     window.addEventListener('keydown', key)
@@ -61,64 +64,74 @@ export function useRail(): [boolean, () => void] {
   return [rail, toggle]
 }
 
-/** The top row: on a Mac the traffic lights, then the sidebar toggle and the wordmark. Windows draws its buttons on the right. */
-export function TitleBar({ rail, onToggle }: { rail: boolean; onToggle: () => void }) {
-  const label = rail ? 'Show the sidebar' : 'Collapse the sidebar'
+/** The open width lives in CSS (--side-open, and the rail's scale of it), so a drag restyles without re-rendering the app. */
+function applyWidth(w: number): void {
+  const root = document.documentElement.style
+  root.setProperty('--side-open', `${w}px`)
+  root.setProperty('--rail-scale', String(RAIL_W / w))
+}
+
+/** Drag the sidebar's edge (or use the arrow keys on it) between 232 and 360 px; a double-click goes back to 248. */
+function SideResizer() {
+  const [width, setWidth] = useState(() => sideWidth(localStorage.getItem(WIDTH_KEY)))
+  useEffect(() => applyWidth(width), [width])
+  const commit = (w: number) => {
+    setWidth(w)
+    localStorage.setItem(WIDTH_KEY, String(w))
+  }
+  const down = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return
+    const el = e.currentTarget
+    el.setPointerCapture(e.pointerId)
+    const x0 = e.clientX
+    const w0 = width
+    document.documentElement.classList.add('side-resizing')
+    const move = (m: PointerEvent) => setWidth(sideWidth(w0 + m.clientX - x0))
+    // A released drag keeps its width; a cancelled one (capture lost, the system took the pointer) goes back.
+    const end = (e: PointerEvent) => {
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', end)
+      el.removeEventListener('pointercancel', end)
+      el.removeEventListener('lostpointercapture', end)
+      document.documentElement.classList.remove('side-resizing')
+      if (e.type === 'pointerup') commit(sideWidth(w0 + e.clientX - x0))
+      else setWidth(w0)
+    }
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', end)
+    el.addEventListener('pointercancel', end)
+    el.addEventListener('lostpointercapture', end)
+  }
+  const key = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = e.key === 'ArrowLeft' ? -8 : e.key === 'ArrowRight' ? 8 : 0
+    if (e.key === 'Home') commit(SIDE.min)
+    else if (e.key === 'End') commit(SIDE.max)
+    else if (step) commit(sideWidth(width + step))
+    else return
+    e.preventDefault()
+  }
   return (
-    <div className="titlebar">
-      <button
-        className="sbt"
-        onClick={onToggle}
-        aria-label={label}
-        title={`${label} (${MOD}\\)`}
-        aria-expanded={!rail}
-        aria-controls="sidebar"
-        data-testid="sidebar-toggle"
-      >
-        <Icon name="sidebar" size={16} stroke={1.75} />
-      </button>
-      <div className="wordmark" aria-hidden>
-        <span className="logo">
-          <Logo />
-        </span>
-        <b>Reel</b>
-        <span>Studio</span>
-      </div>
-    </div>
+    <div
+      className="side-resize"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Sidebar width"
+      aria-valuenow={width}
+      aria-valuemin={SIDE.min}
+      aria-valuemax={SIDE.max}
+      tabIndex={0}
+      onPointerDown={down}
+      onKeyDown={key}
+      onDoubleClick={() => commit(SIDE.default)}
+      data-testid="sidebar-resize"
+    />
   )
 }
 
-export function Sidebar({
-  section,
-  go,
-  provider,
-  userName,
-  shown
-}: {
-  section: string
-  go: Go
-  provider: ProviderInfo | null
-  userName: string | null
-  shown: Screen
-}) {
-  const [menu, setMenu] = useState(false)
-  const acct = useRef<HTMLButtonElement>(null)
+export function Sidebar({ section, go, provider, userName }: { section: string; go: Go; provider: ProviderInfo | null; userName: string | null }) {
   const name = providerName(provider)
-  const close = useCallback(() => setMenu(false), [])
-  const pick = (run: () => void) => () => {
-    setMenu(false)
-    run()
-  }
   const who = userName?.trim() || 'You'
-  const mark =
-    !provider || !name
-      ? null
-      : provider.id === 'claude-cli' || provider.id === 'claude'
-        ? 'claude'
-        : provider.id === 'chatgpt' || provider.id === 'codex-cli'
-          ? 'openai'
-          : null
-
+  const inSettings = section === 'settings'
   return (
     <aside className="side" id="sidebar" aria-label="Sidebar">
       <nav className="nav" aria-label="Main">
@@ -141,13 +154,11 @@ export function Sidebar({
           <UpdateButton />
         </div>
         <button
-          ref={acct}
-          className={`acct${menu ? ' open' : ''}`}
-          aria-haspopup="menu"
-          aria-expanded={menu}
-          aria-label={`${who}, ${name ? `AI editor ${name}` : 'no AI editor'}`}
-          title={provider?.id === 'claude-cli' && name ? 'AI editor: Claude (your Claude Code app)' : undefined}
-          onClick={() => setMenu((m) => !m)}
+          className={`acct${inSettings ? ' on' : ''}`}
+          aria-current={inSettings ? 'page' : undefined}
+          aria-label={`${who}, ${name ? `AI editor ${name}` : 'no AI editor'}. Settings`}
+          title={provider?.id === 'claude-cli' && name ? 'AI editor: Claude (your Claude Code app). Settings' : 'Settings'}
+          onClick={() => go({ name: 'settings' })}
           data-testid="account"
         >
           <span className="av" aria-hidden>
@@ -158,47 +169,9 @@ export function Sidebar({
             <b>{who}</b>
             <span data-testid="ai-status">{name ? `AI editor: ${name}` : 'No AI editor'}</span>
           </span>
-          <span className="lbl chev">
-            <Icon name="updown" size={14} />
-          </span>
         </button>
-        <PopMenu
-          open={menu}
-          onClose={close}
-          anchor={acct}
-          label="Account"
-          style={{ left: 12, bottom: 64, width: 252 }}
-          origin="bottom left"
-          testid="account-menu"
-        >
-          <button
-            className="mi"
-            role="menuitem"
-            onClick={pick(() =>
-              go(
-                name
-                  ? { name: 'settings', section: 'ai' }
-                  : { name: 'connect', back: shown.name === 'connect' ? undefined : (shown as Exclude<Screen, { name: 'connect' }>) }
-              )
-            )}
-            data-testid="sidebar-connect"
-          >
-            {mark ? <BrandMark name={mark} size={14} /> : <Icon name="sparkles" size={16} />}
-            AI editor
-            <span className="r">{name ?? 'Connect one'}</span>
-          </button>
-          <button className="mi" role="menuitem" onClick={pick(() => go({ name: 'settings' }))} data-testid="nav-settings">
-            <Icon name="settings" size={16} />
-            Settings
-            <span className="r">{IS_MAC ? '⌘,' : 'Ctrl+,'}</span>
-          </button>
-          <hr />
-          <button className="mi" role="menuitem" onClick={pick(() => void reel.update.openRelease())} data-testid="whats-new">
-            <Icon name="bell" size={16} />
-            What's new
-          </button>
-        </PopMenu>
       </div>
+      <SideResizer />
     </aside>
   )
 }

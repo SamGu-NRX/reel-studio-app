@@ -94,7 +94,7 @@ test('see it on: phone shapes, Instagram view on each, remembered', async () => 
 
     // The phone column fits the window: Send to my phone in view, and nothing in the column makes the page scroll.
     const pad = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.reel-page')!).paddingBottom))
-    for (const [width, height] of [[1280, 820], [1024, 700]]) {
+    for (const [width, height] of [[1280, 820], [1100, 720]]) {
       await page.setViewportSize({ width, height })
       for (const id of ['any', ...DEVICES.map((d) => d.id)]) {
         await page.getByTestId('device-pick').selectOption(id)

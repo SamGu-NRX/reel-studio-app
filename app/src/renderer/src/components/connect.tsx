@@ -477,7 +477,7 @@ export function ModelPanel({ s, onNext, secondary }: { s: ModelStatus; onNext?: 
     <div className="stack">
       {s.downloading || paused ? (
         <>
-          <Progress pct={s.pct} paused={!s.downloading} label="Downloading the listening model" />
+          <Progress pct={s.pct} label="Downloading the listening model" />
           <div className="row">
             <span className="muted" data-testid="model-progress">
               {downloadLine(s, s.downloading ? 'Downloading' : 'Paused at')}

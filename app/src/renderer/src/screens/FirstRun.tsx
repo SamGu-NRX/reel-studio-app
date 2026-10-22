@@ -322,7 +322,7 @@ function Stage({
               <Icon name="original" size={16} /> Hold the video to see the original
             </span>
             {finished && (
-              <button className="icon-btn small" onClick={() => demo.current?.setPaused(!paused)} aria-label={paused ? 'Play the sample' : 'Pause the sample'}>
+              <button className="icon-btn" onClick={() => demo.current?.setPaused(!paused)} aria-label={paused ? 'Play the sample' : 'Pause the sample'}>
                 <Icon name={paused ? 'play' : 'pause'} size={14} />
               </button>
             )}

@@ -152,9 +152,9 @@ test('full screen reel: open, hand-off both ways, Space, Esc, Exit button, small
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('export-dialog')).toHaveCount(0)
 
-  // ---- the smallest window the app allows (1024 x 700): the view still fills the screen at 9:16 ----
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1024, 700))
-  await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(1024)
+  // ---- the smallest window the app allows (1100 x 720): the view still fills the screen at 9:16 ----
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720))
+  await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(1100)
   await open(page)
   await expectTrueFrame(page, app)
   await page.keyboard.press('Escape')

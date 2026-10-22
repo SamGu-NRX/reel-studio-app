@@ -48,16 +48,6 @@ test('add your own AI server from Settings', async () => {
   const { app, page } = await launch({ REELSTUDIO_MOCK_AI: '0' })
   try {
     await passFirstRun(page)
-    // "Connect one" from My style: the back link names My style and returns there
-    await page.getByTestId('nav-style').click()
-    await page.getByTestId('account').click()
-    await page.getByTestId('sidebar-connect').click()
-    await expect(page.getByTestId('nav-style')).toHaveAttribute('aria-current', 'page')
-    await expect(page.getByTestId('connect-back')).toHaveText('My style')
-    await page.getByTestId('connect-back').click()
-    await expect(page.getByTestId('connect-screen')).toHaveCount(0)
-    await expect(page.getByTestId('nav-style')).toHaveAttribute('aria-current', 'page')
-
     await openSettings(page)
     await page.getByTestId('own-server-toggle').click()
     const dialog = page.getByTestId('connection-dialog')

@@ -59,7 +59,7 @@
 }
 /* The finish moment's slide-in (styles.css) moves the whole frame once, so the camera and home button arrive
    with the phone; switching phones later replays nothing. */
-.fresh .reel-left .device-frame { animation: phone-in .6s var(--ease) both; }
+.fresh .reel-left .device-frame { animation: phone-in .6s var(--ease-out) both; }
 .fresh .reel-left .device-frame .phone { animation: none; }
 .island { position: absolute; background: #000; border-radius: 999px; }
 .home-button {
@@ -69,7 +69,7 @@
 }
 
 /* What Instagram covers: a quiet wash with a dashed edge and a plain label, so the reel stays readable under it. */
-.device-covered { position: absolute; inset: 0; opacity: 1; transition: opacity .18s var(--ease); }
+.device-covered { position: absolute; inset: 0; opacity: 1; transition: opacity .18s var(--ease-out); }
 @starting-style { .device-covered { opacity: 0; } }
 .zone {
   position: absolute; background: rgba(20, 18, 16, .46); outline: 1px dashed rgba(255, 255, 255, .6); outline-offset: -1px;
@@ -87,12 +87,12 @@
 .device-select {
   position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 28px 0 10px; border-radius: 999px;
   border: 1px solid transparent; color: var(--ink-2); font-size: 13.5px; font-weight: 600; cursor: pointer;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2357524c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23474D49' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;
 }
-@media (hover: hover) { .device-select:hover { background-color: var(--soft); color: var(--ink); } }
+@media (hover: hover) { .device-select:hover { background-color: var(--sunk); color: var(--ink); } }
 .device-select b { color: var(--ink); font-weight: 650; }
 .device-select select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; font: inherit; }
-.device-select:has(select:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.device-select:has(select:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
 .device-fit { font-size: 12.5px; line-height: 20px; color: var(--ink-3); text-align: center; max-width: 300px; }
 
 /* Instagram's menu bar under the reel: five quiet marks, enough to read as the app's bar and no more. */

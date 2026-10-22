@@ -233,6 +233,7 @@ font's own `name` table.
 |---|---|---|
 | `resources/fonts/` (`packaging/fonts/`, `SOURCES.md` lists upstream URLs and checksums) | Montserrat v7.222, Inter 4.1, Fraunces 1.000, Roboto 3.016 (static TTFs, unmodified) | SIL OFL 1.1 (`*-OFL.txt` beside the files) |
 | `resources/engine/reelengine/fonts/` | Montserrat (SemiBold, variable), Inter, Fraunces; **Roboto 2.001047** | SIL OFL 1.1 (`OFL-*.txt`); Roboto 2.001047 is **Apache-2.0** (`LICENSE-Roboto-Apache-2.0.txt`) |
+| the app window (`app/src/renderer/src/assets/fonts/`, bundled into the renderer) | **Mona Sans** 2.000 by GitHub, variable (weight 200–900, width 75–125%), the interface face: "Copyright 2022 The Mona Sans Project Authors (https://github.com/github/mona-sans), with Reserved Font Name "Mona""; Montserrat SemiBold, the subtitle preview | SIL OFL 1.1 (`OFL-MonaSans.txt`, `OFL-Montserrat.txt`) |
 | `resources/templates/fonts/` (animation and b-roll templates) | Inter (Medium, SemiBold, Bold), Fraunces (SemiBold, Bold), Montserrat variable, **JetBrains Mono** (Medium, Bold) | SIL OFL 1.1, one `OFL.txt` listing each file's copyright: "Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)" and the same for the others |
 
 OFL fonts may be bundled with software; they may not be sold on their own and keep their names.
