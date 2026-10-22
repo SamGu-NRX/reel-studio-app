@@ -73,6 +73,7 @@ import { autoUpdater } from 'electron-updater'
 import { electronUpdaterBackend } from './updater-electron'
 import { disabledReason, updateMode } from './update-machine'
 import { createJobFeedback, createMainWindow, feedbackLog, installMenu, startDragOut, windowStateFile, type AppCommand } from './window'
+import { viewerFullScreen } from './viewer-fullscreen'
 
 const TEST = process.env.REELSTUDIO_TEST === '1'
 const DEV_PROVIDERS = process.env.REELSTUDIO_DEV === '1'
@@ -153,6 +154,7 @@ let ai: AI
 let perms: Permissions
 let aiSource: 'package' | 'mock' = 'mock'
 let win: BrowserWindow | null = null
+let setViewerFullScreen: ((on: boolean) => void) | null = null
 
 function broadcast(channel: string, payload: unknown): void {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(channel, payload)
@@ -444,6 +446,7 @@ function registerIpc(): void {
     else shell.showItemInFolder(p)
   })
   handle('app:copyText', (_e, t: string) => clipboard.writeText(String(t)))
+  handle('app:fullScreen', (_e, on: boolean) => setViewerFullScreen?.(on === true))
   ipcMain.on('app:startDrag', (e, file: string) => {
     try {
       assertIpcSender(e, win?.webContents, rendererUrl)
@@ -817,6 +820,7 @@ function showTestNotification(): Promise<NotifyResult> {
 // ---- window -------------------------------------------------------------------------------------
 function createWindow(): void {
   win = createMainWindow({ preload: join(__dirname, '../preload/index.js'), stateFile: windowStateFile(settingsDir()), test: TEST })
+  setViewerFullScreen = viewerFullScreen(win)
   installMenu(sendCommand, DEV_PROVIDERS || !app.isPackaged, () =>
     void menuCheckForUpdates(updates, {
       focus: () => win?.show(),
