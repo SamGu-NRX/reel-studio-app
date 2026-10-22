@@ -14,11 +14,11 @@ function instrument(agent, tools) {
   tools.executeTool = async (...args) => {
     const m = current, r = await execute(...args);
     m.toolCalls++;
-    if (r.isError) {let body;try{body=JSON.parse(r.content);}catch{body={error:r.content};}const item={name:args[1],reason:body.error||r.content,code:body.code||null};if(!body.code&&!item.reason.startsWith(args[1]+' failed:'))m.validationErrors.push(item);else m.executionErrors.push(item);}
+    if (r.isError) {let body;try{body=JSON.parse(r.content);}catch{body={error:r.content};}const item={name:args[1],reason:body.error||r.content,code:body.code||null};if(item.code==='NO_ANIMATION_RENDERER')m.environmentErrors.push(item);else if(!body.code&&!item.reason.startsWith(args[1]+' failed:'))m.validationErrors.push(item);else m.executionErrors.push(item);}
     return r;
   };
   return {
-    start(id) { current = {id, modelTurns: 0, parseFailures: 0, emptyToolReplies: 0, retries: 0, toolCalls: 0, validationErrors: [], executionErrors: [], stoppedByCaps: 0, reportedTokens: null, reportedUsage: [], providerErrors: [], agentRuns: []}; return current; },
+    start(id) { current = {id, modelTurns: 0, parseFailures: 0, emptyToolReplies: 0, retries: 0, toolCalls: 0, validationErrors: [], executionErrors: [], environmentErrors: [], stoppedByCaps: 0, reportedTokens: null, reportedUsage: [], providerErrors: [], agentRuns: []}; return current; },
     wrap(provider) {
       return {id: provider.id, model: provider.model, supportsImages: provider.supportsImages,
         dispose: () => provider.dispose?.(),

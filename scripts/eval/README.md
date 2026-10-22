@@ -19,7 +19,11 @@ relative to that file. The runner never discovers old ASR fixtures or invents sp
 
 Each speech clip runs real init, analyze and autocut, then firstEdit and three sequential
 notes. Notes declare allowed project JSON pointers in `allowPaths`. Every changed leaf
-outside those paths fails scope; only notes, version and updatedAt are ignored. The mock
+outside those paths fails scope; only notes, version and updatedAt are ignored. Arrays whose
+items all carry an `id` are compared by id, so removing one b-roll does not report the
+items after it as changed. One exception is recorded under `scope.consequences`: when the
+note's cut removes a word that a b-roll, zoom, music automation or hidden-caption range is
+anchored on, that item may be removed or re-anchored onto words still kept. The mock
 executes only exact `mockTools` supplied by the manifest and first-edit calls supplied by
 the harness. It does not infer requests from prompts. This checks integration and
 bookkeeping; a scripted edit is not evidence of model judgment. The mock disables firstLook
@@ -43,8 +47,10 @@ availability, and instantiates its actual ClaudeCliProvider. A quota error stops
 Other live providers use `--provider <id> --model <id> --provider-adapter /absolute/module.cjs`.
 The module exports an async function receiving
 `{AI,host,profileDir,provider,model,build,signal}` and returning a ModelProvider with
-`id`, `model`, `supportsImages`, `complete(request)`, optional `dispose()` and optional
-`close()`. `AI` is the compiled selected build; `profileDir` is empty owned scratch. The
+`id`, `model`, `supportsImages`, `complete(request)`, optional `dispose()`, optional
+`close()` and optional `renderAnimation(template, params, outPath, fps)`. Without the last,
+animation tools fail as they would outside the app; those calls are counted as
+`environmentErrors`, not as model errors, and the report states how many. `AI` is the compiled selected build; `profileDir` is empty owned scratch. The
 adapter owns credential integration; the runner never reads keys, copies a real profile or
 implements substitute encryption. `dispose()` follows the actual agent lifecycle and
 `close()` is awaited at whole-run end. Temporary provider retries retain actual agent

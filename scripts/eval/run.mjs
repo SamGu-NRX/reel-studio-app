@@ -74,18 +74,7 @@ function copyJSON(src,dst) {
     }
   }
 }
-function leaves(a,b,p='',out=[]) {
-  if(JSON.stringify(a)===JSON.stringify(b))return out;
-  const objectA=a!==null&&typeof a==='object',objectB=b!==null&&typeof b==='object';
-  if((objectA||a===undefined)&&(objectB||b===undefined)) {
-    const keys=new Set([...Object.keys(a||{}),...Object.keys(b||{})]);
-    if(keys.size) {for(const k of keys)leaves(a?.[k],b?.[k],p+'/'+k.replace(/~/g,'~0').replace(/\//g,'~1'),out);return out;}
-  }
-  out.push({path:p,before:a===undefined?{absent:true}:a,after:b===undefined?{absent:true}:b});
-  return out;
-}
-const ignored = p => ['/notes','/version','/updatedAt'].some(x=>p===x||p.startsWith(x+'/'));
-function substantive(a,b) {return leaves(a,b).filter(x=>!ignored(x.path));}
+const {ignored,substantive,check:scopeCheck}=require('./scope.cjs');
 function manifest(file) {
   const m=read(file),base=path.dirname(file),ids=new Set();
   if(m.schemaVersion!==1||!Array.isArray(m.clips)||!m.clips.length)throw Error('manifest requires schemaVersion 1 and clips');
@@ -151,11 +140,11 @@ async function main() {
     const {ScriptedProvider}=require('./mock.cjs');
     const strippedSecrets=Object.fromEntries(Object.keys(process.env).filter(k=>/KEY|TOKEN|SECRET|PASSWORD|AUTHORIZATION/i.test(k)).map(k=>[k,undefined]));
     const rawHost=new AI.PythonEngineHost({python:py,cwd:path.join(source,'engine'),root:path.join(scratch,'root'),env:{...strippedSecrets,PYTHONPATH:path.join(source,'engine'),REELENGINE_FFMPEG:ffmpeg,REELENGINE_FFPROBE:ffprobe,REELENGINE_CACHE:path.join(scratch,'cache'),REELENGINE_CACHE_DIR:path.join(scratch,'cache'),REELENGINE_MODELS:flags.models?path.resolve(flags.models):path.join(scratch,'models'),REELENGINE_FONTS:path.join(source,'packaging/fonts')}});
-    const host={reelStudioRoot:()=>rawHost.reelStudioRoot(),renderAnimation:rawHost.renderAnimation.bind(rawHost),runEngine:async(...args)=>{guard();return rawHost.runEngine(...args)}};
+    const host={reelStudioRoot:()=>rawHost.reelStudioRoot(),renderAnimation:(...args)=>(adapterAnimation??rawHost.renderAnimation.bind(rawHost))(...args),runEngine:async(...args)=>{guard();return rawHost.runEngine(...args)}};
     report.runtimeSettings={firstLook:(flags.provider||'mock')!=='mock',fastNotes:(flags.provider||'mock')!=='mock',finalRender:true};
     const deps={host,prompts:new AI.Prompts(path.join(source,'ai/prompts')),style:new AI.StyleStore(()=>host.reelStudioRoot()),...((flags.provider||'mock')==='mock'?{firstLook:false,fastNotes:false}:{}),finalRender:true};
     const profileDir=path.join(scratch,'profile');fs.mkdirSync(profileDir,{recursive:true});
-    let laneBlocked=false;
+    let laneBlocked=false,adapterAnimation=null;
     for(const clip of corpus.clips) {
       const dir=path.join(runDir,clip.id);fs.mkdirSync(dir);const cr={id:clip.id,status:'FAIL',tasks:[],determinism:{status:'UNAVAILABLE'}};report.clips.push(cr);
       if(laneBlocked){cr.status='BLOCKED';cr.reason='provider lane stopped after previous provider error';continue;}
@@ -188,7 +177,7 @@ async function main() {
           const imported=await import(pathToFileURL(flags['provider-adapter']).href);const adapter=imported.default;
           if(typeof adapter!=='function')throw Error('provider adapter must export a function');
           raw=await adapter({AI,host,profileDir,provider:flags.provider,model:flags.model||null,build:source,signal:abort.signal});
-          if(typeof raw?.complete!=='function')throw Error('provider adapter did not return a ModelProvider');adapters.add(raw);creatingAdapter=false;
+          if(typeof raw?.complete!=='function')throw Error('provider adapter did not return a ModelProvider');adapters.add(raw);adapterAnimation=raw.renderAnimation?.bind(raw)??null;creatingAdapter=false;
         }
         cr.provider={id:raw.id,model:raw.model||null};
         const provider=metrics.wrap(raw);
@@ -206,8 +195,9 @@ async function main() {
             const result=note?await editor.applyNote(deps,provider,project,note.text,fn,abort.signal,{id:slug(note.id)}):await editor.firstEdit(deps,provider,project,fn,abort.signal);
             r.editorCompleted=true;
             if(m.providerErrors.length&&m.agentRuns.some(r=>r.error))laneBlocked=true;
-            const after=read(path.join(project,'project.json'));r.diff=substantive(before,after);
-            if(note) {r.scope={allowed:note.allowPaths,unexpected:r.diff.filter(x=>!note.allowPaths.some(p=>x.path===p||x.path.startsWith(p+'/')))};r.changed=r.diff.length>0;}
+            const after=read(path.join(project,'project.json'));
+            if(note) {const s=scopeCheck(before,after,read(path.join(project,after.transcript.file)).words,note.allowPaths);r.diff=s.diff;r.scope={allowed:note.allowPaths,unexpected:s.unexpected,consequences:s.consequences};r.changed=r.diff.length>0;}
+            else r.diff=substantive(before,after);
             guard();const q=JSON.parse(run(py,[path.join(here,'quality.py'),project],{env:{...Object.fromEntries(Object.entries(process.env).filter(([k])=>!/KEY|TOKEN|SECRET|PASSWORD|AUTHORIZATION/i.test(k))),PYTHONPATH:path.join(source,'engine')}}));
             write(path.join(recordDir,'quality.json'),q);write(path.join(recordDir,'project-before.json'),before);write(path.join(recordDir,'project-after.json'),after);
             r.quality=q.status;r.qualityStatus=q.status;r.notice=result.notice||null;r.fast=result.fast||null;r.reliabilityStatus=!r.notice&&m.stoppedByCaps===0&&m.validationErrors.length===0&&m.executionErrors.length===0&&(m.agentRuns.length>0||Boolean(result.fast))&&m.agentRuns.every(run=>!run.error)&&(!note||(r.changed&&!r.scope.unexpected.length))?'PASS':'FAIL';r.status=r.reliabilityStatus==='PASS'&&r.qualityStatus==='PASS'?'PASS':'FAIL';
@@ -242,12 +232,12 @@ async function main() {
     const allTasks=report.clips.flatMap(c=>[...(c.tasks||[]),...(c.determinism?.runs||[])]);
     for(const status of ['PASS','FAIL','UNAVAILABLE']){report.summary.reliability[status]=allTasks.filter(t=>t.reliabilityStatus===status).length;report.summary.quality[status]=allTasks.filter(t=>t.qualityStatus===status).length;report.summary.determinism[status]=report.clips.filter(c=>c.determinism?.status===status).length;}
     for(const name of ['parseFailures','retries','stoppedByCaps'])report.summary[name]=allTasks.reduce((sum,t)=>sum+(t.metrics[name]||0),0);
-    for(const name of ['validationErrors','executionErrors','providerErrors'])report.summary[name]=allTasks.reduce((sum,t)=>sum+t.metrics[name].length,0);
+    for(const name of ['validationErrors','executionErrors','environmentErrors','providerErrors'])report.summary[name]=allTasks.reduce((sum,t)=>sum+t.metrics[name].length,0);
     report.summary.wallMs=allTasks.reduce((sum,t)=>sum+t.wallMs,0);
     report.summary.tasks=allTasks.length;report.summary.modelTurns=allTasks.reduce((sum,t)=>sum+t.metrics.modelTurns,0);report.summary.reportedTokens=allTasks.some(t=>t.metrics.reportedTokens!==null)?allTasks.reduce((sum,t)=>sum+(t.metrics.reportedTokens||0),0):null;
     write(path.join(runDir,'report.json'),report);
     const table=['| Clip | Reliability (first edit + notes) | Quality | Determinism | Outcome |','| --- | --- | --- | --- | --- |',...report.clips.map(c=>`| ${c.id} | ${(c.tasks||[]).length?c.tasks.every(t=>t.reliabilityStatus==='PASS')?'PASS':'FAIL':'UNAVAILABLE'} | ${(c.tasks||[]).length?c.tasks.every(t=>t.qualityStatus==='PASS')?'PASS':c.tasks.some(t=>t.qualityStatus==='FAIL')?'FAIL':'UNAVAILABLE':'UNAVAILABLE'} | ${c.determinism?.status||'UNAVAILABLE'} | ${c.status} |`)].join('\n');
-    fs.writeFileSync(path.join(runDir,'report.md'),`# Eval run\n\nStatus: ${report.status}\n\nBuild: ${report.build.sha||'UNAVAILABLE'} (dirty: ${report.build.dirty})\n\n${table}\n\nTasks including repeats: ${report.summary.tasks}; reliability PASS ${report.summary.reliability.PASS}, FAIL ${report.summary.reliability.FAIL}; quality PASS ${report.summary.quality.PASS}, FAIL ${report.summary.quality.FAIL}, UNAVAILABLE ${report.summary.quality.UNAVAILABLE}. Expected no-audio rejections: ${report.summary.expectedRejections}.\n\nLive no-regression: UNAVAILABLE. Human 1-5 and pairwise judging: not run.\n`);
+    fs.writeFileSync(path.join(runDir,'report.md'),`# Eval run\n\nStatus: ${report.status}\n\nBuild: ${report.build.sha||'UNAVAILABLE'} (dirty: ${report.build.dirty})\n\n${table}\n\nTasks including repeats: ${report.summary.tasks}; reliability PASS ${report.summary.reliability.PASS}, FAIL ${report.summary.reliability.FAIL}; quality PASS ${report.summary.quality.PASS}, FAIL ${report.summary.quality.FAIL}, UNAVAILABLE ${report.summary.quality.UNAVAILABLE}. Expected no-audio rejections: ${report.summary.expectedRejections}. Tool calls the harness could not serve (no animation renderer): ${report.summary.environmentErrors}.\n\nLive no-regression: UNAVAILABLE. Human 1-5 and pairwise judging: not run.\n`);
     fs.rmSync(scratch,{recursive:true,force:true});
     console.log(JSON.stringify({runDir,status:report.status}));if(report.status!=='PASS')process.exitCode=1;
   }
