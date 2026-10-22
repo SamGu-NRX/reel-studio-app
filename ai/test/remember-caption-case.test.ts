@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
+import { spawn } from 'node:child_process';
 import { createAI, loadProject, AIError } from '../src';
 import { FakeHost, ScriptedModel, makeProject, call, tmpDir } from './helpers';
 
@@ -241,4 +242,28 @@ describe('answering the question', () => {
     expect(await ai().approveStyleProposal(r.styleProposal!)).toMatchObject({ status: 'saved' });
     expect((await ai().styleRules()).map((x) => x.text)).toEqual(['Use lowercase captions.']);
   });
+
+  it('a Yes and a rule saved at once through two separate AI objects keep both', async () => {
+    const { dir, ai } = await setup();
+    const asked = (await ai(new ScriptedModel([{ toolCalls: [lowercase()] }, finish()])).applyNote(dir, 'make the captions lowercase', () => undefined)).styleProposal!;
+    await Promise.all([ai().approveStyleProposal(asked), ai().addStyleRule('Keep music quieter under talking.')]);
+    expect((await ai().styleRules()).map((x) => x.text).sort()).toEqual(['Keep music quieter under talking.', 'Use lowercase captions.']);
+  });
+
+  // A real handle, not a mock: PowerShell opens My style.json the way antivirus and sync tools do (others may read it,
+  // nobody may replace it) and keeps it for 2 s, longer than the 0.9 s the write used to retry for.
+  it.runIf(process.platform === 'win32')('a Yes saved while another program holds My style.json open for a moment is kept', async () => {
+    const { dir, ai, styleFile } = await setup();
+    const asked = (await ai(new ScriptedModel([{ toolCalls: [lowercase()] }, finish()])).applyNote(dir, 'make the captions lowercase', () => undefined)).styleProposal!;
+    await ai().addStyleRule('Keep music quieter under talking.');
+    const holder = spawn('powershell.exe', ['-NoProfile', '-Command',
+      `$f = [IO.File]::Open('${styleFile.replace(/'/g, "''")}', 'Open', 'Read', 'Read'); 'locked'; Start-Sleep -Milliseconds 2000; $f.Close()`]);
+    await new Promise<void>((ok, fail) => {
+      holder.stdout.on('data', (d: Buffer) => d.toString().includes('locked') && ok());
+      holder.on('error', fail);
+      holder.on('exit', (code) => fail(new Error(`PowerShell exited with ${code} before it held the file`)));
+    });
+    expect(await ai().approveStyleProposal(asked)).toMatchObject({ status: 'saved' });
+    expect((await ai().styleRules()).map((x) => x.text).sort()).toEqual(['Keep music quieter under talking.', 'Use lowercase captions.']);
+  }, 20_000);
 });

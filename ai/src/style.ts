@@ -1,5 +1,6 @@
 // "My style": durable user preferences, persisted in <Reel Studio root>/My style.json.
 import { randomUUID } from 'node:crypto';
+import * as path from 'node:path';
 import { readJson, styleFile, writeFileAtomic } from './project';
 
 /** A rule the app applies itself, through the caption tool, when a new video is made. Only lowercase for now:
@@ -48,15 +49,19 @@ export function noteAsksToRemember(note: string | undefined): boolean {
   return !!note && /\b(always|never again|from now on|going forward|in (the )?future|remember|every (video|time|reel)|all (my|of my|future) (videos|reels)|for next time|next time)\b/i.test(note);
 }
 
+/** Every change is a read-modify-write of one file shared by every project: run them one at a time per file,
+ * across every StyleStore in this process (two edits saving a rule at once used to drop one of them; review finding 36). */
+const queues = new Map<string, Promise<unknown>>();
+
 export class StyleStore {
   constructor(private readonly rootDir: () => string) {}
 
-  /** add/remove are read-modify-write of one file shared by every project: run them one at a time
-   * (two edits saving a rule at once used to drop one of them; review finding 36). */
-  private chain: Promise<unknown> = Promise.resolve();
   private serial<T>(fn: () => Promise<T>): Promise<T> {
-    const run = this.chain.catch(() => undefined).then(fn);
-    this.chain = run.catch(() => undefined);
+    const key = path.resolve(this.file);
+    const run = (queues.get(key) ?? Promise.resolve()).then(fn);
+    const tail = run.catch(() => undefined);
+    queues.set(key, tail);
+    void tail.then(() => { if (queues.get(key) === tail) queues.delete(key); });
     return run;
   }
 

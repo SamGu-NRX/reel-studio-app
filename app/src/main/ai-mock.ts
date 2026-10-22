@@ -4,7 +4,7 @@
 import { existsSync, promises as fs } from 'node:fs'
 import { join, extname } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { writeJson } from './store'
+import { serialized, writeJson } from './store'
 import type { AgentEvent, AgentResult, AI, ClaudeCodeStatus, CreateAI, ProviderStatus, ScriptResult } from './ai-types'
 import type { Phase, StyleProposal, StyleRule } from '../shared/api'
 
@@ -43,8 +43,10 @@ export const createMockAI: CreateAI = ({ host }) => {
     // keep what the real package also stores there (`version`, `forgotten`)
     // a file that can't be read is never replaced: only a missing one starts empty
     const file = await fs.readFile(styleFile(), 'utf8').then(JSON.parse).catch((e) => (e?.code === 'ENOENT' ? {} : Promise.reject(e)))
-    await fs.writeFile(styleFile(), JSON.stringify({ ...file, rules }, null, 2) + '\n', 'utf8')
+    await writeJson(styleFile(), { ...file, rules })
   }
+  /** Each change reads, edits and writes the whole file: one at a time, or two at once lose one of them. */
+  const changeStyle = <T>(fn: () => Promise<T>): Promise<T> => serialized(styleFile(), fn)
 
   async function readProject(dir: string): Promise<any> {
     return JSON.parse(await fs.readFile(join(dir, 'project.json'), 'utf8'))
@@ -176,9 +178,7 @@ export const createMockAI: CreateAI = ({ host }) => {
       const p = await readProject(projectDir)
       const added: string[] = []
       if (/\b(always|never|every video|from now on|in general)\b/i.test(note)) {
-        const rules = await readRules()
-        rules.push({ id: randomUUID(), text: note.trim(), createdAt: new Date().toISOString() })
-        await writeRules(rules)
+        await changeStyle(async () => writeRules([...(await readRules()), { id: randomUUID(), text: note.trim(), createdAt: new Date().toISOString() }]))
         added.push(note.trim())
       }
       // Tests only, with the mock Claude Code app connected: act like the real package on a lowercase note
@@ -217,35 +217,43 @@ export const createMockAI: CreateAI = ({ host }) => {
       return readRules()
     },
     async addStyleRule(text) {
-      const rule = { id: randomUUID(), text, createdAt: new Date().toISOString() }
-      await writeRules([...(await readRules()), rule])
-      return rule
+      return changeStyle(async () => {
+        const rule = { id: randomUUID(), text, createdAt: new Date().toISOString() }
+        await writeRules([...(await readRules()), rule])
+        return rule
+      })
     },
     async approveStyleProposal(proposal) {
-      const rules = await readRules()
-      if (rules.some((r) => r.payload)) return { status: 'exists' as const }
-      const at = new Date().toISOString()
-      await writeRules([...rules, { id: randomUUID(), text: proposal.text, createdAt: at, payload: proposal.payload, source: proposal.source, consent: { proposal: proposal.id, at } }])
-      return { status: 'saved' as const }
+      return changeStyle(async () => {
+        const rules = await readRules()
+        if (rules.some((r) => r.payload)) return { status: 'exists' as const }
+        const at = new Date().toISOString()
+        await writeRules([...rules, { id: randomUUID(), text: proposal.text, createdAt: at, payload: proposal.payload, source: proposal.source, consent: { proposal: proposal.id, at } }])
+        return { status: 'saved' as const }
+      })
     },
     async declineStyleProposal(proposal) {
-      const rules = await readRules()
-      if (rules.some((r) => r.consent?.proposal === proposal.id)) await writeRules(rules.filter((r) => r.consent?.proposal !== proposal.id))
+      return changeStyle(async () => {
+        const rules = await readRules()
+        if (rules.some((r) => r.consent?.proposal === proposal.id)) await writeRules(rules.filter((r) => r.consent?.proposal !== proposal.id))
+      })
     },
     async updateStyleRule(id, patch) {
-      const rules = await readRules()
-      const rule = rules.find((r) => r.id === id)
-      if (!rule) throw { code: 'NOT_FOUND', userMessage: 'That rule is not in My style any more.' }
-      if (patch.text !== undefined) {
-        rule.text = patch.text.trim()
-        if (rule.text !== 'Use lowercase captions.') delete rule.payload
-      }
-      if (patch.paused !== undefined) rule.paused = patch.paused || undefined
-      await writeRules(rules)
-      return rule
+      return changeStyle(async () => {
+        const rules = await readRules()
+        const rule = rules.find((r) => r.id === id)
+        if (!rule) throw { code: 'NOT_FOUND', userMessage: 'That rule is not in My style any more.' }
+        if (patch.text !== undefined) {
+          rule.text = patch.text.trim()
+          if (rule.text !== 'Use lowercase captions.') delete rule.payload
+        }
+        if (patch.paused !== undefined) rule.paused = patch.paused || undefined
+        await writeRules(rules)
+        return rule
+      })
     },
     async removeStyleRule(id) {
-      await writeRules((await readRules()).filter((r) => r.id !== id))
+      return changeStyle(async () => writeRules((await readRules()).filter((r) => r.id !== id)))
     }
   }
   return ai
