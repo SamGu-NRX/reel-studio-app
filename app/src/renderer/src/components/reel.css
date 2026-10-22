@@ -202,7 +202,7 @@ html.kb .draghandle { transition: none; }
 .strip b { font-weight: 650; white-space: nowrap; }
 .strip .m { color: rgba(255, 255, 255, .78); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .strip .sp { flex: 1; }
-.strip .sbtn { height: 28px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: rgba(255, 255, 255, .92); font: inherit; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.strip .sbtn { height: 28px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: rgba(255, 255, 255, .92); font: inherit; font-size: 13px; font-weight: 600; display: inline-flex; flex: none; white-space: nowrap; align-items: center; gap: 4px; cursor: pointer; }
 @media (hover: hover) and (pointer: fine) { .strip .sbtn:hover { background: rgba(255, 255, 255, .14); color: #fff; } }
 .strip :focus-visible, .steps :focus-visible { outline-color: #fff; }
 .strip.wait { background: var(--soft); color: var(--ink); }
