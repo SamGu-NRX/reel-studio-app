@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { clock } from '../../../shared/progress'
 import { Icon } from './icons'
 import { reel } from '../api'
+import { releaseVideo } from './media-release'
 
 /**
  * While our own reel is being dragged out, the window must not treat it as a new video dropped in.
@@ -81,6 +82,21 @@ function useWidth(ref: React.RefObject<HTMLElement | null>): number {
     return () => ro.disconnect()
   }, [ref])
   return w
+}
+
+/** A video element that closes its decoder and stream when it leaves the tree. */
+function Video({ el, ...props }: ComponentProps<'video'> & { el?: (v: HTMLVideoElement | null) => void }) {
+  const own = useRef<HTMLVideoElement>(null)
+  useLayoutEffect(() => {
+    const v = own.current!
+    el?.(v)
+    return () => {
+      el?.(null)
+      releaseVideo(v)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per element
+  }, [])
+  return <video ref={own} {...props} />
 }
 
 const typing = (t: EventTarget | null): boolean => {
@@ -194,8 +210,10 @@ export function PhonePlayer({
       <div className="phone-screen" ref={screenRef}>
         {src ? (
           <>
-            <video
-              ref={video}
+            <Video
+              el={(v) => {
+                video.current = v
+              }}
               key={src}
               src={src}
               poster={poster ?? undefined}
@@ -219,8 +237,10 @@ export function PhonePlayer({
               data-testid={testid}
             />
             {original && (
-              <video
-                ref={raw}
+              <Video
+                el={(v) => {
+                  raw.current = v
+                }}
                 className={`raw-video${holdingOriginal ? ' on' : ''}`}
                 src={original}
                 preload="metadata"
@@ -231,7 +251,7 @@ export function PhonePlayer({
               />
             )}
             {still && subtitle && !holdingOriginal && (
-              <video className={`raw-video on${stillMirrored ? ' mirrored' : ''}`} key={still} src={still} preload="auto" muted playsInline disablePictureInPicture aria-hidden />
+              <Video className={`raw-video on${stillMirrored ? ' mirrored' : ''}`} key={still} src={still} preload="auto" muted playsInline disablePictureInPicture aria-hidden />
             )}
             {holdingOriginal && <div className="phone-tag">Original</div>}
             {subtitle && !holdingOriginal && <SubtitleSample look={subtitle.look} text={subtitle.text} width={width} testid="sub-preview" />}
