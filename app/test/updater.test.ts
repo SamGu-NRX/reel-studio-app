@@ -244,7 +244,7 @@ it('fails if new work is allowed during restart preparation or remains blocked a
   releaseRead()
   await enabling
   expect(u.state().status).toBe('installing')
-  const jobs = createJobManager(() => {}, () => {}, undefined, undefined, () => u.assertCanStartWork())
+  const jobs = createJobManager(() => {}, () => {}, undefined, undefined, undefined, () => u.assertCanStartWork())
   expect(() => jobs.start(null, 'rerender', async () => ({ summary: '' }))).toThrow(expect.objectContaining({ code: 'UPDATING' }))
   expect(jobs.runningCount()).toBe(0)
   fail(new Error('shutdown failed'))

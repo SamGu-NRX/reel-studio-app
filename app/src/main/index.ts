@@ -239,7 +239,7 @@ const updateFeed = app.isPackaged || TEST_FEED ? readUpdateFeed() : null
 const updateEnv = {
   platform: process.platform,
   isPackaged: app.isPackaged || !!TEST_FEED,
-  test: (TEST && !TEST_FEED) || SELF_TEST,
+  test: (TEST && !TEST_FEED) || SELF_TEST.selfTest,
   hasFeed: updateFeed !== null,
   inApplications: !!TEST_FEED || (app.isPackaged && process.platform === 'darwin' && app.isInApplicationsFolder())
 }
