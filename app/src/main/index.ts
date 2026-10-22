@@ -1,3 +1,4 @@
+import { clipboardFiles, filesFromArgv } from './intake'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent, Notification } from 'electron'
 import { existsSync, promises as fs, appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -495,6 +496,8 @@ function registerIpc(): void {
     await saveSettings({ fasterExports: on })
     return appInfo()
   })
+  handle('app:clipboardFiles', () => clipboardFiles())
+  handle('app:takeOpenFiles', async () => (await loadSettings()).firstRunDone ? pendingOpenFiles.splice(0) : [])
   handle('app:finishFirstRun', async () => {
     // Windows and Linux skip the "Your Mac" stage, so their folder is made here (on a Mac it already exists).
     await ensureRoot().catch((e) => log(`[root] ${String(e)}`))
@@ -987,9 +990,21 @@ async function selfTestAndQuit(): Promise<void> {
   app.exit(payload.ok ? 0 : 1)
 }
 
+const pendingOpenFiles: string[] = []
+function queueOpenFiles(files: string[]): void {
+  pendingOpenFiles.push(...files)
+  if (win && !win.isDestroyed()) win.webContents.send('app:filesAvailable')
+}
+app.on('open-file', (event, path) => {
+  event.preventDefault()
+  queueOpenFiles([path])
+})
+if (process.platform === 'win32') queueOpenFiles(filesFromArgv(process.argv, process.cwd(), !!process.defaultApp))
+
 const gotLock = TEST || SELF_TEST.selfTest || app.requestSingleInstanceLock()
 if (!gotLock) app.quit()
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv, cwd) => {
+  queueOpenFiles(filesFromArgv(argv, cwd, !!process.defaultApp))
   if (win) {
     if (win.isMinimized()) win.restore()
     win.focus()
