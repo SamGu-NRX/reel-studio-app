@@ -561,6 +561,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               onPlayRequestHandled={() => setPlayRequest(null)}
               subtitle={drawer === 'captions' && preview ? preview : null}
               still={drawer === 'captions' && preview && d.sourceVideo ? `${d.sourceVideo}#t=${preview.at.toFixed(2)}` : null}
+              stillMirrored={d.project.sources?.[0]?.mirror === true}
               instagram={igOverlay}
               caption={d.project.post?.caption}
               original={d.sourceVideo}
@@ -706,7 +707,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
             setPreview(null)
           }}
           onChanged={() => load()}
-          onRerender={(change) => void rerender(change, drawer ? CHANGE_LABEL[drawer] : undefined)}
+          onRerender={(change, label) => void rerender(change, label ?? (drawer ? CHANGE_LABEL[drawer] : undefined))}
           onPreview={setPreview}
           onTab={(t) => setDrawer(t)}
         />

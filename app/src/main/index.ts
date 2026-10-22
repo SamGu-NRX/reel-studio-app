@@ -72,6 +72,7 @@ import { createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
 import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment } from '../shared/moments'
 import { versionMessage } from '../shared/describe'
+import { mergeSourcesPatch } from '../shared/mirror'
 import { displayPath } from '../shared/display-path'
 import { RELEASES_REPO } from '../shared/config'
 import { registerPhoneIpc, stopPhoneShare } from './phone-ipc'
@@ -765,6 +766,11 @@ function registerIpc(): void {
     jobs.hold(slug, async () => {
       const p = await readProject(slug)
       for (const k of Object.keys(patch ?? {}) as (keyof ProjectJson)[]) {
+        // the "Flip picture" toggle: only each take's mirror flag, never its path or size
+        if (k === 'sources') {
+          p.sources = mergeSourcesPatch(p.sources, patch.sources)
+          continue
+        }
         if (!EDITABLE.includes(k)) continue
         ;(p as any)[k] = (patch as any)[k]
       }
