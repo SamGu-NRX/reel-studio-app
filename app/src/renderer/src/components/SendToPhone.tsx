@@ -306,6 +306,15 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
               </p>
             </div>
           )}
+          {!sent && !error && (
+            <div className="phone-way" data-testid="phone-check-wifi">
+              <Glyph name="wifi" />
+              <div>
+                <b>{PHONE_HELP.checkTitle}</b>
+                <p className="muted-sm">{PHONE_HELP.check}</p>
+              </div>
+            </div>
+          )}
           {fallbackOrder(IS_MAC).map((way) => (
             <Fragment key={way}>{ways[way]}</Fragment>
           ))}
