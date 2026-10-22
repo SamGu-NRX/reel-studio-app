@@ -36,21 +36,25 @@
 .rdiv { background: var(--line-2); }
 .ncol { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding-left: 28px; position: relative; }
 
-/* drag the file out from here, not from anywhere on the phone */
+/* Drag the file out from here, not from anywhere on the phone. It sits in the gutter beside the frame, never on the
+   bezel: a quiet grip at rest, a soft pill under the pointer. 24 x 64 px to hit. */
 .draghandle {
-  position: absolute; right: -14px; top: 50%; translate: 0 -50%; z-index: 12; width: 28px; height: 64px; border: 0; border-radius: 14px; padding: 0;
-  background: var(--panel); color: var(--ink-2); box-shadow: var(--e2); display: grid; place-items: center; cursor: grab; transition: scale 150ms var(--ease-out);
+  position: absolute; left: calc(100% + 2px); top: 50%; translate: 0 -50%; z-index: 12; width: 24px; height: 64px; border: 0; border-radius: 12px;
+  padding: 0; background: transparent; color: var(--ink-3); display: grid; place-items: center; cursor: grab;
+  transition: background-color 150ms ease, color 150ms ease, scale 150ms var(--ease-out);
 }
-.draghandle:active { cursor: grabbing; scale: .96; }
+.draghandle:active { cursor: grabbing; scale: .96; background: var(--soft); color: var(--ink); }
+.draghandle:focus-visible { background: var(--soft); color: var(--ink); }
 .draghandle-tip {
-  position: absolute; left: 36px; top: 50%; translate: 0 -50%; white-space: nowrap; background: var(--ink); color: #fff; font-size: 12px; font-weight: 600;
+  position: absolute; left: 30px; top: 50%; translate: 0 -50%; white-space: nowrap; background: var(--ink); color: #fff; font-size: 12px; font-weight: 600;
   padding: 5px 9px; border-radius: 7px; opacity: 0; pointer-events: none; transition: opacity 150ms ease;
 }
 @media (hover: hover) and (pointer: fine) {
-  .draghandle:hover { color: var(--ink); }
+  .draghandle:hover { background: var(--soft); color: var(--ink); }
   .draghandle:hover .draghandle-tip { opacity: 1; transition-delay: 300ms; }
 }
 .draghandle:focus-visible .draghandle-tip { opacity: 1; }
+html.kb .draghandle { transition: none; }
 
 /* playback speed in the player's row: 1×, 1.5×, 2× */
 .scrub-speed {
@@ -67,7 +71,26 @@
 .abswitch button { border: 0; background: transparent; color: #fff; font: inherit; font-size: 12px; font-weight: 650; padding: 5px 11px; border-radius: 999px; white-space: nowrap; cursor: pointer; }
 .abswitch button.on { background: #fff; color: var(--ink); }
 
-.under { display: flex; gap: 2px; justify-content: center; align-items: center; margin-top: 10px; flex: none; min-height: 30px; width: 100%; }
+.under { container-type: inline-size; display: flex; gap: 2px; justify-content: center; align-items: center; margin-top: 10px; flex: none; min-height: 30px; width: 100%; }
+.under > * { flex: none; }
+.under .device-pick { flex: 0 1 auto; min-width: 0; }
+.under .device-select { max-width: 100%; }
+.under .device-select > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The phone column is 254-420 px wide. Short labels fit from 400 px; below that the three toggles are icons, each
+   with its name on hover and on keyboard focus. */
+@container (max-width: 399px) {
+  .under .btn .lbl { display: none; }
+  .under .btn.small { width: 32px; padding: 0; justify-content: center; }
+}
+.under .btn[data-tip] { position: relative; }
+.under .btn[data-tip]::after {
+  content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: 50%; z-index: 20; translate: -50% 0; padding: 5px 8px; border-radius: 7px;
+  background: var(--ink); color: #fff; font-size: 12px; font-weight: 500; line-height: 16px; white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity 120ms ease;
+}
+@media (hover: hover) and (pointer: fine) { .under .btn[data-tip]:hover::after { opacity: 1; transition-delay: 450ms; } }
+.under .btn[data-tip]:focus-visible::after { opacity: 1; }
+.under .btn[data-tip]:first-child::after { left: 0; translate: 0 0; }
 .under .btn.small { min-height: 30px; padding: 0 9px; font-size: 13px; gap: 6px; color: var(--ink-2); }
 .under .btn.on { background: var(--panel); color: var(--ink); box-shadow: var(--e1); }
 .under .device-pick { margin: 0; }
@@ -191,6 +214,7 @@
 .steps { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms var(--ease-out); background: var(--ink); color: rgba(255, 255, 255, .8); border-radius: 14px 14px 0 0; }
 .steps > ul { overflow: hidden; min-height: 0; list-style: none; margin: 0; padding: 0 12px; font-size: 13px; }
 .steps.on { grid-template-rows: 1fr; }
+.steps .tm { height: 18px; padding: 0 5px; font-size: 12px; margin-right: 0; vertical-align: 0; }
 .steps.on > ul { padding: 10px 12px 6px; border-bottom: 1px solid rgba(255, 255, 255, .12); }
 .steps.on + .strip { border-radius: 0; }
 .steps li { display: flex; align-items: center; gap: 8px; min-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

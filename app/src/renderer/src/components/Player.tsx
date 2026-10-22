@@ -4,6 +4,7 @@ import { BOX_PAD, MARGIN_FRAC, SIZE_PER_EM, fitCaption, type Measure } from '../
 import { groupMarks, type NoteMark } from '../../../shared/moments'
 import { Icon } from './icons'
 import { reel } from '../api'
+import { FOLDER_APP } from './ui'
 import { FullScreenReel } from './FullScreenReel'
 import { createPlayhead, useFollowPlayhead, type Playhead } from './playhead'
 import { NO_LAYERS, layersReducer, type Layer } from './videoLayers'
@@ -557,7 +558,9 @@ export function PhonePlayer({
         <button
           className="draghandle"
           draggable
-          aria-label="Drag the video out"
+          aria-label={`Drag the video out, or press to show it in ${FOLDER_APP}`}
+          // dragging needs a pointer: from the keyboard (or a click) the file is shown in Finder, to take from there
+          onClick={() => void reel.app.openFolder(dragFile)}
           onDragStart={(e) => {
             e.preventDefault()
             e.stopPropagation()

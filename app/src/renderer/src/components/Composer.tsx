@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import type { NoteMoment } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
 import { timeLeftWords, type LiveState } from '../../../shared/live'
 import { Icon } from './icons'
@@ -25,6 +26,7 @@ export function Composer({
   job,
   making,
   steps,
+  stepNote,
   held,
   alert,
   onSend,
@@ -47,6 +49,8 @@ export function Composer({
   /** the version the running job will make */
   making: number | null
   steps: string[]
+  /** the running note, so the step that quotes it shows its moment the way the notes log does */
+  stepNote?: { text: string; moment?: NoteMoment } | null
   /** notes held after Stop or a failed note */
   held: number
   alert: string | null
@@ -66,22 +70,16 @@ export function Composer({
   const field = inputRef ?? ownRef
   const canSend = (!!draft.trim() || att.chips.length > 0) && !att.busy && !checking
 
-  if (!checking && !aiOn)
-    return (
-      <div className="cbox">
-        <div className="noai-cin">
-          <span>Connect an AI editor to ask for changes.</span>
-          <button className="btn small" onClick={onConnect} data-testid="composer-connect">
-            Connect
-          </button>
-        </div>
-      </div>
-    )
-
+  // No AI editor: a version made by hand still shows its progress strip; below it, one line to connect.
+  const noAi = !checking && !aiOn
   const pct = job ? Math.min(1, job.overall / 100) : 0
   const left = job ? timeLeftWords(job) : null
   return (
-    <div className={`cbox${focus ? ' focus' : ''}`} data-note-drop={where === 'main' || undefined}>
+    <div
+      className={`cbox${focus ? ' focus' : ''}`}
+      data-note-drop={(where === 'main' && !noAi) || undefined}
+      data-testid={where === 'main' && !noAi ? 'note-drop' : undefined}
+    >
       <div className={`stripwrap${strip ? ' on' : ''}`}>
         <div>
           {stripShown && strip === 'job' && job && (
@@ -97,7 +95,7 @@ export function Composer({
                       ) : (
                         <span className="spin light" />
                       )}
-                      {s}
+                      <StepText s={s} note={stepNote} />
                     </li>
                   ))}
                 </ul>
@@ -138,78 +136,101 @@ export function Composer({
           )}
         </div>
       </div>
-      <AttachmentChips chips={att.chips} busy={att.busy} onRemove={(a) => void att.remove(a)} />
-      {alert && (
-        <p className="cin-alert" role="alert" data-testid="change-alert">
-          {alert}
-        </p>
-      )}
-      <div className="cin">
-        <button
-          className="att"
-          onClick={att.choose}
-          disabled={checking}
-          aria-label="Attach a picture or a clip"
-          title="Attach a picture or a clip"
-          data-testid="note-attach"
-        >
-          <Icon name="paperclip" size={17} />
-        </button>
-        <div className="cfield">
-          {chip ? (
-            <span className="tchip" data-testid="moment-chip">
-              {clock(chip.at)}
-              <button
-                className="x"
-                aria-label="Remove the moment"
-                onClick={() => {
-                  onChip(null)
-                  field.current?.focus()
-                }}
-              >
-                <Icon name="x" size={12} stroke={2} />
-              </button>
-            </span>
-          ) : (
-            <button
-              className="tchip suggest"
-              onClick={() => {
-                onChip({ at: playhead.get() })
-                field.current?.focus()
-              }}
-              aria-label={`Attach the moment on screen, ${clock(second)}`}
-              title="Ask about this moment"
-              disabled={checking}
-              data-testid="moment-suggest"
-            >
-              <Icon name="plus" size={12} stroke={2} />
-              {clock(second)}
-            </button>
-          )}
-          <textarea
-            ref={field}
-            rows={1}
-            value={draft}
-            onChange={(e) => onDraft(e.target.value)}
-            onPaste={checking ? undefined : att.onPaste}
-            onFocus={() => setFocus(true)}
-            onBlur={() => setFocus(false)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                if (canSend) onSend()
-              }
-            }}
-            disabled={checking}
-            aria-label="Tell your editor what to change"
-            placeholder={checking ? 'Checking for your AI editor…' : job ? 'Your next note waits for this one…' : 'Tell your editor what to change…'}
-            data-testid="note-input"
-          />
+      {noAi ? (
+        <div className="noai-cin">
+          <span>Connect an AI editor to ask for changes.</span>
+          <button className="btn small" onClick={onConnect} data-testid="composer-connect">
+            Connect
+          </button>
         </div>
-        <button className={`send${canSend ? ' ready' : ''}`} onClick={onSend} disabled={!canSend} aria-label="Send" data-testid="send">
-          <Icon name="arrow-up" size={16} stroke={2} />
-        </button>
-      </div>
+      ) : (
+        <>
+          <AttachmentChips chips={att.chips} busy={att.busy} onRemove={(a) => void att.remove(a)} />
+          {alert && (
+            <p className="cin-alert" role="alert" data-testid="change-alert">
+              {alert}
+            </p>
+          )}
+          <div className="cin">
+            <button
+              className="att"
+              onClick={att.choose}
+              disabled={checking}
+              aria-label="Attach a picture or a clip"
+              title="Attach a picture or a clip"
+              data-testid="note-attach"
+            >
+              <Icon name="paperclip" size={17} />
+            </button>
+            <div className="cfield">
+              {chip ? (
+                <span className="tchip" data-testid="moment-chip">
+                  {clock(chip.at)}
+                  <button
+                    className="x"
+                    aria-label="Remove the moment"
+                    onClick={() => {
+                      onChip(null)
+                      field.current?.focus()
+                    }}
+                  >
+                    <Icon name="x" size={12} stroke={2} />
+                  </button>
+                </span>
+              ) : (
+                <button
+                  className="tchip suggest"
+                  onClick={() => {
+                    onChip({ at: playhead.get() })
+                    field.current?.focus()
+                  }}
+                  aria-label={`Attach the moment on screen, ${clock(second)}`}
+                  title="Ask about this moment"
+                  disabled={checking}
+                  data-testid="moment-suggest"
+                >
+                  <Icon name="plus" size={12} stroke={2} />
+                  {clock(second)}
+                </button>
+              )}
+              <textarea
+                ref={field}
+                rows={1}
+                value={draft}
+                onChange={(e) => onDraft(e.target.value)}
+                onPaste={checking ? undefined : att.onPaste}
+                onFocus={() => setFocus(true)}
+                onBlur={() => setFocus(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    if (canSend) onSend()
+                  }
+                }}
+                disabled={checking}
+                aria-label="Tell your editor what to change"
+                placeholder={checking ? 'Checking for your AI editor…' : job ? 'Your next note waits for this one…' : 'Tell your editor what to change…'}
+                data-testid="note-input"
+              />
+            </div>
+            <button className={`send${canSend ? ' ready' : ''}`} onClick={onSend} disabled={!canSend} aria-label="Send" data-testid="send">
+              <Icon name="arrow-up" size={16} stroke={2} />
+            </button>
+          </div>
+        </>
+      )}
     </div>
+  )
+}
+
+/** A step line; where it quotes the running note, the note's moment sits before its words. */
+function StepText({ s, note }: { s: string; note?: { text: string; moment?: NoteMoment } | null }) {
+  const at = note?.moment && note.text ? s.indexOf(`"${note.text}"`) : -1
+  if (at < 0 || !note?.moment) return <>{s}</>
+  return (
+    <>
+      {s.slice(0, at)}
+      <span className="tm">{clock(note.moment.at)}</span> {s.slice(at)}
+    </>
   )
 }

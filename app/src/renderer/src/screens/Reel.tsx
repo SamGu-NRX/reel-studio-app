@@ -100,6 +100,15 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const [alert, setAlert] = useState<string | null>(null)
   const noteField = useRef<HTMLTextAreaElement>(null)
   const att = useNoteAttachments(slug, notify)
+  // Files dropped on the note box before the AI check answers: attached once it does, as any drop is.
+  const heldDrops = useRef<{ files: File[]; types: string[] }[]>([])
+  const [heldN, setHeldN] = useState(0)
+  useEffect(() => {
+    if (!providerChecked || !heldDrops.current.length) return
+    for (const drop of heldDrops.current) att.onDropFiles(drop)
+    heldDrops.current = []
+    setHeldN(0)
+  }, [providerChecked, att.onDropFiles])
   const versionRows = useVersionRows(slug)
   // one export per version: a cloud save after Export reuses the file
   const exports = useRef(new Map<number, ExportResult>())
@@ -435,6 +444,11 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
           e.preventDefault()
           e.stopPropagation()
           window.dispatchEvent(new Event(NOTE_DROP_DONE))
+          if (!providerChecked) {
+            heldDrops.current.push({ files: Array.from(e.dataTransfer.files), types: Array.from(e.dataTransfer.types) })
+            setHeldN(heldDrops.current.length)
+            return
+          }
           att.onDropFiles(e.dataTransfer)
         }}
       >
@@ -452,12 +466,13 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
           chip={chip}
           onChip={setChip}
           playhead={playhead}
-          att={att}
+          att={heldN ? { ...att, busy: att.busy + heldN } : att}
           aiOn={!aiOff}
           checking={!providerChecked}
           job={job}
           making={making}
           steps={steps}
+          stepNote={job ? d.chat.find((m) => m.from === 'you' && m.jobId === job.jobId) : null}
           held={d.queueHeld ? waiting : 0}
           alert={alert}
           onSend={() => void send()}
@@ -615,10 +630,11 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                     localStorage.setItem(IG_KEY, igOverlay ? '0' : '1')
                     setIgOverlay(!igOverlay)
                   }}
-                  title="See where Instagram's buttons and caption will sit"
+                  aria-label="Instagram view"
+                  data-tip="See where Instagram's buttons and caption sit"
                   data-testid="ig-toggle"
                 >
-                  <Icon name="instagram" size={14} /> Instagram view
+                  <Icon name="instagram" size={14} /> <span className="lbl">Instagram</span>
                 </button>
                 {d.sourceVideo && (
                   <button
@@ -630,14 +646,15 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                     onPointerLeave={() => setHolding(false)}
                     onKeyDown={(e) => (e.key === ' ' || e.key === 'Enter') && setHolding(true)}
                     onKeyUp={() => setHolding(false)}
-                    title="Press and hold to see your video before I edited it"
+                    aria-label="Hold for original"
+                    data-tip="Hold to see your video before I edited it"
                     data-testid="hold-original"
                   >
-                    <Icon name="original" size={14} /> Hold for original
+                    <Icon name="original" size={14} /> <span className="lbl">Original</span>
                   </button>
                 )}
-                <button className="btn ghost small" onClick={() => setZoom(true)} disabled={!version} data-testid="zoom-in">
-                  <Icon name="zoom-in" size={14} /> Zoom in
+                <button className="btn ghost small" onClick={() => setZoom(true)} disabled={!version} aria-label="Zoom in" data-tip="Zoom in" data-testid="zoom-in">
+                  <Icon name="zoom-in" size={14} /> <span className="lbl">Zoom in</span>
                 </button>
                 <DevicePick id={device} onPick={setDevice} />
               </>
