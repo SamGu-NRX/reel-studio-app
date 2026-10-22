@@ -51,6 +51,6 @@ describe('flip picture', () => {
     expect(src('main/index.ts')).toMatch(/p\.sources = mergeSourcesPatch\(p\.sources, patch\.sources\)/)
     expect(src('renderer/src/screens/Reel.tsx')).toMatch(/stillMirrored=\{d\.project\.sources\?\.\[0\]\?\.mirror === true\}/)
     expect(src('renderer/src/screens/Working.tsx')).toMatch(/still\$\{mirrored \? ' mirrored' : ''\}/)
-    expect(src('renderer/src/styles.css')).toMatch(/video\.mirrored \{ transform: scaleX\(-1\); \}/)
+    expect(src('renderer/src/components/Phone.css')).toMatch(/video\.mirrored \{ transform: scaleX\(-1\); \}/)
   })
 })

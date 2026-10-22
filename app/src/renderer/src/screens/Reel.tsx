@@ -12,7 +12,7 @@ import { SendToPhone } from '../components/SendToPhone'
 import { CloudSave } from '../components/CloudSave'
 import { Icon } from '../components/icons'
 import { PhonePlayer, type SubtitleLook } from '../components/Player'
-import { DevicePick, DevicePreview, useDevice } from '../components/DevicePreview'
+import { PhoneViewSwitch, usePhoneView } from '../components/Phone'
 import { createPlayhead } from '../components/playhead'
 import { versionOnScreen } from '../components/videoLayers'
 import { EXPORT_EVENT, NOTE_DROP_DONE, useNotify } from '../App'
@@ -49,7 +49,6 @@ const CHANGE_LABEL: Record<Tab, string> = {
 
 const INSTAGRAM_URL = 'https://www.instagram.com/'
 const fileName = (p: string): string => p.split(/[\\/]/).pop() ?? p
-const IG_KEY = 'rs.instagram-overlay'
 const pinsKey = (slug: string): string => `rs.pins.${slug}`
 
 const noWords = (at: number) =>
@@ -79,7 +78,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const [more, setMore] = useState(false)
   const moreBtn = useRef<HTMLButtonElement>(null)
   const [stopAsk, setStopAsk] = useState(false)
-  const [igOverlay, setIgOverlay] = useState(() => localStorage.getItem(IG_KEY) === '1')
+  const [phoneView, setPhoneView] = usePhoneView()
   const [holding, setHolding] = useState(false)
   const [warmOriginal, setWarmOriginal] = useState(false)
   const [preview, setPreview] = useState<{ look: SubtitleLook; text: string; at: number } | null>(null)
@@ -92,7 +91,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
       return []
     }
   })
-  const [device, setDevice] = useDevice()
   const [playhead] = useState(createPlayhead)
   const [shownSrc, setShownSrc] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -567,50 +565,50 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
 
       <div className="reel-b">
         <div className="pcol">
-          <DevicePreview id={device} instagram={igOverlay && !holding} caption={d.project.post?.caption}>
-            <PhonePlayer
-              src={src}
-              poster={version?.cover}
-              autoPlayMuted={!!changePreview || (freshPlay && version?.n === latestN)}
-              playRequest={!changePreview && playRequest?.n === version?.n ? playRequest?.ask : undefined}
-              onPlayRequestHandled={() => setPlayRequest(null)}
-              subtitle={drawer === 'captions' && preview ? preview : null}
-              still={drawer === 'captions' && preview && d.sourceVideo ? `${d.sourceVideo}#t=${preview.at.toFixed(2)}` : null}
-              stillMirrored={d.project.sources?.[0]?.mirror === true}
-              instagram={igOverlay}
-              caption={d.project.post?.caption}
-              original={d.sourceVideo}
-              originalAt={originalAt}
-              originalReady={originalReady}
-              warmOriginal={warmOriginal}
-              holdingOriginal={holding}
-              dragFile={version && !version.draft ? version.videoPath : null}
-              marks={marks}
-              playhead={playhead}
-              onShown={setShownSrc}
-              keepTime={!!compare}
-              onZoom={version ? () => setZoom(true) : undefined}
-              onFailed={() => {
-                notify('I could not find that video. It may have been moved or deleted.', 'error')
-                if (onScreen) setSelected(onScreen.n)
-              }}
-            />
-            {compare && (
-              <div className="abswitch" role="group" aria-label="Compare versions" data-testid="compare">
-                {[compare.a, compare.b].map((n) => (
-                  <button
-                    key={n}
-                    className={selected === n ? 'on' : undefined}
-                    aria-pressed={selected === n}
-                    onClick={() => setSelected(n)}
-                    data-testid={`compare-pick-${n}`}
-                  >
-                    Version {n}
-                  </button>
-                ))}
-              </div>
-            )}
-          </DevicePreview>
+          <PhonePlayer
+            src={src}
+            poster={version?.cover}
+            autoPlayMuted={!!changePreview || (freshPlay && version?.n === latestN)}
+            playRequest={!changePreview && playRequest?.n === version?.n ? playRequest?.ask : undefined}
+            onPlayRequestHandled={() => setPlayRequest(null)}
+            subtitle={drawer === 'captions' && preview ? preview : null}
+            still={drawer === 'captions' && preview && d.sourceVideo ? `${d.sourceVideo}#t=${preview.at.toFixed(2)}` : null}
+            stillMirrored={d.project.sources?.[0]?.mirror === true}
+            view={phoneView}
+            caption={d.project.post?.caption}
+            original={d.sourceVideo}
+            originalAt={originalAt}
+            originalReady={originalReady}
+            warmOriginal={warmOriginal}
+            holdingOriginal={holding}
+            dragFile={version && !version.draft ? version.videoPath : null}
+            marks={marks}
+            playhead={playhead}
+            onShown={setShownSrc}
+            keepTime={!!compare}
+            onZoom={version ? () => setZoom(true) : undefined}
+            onFailed={() => {
+              notify('I could not find that video. It may have been moved or deleted.', 'error')
+              if (onScreen) setSelected(onScreen.n)
+            }}
+            over={
+              compare && (
+                <div className="abswitch" role="group" aria-label="Compare versions" data-testid="compare">
+                  {[compare.a, compare.b].map((n) => (
+                    <button
+                      key={n}
+                      className={selected === n ? 'on' : undefined}
+                      aria-pressed={selected === n}
+                      onClick={() => setSelected(n)}
+                      data-testid={`compare-pick-${n}`}
+                    >
+                      Version {n}
+                    </button>
+                  ))}
+                </div>
+              )
+            }
+          />
           {changePreview && (
             <p className="muted-sm center" data-testid="change-preview">
               Here's your change. I'm making the full-quality version.
@@ -623,19 +621,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               </button>
             ) : (
               <>
-                <button
-                  className={`btn ghost small${igOverlay ? ' on' : ''}`}
-                  aria-pressed={igOverlay}
-                  onClick={() => {
-                    localStorage.setItem(IG_KEY, igOverlay ? '0' : '1')
-                    setIgOverlay(!igOverlay)
-                  }}
-                  aria-label="Instagram view"
-                  data-tip="See where Instagram's buttons and caption sit"
-                  data-testid="ig-toggle"
-                >
-                  <Icon name="instagram" size={14} /> <span className="lbl">Instagram</span>
-                </button>
+                <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
                 {d.sourceVideo && (
                   <button
                     className={`btn ghost small${holding ? ' on' : ''}`}
@@ -656,7 +642,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                 <button className="btn ghost small" onClick={() => setZoom(true)} disabled={!version} aria-label="Zoom in" data-tip="Zoom in" data-testid="zoom-in">
                   <Icon name="zoom-in" size={14} /> <span className="lbl">Zoom in</span>
                 </button>
-                <DevicePick id={device} onPick={setDevice} />
               </>
             )}
           </div>

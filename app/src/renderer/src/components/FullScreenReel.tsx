@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clock } from '../../../shared/progress'
 import { reel } from '../api'
 import { EXPORT_EVENT } from '../App'
 import { Icon } from './icons'
 import { applyPlay, handOff, readPlay } from './handoff'
+import { InstagramChrome } from './Phone'
+import type { PhoneView } from '../../../shared/api'
 
 /**
  * The reel full screen, at its real 9:16 shape and the full height of the screen, on the phone's
@@ -18,15 +20,17 @@ export function FullScreenReel({
   src,
   poster,
   from,
-  overlay,
+  view,
+  caption,
   onClosed
 }: {
   src: string
   poster?: string | null
   /** The phone's video: where playback comes from and goes back to. */
   from: HTMLVideoElement
-  /** Drawn over the video (the Instagram view). */
-  overlay?: ReactNode
+  /** The phone's view, kept full screen. */
+  view: PhoneView
+  caption?: string
   /** The exit motion has finished: unmount. */
   onClosed: () => void
 }) {
@@ -85,10 +89,14 @@ export function FullScreenReel({
   }, [from, start])
 
   // Unmount once the exit transitions finish (reduced motion has none). A transition cut short by
-  // another one settles too, so Esc halfway through opening still closes.
+  // another one settles too, so Esc halfway through opening still closes. A looping animation (Instagram's
+  // audio ticker) never finishes, so it is not waited for.
   useEffect(() => {
     if (!closing) return
-    const running = root.current!.getAnimations({ subtree: true }).map((a) => a.finished)
+    const running = root.current!
+      .getAnimations({ subtree: true })
+      .filter((a) => a.effect?.getTiming().iterations !== Infinity)
+      .map((a) => a.finished)
     void Promise.allSettled(running).then(onClosed)
   }, [closing, onClosed])
 
@@ -144,7 +152,7 @@ export function FullScreenReel({
           onVolumeChange={(e) => setMuted(e.currentTarget.muted)}
           data-testid="fullscreen-video"
         />
-        {overlay}
+        <InstagramChrome on={view === 'instagram'} caption={caption} playing={playing} />
         {!playing && (
           <button className="big-play" onClick={toggle} aria-label="Play">
             <Icon name="play" size={34} stroke={1.5} />
