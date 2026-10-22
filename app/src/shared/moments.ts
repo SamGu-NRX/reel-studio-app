@@ -180,3 +180,28 @@ export function groupMarks(marks: NoteMark[], duration: number, trackPx: number,
   }
   return groups
 }
+
+type PersonEvent = { type: string; message?: string; summary?: string }
+
+/**
+ * A running note's events as the person may see them. The AI is handed `aiText` (aiNoteText: the moment and
+ * transcript word ids written into the note), and anything it or the practice editor echoes would reach the
+ * progress card. Each status and tool line gets the person's own words back, and no moment wrapper or word id
+ * survives.
+ */
+export function forPerson<E extends PersonEvent>(emit: (e: E) => void, aiText: string, text: string): (e: E) => void {
+  const clean = (line: string): string =>
+    (aiText && aiText !== text ? line.split(aiText).join(text) : line)
+      .replace(/At \d+:[0-5]\d \(around "[^"]*", words [^()]*\): /g, '')
+      .replace(/\s*\(around "[^"]*"(?:, words [^()]*)?\)/g, '')
+      .replace(/\b(?:at |on )?words? w\d+(?:(?:,| to| and|-) ?w\d+)*/g, '')
+      .replace(/\b(?:on |at )?w\d+(?:(?:,| to| and|-) ?w\d+)*/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\s+([,.:;)])/g, '$1')
+      .trim()
+  return (e) => {
+    if (e.type === 'status' && typeof e.message === 'string') return emit({ ...e, message: clean(e.message) })
+    if (e.type === 'tool' && typeof e.summary === 'string') return emit({ ...e, summary: clean(e.summary) })
+    emit(e)
+  }
+}

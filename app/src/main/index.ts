@@ -70,7 +70,7 @@ import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, Settings
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
-import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment } from '../shared/moments'
+import { aiNoteText, checkMoment, forPerson, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment } from '../shared/moments'
 import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { displayPath } from '../shared/display-path'
@@ -224,8 +224,10 @@ async function startNote(slug: string, { id: noteId, text, attachments, moment }
       const before = (await readProject(slug)).version ?? 0
       // saved under its queue entry's id (note-queue.ts); the app asks before anything goes into My style
       const opts = { attachments: attachments.map((f) => f.asset), id: noteId, saveStyleRules: false, ...(owner ? { owner } : {}) }
-      // the AI reads the moment in the note text: "At 0:08 (around "...", words w18, w19): cut this part"
-      const r: AgentResult = await ai.applyNote(dir, aiNoteText(text, moment), (e) => emit(e), signal, opts)
+      // the AI reads the moment in the note text: "At 0:08 (around "...", words w18, w19): cut this part";
+      // what it says back while it works reaches the progress card in the person's own words
+      const aiText = aiNoteText(text, moment)
+      const r: AgentResult = await ai.applyNote(dir, aiText, forPerson(emit, aiText, text), signal, opts)
       const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
       const reply = await replyAskingAboutStyle(r, r.summary + extra)
       // a note that changed only the caption keeps its version number (docs/versions.md), so `changed` decides
