@@ -42,10 +42,13 @@ import {
   uniqueSlug,
   updateAppState,
   writeJson,
-  writeProject
+  writeProject,
+  type AppState
 } from './store'
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { createJobManager } from './jobs'
+import { createNoteQueue, type NoteToRun } from './note-queue'
+import { withRenderSlot } from './render-slot'
 import { clearStaleLocks } from './owner'
 import { createLiveVideos } from './live-video'
 import { replyChat, styleConsent, type ChatLine } from './style-consent'
@@ -140,14 +143,17 @@ function showOpenDialog(options: Electron.OpenDialogOptions): Promise<Electron.O
 
 // ---- engine, AI, jobs ----------------------------------------------------------------------------
 let pidRegistry: ReturnType<typeof createPidRegistry> | null = null
-const runEngine: RunEngine = createEngineRunner({
-  python: pythonExe,
-  env: engineEnv,
-  cwd: engineDir,
-  log,
-  onSpawn: (pid, project) => pidRegistry?.add(pid, project),
-  onExit: (pid) => pidRegistry?.remove(pid)
-})
+const runEngine: RunEngine = withRenderSlot(
+  createEngineRunner({
+    python: pythonExe,
+    env: engineEnv,
+    cwd: engineDir,
+    log,
+    onSpawn: (pid, project) => pidRegistry?.add(pid, project),
+    onExit: (pid) => pidRegistry?.remove(pid)
+  }),
+  (owner, waiting) => jobs.waitingForRender(owner, waiting)
+)
 
 const host: EngineHost = {
   runEngine,
@@ -184,6 +190,7 @@ const jobs = createJobManager(
   (e: JobEvent) => {
     broadcast('job:event', e)
     feedback.onJobEvent(e)
+    noteQueue.onJobEvent(e)
   },
   log,
   {
@@ -202,6 +209,30 @@ const jobs = createJobManager(
   workGate,
   () => updates.assertCanStartWork()
 )
+
+/** A note job: the AI applies it as one all-or-nothing change (ai applyNote) on the newest version. */
+async function startNote(slug: string, { id: noteId, text, attachments, moment }: NoteToRun, record: (s: AppState) => void): Promise<string> {
+  const dir = projectDir(slug)
+  return jobs.start(
+    slug,
+    'note',
+    async (emit, signal, { owner }) => {
+      const before = (await readProject(slug)).version ?? 0
+      // saved under its queue entry's id (note-queue.ts); the app asks before anything goes into My style
+      const opts = { attachments: attachments.map((f) => f.asset), id: noteId, saveStyleRules: false, ...(owner ? { owner } : {}) }
+      // the AI reads the moment in the note text: "At 0:08 (around "...", words w18, w19): cut this part"
+      const r: AgentResult = await ai.applyNote(dir, aiNoteText(text, moment), (e) => emit(e), signal, opts)
+      const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
+      const reply = await replyAskingAboutStyle(r, r.summary + extra)
+      // a note that changed only the caption keeps its version number (docs/versions.md), so `changed` decides
+      const changedIt = r.version > before || r.changed.length > 0
+      return { ...reply, outcome: changedIt ? 'done' : 'failed', made: { by: 'note', summary: text } }
+    },
+    { note: text || attachments.map((f) => f.name).join(', '), record }
+  )
+}
+const noteQueue = createNoteQueue({ jobs, startNote, changed: (slug) => broadcast('queue:change', slug), log })
+
 const models = createModelManager({
   runEngine,
   onChange: (s) => broadcast('model:progress', s),
@@ -598,7 +629,7 @@ function registerIpc(): void {
     const d = await detail(slug)
     const running = jobs.forSlug(slug)
     d.job = running
-      ? { id: running.id, kind: running.kind, message: running.message, pct: running.pct, overall: running.overall, secondsLeft: running.secondsLeft, overdue: running.overdue, thinking: running.thinking }
+      ? { id: running.id, kind: running.kind, message: jobs.message(running), pct: running.pct, overall: running.overall, secondsLeft: running.secondsLeft, overdue: running.overdue, thinking: running.thinking }
       : null
     if (!running && d.status === 'working') d.status = 'interrupted'
     return d
@@ -639,7 +670,7 @@ function registerIpc(): void {
     }
     return { jobId: startFirstEdit(slug, null) }
   })
-  handle('projects:note', async (_e, slug: string, text: string, attachments?: unknown, at?: unknown) => {
+  handle('projects:note', async (_e, slug: string, text: string, attachments?: unknown, at?: unknown, onVersion?: unknown) => {
     const typedText = String(text ?? '').trim()
     // "At 1:00: zoom in" with Just here: the typed time is the moment, and the words are the note
     const typed = at !== undefined ? typedMoment(typedText) : null
@@ -649,7 +680,6 @@ function registerIpc(): void {
     const files = await checkNoteAttachments(dir, attachments)
     if (!note && !files.length) throw { code: 'EMPTY', userMessage: 'Type what you would like changed first.' }
     if (!note && typed) note = 'Put this here' // a typed time and a file, as the pop-up says it
-    if (jobs.forSlug(slug)) throw { code: 'BUSY', userMessage: 'I am still working on this video. Give me a moment, or press Stop.' }
     let moment: NoteMoment | undefined
     if (at !== undefined) {
       let asked: NoteMoment
@@ -669,39 +699,17 @@ function registerIpc(): void {
       // from applyNote's no-model fast path; the chat shows the words as typed.
       if (!files.length && (await momentRoute(typedText, (w) => ai.wholeReelSetting(dir, w))) === 'fast') moment = undefined
     }
-    // the chat keeps the words as typed, "At 0:05:" included; the AI reads them without it (aiNoteText)
-    const noteId = await addChat(slug, 'you', typedText, undefined, undefined, undefined, files.map(forChat), moment)
     const active = await ai.active().catch(() => null)
     if (!active || !active.connected || active.id === 'none') {
       // No AI editor: nothing can apply the note, so do not pretend. Say what they can do instead
       // and offer the matching manual control plus "Connect ChatGPT" (grandma test, finding 8).
+      await addChat(slug, 'you', typedText, undefined, undefined, undefined, files.map(forChat), moment)
       const reply = noAiReply(note, files.length)
       await addChat(slug, 'editor', reply.text, undefined, reply.actions)
       return { jobId: null }
     }
-    const before = (await readProject(slug)).version ?? 0
-    const jobId = jobs.start(
-      slug,
-      'note',
-      async (emit, signal, { id, owner }) => {
-        // the note is saved under the job's id; the app asks before anything goes into My style
-        const opts = { attachments: files.map((f) => f.asset), id, saveStyleRules: false, ...(owner ? { owner } : {}) }
-        // the AI reads the moment in the note text: "At 0:08 (around "...", words w18, w19): cut this part"
-        const r: AgentResult = await ai.applyNote(dir, aiNoteText(note, moment), (e) => emit(e), signal, opts)
-        const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
-        const reply = await replyAskingAboutStyle(r, r.summary + extra)
-        // a note that changed only the caption keeps its version number (docs/versions.md), so `changed` decides
-        const changedIt = r.version > before || r.changed.length > 0
-        return { ...reply, outcome: changedIt ? 'done' : 'failed', made: { by: 'note', summary: note } }
-      },
-      { note: note || files.map((f) => f.name).join(', ') }
-    )
-    // queued on app.json before the job can settle (store.updateAppState runs one write at a time)
-    await updateAppState(slug, (s) => {
-      const m = s.chat.find((c) => c.id === noteId)
-      if (m) m.jobId = jobId
-    })
-    return { jobId }
+    const seen = Number.isInteger(onVersion) ? Number(onVersion) : (moment?.version ?? (await readProject(slug)).version ?? 0)
+    return noteQueue.send(slug, { text: note, attachments: files.map(forChat), ...(moment ? { moment } : {}) }, seen)
   })
   handle('projects:timeline', async (_e, slug: string, n: number) => {
     if (!Number.isInteger(n) || n < 0) throw { code: 'BAD_VERSION', userMessage: 'Pick a version of your video first.' }
@@ -778,7 +786,12 @@ function registerIpc(): void {
     await fs.rm(projectDir(slug), { recursive: true, force: true })
   })
 
-  handle('jobs:cancel', (_e, id: string) => jobs.cancel(id))
+  handle('jobs:cancel', (_e, id: string) => noteQueue.stop(String(id)))
+  handle('queue:edit', (_e, slug: string, id: string, text: string) => noteQueue.edit(slug, String(id), String(text ?? '')))
+  handle('queue:cancel', (_e, slug: string, id: string) => noteQueue.cancel(slug, String(id)))
+  handle('queue:move', (_e, slug: string, id: string, by: number) => noteQueue.move(slug, String(id), by < 0 ? -1 : 1))
+  handle('queue:runNext', (_e, slug: string) => noteQueue.runNext(slug))
+  handle('queue:clear', (_e, slug: string) => noteQueue.clear(slug))
 
   handle('library:list', async () => {
     await ensureRoot()
@@ -1048,6 +1061,7 @@ app.whenReady().then(async () => {
       return []
     })
     if (recovered.length) log(`[recover] cleaned up ${recovered.join(', ')}`)
+    await noteQueue.recover().catch((e) => log(`[queue] ${String(e)}`))
   }
   const loaded = await loadAI(
     {

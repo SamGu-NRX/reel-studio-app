@@ -60,7 +60,7 @@ const api: ReelApi = {
     get: (slug) => call('projects:get', slug),
     create: (files) => call('projects:create', files),
     resume: (slug) => call('projects:resume', slug),
-    note: (slug, text, attachments, moment) => call('projects:note', slug, text, attachments, moment),
+    note: (slug, text, attachments, moment, onVersion) => call('projects:note', slug, text, attachments, moment, onVersion),
     timeline: (slug, n) => call('projects:timeline', slug, n),
     update: (slug, patch) => call('projects:update', slug, patch),
     rerender: (slug, change, label) => call('projects:rerender', slug, change, label),
@@ -79,6 +79,14 @@ const api: ReelApi = {
   jobs: {
     cancel: (id) => call('jobs:cancel', id),
     onEvent: (cb) => on<JobEvent>('job:event', cb)
+  },
+  queue: {
+    edit: (slug, id, text) => call('queue:edit', slug, id, text),
+    cancel: (slug, id) => call('queue:cancel', slug, id),
+    move: (slug, id, by) => call('queue:move', slug, id, by),
+    runNext: (slug) => call('queue:runNext', slug),
+    clear: (slug) => call('queue:clear', slug),
+    onChange: (cb) => on<string>('queue:change', cb)
   },
   phone: {
     start: (video, caption, address) => call('phone:start', video, caption, address),

@@ -19,6 +19,7 @@ import { ChangeAt } from '../components/ChangeAt'
 import { noteMarks, sourceAt, typedMoment, type RenderSegment } from '../../../shared/moments'
 import { VersionSwitch } from '../components/VersionSwitch'
 import { versionChanges } from '../../../shared/versions'
+import { NoteQueue } from '../components/NoteQueue'
 
 const ACTION_TAB: Partial<Record<ChatAction, Tab>> = {
   'open-cut': 'cut',
@@ -77,6 +78,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   // Live subtitle preview from the drawer's Subtitles tab.
   const [preview, setPreview] = useState<{ look: SubtitleLook; text: string; at: number } | null>(null)
   const chatEnd = useRef<HTMLDivElement>(null)
+  const lastJob = useRef<string | null>(null)
   // pictures, GIFs and clips on the note being written (components/NoteAttachments.tsx)
   const att = useNoteAttachments(slug, notify)
   const [noteDrop, setNoteDrop] = useState(false)
@@ -113,8 +115,14 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
       .then(setProvider)
       .catch(() => {})
       .finally(() => setProviderChecked(true))
-    return reel.jobs.onEvent((e) => {
+    const offQueue = reel.queue.onChange((s) => s === slug && void load())
+    const offJobs = reel.jobs.onEvent((e) => {
       if (e.slug !== slug) return
+      // a waiting note just started: its words move from the queue into the chat
+      if (e.type === 'status' && lastJob.current !== e.jobId) {
+        lastJob.current = e.jobId
+        void load()
+      }
       if (e.type === 'status' || e.type === 'reply' || e.type === 'tool') setJob((cur) => reduceLive(cur ?? EMPTY_LIVE, e))
       // a quick preview of the change: play it in the phone until the full-quality version is done
       else if (e.type === 'render' && e.draft) {
@@ -126,6 +134,10 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
         void load(e.type === 'done')
       }
     })
+    return () => {
+      offQueue()
+      offJobs()
+    }
   }, [slug, load])
 
   // Scroll only the chat box to its last message. scrollIntoView would also scroll the page and
@@ -214,7 +226,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     setNote('')
     att.clear()
     try {
-      const r = await reel.projects.note(slug, text, files.length ? files.map((f) => f.asset) : undefined)
+      const r = await reel.projects.note(slug, text, files.length ? files.map((f) => f.asset) : undefined, undefined, version?.n)
       // null = no AI editor: the note and a plain answer are in the chat, nothing is running.
       if (r.jobId) setJob((cur) => (cur?.jobId === r.jobId ? cur : { ...EMPTY_LIVE, jobId: r.jobId, message: 'Reading your note' }))
       await load()
@@ -225,7 +237,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     }
   }
   // the AI check must answer first: until then a note could go out as if no editor were connected
-  const canSend = (!!note.trim() || att.chips.length > 0) && !job && !att.busy && providerChecked
+  const canSend = (!!note.trim() || att.chips.length > 0) && !att.busy && providerChecked
   // Files dropped on the note box are attached to the note. The window-wide drop (App.tsx: a video makes
   // a new reel) must not see them, so the drop stops here; App clears its overlay on NOTE_DROP_DONE.
   const noteDropProps = {
@@ -671,6 +683,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                 <Progress pct={job.overall} label={job.message} />
               </div>
             )}
+            <NoteQueue slug={slug} queue={d.queue} held={d.queueHeld} head={d.versions[d.versions.length - 1]?.n ?? 0} onError={(m) => notify(m, 'error')} />
             {/* greyed, not removed, while working (polish-pass); on an older version they act on the latest (version-switcher) */}
             {extras.length > 0 && (
               <div className="extras" data-testid="extras">
@@ -705,7 +718,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               <textarea
                 className="input composer-input"
                 rows={1}
-                placeholder={providerChecked ? 'Tell your editor what to change…' : 'Checking for your AI editor…'}
+                placeholder={!providerChecked ? 'Checking for your AI editor…' : job ? 'Add another note. It runs after this one.' : 'Tell your editor what to change…'}
                 aria-label="Note for your editor"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
@@ -716,7 +729,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                     void send()
                   }
                 }}
-                disabled={!!job || !providerChecked}
+                disabled={!providerChecked}
                 data-testid="note-input"
               />
               </div>

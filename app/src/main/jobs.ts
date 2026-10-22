@@ -2,7 +2,7 @@
 // goes to the renderer; app.json records the running job so a crash can be recovered at startup.
 import { randomUUID } from 'node:crypto'
 import type { JobEvent, JobKind, JobUpdate, Phase, VersionMade } from '../shared/api'
-import { addChat, cleanPartialVersions, listVersions, projectDir, recordVersionMade, settleNote, updateAppState, settleInterrupted, stamp } from './store'
+import { addChat, cleanPartialVersions, listVersions, projectDir, recordVersionMade, settleNote, updateAppState, settleInterrupted, stamp, type AppState } from './store'
 import { claimProject, type ProjectOwner } from './owner'
 import type { ChatLine } from './style-consent'
 import { toUserError } from './engine'
@@ -55,8 +55,17 @@ interface Running {
   secondsLeft: number | null
   overdue: boolean
   thinking: boolean
+  /** The project owner token its engine commands carry (owner.ts); null until the project is claimed. */
+  owner: string | null
+  /** Waiting for the render slot another reel holds (render-slot.ts). */
+  waitingForRender: boolean
+  /** Sends its status now. */
+  report: () => void
   done: Promise<void>
 }
+
+export const WAITING_FOR_RENDER = 'Waiting for another reel to finish rendering'
+const shown = (j: Running): string => (j.waitingForRender ? WAITING_FOR_RENDER : j.message)
 
 export function createJobManager(
   broadcast: (e: JobEvent) => void,
@@ -86,12 +95,13 @@ export function createJobManager(
     return [...jobs.values()].find((j) => j.slug === slug)
   }
 
-  function start(slug: string | null, kind: JobKind, fn: JobFn, opts: { note?: string } = {}): string {
+  /** `record`: more changes to app.json, saved in the same write that records the job as running. */
+  function start(slug: string | null, kind: JobKind, fn: JobFn, opts: { note?: string; record?: (s: AppState) => void } = {}): string {
     assertCanStart()
     if (slug) refuseIfBusy(slug)
     const id = randomUUID()
     const abort = new AbortController()
-    const job: Running = { id, slug, kind, abort, message: 'Getting started', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false, done: Promise.resolve() }
+    const job: Running = { id, slug, kind, abort, message: 'Getting started', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false, owner: null, waitingForRender: false, report: () => undefined, done: Promise.resolve() }
     jobs.set(id, job)
     const send = (e: JobEvent): void => broadcast(e)
     let history: SpeedHistory = { v: 1, phases: {} }
@@ -109,13 +119,15 @@ export function createJobManager(
       const snap = tracker.snapshot()
       job.overall = snap.overall
       // Until the video's length is known every estimate is for "0 minutes of video" and would jump UP
-      // later: wait for duration before showing a number.
-      const secondsLeft = slug && progress && !mediaSec ? null : snap.etaSec
+      // later: wait for duration before showing a number. Waiting for another reel's render: no
+      // estimate covers that wait, so say none.
+      const secondsLeft = job.waitingForRender || (slug && progress && !mediaSec) ? null : snap.etaSec
       // Project-detail hydration must retain the same estimate as an already-open screen.
-      if (secondsLeft !== null) job.secondsLeft = secondsLeft
-      job.overdue = snap.overdue
-      send({ jobId: id, slug, type: 'status', message: job.message, pct: job.pct, ...(phase ? { phase } : {}), overall: snap.overall, secondsLeft: job.secondsLeft, overdue: job.overdue, thinking: job.thinking })
+      if (secondsLeft !== null || job.waitingForRender) job.secondsLeft = secondsLeft
+      job.overdue = !job.waitingForRender && snap.overdue
+      send({ jobId: id, slug, type: 'status', message: shown(job), pct: job.pct, ...(phase ? { phase } : {}), overall: snap.overall, secondsLeft: job.secondsLeft, overdue: job.overdue, thinking: job.thinking })
     }
+    job.report = status
     // re-broadcast once a second: time moves the bar and the estimate even while the AI thinks
     const tick = setInterval(() => status(), progress?.tickMs ?? 1000)
     tick.unref?.()
@@ -126,10 +138,12 @@ export function createJobManager(
         // Inside the try: if even this fails, the user gets an error instead of a job that never ends.
         if (slug) {
           owner = await enter(slug)
+          job.owner = owner.token
           await updateAppState(slug, (s) => {
             s.job = { id, kind, startedAt: new Date().toISOString(), note: opts.note }
             s.lastError = null
             if (kind === 'first-edit') s.status = 'working'
+            opts.record?.(s)
           })
         }
         if (progress) {
@@ -284,6 +298,14 @@ export function createJobManager(
     keepClosed,
     forSlug,
     get: (id: string) => jobs.get(id),
+    /** What a job is showing now (its own words, or that it waits for the render slot). */
+    message: shown,
+    waitingForRender(owner: string, waiting: boolean): void {
+      const job = [...jobs.values()].find((j) => j.owner === owner)
+      if (!job) return
+      job.waitingForRender = waiting
+      job.report()
+    },
     cancel(id: string): void {
       jobs.get(id)?.abort.abort()
     },
