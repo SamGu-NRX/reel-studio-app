@@ -61,12 +61,17 @@ import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, Settings
 import { noAiReply } from '../shared/notes'
 import { versionMessage } from '../shared/describe'
 import { displayPath } from '../shared/display-path'
+import { RELEASES_REPO } from '../shared/config'
 import { registerPhoneIpc, stopPhoneShare } from './phone-ipc'
 import { checkNoteAttachments, forChat, pickClipboardType, registerAttachmentIpc } from './attachments'
-import { createUpdateService } from './update-check'
+import { RELEASES_API, releasePageBackend, type FetchLike } from './update-check'
 import { createPermissions, notificationsWanted, parseFakes, type NotifyResult, type Permissions } from './permissions'
 import { helperInstruction, MAC_PANES } from './mac-permission'
 import { MacPermissionHelper } from './mac-permission-helper'
+import { createUpdater, menuCheckForUpdates } from './updater'
+import { autoUpdater } from 'electron-updater'
+import { electronUpdaterBackend } from './updater-electron'
+import { disabledReason, updateMode } from './update-machine'
 import { createJobFeedback, createMainWindow, feedbackLog, installMenu, startDragOut, windowStateFile, type AppCommand } from './window'
 
 const TEST = process.env.REELSTUDIO_TEST === '1'
@@ -181,7 +186,8 @@ const jobs = createJobManager(
   },
   // render events carry a playable URL (a stable copy for drafts: main/live-video.ts)
   ((live) => (slug: string, e) => live(projectDir(slug), e))(createLiveVideos()),
-  workGate
+  workGate,
+  () => updates.assertCanStartWork()
 )
 const models = createModelManager({
   runEngine,
@@ -195,18 +201,70 @@ const models = createModelManager({
   checkDeadlineMs: 60_000,
   log
 })
-// "Update available" notice (main/update-check.ts): one anonymous GET a day, never in test runs.
-const updates = createUpdateService({
-  active: !TEST,
+// ---- updates (main/updater.ts) -------------------------------------------------------------------
+// Test runs never touch the network, except the update e2e, which points a dev build at a local server
+// (REELSTUDIO_UPDATE_FEED, honoured only in an unpackaged test run: app/e2e/update.spec.ts).
+const TEST_FEED = TEST && !app.isPackaged ? process.env.REELSTUDIO_UPDATE_FEED : undefined
+let exportsWriting = 0
+const updateBusy = () => ({ exporting: exportsWriting > 0, working: jobs.runningCount() })
+
+function readUpdateFeed(): string | null {
+  if (TEST_FEED) {
+    // electron-updater's dev config: same format as the packaged app-update.yml, generic provider
+    const file = join(app.getPath('userData'), 'dev-app-update.yml')
+    const text = `provider: generic\nurl: ${TEST_FEED}\nupdaterCacheDirName: reel-studio-e2e-updater-${basename(dirname(app.getPath('userData')))}\n`
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, text)
+    return file
+  }
+  const file = join(process.resourcesPath, 'app-update.yml')
+  return existsSync(file) ? file : null
+}
+
+const updateFeed = app.isPackaged || TEST_FEED ? readUpdateFeed() : null
+const updateEnv = {
+  platform: process.platform,
+  isPackaged: app.isPackaged || !!TEST_FEED,
+  test: (TEST && !TEST_FEED) || SELF_TEST,
+  hasFeed: updateFeed !== null,
+  inApplications: !!TEST_FEED || (app.isPackaged && process.platform === 'darwin' && app.isInApplicationsFolder())
+}
+// Node's fetch: no Electron session, so no cookies ride along
+const githubFetch: FetchLike = (url, init) => fetch(url, init)
+const updateOff = disabledReason(updateEnv)
+const updateHow = updateMode(updateEnv)
+const updates = createUpdater({
   version: app.getVersion(),
+  mode: updateHow,
+  disabledReason: updateOff,
+  backend: updateOff
+    ? null
+    : updateHow === 'install'
+      ? electronUpdaterBackend({
+          updater: autoUpdater,
+          version: app.getVersion(),
+          fetch: githubFetch,
+          releasesApi: TEST_FEED ? `${TEST_FEED}/releases` : RELEASES_API,
+          releaseFolder: (tag) => (TEST_FEED ? `${TEST_FEED}/download/${tag}` : `https://github.com/${RELEASES_REPO}/releases/download/${tag}`),
+          log,
+          devFeedFile: TEST_FEED ? updateFeed ?? undefined : undefined,
+          onError: (e) => updates.installFailed(e)
+        })
+      : releasePageBackend(githubFetch, app.getVersion()),
   load: loadSettings,
   save: saveSettings,
-  fetch: (url, init) => fetch(url, init), // Node's fetch: no Electron session, so no cookies
-  now: () => Date.now(),
-  log,
+  busy: updateBusy,
+  prepareToQuit: async () => {
+    await stopPhoneShare()
+    await jobs.cancelAll()
+    await killAllEngines()
+  },
   openExternal: (url) => shell.openExternal(url),
-  send: (n) => broadcast('update:change', n)
+  send: (st) => broadcast('update:state', st),
+  log,
+  now: () => Date.now()
 })
+log(`[update] ${updateOff ?? `on (${updateHow})`}`)
 
 // ---- helpers ------------------------------------------------------------------------------------
 type Handler = (e: IpcMainInvokeEvent, ...args: any[]) => unknown
@@ -611,7 +669,15 @@ function registerIpc(): void {
     })
     return { jobId }
   })
-  handle('projects:export', (_e, slug: string, n: number) => exportVersion(slug, n))
+  handle('projects:export', async (_e, slug: string, n: number) => {
+    updates.assertCanStartWork()
+    exportsWriting++ // the updater will not restart the app while an export writes its file
+    try {
+      return await exportVersion(slug, n)
+    } finally {
+      exportsWriting--
+    }
+  })
   handle('projects:remove', async (_e, slug: string) => {
     const running = jobs.forSlug(slug)
     if (running) {
@@ -669,10 +735,14 @@ function registerIpc(): void {
     return ai.writeScript(String(idea), () => {})
   })
 
-  handle('update:status', () => updates.status())
-  handle('update:setEnabled', (_e, on: unknown) => updates.setEnabled(on))
-  handle('update:open', (_e, url: unknown) => updates.open(url))
+  handle('update:state', () => updates.state())
+  handle('update:check', () => updates.check('button'))
+  handle('update:download', () => updates.download())
+  handle('update:install', () => updates.install())
+  handle('update:openRelease', () => updates.openRelease())
+  handle('update:busy', updateBusy)
   handle('update:dismiss', (_e, version: unknown) => updates.dismiss(version))
+  handle('update:setEnabled', (_e, on: unknown) => updates.setEnabled(on))
 
   handle('dev:renderTestAnimation', (_e, outPath: string, fullSize?: boolean, template?: string, params?: Record<string, unknown>) => {
     if (!TEST && app.isPackaged) throw { code: 'NOT_ALLOWED', userMessage: 'Not available.' }
@@ -747,7 +817,12 @@ function showTestNotification(): Promise<NotifyResult> {
 // ---- window -------------------------------------------------------------------------------------
 function createWindow(): void {
   win = createMainWindow({ preload: join(__dirname, '../preload/index.js'), stateFile: windowStateFile(settingsDir()), test: TEST })
-  installMenu(sendCommand, DEV_PROVIDERS || !app.isPackaged)
+  installMenu(sendCommand, DEV_PROVIDERS || !app.isPackaged, () =>
+    void menuCheckForUpdates(updates, {
+      focus: () => win?.show(),
+      show: (o) => (win && !win.isDestroyed() ? dialog.showMessageBox(win, o) : dialog.showMessageBox(o))
+    })
+  )
   win.once('ready-to-show', () => win?.show())
   // Stop flashing the taskbar once the person is back.
   win.on('focus', () => win?.flashFrame(false))
@@ -890,7 +965,8 @@ app.whenReady().then(async () => {
   setAsrThreads(await models.savedThreads()) // before any engine call can start
   registerIpc()
   createWindow()
-  updates.start() // a few seconds after the window, so launch is never slower
+  await updates.init()
+  updates.start() // 15 s after the window, so launch is never slower
   // A model that was here before the timing check existed, or whose check a video interrupted, so it never slows launch.
   if (!TEST) setTimeout(() => void models.checkInBackground(), 30_000)
   app.on('activate', () => {
