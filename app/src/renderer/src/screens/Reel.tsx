@@ -10,11 +10,13 @@ import { SendToPhone } from '../components/SendToPhone'
 import { Icon } from '../components/icons'
 import { PhonePlayer, type SubtitleLook } from '../components/Player'
 import { DevicePreview } from '../components/DevicePreview'
+import { createPlayhead } from '../components/playhead'
+import { versionOnScreen } from '../components/videoLayers'
 import { EXPORT_EVENT, NOTE_DROP_DONE, useNotify } from '../App'
 import { ShowMeHow, type Tab } from './ShowMeHow'
 import { AttachmentChips, AttachmentThumb, useNoteAttachments } from '../components/NoteAttachments'
 import { ChangeAt } from '../components/ChangeAt'
-import { noteMarks, typedMoment } from '../../../shared/moments'
+import { noteMarks, sourceAt, typedMoment, type RenderSegment } from '../../../shared/moments'
 
 const ACTION_TAB: Partial<Record<ChatAction, Tab>> = {
   'open-cut': 'cut',
@@ -59,6 +61,8 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const [bannerHidden, setBannerHidden] = useState(() => localStorage.getItem(bannerKey(slug)) === '1')
   const [igOverlay, setIgOverlay] = useState(() => localStorage.getItem(IG_KEY) === '1')
   const [holding, setHolding] = useState(false)
+  // the pointer or focus reached Hold for original: load the raw footage from then on
+  const [warmOriginal, setWarmOriginal] = useState(false)
   const [duration, setDuration] = useState<number | null>(null)
   // Live subtitle preview from the drawer's Subtitles tab.
   const [preview, setPreview] = useState<{ look: SubtitleLook; text: string; at: number } | null>(null)
@@ -70,7 +74,10 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   // Files dropped on the note box before the AI check answers: attached once it does, as any drop is.
   const heldDrops = useRef<{ files: File[]; types: string[] }[]>([])
   const [held, setHeld] = useState(0)
-  const [playhead, setPlayhead] = useState(0)
+  // Read by the player and the change button only, so playback does not re-render this screen.
+  const [playhead] = useState(createPlayhead)
+  // the video the player has on screen; during a switch it is still the old one
+  const [shownSrc, setShownSrc] = useState<string | null>(null)
   const [asking, setAsking] = useState(false)
 
   const load = useCallback(
@@ -132,27 +139,28 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const changePreview = job?.preview?.video ?? null
   // Where the shown version plays each word, for the marks. Keyed on its video URL, which changes
   // with every render of it (the file's mtime is in the URL).
-  const [timeline, setTimeline] = useState<{ video: string; words: PlacedWord[] } | null>(null)
-  const shownN = version?.n
-  const shownVideo = version?.video
+  // segments null: no timeline to read for that version (none written, or reading it failed)
+  const [timeline, setTimeline] = useState<{ video: string; words: PlacedWord[]; segments: RenderSegment[] | null } | null>(null)
+  // The marks, the change pop-up and Hold for original act on what is on screen, not on what was just picked.
+  const onScreen = d ? versionOnScreen(d.versions, shownSrc) : null
+  const shownN = onScreen?.n
+  const shownVideo = onScreen?.video
   useEffect(() => {
     if (shownN === undefined || !shownVideo) return
     let live = true
     reel.projects
       .timeline(slug, shownN)
       .then((t) => {
-        if (live) setTimeline({ video: shownVideo, words: t?.words ?? [] })
+        if (live) setTimeline({ video: shownVideo, words: t?.words ?? [], segments: t?.segments ?? null })
       })
-      .catch((e) => notify(userMessage(e), 'error'))
+      .catch((e) => {
+        if (live) setTimeline({ video: shownVideo, words: [], segments: null })
+        notify(userMessage(e), 'error')
+      })
     return () => {
       live = false
     }
   }, [slug, shownN, shownVideo, notify])
-  // The player starts over at 0:00 on every new video (it is keyed on it): so does the change button.
-  const playerSrc = changePreview ?? shownVideo ?? 'none'
-  useEffect(() => {
-    setPlayhead(0)
-  }, [playerSrc])
 
   useEffect(() => {
     if (!providerChecked || !heldDrops.current.length) return
@@ -296,8 +304,20 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     }
   }
 
-  // none over a change's quick preview: it is cut differently from the saved version they are placed on
-  const marks = !changePreview && timeline && timeline.video === version?.video ? noteMarks(d.chat, job?.jobId ?? null, timeline.words) : []
+  // only on the saved version on screen: a change's quick preview (a separate draft file) is cut differently
+  const marks = timeline && timeline.video === shownVideo ? noteMarks(d.chat, job?.jobId ?? null, timeline.words) : []
+  // Hold for original shows the raw take at the moment on screen, by the shown version's own segments (same
+  // rule as the marks), and waits while they load. Over a change's quick preview (a draft, no saved version on
+  // screen), or for a version with no timeline, it plays the first take from 0:00 and says so.
+  const originalReady = !shownVideo || timeline?.video === shownVideo
+  const originalAt = (t: number) => {
+    if (!shownVideo) return 'start' as const
+    if (timeline?.video !== shownVideo) return null
+    if (!timeline.segments) return 'start' as const
+    const at = sourceAt(timeline.segments, t)
+    const src = at && d.sourceVideos[at.source]
+    return src ? { src, at: at.at } : null
+  }
   const sent = async (jobId: string | null) => {
     if (jobId) setJob((cur) => (cur?.jobId === jobId ? cur : { ...EMPTY_LIVE, jobId, message: 'Reading your note' }))
     await load()
@@ -358,7 +378,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
           <div className="phone-slot">
           <DevicePreview instagram={igOverlay && !holding} caption={d.project.post?.caption}>
             <PhonePlayer
-              key={playerSrc}
               src={changePreview ?? version?.video ?? null}
               poster={version?.cover}
               autoPlayMuted={!!changePreview || (fresh && version?.n === d.versions[d.versions.length - 1]?.n)}
@@ -367,19 +386,28 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               instagram={igOverlay}
               caption={d.project.post?.caption}
               original={d.sourceVideo}
+              originalAt={originalAt}
+              originalReady={originalReady}
+              warmOriginal={warmOriginal}
               holdingOriginal={holding}
               onDuration={setDuration}
               dragFile={version && !version.draft ? version.videoPath : null}
               marks={marks}
               asking={asking}
-              onTime={setPlayhead}
+              playhead={playhead}
+              onShown={setShownSrc}
+              onFailed={() => {
+                // main's words for a missing video; the version on screen stays picked, so its chip can be tried again
+                notify('I could not find that video. It may have been moved or deleted.', 'error')
+                if (onScreen) setSelected(onScreen.n)
+              }}
             />
           </DevicePreview>
           </div>
           <ChangeAt
             slug={slug}
-            at={playhead}
-            shown={version ? { n: version.n, latest: version.n === d.versions[d.versions.length - 1].n } : null}
+            playhead={playhead}
+            shown={onScreen ? { n: onScreen.n, latest: onScreen.n === d.versions[d.versions.length - 1].n } : null}
             aiOn={!aiOff}
             checking={!providerChecked}
             busy={!!job}
@@ -405,6 +433,8 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
             {d.sourceVideo && (
               <button
                 className={`tool${holding ? ' on' : ''}`}
+                onPointerEnter={() => setWarmOriginal(true)}
+                onFocus={() => setWarmOriginal(true)}
                 onPointerDown={() => setHolding(true)}
                 onPointerUp={() => setHolding(false)}
                 onPointerLeave={() => setHolding(false)}
