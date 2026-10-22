@@ -134,7 +134,7 @@ export function Working({ slug, go }: { slug: string; go: Go }) {
               <div className={`phone-screen${frameShown ? '' : ' waiting'}`} data-testid="working-screen">
                 {source && (
                   <video
-                    className={`still${frameShown ? ' shown' : ''}${mirrored ? ' mirrored' : ''}`}
+                    className={`still${mirrored ? ' mirrored' : ''}${frameShown ? ' shown' : ''}`}
                     src={`${source}#t=0.5`}
                     preload="auto"
                     muted
