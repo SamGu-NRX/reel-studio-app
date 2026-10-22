@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, promises as fs, readFileSync, writeFileSync } f
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createEngineRunner } from '../src/main/engine'
-import { checkPlatformExport, exportPlatforms } from '../src/main/platform-export'
+import { checkPlatformExport, exportPlatforms, sweepExportStaging } from '../src/main/platform-export'
 import type { PlatformExportRequest } from '../src/shared/platforms'
 import { PYTHON } from './helpers'
 
@@ -70,5 +70,26 @@ describe('platform files through the real engine', () => {
       name: 'Long', request, runEngine, signal: stop.signal, onProgress: (_message, pct) => { if (pct > 0) stop.abort() } })
     await expect(running).rejects.toMatchObject({ code: 'CANCELLED' })
     expect(await fs.readdir(folder)).toEqual(['earlier export.mp4'])
+  })
+
+  it('retries staging cleanup after a Windows file lock is released', async () => {
+    const folder = join(scratch, 'sweep-retry')
+    const stage = join(folder, '.platform-export-locked')
+    await fs.mkdir(stage, { recursive: true })
+    await fs.writeFile(join(stage, 'video.mp4'), 'leftover')
+    let attempts = 0
+    const originalRm = fs.rm
+    const rmSpy = (async (...args: Parameters<typeof fs.rm>) => {
+      if (++attempts === 1) throw Object.assign(new Error('busy'), { code: 'EBUSY' })
+      return originalRm(...args)
+    }) as typeof fs.rm
+    ;(fs as unknown as { rm: typeof fs.rm }).rm = rmSpy
+    try {
+      await sweepExportStaging(folder)
+    } finally {
+      ;(fs as unknown as { rm: typeof fs.rm }).rm = originalRm
+    }
+    expect(attempts).toBe(2)
+    expect(await fs.readdir(folder)).toEqual([])
   })
 })
