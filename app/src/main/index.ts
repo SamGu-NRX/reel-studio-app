@@ -369,7 +369,8 @@ async function appInfo(): Promise<AppInfo> {
     dev: DEV_PROVIDERS,
     userName: await accountNameRead,
     models: s.models,
-    sharing: s.sharing
+    sharing: s.sharing,
+    phoneView: s.phoneView
   }
 }
 
@@ -534,6 +535,11 @@ function registerIpc(): void {
     const keys = ['asked', 'on', 'usage', 'quality', 'posts'] as const
     if (!keys.every((k) => typeof x[k] === 'boolean')) throw { code: 'BAD_INPUT', userMessage: 'Choose what to share.' }
     await saveSettings({ sharing: Object.fromEntries(keys.map((k) => [k, x[k]])) as Record<(typeof keys)[number], boolean> })
+    return appInfo()
+  })
+  handle('app:setPhoneView', async (_e, view: unknown) => {
+    if (view !== 'instagram' && view !== 'clean') throw { code: 'BAD_INPUT', userMessage: 'Choose Instagram or Clean.' }
+    await saveSettings({ phoneView: view })
     return appInfo()
   })
   handle('app:setFasterExports', async (_e, on: boolean) => {
