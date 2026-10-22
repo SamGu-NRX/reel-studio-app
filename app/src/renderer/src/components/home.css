@@ -51,3 +51,38 @@ html.kb .hcard .im { transition: none; }
   .hcard .im { transition: none; }
   .hcard .pb i { transition: none; }
 }
+
+/* Right after the first run (components/YourTurn.tsx): what to bring, and the sample to watch again */
+.yourturn { display: grid; grid-template-columns: minmax(0, 1fr) clamp(140px, 16vw, 200px); gap: 28px; align-items: start; }
+.yt-drop { min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 32px; }
+.yt-ic { width: 44px; height: 44px; border-radius: 12px; background: var(--panel); box-shadow: var(--e1); display: grid; place-items: center; color: var(--ink-2); margin-bottom: 18px; }
+.yt-drop h2 { font-size: 20px; line-height: 26px; font-weight: 700; letter-spacing: -.012em; text-wrap: balance; }
+.yt-drop > p { margin-top: 8px; max-width: 420px; font-size: 14px; line-height: 20px; color: var(--ink-2); }
+.yt-drop .btn { margin-top: 20px; }
+.yt-drop .yt-note { margin-top: 16px; font-size: 12.5px; line-height: 17px; color: var(--ink-3); text-wrap: pretty; }
+.sample-card { margin: 0; }
+.sample-card .im {
+  position: relative; display: block; width: 100%; padding: 0; border: 0; aspect-ratio: 9 / 16; border-radius: 14px; overflow: hidden; cursor: pointer;
+  background: #1b1d1c; box-shadow: var(--e1); container-type: inline-size; transition: transform 160ms var(--ease-out);
+}
+.sample-card .im:active { transform: scale(.98); }
+.sample-card .im:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.sample-card img, .sample-card video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity 200ms ease; }
+.sample-card video { opacity: 0; }
+.sample-card video.on { opacity: 1; }
+.sample-card img.off, .sample-card .cover-t.off { opacity: 0; }
+.sample-card .cover-t {
+  position: absolute; left: 8%; right: 8%; top: 13%; text-align: center; color: #fff; font: 600 11cqw/1.12 'Reel Subtitles', sans-serif; text-transform: uppercase;
+  -webkit-text-stroke: .6cqw #000; paint-order: stroke fill; transition: opacity 200ms ease; pointer-events: none;
+}
+.sample-card .cover-t em { font-style: normal; background: #ffd84a; color: #111; -webkit-text-stroke: 0; padding: 0 1.2cqw; border-radius: 1.2cqw; }
+.sample-card .yt-play {
+  position: absolute; right: 8px; bottom: 8px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(255, 255, 255, .94); color: var(--ink); box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+}
+.sample-card figcaption { display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; }
+.sample-card figcaption b { font-weight: 650; }
+.sample-card figcaption span { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) { .yourturn { grid-template-columns: 1fr; } .sample-card { width: 168px; } }
+html.kb .sample-card .im { transition: none; }
+@media (prefers-reduced-motion: reduce) { .sample-card .im { transition: none; } }

@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, ROOT, SHOTS, dropFiles, launch, listeningState, makeMedia, passFirstRun, passMacStage, shot, openSettings } from './helpers'
+import { BASE, ROOT, SHOTS, dropFiles, launch, makeMedia, passFirstRun, passMacStage, shot, openSettings } from './helpers'
 
 test.beforeAll(() => {
   mkdirSync(SHOTS, { recursive: true })
@@ -23,20 +23,20 @@ test('make a reel end to end', async () => {
   await expect(page.getByText('Welcome to Reel Studio')).toBeVisible()
   await shot(page, '01-firstrun-welcome')
   await page.getByTestId('get-started').click()
+  // the sample edits itself while the listening model downloads beside it (instant with the stand-in engine)
+  await expect(page.getByTestId('model-line')).toBeVisible()
+  await shot(page, '02-firstrun-sample')
+  await page.getByTestId('demo-skip').click()
+  await page.getByTestId('demo-next').click()
   await passMacStage(page)
-  // "One download" before the model is here, "Ready to listen" once it is (grandma3 #1).
-  await expect(page.getByTestId('model-heading')).toHaveText(/One download, about 500 MB|Ready to listen/)
-  // Use an installed model if there is one; else "download" (instant with the stand-in engine), which moves on by itself.
-  const state = await listeningState(page)
-  await shot(page, '02-firstrun-model')
-  await page.getByTestId(state === 'download' ? 'download-model' : 'model-next').click()
-  await expect(page.getByText('Connect your AI editor')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Connect your AI editor' })).toBeVisible()
+  await expect(page.getByTestId('model-line')).toContainText('Listening model ready')
   await shot(page, '03-firstrun-connect')
   await page.getByTestId('skip').click()
   await page.getByTestId('share-no').click()
 
   // ---- home ----
-  await expect(page.getByText('Make your first reel')).toBeVisible()
+  await expect(page.getByTestId('your-turn')).toBeVisible()
   await shot(page, '04-home-empty')
 
   // ---- library: add a song, a picture and a file it cannot use ----

@@ -20,7 +20,7 @@ import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, dirname } from 'node:path'
-import { attachMemeFlow, chooseClaudeCode, dropFiles, listeningState, passMacStage, openSettings } from './helpers'
+import { attachMemeFlow, chooseClaudeCode, dropFiles, passMacStage, passSample, openSettings } from './helpers'
 import { installedRuntime } from './runtime'
 
 const EXE = process.env.REELSTUDIO_E2E_INSTALLED
@@ -108,24 +108,23 @@ test('first run: speech model + AI', async () => {
   const info: Record<string, unknown> = {}
   try {
     const welcome = page.getByTestId('get-started')
-    await expect(welcome.or(page.getByText('Your videos'))).toBeVisible()
+    await expect(welcome.or(page.getByRole('heading', { name: 'Your videos' }))).toBeVisible()
     info.freshProfile = await welcome.isVisible()
     await snap(page, '00-welcome')
     if (info.freshProfile) {
-      await welcome.click()
+      const t0 = Date.now()
+      await passSample(page)
       await passMacStage(page)
       await snap(page, '01-download')
-      const t0 = Date.now()
-      await page.getByTestId((await listeningState(page)) === 'download' ? 'download-model' : 'model-next').click()
-      const connect = page.getByText('Connect your AI editor')
-      while (!(await connect.isVisible())) {
+      const ready = page.getByTestId('model-line').getByText('Listening model ready')
+      while (!(await ready.isVisible())) {
         if (Date.now() - t0 > 25 * 60_000) throw new Error('model download took over 25 minutes')
         await page.waitForTimeout(1000)
       }
       info.modelSec = Math.round((Date.now() - t0) / 1000)
       await page.waitForTimeout(2000)
       await snap(page, '02-connect')
-      info.connectButtons = await page.locator('.setup-panel button').allInnerTexts()
+      info.connectButtons = await page.locator('.fr-pane button').allInnerTexts()
       // Nothing picks the Claude Code app on its own: this run chooses it, like a person would.
       const picked = EXPECT_AI === 'claude-cli' && (await chooseClaudeCode(page))
       const c = page.getByTestId('ai-connected')

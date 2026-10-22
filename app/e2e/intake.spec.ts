@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { APP_DIR, BASE, launch, makeMedia, passFirstRun } from './helpers'
+import { APP_DIR, BASE, launch, makeMedia, passFirstRun, passMacStage, passSample } from './helpers'
 
 const media = makeMedia()
 function profile() {
@@ -40,10 +40,8 @@ for (const source of ['paste', 'open-file before ready', 'second-instance argv']
       if (source === 'open-file before ready') {
         await expect(page.getByTestId('get-started')).toBeVisible()
         expect(await page.evaluate(() => window.reel.projects.list())).toEqual([])
-        await page.getByTestId('get-started').click()
-        const next = page.getByTestId('model-next')
-        await expect(next.or(page.getByTestId('download-model'))).toBeVisible()
-        await ((await next.isVisible()) ? next : page.getByTestId('later')).click()
+        await passSample(page)
+        await passMacStage(page)
         await page.getByTestId('skip').click()
         await page.getByTestId('share-no').click()
       } else await passFirstRun(page)

@@ -13,7 +13,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { CLAUDE_CODE_MISNAMED, attachMemeFlow, chooseClaudeCode, dropFiles, passListeningStage, passMacStage, openSettings } from './helpers'
+import { CLAUDE_CODE_MISNAMED, attachMemeFlow, chooseClaudeCode, dropFiles, passMacStage, passSample, openSettings } from './helpers'
 
 const EXE = process.env.REELSTUDIO_E2E_EXE
 const USE_CLAUDE = process.env.REELSTUDIO_E2E_USE_CLAUDE !== '0'
@@ -67,20 +67,19 @@ function newest(dir: string, filter: (n: string) => boolean): string | null {
   return all.length ? join(dir, all[0].n) : null
 }
 
-/** First run on a fresh profile: welcome -> speech model (already there) -> Connect. Returns what Connect showed. */
+/** First run on a fresh profile: welcome -> the sample -> the Mac -> Connect. Returns what Connect showed. */
 async function firstRun(page: Page): Promise<Record<string, unknown>> {
   const info: Record<string, unknown> = {}
   const welcome = page.getByTestId('get-started')
-  await expect(welcome.or(page.getByText('Your videos'))).toBeVisible({ timeout: 60_000 })
+  await expect(welcome.or(page.getByRole('heading', { name: 'Your videos' }))).toBeVisible({ timeout: 60_000 })
   if (!(await welcome.isVisible())) return info
   await snap(page, `${TAG}-00-welcome`)
-  await welcome.click()
+  await passSample(page)
   await passMacStage(page)
-  await passListeningStage(page)
   await page.waitForTimeout(2500) // the Claude choice shows once the app has looked for the Claude Code app
   await snap(page, `${TAG}-01-connect`)
-  info.connectButtons = await page.locator('.setup-panel button').allInnerTexts()
-  info.connectText = await page.locator('.setup-panel').innerText()
+  info.connectButtons = await page.locator('.fr-pane button').allInnerTexts()
+  info.connectText = await page.locator('.fr-pane').innerText()
   info.claudeCode = await page.evaluate(() => (window as any).reel.ai.claudeCodeStatus())
   const picked = USE_CLAUDE && (await chooseClaudeCode(page))
   info.connectAi = picked ? (await page.evaluate(() => (window as any).reel.ai.active())).label : 'none'

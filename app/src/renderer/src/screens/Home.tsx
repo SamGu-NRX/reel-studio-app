@@ -5,6 +5,8 @@ import { dayLabel } from '../../../shared/notes-log'
 import { reel } from '../api'
 import type { Go } from '../nav'
 import { Icon } from '../components/icons'
+import { YourTurn } from '../components/YourTurn'
+import { sawSample } from '../components/first-run/handoff'
 import '../components/home.css'
 
 type View = 'activity' | 'all'
@@ -152,15 +154,19 @@ export function Home({ go }: { go: Go }) {
         </button>
       </div>
 
-      {projects && projects.length === 0 && (
-        <div className="drop tall">
-          <div className="drop-icon">
-            <Icon name="video" size={28} />
+      {projects &&
+        projects.length === 0 &&
+        (sawSample() ? (
+          <YourTurn go={go} />
+        ) : (
+          <div className="drop tall">
+            <div className="drop-icon">
+              <Icon name="video" size={28} />
+            </div>
+            <h2>Make your first reel</h2>
+            <p className="muted">Drag your video anywhere onto this window, or click New video.</p>
           </div>
-          <h2>Make your first reel</h2>
-          <p className="muted">Drag your video anywhere onto this window, or click New video.</p>
-        </div>
-      )}
+        ))}
       {list.length > 0 && body}
     </div>
   )
