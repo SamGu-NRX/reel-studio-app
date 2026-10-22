@@ -364,6 +364,7 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   const task = deps.prompts.render('applyNote', { note: noteText }) + (files ? `\n\n${files}` : '');
   const label = noteLabel(note, attached);
   let committed: EditResult;
+  let saved: Project;
   try {
     const r = await runAgent({ provider, system: await systemPrompt(deps), task, taskImages: images, ctx, onEvent, signal, maxSteps: deps.maxSteps ?? 25, tokenBudget: deps.tokenBudget, preload: ['get_project', 'get_transcript'] });
     if (!ctx.state.changed.size && !ctx.state.styleRulesAdded.length) {
@@ -384,12 +385,13 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     await saveProject(projectDir, p);
     await snapshotVersion(projectDir, p, version, `# v${version}\n\nNote: ${label}\n\n${summary}\n`);
     onEvent({ type: 'status', message: 'Done', pct: 100 });
+    saved = p;
     committed = { summary, version, styleRulesAdded: ctx.state.styleRulesAdded, styleSuggestions: ctx.state.styleSuggestions, changed: [...ctx.state.changed] };
   } catch (e) {
     await rollbackNote(deps, projectDir, before, assetsBefore, ctx.state);
     throw e;
   }
-  const styleProposal = await rememberCaptionCase(deps, p0, await loadProject(projectDir), committed.version);
+  const styleProposal = await rememberCaptionCase(deps, p0, saved, committed.version);
   return styleProposal ? { ...committed, styleProposal } : committed;
 }
 

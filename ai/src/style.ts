@@ -62,16 +62,20 @@ export class StyleStore {
 
   get file(): string { return styleFile(this.rootDir()); }
 
+  /** No file is an empty My style. A file that can't be read throws, so no save replaces the rules in it. */
   private async read(): Promise<StyleFile> {
-    try {
-      const data = await readJson<StyleFile>(this.file);
-      const rules = Array.isArray(data?.rules) ? data.rules.filter((r) => r && typeof r.text === 'string') : [];
-      const forgotten = Array.isArray(data?.forgotten) ? data.forgotten.filter((x) => typeof x === 'string') : [];
-      return { version: 1, rules, ...(forgotten.length ? { forgotten } : {}) };
-    } catch { return { version: 1, rules: [] }; }
+    let data: StyleFile;
+    try { data = await readJson<StyleFile>(this.file); } catch (e: any) {
+      if (e?.code === 'ENOENT') return { version: 1, rules: [] };
+      throw e;
+    }
+    if (!Array.isArray(data?.rules)) throw new Error(`${this.file} has no rules list`);
+    const forgotten = Array.isArray(data.forgotten) ? data.forgotten.filter((x) => typeof x === 'string') : [];
+    return { version: 1, rules: data.rules.filter((r) => r && typeof r.text === 'string'), ...(forgotten.length ? { forgotten } : {}) };
   }
 
-  async list(): Promise<StyleRule[]> { return (await this.read()).rules; }
+  /** What edits and the My style screen use: nothing when the file can't be read. */
+  async list(): Promise<StyleRule[]> { return (await this.read().catch(() => null))?.rules ?? []; }
 
   private async write(data: StyleFile): Promise<void> {
     await writeFileAtomic(this.file, JSON.stringify(data, null, 2) + '\n');
@@ -121,6 +125,16 @@ export class StyleStore {
       const rest = data.rules.filter((r) => normalize(r.text) !== normalize(LOWERCASE_CAPTIONS));
       await this.write({ ...data, rules: [...rest, rule] });
       return { status: 'saved', rule };
+    });
+  }
+
+  /** The person said No to `p`. If a Yes to it was saved before a crash cut off the reply, that rule goes,
+   * and the question is remembered as answered so it cannot save again. */
+  async decline(p: StyleProposal): Promise<void> {
+    return this.serial(async () => {
+      const data = await this.read();
+      if (!data.rules.some((r) => r.consent?.proposal === p.id)) return;
+      await this.write({ ...data, rules: data.rules.filter((r) => r.consent?.proposal !== p.id), forgotten: [...(data.forgotten ?? []), p.id] });
     });
   }
 

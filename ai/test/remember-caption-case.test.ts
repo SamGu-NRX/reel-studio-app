@@ -203,6 +203,32 @@ describe('answering the question', () => {
     expect(await ai().styleRules()).toEqual([expect.objectContaining({ payload: { kind: 'caption-case', case: 'lower' }, consent: expect.objectContaining({ proposal: asked.id }) })]);
   });
 
+  it('a My style.json that cannot be read is never replaced, and a lowercase note still commits', async () => {
+    const { dir, ai, styleFile } = await setup();
+    const damaged = '{"version":1,"rules":[{"id":"a","text":"Keep music quieter under talk';
+    await fsp.writeFile(styleFile, damaged);
+    const r = await ai(new ScriptedModel([{ toolCalls: [lowercase()] }, finish()])).applyNote(dir, 'make the captions lowercase', () => undefined);
+    expect(await caseOf(dir)).toBe('lower');
+    expect((await loadProject(dir)).notes.at(-1)).toMatchObject({ version: r.version, text: 'make the captions lowercase' });
+    await expect(ai().approveStyleProposal(r.styleProposal!)).rejects.toThrow();
+    await expect(ai().addStyleRule('Keep music quieter under talking.')).rejects.toThrow();
+    expect(await fsp.readFile(styleFile, 'utf8')).toBe(damaged);
+  });
+
+  it('No on a question whose Yes was saved before a crash takes the rule back out for good', async () => {
+    const { dir, ai, newVideo, styleFile } = await setup();
+    const r = await ai(new ScriptedModel([{ toolCalls: [lowercase()] }, finish()])).applyNote(dir, 'make the captions lowercase', () => undefined);
+    await ai().declineStyleProposal(r.styleProposal!);
+    await expect(fsp.stat(styleFile)).rejects.toMatchObject({ code: 'ENOENT' });
+    await ai().approveStyleProposal(r.styleProposal!);
+    await ai().declineStyleProposal(r.styleProposal!);
+    expect(await ai().styleRules()).toEqual([]);
+    expect(await ai().approveStyleProposal(r.styleProposal!)).toEqual({ status: 'forgotten' });
+    const next = await newVideo(dir);
+    await ai().firstEdit(next, () => undefined);
+    expect(await caseOf(next)).not.toBe('lower');
+  });
+
   it('a save that fails saves nothing, and answering again saves the rule once', async () => {
     const { dir, ai, styleFile } = await setup();
     const r = await ai(new ScriptedModel([{ toolCalls: [lowercase()] }, finish()])).applyNote(dir, 'make the captions lowercase', () => undefined);

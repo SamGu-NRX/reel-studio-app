@@ -41,7 +41,8 @@ export const createMockAI: CreateAI = ({ host }) => {
   async function writeRules(rules: StyleRule[]): Promise<void> {
     await fs.mkdir(host.reelStudioRoot(), { recursive: true })
     // keep what the real package also stores there (`version`, `forgotten`)
-    const file = await fs.readFile(styleFile(), 'utf8').then(JSON.parse).catch(() => ({}))
+    // a file that can't be read is never replaced: only a missing one starts empty
+    const file = await fs.readFile(styleFile(), 'utf8').then(JSON.parse).catch((e) => (e?.code === 'ENOENT' ? {} : Promise.reject(e)))
     await fs.writeFile(styleFile(), JSON.stringify({ ...file, rules }, null, 2) + '\n', 'utf8')
   }
 
@@ -226,6 +227,10 @@ export const createMockAI: CreateAI = ({ host }) => {
       const at = new Date().toISOString()
       await writeRules([...rules, { id: randomUUID(), text: proposal.text, createdAt: at, payload: proposal.payload, source: proposal.source, consent: { proposal: proposal.id, at } }])
       return { status: 'saved' as const }
+    },
+    async declineStyleProposal(proposal) {
+      const rules = await readRules()
+      if (rules.some((r) => r.consent?.proposal === proposal.id)) await writeRules(rules.filter((r) => r.consent?.proposal !== proposal.id))
     },
     async updateStyleRule(id, patch) {
       const rules = await readRules()

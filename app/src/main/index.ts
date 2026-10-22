@@ -579,6 +579,7 @@ function registerIpc(): void {
         chat: async (s) => (await readAppState(s)).chat,
         addStyleRule: ai.addStyleRule?.bind(ai),
         approveStyleProposal: ai.approveStyleProposal?.bind(ai),
+        declineStyleProposal: ai.declineStyleProposal?.bind(ai),
         // one write: a crash can never leave the question without its buttons and without the reply
         settle: async (s, id, reply) => {
           await updateAppState(s, (st) => {

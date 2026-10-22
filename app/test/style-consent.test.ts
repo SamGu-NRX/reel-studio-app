@@ -79,4 +79,33 @@ describe('answering a typed My style question (lowercase captions)', () => {
     await answer()
     expect(chat.at(-1)?.text).toBe('Saved. Your next videos will start with lowercase captions. You can change or remove it in My style.')
   })
+
+  it('No on a question whose Yes was saved just before a crash takes the rule back out', async () => {
+    const saved: string[] = []
+    let crash = true
+    const chat: ChatMessage[] = [
+      { id: 'm1', from: 'editor', text: rememberQuestion(proposal.text), at: '', actions: ['remember-yes', 'remember-no'], proposal }
+    ]
+    const deps: AnswerDeps = {
+      chat: async () => structuredClone(chat),
+      approveStyleProposal: async (p) => {
+        saved.push(p.id)
+        return { status: 'saved' }
+      },
+      declineStyleProposal: async (p) => {
+        saved.splice(saved.indexOf(p.id), 1)
+      },
+      settle: async (_slug, id, reply) => {
+        if (crash) throw new Error('the app quit')
+        delete chat.find((m) => m.id === id)!.actions
+        chat.push({ id: 'r', from: 'editor', text: reply, at: '' })
+      },
+      serialized
+    }
+    await expect(answerStyleQuestion(deps, 'bread', 'm1', true)).rejects.toThrow()
+    crash = false
+    await answerStyleQuestion(deps, 'bread', 'm1', false)
+    expect(saved).toEqual([])
+    expect(chat.at(-1)?.text).toBe('OK, only for this video.')
+  })
 })

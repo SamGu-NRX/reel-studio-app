@@ -84,6 +84,7 @@ export interface AI {
   addStyleRule?(text: string): Promise<{ id: string; text: string; createdAt: string }>
   /** Saves a typed rule the user said Yes to. `exists`: already in My style; `forgotten`: they removed it since. */
   approveStyleProposal?(p: StyleProposal): Promise<{ status: 'saved' | 'exists' | 'forgotten' }>
+  declineStyleProposal?(p: StyleProposal): Promise<void>
   updateStyleRule?(id: string, patch: { text?: string; paused?: boolean }): Promise<StyleRule>
   /** Optional extras from @reelstudio/ai. */
   cancelSignInChatGPT?(): void | Promise<void>

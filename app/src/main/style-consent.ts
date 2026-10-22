@@ -36,6 +36,7 @@ export interface AnswerDeps {
   chat(slug: string): Promise<ChatMessage[]>
   addStyleRule?(text: string): Promise<unknown>
   approveStyleProposal?(p: StyleProposal): Promise<{ status: 'saved' | 'exists' | 'forgotten' }>
+  declineStyleProposal?(p: StyleProposal): Promise<void>
   /** Take the buttons off the question and add the editor's reply. */
   settle(slug: string, messageId: string, reply: string): Promise<void>
   serialized<T>(key: string, fn: () => Promise<T>): Promise<T>
@@ -66,6 +67,11 @@ export function answerStyleQuestion(d: AnswerDeps, slug: string, messageId: stri
     } else if (yes) {
       if (!d.addStyleRule) throw NOT_READY
       await d.addStyleRule(m.suggestion!)
+    } else if (m.proposal && d.declineStyleProposal) {
+      // a Yes saved just before a crash, then No: the No wins
+      await d.declineStyleProposal(m.proposal).catch(() => {
+        throw NOT_SAVED
+      })
     }
     await d.settle(slug, messageId, reply)
   })

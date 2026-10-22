@@ -293,6 +293,8 @@ export function createAI(opts: CreateAIOptions) {
     async addStyleRule(text: string) { return (await style.add(text)).rule; },
     /** The user said Yes to AgentResult.styleProposal. */
     async approveStyleProposal(p: StyleProposal) { return style.approve(p); },
+    /** The user said No to AgentResult.styleProposal. */
+    async declineStyleProposal(p: StyleProposal) { return style.decline(p); },
     /** My style: the user edited a rule's words, or paused or resumed it. */
     async updateStyleRule(id: string, patch: { text?: string; paused?: boolean }) { return style.update(id, patch); },
   };
