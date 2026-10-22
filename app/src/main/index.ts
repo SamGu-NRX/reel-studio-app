@@ -677,7 +677,7 @@ function registerIpc(): void {
         const r: AgentResult = await ai.applyNote(dir, aiNoteText(note, moment), (e) => emit(e), signal, opts)
         const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
         const reply = await replyAskingAboutStyle(slug, r, r.summary + extra)
-        return { ...reply, outcome: r.version > before ? 'done' : 'failed' }
+        return { ...reply, outcome: r.version > before ? 'done' : 'failed', made: { by: 'note', summary: note } }
       },
       { note: note || files.map((f) => f.name).join(', ') }
     )
@@ -731,7 +731,8 @@ function registerIpc(): void {
       )
       const version = Number(r?.version ?? (await readProject(slug)).version)
       emit({ type: 'render', version, draft: false, ...(r?.file ? { file: String(r.file) } : {}) })
-      return { summary: versionMessage(version, typeof change === 'string' ? change.slice(0, 200) : ''), version }
+      const what = typeof change === 'string' ? change.slice(0, 200) : ''
+      return { summary: versionMessage(version, what), version, made: { by: 'hand', summary: what } }
     })
     return { jobId }
   })

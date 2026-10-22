@@ -224,6 +224,8 @@ export function PhonePlayer({
   src,
   poster,
   autoPlayMuted,
+  playRequest,
+  onPlayRequestHandled,
   subtitle,
   instagram,
   caption,
@@ -248,6 +250,10 @@ export function PhonePlayer({
   poster?: string | null
   /** First arrival after Working: start playing, muted, with a "Tap for sound" chip. */
   autoPlayMuted?: boolean
+  /** Each new number starts playing, with sound (the person just picked this version). */
+  playRequest?: number
+  /** Called once a play request has started, so the caller can drop it. */
+  onPlayRequestHandled?: () => void
   /** Live preview of the subtitle style (the drawer). */
   subtitle?: { look: SubtitleLook; text: string } | null
   /** Faint Instagram buttons + caption area over the video. */
@@ -402,6 +408,19 @@ export function PhonePlayer({
   useEffect(() => {
     if (asking) video.current?.pause()
   }, [asking])
+
+  // A picked version plays with sound once its own video is on screen (it loads under the old one first).
+  useEffect(() => {
+    if (!playRequest || layers.shown?.src !== src) return
+    const v = video.current
+    setMuted(false)
+    if (v) {
+      v.muted = false
+      void v.play().catch(() => {})
+    }
+    onPlayRequestHandled?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one run per request, not per callback identity
+  }, [playRequest, shownId])
 
   // Hold "Original": play the raw footage from the moment on screen, over the reel, then go back to the reel
   // where it was. Both are stacked, so only opacity changes; only the one on screen plays. The raw footage
