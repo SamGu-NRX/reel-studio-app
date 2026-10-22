@@ -763,7 +763,8 @@ function registerIpc(): void {
   handle('projects:coverCandidates', async (_e, slug: string, moments: number[], source: string): Promise<CoverCandidate[]> => {
     const at = moments.filter((t) => Number.isFinite(t) && t >= 0).slice(0, COVER_SUGGESTIONS)
     if (!at.length) return []
-    const r = await coverScans.scan(slug, ['--project', projectDir(slug), '--at', at.join(','), '--source', source])
+    // During a note the project's job holds work/.owner.lock; the scan joins it with that job's token (note-atomic)
+    const r = await coverScans.scan(slug, owned(['--project', projectDir(slug), '--at', at.join(','), '--source', source], jobs.ownerToken(slug)))
     return parseCoverCandidates(r, source, projectDir(slug))
   })
   handle('projects:stopCoverCandidates', (_e, slug: string) => coverScans.stop(slug))

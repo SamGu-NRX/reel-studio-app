@@ -229,8 +229,19 @@ export function createJobManager(
   }
 
   /** Marks the project open, then finishes a job app.json still records, before anything else writes. */
+  /** The token of the job or manual edit that has each project open (`ownerToken`). */
+  const tokens = new Map<string, string>()
+
   async function enter(slug: string): Promise<ProjectOwner> {
-    const owner = await claimProject(projectDir(slug))
+    const claimed = await claimProject(projectDir(slug))
+    tokens.set(slug, claimed.token)
+    const owner: ProjectOwner = {
+      token: claimed.token,
+      release: async () => {
+        if (tokens.get(slug) === claimed.token) tokens.delete(slug)
+        await claimed.release()
+      }
+    }
     try {
       if ((await settleInterrupted(slug)) === 'unreadable') {
         throw { code: 'PROJECT_UNREADABLE', userMessage: 'I could not read this video right now. Try again in a moment.' }
@@ -267,6 +278,9 @@ export function createJobManager(
   return {
     start,
     hold,
+    /** The owner token of the job or manual edit that has `slug` open, or null. Work that runs beside it on the
+     * same project (the cover picker's scan) passes it as `--owner`, as the job's own engine commands do. */
+    ownerToken: (slug: string): string | null => tokens.get(slug) ?? null,
     keepClosed,
     forSlug,
     get: (id: string) => jobs.get(id),
