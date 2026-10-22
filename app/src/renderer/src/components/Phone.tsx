@@ -84,7 +84,7 @@ export function PhoneViewSwitch({ value, onChange }: { value: PhoneView; onChang
           title={v === 'instagram' ? 'Your reel under Instagram’s buttons and caption' : 'Your reel alone'}
           onClick={() => onChange(v)}
           onKeyDown={(e) => {
-            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+            if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return
             e.preventDefault()
             const next = v === 'instagram' ? 'clean' : 'instagram'
             onChange(next)
