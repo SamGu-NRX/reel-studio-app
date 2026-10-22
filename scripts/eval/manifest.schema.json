@@ -1,0 +1,133 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "clips"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "clips": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "description",
+          "notes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          },
+          "path": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "transcript": {
+            "type": "string"
+          },
+          "expectedProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "text",
+                "allowPaths"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9_-]+$"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "category": {
+                  "type": "string"
+                },
+                "allowPaths": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^/"
+                  }
+                },
+                "mockTools": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "args"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "args": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "expectedOutcome": {
+            "enum": [
+              "no_audio"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "expectedOutcome": {
+                  "const": "no_audio"
+                }
+              },
+              "required": [
+                "expectedOutcome"
+              ]
+            },
+            "then": {
+              "properties": {
+                "notes": {
+                  "maxItems": 0
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "notes": {
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

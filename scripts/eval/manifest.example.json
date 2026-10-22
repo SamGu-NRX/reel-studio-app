@@ -1,0 +1,15 @@
+{
+  "$schema": "./manifest.schema.json",
+  "schemaVersion": 1,
+  "clips": [{
+    "id": "synthetic-speech",
+    "path": "generated://synthetic-speech",
+    "description": "Generated test pattern with individually synthesized spoken words and a repeated phrase.",
+    "expectedProperties": ["generated word slots", "repeated phrase"],
+    "notes": [
+      {"id":"remove-repeat","text":"Remove the second hello and the phrase after it.","category":"cut","allowPaths":["/cut/keep"],"mockTools":[{"name":"set_cut","args":{"keep":[{"from":"w0","to":"w5"}]}}]},
+      {"id":"captions-up","text":"Make the captions bigger and move them higher.","category":"captions","allowPaths":["/captions/style/size","/captions/style/position"],"mockTools":[{"name":"set_caption_style","args":{"size":120,"position":0.68}}]},
+      {"id":"zoom-hello","text":"Add a gentle zoom to the first hello.","category":"visuals","allowPaths":["/zooms"],"mockTools":[{"name":"set_zoom","args":{"zooms":[{"anchor":{"from":"w0","to":"w1"},"scale":1.1}]}}]}
+    ]
+  }]
+}
