@@ -46,12 +46,9 @@ for (const source of ['paste', 'open-file before ready', 'second-instance argv']
         await page.getByTestId('share-no').click()
       } else await passFirstRun(page)
       if (source === 'paste') {
-        await app.evaluate(async ({ clipboard, ClipboardItem }, url) => {
-          const previous = await clipboard.read()
-          globalThis.__intakeClipboard = await Promise.all(previous.map(async (item) => new ClipboardItem(Object.fromEntries(
-            await Promise.all(item.types.map(async (type) => [type, await item.getType(type)]))
-          ))))
-          await clipboard.write([new ClipboardItem({ 'electron application/osclipboard;format="public.file-url"': new Blob([url]) })])
+        // the app's stand-in clipboard under test (main/index.ts testClipboard): the system clipboard is never read or written
+        await app.evaluate(({ ClipboardItem }, url) => {
+          globalThis.__reelClipboard.items = [new ClipboardItem({ 'electron application/osclipboard;format="public.file-url"': new Blob([url]) })]
         }, pathToFileURL(media.video).href)
         await page.evaluate(() => window.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true })))
       } else if (source === 'second-instance argv') {
@@ -67,14 +64,11 @@ for (const source of ['paste', 'open-file before ready', 'second-instance argv']
       expect(projects).toHaveLength(1)
       expect(projects[0].title).toBe('My first take')
     } finally {
-      if (source === 'paste') await app.evaluate(async ({ clipboard }) => {
-        if (globalThis.__intakeClipboard) await clipboard.write(globalThis.__intakeClipboard)
-      })
       await app.close()
     }
   })
 }
 
 declare global {
-  var __intakeClipboard: Electron.ClipboardItem[] | undefined
+  var __reelClipboard: { items: Electron.ClipboardItem[] }
 }

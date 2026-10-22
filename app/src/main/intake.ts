@@ -7,9 +7,10 @@ export function filesFromArgv(argv: string[], cwd: string, defaultApp: boolean):
   return argv.slice(defaultApp ? 2 : 1).filter((arg) => !arg.startsWith('-')).map((arg) => isAbsolute(arg) ? arg : resolve(cwd, arg))
 }
 
-export async function clipboardFiles(): Promise<string[]> {
+/** `read` is the system clipboard; tests hand in their own items so a run never reads or replaces the person's. */
+export async function clipboardFiles(read: () => Promise<Electron.ClipboardItem[]> = () => clipboard.read()): Promise<string[]> {
   const paths: string[] = []
-  for (const item of await clipboard.read()) {
+  for (const item of await read()) {
     for (const type of item.types) {
       if (type === 'electron application/osclipboard;format="public.file-url"') {
         const value = await item.getType(type)
