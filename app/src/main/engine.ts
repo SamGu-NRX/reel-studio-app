@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { delimiter } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
-import { killTree } from './proctree'
+import { groupAlive, killTree } from './proctree'
 
 export interface EngineProgress {
   stage: string
@@ -91,23 +91,42 @@ export interface RunnerConfig {
   env: () => NodeJS.ProcessEnv
   cwd?: () => string
   log?: (line: string) => void
-  /** Called with the engine's pid right after it starts (tests use this). */
-  onSpawn?: (pid: number) => void
-  /** Called when that engine process has exited. */
+  /** Called with the engine's pid and its `--project` right after it starts. */
+  onSpawn?: (pid: number, project: string | null) => void
+  /** Called once that engine and everything it started have exited; never for a group that would not die. */
   onExit?: (pid: number) => void
 }
 
-// How long shutdown waits for a killed engine's pipes to close. 5 s is the figure the PR review suggested; it was not
-// measured.
+// How long an engine that has exited may keep its pipes open before it counts as gone. 5 s is the figure the PR review
+// suggested; it was not measured.
 const CLOSE_WAIT_MS = 5000
 
 const running = new Set<ChildProcess>()
-// Cancellation settles before process-group termination; shutdown must still await that drain.
-const stopping = new Set<Promise<void>>()
 
 /** Kills every engine process this runner started. Used when the app quits. */
 export async function killAllEngines(): Promise<void> {
-  await Promise.all([...stopping, ...[...running].map((c) => (c.pid ? killTree(c.pid) : Promise.resolve()))])
+  await Promise.all([...running].map((c) => (c.pid ? killTree(c.pid) : Promise.resolve())))
+}
+
+/** Settles once the engine has exited and nothing it started is left in its process group (false
+ * when something survived SIGKILL): an engine that died early must not leave an ffmpeg writing into
+ * a project its job has let go of. Windows has no groups; there the engine's Job Object ends its
+ * children with it (engine/reelengine/contain.py). */
+function ended(child: ChildProcess, pipesHeld: () => void): Promise<boolean> {
+  return new Promise<void>((resolve) => {
+    child.once('close', () => resolve())
+    // `close` waits for every copy of the stdio pipes. A grandchild that left the process group can hold one open
+    // forever, and then a cancel, quitting and --self-test would hang, so stop waiting CLOSE_WAIT_MS after the exit.
+    const bound = (): void => {
+      const timer = setTimeout(() => {
+        pipesHeld()
+        resolve()
+      }, CLOSE_WAIT_MS)
+      child.once('close', () => clearTimeout(timer))
+    }
+    if (child.exitCode !== null || child.signalCode !== null) bound()
+    else child.once('exit', bound)
+  }).then(() => !child.pid || process.platform === 'win32' || !groupAlive(child.pid) || killTree(child.pid))
 }
 
 export function createEngineRunner(cfg: RunnerConfig) {
@@ -116,7 +135,7 @@ export function createEngineRunner(cfg: RunnerConfig) {
     args: string[],
     onProgress?: (p: EngineProgress) => void,
     signal?: AbortSignal,
-    /** Called once the process is gone. Cancelling rejects at once, before the process has exited. */
+    /** Called once the process is gone, or at once when it never started. */
     onExit?: () => void
   ): Promise<unknown> {
     return new Promise((resolvePromise, rejectPromise) => {
@@ -146,44 +165,39 @@ export function createEngineRunner(cfg: RunnerConfig) {
         stdio: ['ignore', 'pipe', 'pipe']
       })
       running.add(child)
-      if (child.pid) cfg.onSpawn?.(child.pid)
-      let gone = false
+      if (child.pid) cfg.onSpawn?.(child.pid, args.includes('--project') ? args[args.indexOf('--project') + 1] : null)
+      let exitReported = false
       const markGone = (): void => {
-        if (gone) return
-        gone = true
+        if (exitReported) return
+        exitReported = true
         onExit?.()
       }
 
+      const gone = ended(child, () => log(`[engine ${command}] pipes still open ${CLOSE_WAIT_MS} ms after it exited`))
+      void gone.then((clean) => {
+        running.delete(child)
+        markGone()
+        // a group that would not die stays registered, so the next start finds it (orphans.ts)
+        if (clean && child.pid) cfg.onExit?.(child.pid)
+      })
       const finish = (fn: () => void): void => {
         if (settled) return
         settled = true
-        running.delete(child)
         signal?.removeEventListener('abort', onAbort)
         fn()
       }
 
+      // Every outcome settles only once the engine and everything it started have exited: whoever runs
+      // next on this project (a new note, a cleanup) must never share its files with a dying render.
       const onAbort = (): void => {
-        if (child.pid) {
-          const closed = new Promise<void>((resolve) => child.once('close', () => resolve()))
-          // `close` waits for every copy of the stdio pipes. A grandchild that left the process group can hold one
-          // open forever, and then quitting and --self-test would hang, so stop waiting CLOSE_WAIT_MS after the kill.
-          const stopped = killTree(child.pid).then(
-            () =>
-              new Promise<void>((resolve) => {
-                const timer = setTimeout(() => {
-                  log(`[engine ${command}] pipes still open ${CLOSE_WAIT_MS} ms after the kill`)
-                  resolve()
-                }, CLOSE_WAIT_MS)
-                void closed.then(() => {
-                  clearTimeout(timer)
-                  resolve()
-                })
-              })
-          )
-          stopping.add(stopped)
-          void stopped.finally(() => stopping.delete(stopped))
-        }
-        finish(() => rejectPromise(cancelled()))
+        if (settled) return
+        settled = true
+        signal?.removeEventListener('abort', onAbort)
+        // Windows kills by pid, and an engine that has already exited may have handed its pid on
+        const exited = child.exitCode !== null || child.signalCode !== null
+        const kill = child.pid && !(exited && process.platform === 'win32') ? killTree(child.pid) : true
+        void Promise.all([kill, gone]).then(([killed, clean]) =>
+          rejectPromise(killed && clean ? cancelled() : stuck(child.pid)))
       }
       signal?.addEventListener('abort', onAbort, { once: true })
 
@@ -216,15 +230,13 @@ export function createEngineRunner(cfg: RunnerConfig) {
         )
       })
       child.on('close', (code, exitSignal) => {
-        if (child.pid) cfg.onExit?.(child.pid)
-        markGone()
         out.end()
         err.end()
         log(`[engine ${command}] closed exitCode=${code} signal=${exitSignal ?? 'none'}`)
-        finish(() => {
+        void gone.then((clean) => finish(() => {
           const r = result as typeof result
-          // A terminal protocol result survives a signal during engine shutdown.
-          if (r?.ok === true) resolvePromise(r.value)
+          if (!clean) rejectPromise(stuck(child.pid))
+          else if (r?.ok === true) resolvePromise(r.value)
           else if (r?.ok === false) rejectPromise(r.err)
           else
             rejectPromise({
@@ -232,7 +244,7 @@ export function createEngineRunner(cfg: RunnerConfig) {
               userMessage: GENERIC_ERROR,
               message: `${exitSignal ? `signal ${exitSignal}` : `exit ${code}`}: ${stderrTail.slice(-8).join('\n')}`
             } satisfies EngineError)
-        })
+        }))
       })
     })
   }
@@ -242,6 +254,15 @@ export type RunEngine = ReturnType<typeof createEngineRunner>
 
 function cancelled(): EngineError {
   return { code: 'CANCELLED', userMessage: 'Stopped.' }
+}
+
+/** Something the engine started would not stop: it may still be writing (jobs.ts keeps the project closed). */
+function stuck(pid: number | undefined): EngineError {
+  return {
+    code: 'ENGINE_STUCK',
+    userMessage: "Part of Reel Studio's video engine would not stop. Restart Reel Studio before you change this video again.",
+    message: `process group ${pid} is still alive after SIGKILL`
+  }
 }
 
 export function isEngineError(e: unknown): e is EngineError {

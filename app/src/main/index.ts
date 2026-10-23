@@ -38,7 +38,6 @@ import {
   readJson,
   readProject,
   readWords,
-  recoverInterrupted,
   titleFromFile,
   uniqueSlug,
   updateAppState,
@@ -58,6 +57,7 @@ import { createModelManager } from './models'
 import { createWorkGate } from './work-gate'
 import { loadSettings, saveSettings } from './settings'
 import { createPidRegistry } from './orphans'
+import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
 import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord } from '../shared/api'
@@ -70,7 +70,7 @@ import { mergeSourcesPatch } from '../shared/mirror'
 import { displayPath } from '../shared/display-path'
 import { RELEASES_REPO } from '../shared/config'
 import { registerPhoneIpc, stopPhoneShare } from './phone-ipc'
-import { checkNoteAttachments, forChat, pickClipboardType, registerAttachmentIpc } from './attachments'
+import { forChat, pickClipboardType, registerAttachmentIpc } from './attachments'
 import { RELEASES_API, releasePageBackend, type FetchLike, createUpdateService } from './update-check'
 import { createPermissions, notificationsWanted, parseFakes, type NotifyResult, type Permissions } from './permissions'
 import { helperInstruction, MAC_PANES } from './mac-permission'
@@ -80,6 +80,7 @@ import { autoUpdater } from 'electron-updater'
 import { electronUpdaterBackend, macBundleCheck, windowsInstaller } from './updater-electron'
 import { disabledReason, updateMode } from './update-machine'
 import { createJobFeedback, createMainWindow, feedbackLog, installMenu, startDragOut, windowStateFile, type AppCommand, titleBarOverlay } from './window'
+import { takeNote } from './note-intake'
 
 const TEST = process.env.REELSTUDIO_TEST === '1'
 const DEV_PROVIDERS = process.env.REELSTUDIO_DEV === '1'
@@ -145,7 +146,7 @@ const runEngine: RunEngine = createEngineRunner({
   env: engineEnv,
   cwd: engineDir,
   log,
-  onSpawn: (pid) => pidRegistry?.add(pid),
+  onSpawn: (pid, project) => pidRegistry?.add(pid, project),
   onExit: (pid) => pidRegistry?.remove(pid)
 })
 
@@ -526,7 +527,8 @@ function registerIpc(): void {
     log,
     projectDir,
     readProject,
-    busy: (slug) => !!jobs.forSlug(slug),
+    busy: (slug) => jobs.isClosed(slug),
+    refuse: (slug) => jobs.refuseIfBusy(slug),
     clipboardImage: async () => {
       // Electron's async clipboard: the first item that carries a picture, as bytes
       for (const item of await clipboard.read()) {
@@ -643,16 +645,15 @@ function registerIpc(): void {
     return { jobId: startFirstEdit(slug, null) }
   })
   handle('projects:note', async (_e, slug: string, text: string, attachments?: unknown, at?: unknown) => {
-    const typedText = String(text ?? '').trim()
+    const dir = projectDir(slug)
+    // never trust the page: every attached ref is re-read from THIS project's own sidecars, and a video a job runs
+    // on, or one kept closed, refuses the note before the chat shows it (note-intake.ts)
+    const { note: typedText, files } = await takeNote(jobs, slug, text, attachments)
     // "At 1:00: zoom in" with Just here: the typed time is the moment, and the words are the note
     const typed = at !== undefined ? typedMoment(typedText) : null
     let note = typed ? typed.rest : typedText
-    const dir = projectDir(slug)
-    // never trust the page: every attached ref is re-read from THIS project's own sidecars
-    const files = await checkNoteAttachments(dir, attachments)
     if (!note && !files.length) throw { code: 'EMPTY', userMessage: 'Type what you would like changed first.' }
     if (!note && typed) note = 'Put this here' // a typed time and a file, as the pop-up says it
-    if (jobs.forSlug(slug)) throw { code: 'BUSY', userMessage: 'I am still working on this video. Give me a moment, or press Stop.' }
     let moment: NoteMoment | undefined
     if (at !== undefined) {
       let asked: NoteMoment
@@ -708,7 +709,7 @@ function registerIpc(): void {
     return readTimeline(slug, n)
   })
   handle('projects:update', async (_e, slug: string, patch: Partial<ProjectJson>) => {
-    if (jobs.forSlug(slug)) throw { code: 'BUSY', userMessage: 'I am still working on this video. Give me a moment, or press Stop.' }
+    jobs.refuseIfBusy(slug)
     const p = await readProject(slug)
     for (const k of Object.keys(patch ?? {}) as (keyof ProjectJson)[]) {
       // the "Flip picture" toggle: only each take's mirror flag, never its path or size
@@ -779,6 +780,8 @@ function registerIpc(): void {
       jobs.cancel(running.id)
       await running.done
     }
+    // a video kept closed stays: part of its engine may still be writing into the folder
+    jobs.refuseIfBusy(slug)
     await fs.rm(projectDir(slug), { recursive: true, force: true })
   })
 
@@ -1019,10 +1022,7 @@ app.whenReady().then(async () => {
     if (move === 'moving') return // this copy quits; the one in Applications opens
   }
   pidRegistry = createPidRegistry(settingsDir())
-  const reaped = await pidRegistry.reap().catch(() => 0)
-  if (reaped) log(`[start] stopped ${reaped} engine process(es) left over from a crash`)
-  const settings = await loadSettings()
-  if (settings.root) setRootOverride(settings.root)
+  const settings = await settleLastRun(pidRegistry, (slug) => jobs.keepClosed(slug), log)
   notificationsOn = notificationsWanted(settings, process.platform)
   perms = createPermissions({
     platform: process.platform,
@@ -1038,15 +1038,6 @@ app.whenReady().then(async () => {
     fakes: TEST ? parseFakes(process.env.REELSTUDIO_TEST_PERMISSIONS) : undefined
   })
   if (TEST) Object.assign(globalThis, { __reelPermFakes: perms.fakes, __reelPermLog: paneLog })
-  // Touching the folder in Documents is what makes macOS ask, so first run explains it before it is made.
-  if (settings.firstRunDone) {
-    await ensureRoot().catch((e) => log(`[root] ${String(e)}`))
-    const recovered = await recoverInterrupted().catch((e) => {
-      log(`[recover] ${String(e)}`)
-      return []
-    })
-    if (recovered.length) log(`[recover] cleaned up ${recovered.join(', ')}`)
-  }
   const loaded = await loadAI(
     {
       host,
