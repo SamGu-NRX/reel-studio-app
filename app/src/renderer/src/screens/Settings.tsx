@@ -84,6 +84,23 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
 
   const update = useUpdateState()
   const [savingExports, setSavingExports] = useState(false)
+  // Double-check each edit (main/settings.ts checkEdits): off by default, read once like the other switches
+  const [checkEdits, setCheckEdits] = useState<boolean | null>(null)
+  const [savingChecks, setSavingChecks] = useState(false)
+  useEffect(() => {
+    reel.ai.checkEdits().then(setCheckEdits).catch(() => {})
+  }, [])
+  const toggleCheckEdits = async () => {
+    if (checkEdits === null) return
+    setSavingChecks(true)
+    try {
+      setCheckEdits(await reel.ai.setCheckEdits(!checkEdits))
+    } catch (e) {
+      notify(userMessage(e), 'error')
+    } finally {
+      setSavingChecks(false)
+    }
+  }
   const toggleExports = async () => {
     setSavingExports(true)
     try {
@@ -197,6 +214,13 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
               <div className="srow picker-row" data-setting="editor" hidden={!shown('editor')}>
                 <ConnectAI advanced={false} />
               </div>
+              {checkEdits !== null && (
+                <SettingRow
+                  id="check-edits"
+                  line="After each note, your editor looks at the change again and fixes what it missed. Notes take longer and use more of your AI plan."
+                  control={<Switch on={checkEdits} disabled={savingChecks} labelledBy="set-check-edits" onToggle={() => void toggleCheckEdits()} testid="check-edits" />}
+                />
+              )}
               {hits ? (
                 ADVANCED.some(shown) && advanced
               ) : (

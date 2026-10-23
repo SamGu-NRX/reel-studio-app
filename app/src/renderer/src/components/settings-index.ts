@@ -17,6 +17,7 @@ const SHARING_WORDS = ['telemetry', 'analytics', 'data sharing']
 
 export const SETTINGS = {
   editor: { section: 'editor', label: 'Choose your editor', synonyms: ['AI', 'AI editor', 'Claude', 'Claude Code', 'ChatGPT', 'OpenAI', 'GPT', 'provider', 'connect', 'sign in', 'log in', 'sign out', 'disconnect', 'account', 'plan', 'subscription'] },
+  'check-edits': { section: 'editor', label: 'Double-check each edit', synonyms: ['check', 'checker', 'double check', 'review', 'second look', 'verify', 'fix', 'mistakes'] },
   'model-edits': { section: 'editor', label: 'Edits', synonyms: [...MODEL_WORDS, 'editor model', 'makes the edits'] },
   'model-checks': { section: 'editor', label: 'Checks each edit', synonyms: [...MODEL_WORDS, 'checker', 'review', 'second opinion', 'verify'] },
   'model-titles': { section: 'editor', label: 'Writes titles', synonyms: [...MODEL_WORDS, 'writer', 'titles', 'summaries', 'small model', 'fast model'] },
