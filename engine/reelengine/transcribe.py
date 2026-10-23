@@ -773,14 +773,29 @@ def run(project_dir: Path, model_name: Optional[str] = None, language: Optional[
         name = default_model()             # the model this project used before is gone: use ours
     if language and not language.startswith("en") and name.endswith(".en"):
         name = MULTILINGUAL_MODEL          # English-only models cannot hear other languages
-    require_model(name)
+    from . import footage
+    index_root = _library_root(project_dir) or tools.root_dir()
+    sources = {src["id"]: projmod.source_path(project_dir, src, root=index_root) for src in proj["sources"]}
+    cached = {}
+    # Project-specific decoding requests need whisper; the Library index has no prompt or hints.
+    if not prompt and os.environ.get("REELENGINE_HINTS") != "1":
+        for sid, path in sources.items():
+            found = footage.lookup(index_root, path, name, language)
+            if found is not None:
+                cached[sid] = found
+    needs_model = len(cached) != len(proj["sources"])
+    if needs_model:
+        require_model(name)
 
     progress(STAGE, 1, "Getting your video ready", force=True)
     t0 = time.time()
     wavs = {}
     audio_sources = []
     for i, src in enumerate(proj["sources"]):
-        sp = projmod.source_path(project_dir, src)
+        if src["id"] in cached:
+            audio_sources.append(src)      # already heard: its words come from the footage index
+            continue
+        sp = sources[src["id"]]
         has_audio = any(stream.get("codec_type") == "audio"
                         for stream in probemod.ffprobe_json(sp).get("streams", []))
         if not has_audio:
@@ -798,9 +813,11 @@ def run(project_dir: Path, model_name: Optional[str] = None, language: Optional[
                           "and try again.")
     t_extract = time.time() - t0
 
-    progress(STAGE, 9, "Waking up the listening model", force=True)
     t1 = time.time()
-    model, dev, compute = load_model(name, prefer=device)
+    model, dev, compute = None, "index", None
+    if needs_model:
+        progress(STAGE, 9, "Waking up the listening model", force=True)
+        model, dev, compute = load_model(name, prefer=device)
     t_load = time.time() - t1
     log(f"# whisper {name} on {dev} ({compute}), loaded in {t_load:.1f}s")
 
@@ -839,16 +856,20 @@ def run(project_dir: Path, model_name: Optional[str] = None, language: Optional[
         dur = float(src.get("duration") or 0.0)
         p0 = 10 + 80 * done_dur / total_dur
         p1 = 10 + 80 * (done_dur + dur) / total_dur
-        words, segs, got_lang = _transcribe_one(model, wavs[src["id"]], lang, hints["initialPrompt"],
-                                                dur, p0, p1, hotwords=hints["hotwords"])
+        if src["id"] in cached:
+            words, segs, got_lang = cached[src["id"]]
+        else:
+            words, segs, got_lang = _transcribe_one(model, wavs[src["id"]], lang, hints["initialPrompt"],
+                                                   dur, p0, p1, hotwords=hints["hotwords"])
         lang = lang or got_lang
-        samples = audio_env.read_wav(wavs[src["id"]])
-        env = audio_env.envelope(samples)
-        thresh = audio_env.noise_threshold(env)
         for w in words:
             w["source"] = src["id"]
         words.sort(key=lambda w: (w["s"], w["e"]))
-        words = audio_env.refine_words(words, env, thresh, len(samples) / audio_env.SR)
+        if src["id"] not in cached:
+            samples = audio_env.read_wav(wavs[src["id"]])
+            env = audio_env.envelope(samples)
+            thresh = audio_env.noise_threshold(env)
+            words = audio_env.refine_words(words, env, thresh, len(samples) / audio_env.SR)
         if terms:
             try:
                 words, _ = vocabmod.correct(words, terms, is_common)

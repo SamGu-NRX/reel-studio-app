@@ -152,7 +152,12 @@ export async function classifyByExtension(files: string[]): Promise<DropResult[]
 }
 
 /** Sorts dropped files into the Library with the engine's classifier; falls back to extensions. */
-export async function addToLibrary(files: string[], runEngine: RunEngine, log: (s: string) => void): Promise<DropResult[]> {
+export async function addToLibrary(files: string[], runEngine: RunEngine, log: (s: string) => void, onAdded?: () => void): Promise<DropResult[]> {
+  const finish = (results: DropResult[]): DropResult[] => {
+    if (results.some((r) => r.dest && r.dest !== r.file &&
+      (VIDEO_EXT.has(extname(r.dest).toLowerCase()) || AUDIO_EXT.has(extname(r.dest).toLowerCase())))) onAdded?.()
+    return results
+  }
   if (!files.length) return []
   // Folders and files that are already in the Library are not copied again.
   const lib = resolve(libraryDir())
@@ -165,7 +170,7 @@ export async function addToLibrary(files: string[], runEngine: RunEngine, log: (
     else if (resolve(f).startsWith(lib)) out.push({ file: f, name: basename(f), bin: binForFolder(f), dest: f })
     else todo.push(f)
   }
-  if (!todo.length) return out
+  if (!todo.length) return finish(out)
   try {
     const res: any = await logDuration(`[library] classify fileCount=${todo.length}`, log, () =>
       runEngine('classify', ['--root', reelStudioRoot(), ...todo])
@@ -182,9 +187,9 @@ export async function addToLibrary(files: string[], runEngine: RunEngine, log: (
         reason: dest ? undefined : String(r.reason ?? r.userMessage ?? 'This file could not be sorted.')
       })
     }
-    return out
+    return finish(out)
   } catch (e) {
     log(`[library] engine classify failed, sorting by file type: ${JSON.stringify(e)}`)
-    return [...out, ...(await classifyByExtension(todo))]
+    return finish([...out, ...(await classifyByExtension(todo))])
   }
 }

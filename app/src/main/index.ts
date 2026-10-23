@@ -72,6 +72,7 @@ import type { SoundEffect } from '../shared/sfx'
 import { mediaUrl } from './media-url'
 import { withRenderSlot } from './render-slot'
 import { titleVersion } from './version-title'
+import { createFootageIndexer } from './footage-index'
 import { createLiveVideos } from './live-video'
 import { replyChat, styleConsent, type ChatLine, answerStyleQuestion, rememberQuestion } from './style-consent'
 import type { AgentResult } from './ai-types'
@@ -216,6 +217,8 @@ if (TEST) (globalThis as { __reelFeedback?: unknown }).__reelFeedback = feedback
 const testClipboard: { items: Electron.ClipboardItem[] } = { items: [] }
 if (TEST) (globalThis as { __reelClipboard?: unknown }).__reelClipboard = testClipboard
 const workGate = createWorkGate()
+const footageIndex = createFootageIndexer({ runEngine, root: reelStudioRoot, busy: () => jobs.runningCount() > 0 })
+const indexLibrary = (): void => { if (!TEST) void footageIndex.request() }
 // Honest progress (main/progress.ts): phase times measured on this computer, per minute of video.
 const speedHistoryFile = (): string => join(settingsDir(), 'speed-history.json')
 // Paused without you (main/pause.ts): work a plan limit, no internet, sleep or a quit stopped goes on by itself.
@@ -280,7 +283,8 @@ const jobs = createJobManager(
   // render events carry a playable URL (a stable copy for drafts: main/live-video.ts)
   ((live) => (slug: string, e) => live(projectDir(slug), e))(createLiveVideos()),
   workGate,
-  () => updates.assertCanStartWork()
+  () => updates.assertCanStartWork(),
+  footageIndex
 )
 
 /** A note job: the AI applies it as one all-or-nothing change (ai applyNote) on the newest version. */
@@ -444,6 +448,7 @@ async function appInfo(): Promise<AppInfo> {
     rootDisplay: rootDisplay(root),
     firstRunDone: s.firstRunDone,
     fasterExports: s.fasterExports,
+    footageIndex: footageIndex.status(),
     engine: { mode: engineMode(), dir: engineDir(), python: pythonExe() },
     ai: aiSource,
     test: TEST,
@@ -575,6 +580,7 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
   const video = uniqueDest(exportsDir, `${name}.mp4`)
   const stem = basename(video, '.mp4')
   await fs.copyFile(v.videoPath, video)
+  indexLibrary()
   let cover: string | null = null
   const coverSrc = join(dirname(v.videoPath), 'cover.png')
   if (existsSync(coverSrc)) {
@@ -695,10 +701,18 @@ function registerIpc(): void {
     if (jobs.runningCount()) throw { code: 'BUSY', userMessage: 'Wait until no reel is being made, then change where reels are kept.' }
     const root = basename(p) === 'Reel Studio' ? p : join(p, 'Reel Studio')
     await fs.mkdir(root, { recursive: true })
-    await saveSettings({ root })
-    setRootOverride(root)
-    await ensureRoot()
-    perms.markTouched()
+    // indexing pauses while the Library moves, and starts again in the new place (footage-search-tool)
+    await footageIndex.pause()
+    try {
+      if (jobs.runningCount()) throw { code: 'BUSY', userMessage: 'Wait until your video is finished, then change where videos are kept.' }
+      await saveSettings({ root })
+      setRootOverride(root)
+      await ensureRoot()
+      perms.markTouched()
+      indexLibrary()
+    } finally {
+      footageIndex.resume()
+    }
     return appInfo()
   })
 
@@ -739,7 +753,11 @@ function registerIpc(): void {
   })
 
   handle('model:status', () => models.status())
-  handle('model:download', () => models.download())
+  handle('model:download', async () => {
+    const status = await models.download()
+    if (status.installed) indexLibrary()
+    return status
+  })
   handle('model:find', () => models.find())
   handle('model:cancel', () => models.cancel())
 
@@ -812,7 +830,7 @@ function registerIpc(): void {
   const takeVideos = async (files: string[]): Promise<{ videos: string[]; skipped: DropResult[] }> => {
     const videos = files.filter(isVideo)
     const others = files.filter((f) => !isVideo(f))
-    const skipped: DropResult[] = others.length ? await addToLibrary(others, runEngine, log) : []
+    const skipped: DropResult[] = others.length ? await addToLibrary(others, runEngine, log, indexLibrary) : []
     if (!videos.length) {
       const sorted = skipped.filter((s) => s.bin)
       throw {
@@ -1061,7 +1079,7 @@ function registerIpc(): void {
   })
   handle('library:add', async (_e, paths: string[]) => {
     await ensureRoot()
-    return addToLibrary(paths, runEngine, log)
+    return addToLibrary(paths, runEngine, log, indexLibrary)
   })
   handle('library:choose', async (_e, kind: 'music' | 'images') => {
     const filters =
@@ -1075,7 +1093,7 @@ function registerIpc(): void {
     })
     if (r.canceled || !r.filePaths.length) return []
     await ensureRoot()
-    return addToLibrary(r.filePaths, runEngine, log)
+    return addToLibrary(r.filePaths, runEngine, log, indexLibrary)
   })
 
   handle('library:preview', (_e, file: string) => libraryPreview(file))
@@ -1438,6 +1456,7 @@ app.whenReady().then(async () => {
       awake = null
     }
   }, 5000).unref()
+  indexLibrary()
   await updates.init()
   updates.start() // 15 s after the window, so launch is never slower
   // A model that was here before the timing check existed, or whose check a video interrupted, so it never slows launch.
@@ -1451,7 +1470,9 @@ let quitting = false
 app.on('before-quit', (e) => {
   void stopPhoneShare() // the "Send to my phone" link never outlives the app
   permissionHelper.close()
-  if (quitting || (!jobs.runningCount() && !cloudSavesRunning())) {
+  const indexing = footageIndex.status().state === 'indexing'
+  if (quitting || (!jobs.runningCount() && !cloudSavesRunning() && !indexing)) {
+    void footageIndex.stop()
     void killAllEngines()
     return
   }
@@ -1477,7 +1498,7 @@ app.on('before-quit', (e) => {
     }
     quitting = true
     noteQueue.quit()
-    await Promise.allSettled([jobs.cancelAll().then(() => killAllEngines()), cloudSavesSettled()]).finally(() => app.quit())
+    await Promise.allSettled([jobs.cancelAll().then(() => killAllEngines()), cloudSavesSettled(), footageIndex.stop()]).finally(() => app.quit())
   })()
 })
 let askingToQuit = false

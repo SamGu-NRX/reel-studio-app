@@ -1,5 +1,6 @@
 // Long-running work (first edit, notes, re-renders). One job per project at a time. Every event
 // goes to the renderer; app.json records the running job so a crash can be recovered at startup.
+import type { IdleWork } from './footage-index'
 import { randomUUID } from 'node:crypto'
 import type { JobEvent, JobKind, JobUpdate, PausedFor, Phase, VersionMade } from '../shared/api'
 import { cleanPartialVersions, listVersions, projectDir, recordVersionMade, settleNote, updateAppState, settleInterrupted, stamp, type AppState } from './store'
@@ -70,7 +71,9 @@ export function createJobManager(
   toVideo?: ToVideo,
   gate?: WorkGate,
   /** The updater refuses new work while it restarts to install (main/updater.ts). */
-  assertCanStart: () => void = () => {}
+  assertCanStart: () => void = () => {},
+  /** Background work that yields while any job runs (footage-index.ts: indexing Library footage). */
+  idleWork?: IdleWork
 ) {
   const jobs = new Map<string, Running>()
 
@@ -156,6 +159,8 @@ export function createJobManager(
     job.done = (async () => {
       const leaveGate = await gate?.enterJob()
       try {
+        await idleWork?.pause()
+        if (abort.signal.aborted) throw { code: 'CANCELLED', userMessage: 'Stopped.' }
         // Inside the try: if even this fails, the user gets an error instead of a job that never ends.
         if (slug) {
           owner = await enter(slug)
@@ -290,6 +295,8 @@ export function createJobManager(
         // (projects:get reads forSlug), or it shows the progress row again after the note is done.
         if (ended) send(ended)
         if (slug) freed(slug)
+        // the last job is done: background indexing may go on
+        if (!jobs.size) idleWork?.resume()
       }
     })()
     return id

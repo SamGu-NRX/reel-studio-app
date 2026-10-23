@@ -425,6 +425,11 @@ export interface SaveConnectionResult {
   error?: UserError & { field?: 'label' | 'address' | 'key' | 'model' }
 }
 
+export type FootageIndexStatus =
+  | { state: 'idle' | 'paused' }
+  | { state: 'indexing'; stage: string; pct: number; message: string }
+  | { state: 'error'; message: string }
+
 export interface AppInfo {
   version: string
   platform: string
@@ -433,6 +438,7 @@ export interface AppInfo {
   rootDisplay: string
   firstRunDone: boolean
   fasterExports: boolean
+  footageIndex: FootageIndexStatus
   engine: { mode: 'real' | 'fake'; dir: string; python: string }
   ai: 'package' | 'mock'
   test: boolean

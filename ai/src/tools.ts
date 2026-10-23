@@ -1215,6 +1215,23 @@ function addCutStyleVerdicts(meter: any, preset?: CutPreset): void {
   }
 }
 
+const FOOTAGE_RESULT = S.obj({
+  hits: S.arr(S.obj({
+    hit: S.str(), file: S.obj({ name: S.str(), path: S.str(), place: S.str(), online: S.bool(), duration: S.num() }),
+    t0: S.num(), t1: S.num(), said: S.str(), thumbnail: S.opt(S.str()),
+  })), more: S.bool(), backend: S.str(),
+});
+
+type FootageResult = {
+  hits: { hit: string; file: { name: string; path: string; place: string; online: boolean; duration: number };
+    t0: number; t1: number; said: string; thumbnail: string | null }[];
+  more: boolean; backend: string;
+};
+
+function isFootageResult(value: unknown): value is FootageResult {
+  return validate(FOOTAGE_RESULT, value).length === 0;
+}
+
 const tools: ToolDef[] = [
   {
     name: 'merge_versions',
@@ -1237,6 +1254,28 @@ const tools: ToolDef[] = [
     async run(ctx, args) {
       const { p, t } = await load(ctx);
       return { content: readPage(projectView(ctx, p, t), args) };
+    },
+  },
+  {
+    name: 'search_footage',
+    description: 'Search indexed Library speech before reading whole transcripts of other clips. Returns source file paths, start and end seconds, matching words and cached midpoint thumbnails. Audio-only hits have no thumbnail.',
+    // no minLength: OpenAI's strict tool schemas refuse it (#33); an empty query is refused below
+    parameters: S.obj({ query: S.str('words to find in your Library'),
+      limit: S.opt(S.int('maximum hits, default 6', { minimum: 1, maximum: 8 })) }),
+    async run(ctx, args: { query: string; limit: number | null }) {
+      if (!args.query.trim()) throw new ToolInputError('query: say what to look for in your Library footage.');
+      const result: unknown = await ctx.host.runEngine('footage', ['search', '--root', ctx.host.reelStudioRoot(),
+        '--query', args.query, '--limit', String(args.limit ?? 6)], undefined, ctx.signal);
+      if (!isFootageResult(result)) throw new ToolInputError('Footage search returned an invalid result. Rebuild the footage index and try again.');
+      const images: ImagePart[] = [];
+      for (const hit of result.hits) {
+        if (!hit.thumbnail || !ctx.supportsImages) continue;
+        const folder = await fsp.realpath(path.join(ctx.host.reelStudioRoot(), '.index', 'thumbs'));
+        const file = await fsp.realpath(hit.thumbnail);
+        if (!file.startsWith(folder + path.sep)) throw new ToolInputError('Footage thumbnail is outside the index.');
+        images.push({ type: 'image', mime: 'image/jpeg', base64: (await fsp.readFile(file)).toString('base64'), path: file });
+      }
+      return { content: result, images: images.length ? images : undefined };
     },
   },
   {
