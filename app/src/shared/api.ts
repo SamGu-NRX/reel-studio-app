@@ -7,23 +7,29 @@ export type AppCommand = { type: 'new-video' | 'settings' | 'export' | 'library'
 
 export type ScreenStatus = 'new' | 'working' | 'ready' | 'interrupted' | 'failed'
 
+/**
+ * A picture, video or song the page may show, named by its place inside the Reel Studio folder, each path segment
+ * URL-encoded: "Projects/my-reel/versions/v2/export.mp4?v=1712". Never an absolute path on the computer, so the same
+ * value works in the desktop app and in a browser. The renderer turns it into a `src` with `mediaSrc` (renderer/src/api.ts);
+ * main serves it only after resolving it inside the folder (main/media-files.ts).
+ */
+export type MediaRef = string
+
 export interface ProjectSummary {
   slug: string
-  dir: string
   title: string
   createdAt: string
   updatedAt: string
   version: number
-  thumbnail: string | null
+  thumbnail: MediaRef | null
   status: ScreenStatus
 }
 
 export interface VersionInfo {
   n: number
-  video: string
-  videoPath: string
+  video: MediaRef
   draft: boolean
-  cover: string | null
+  cover: MediaRef | null
   createdAt: string
 }
 
@@ -72,8 +78,8 @@ export interface NoteAttachment {
   fromGif?: boolean
   /** project-relative 320 px still */
   thumb?: string
-  /** reel-media URL of the still (filled by main when it goes to the page) */
-  thumbUrl?: string
+  /** the still, for the page (filled by main when it goes to the page) */
+  thumbUrl?: MediaRef
 }
 
 /** What came of attaching: the files that made it, and a plain message for each one that did not. */
@@ -83,9 +89,9 @@ export interface AttachResult {
 }
 
 export interface ProjectDetail extends ProjectSummary {
-  /** The raw take (reel-media URL), or null before it is copied in. */
-  sourceVideo: string | null
-  project: ProjectJson
+  /** The raw take, or null before it is copied in. */
+  sourceVideo: MediaRef | null
+  project: ClientProject
   versions: VersionInfo[]
   words: Word[]
   keptIds: string[]
@@ -93,15 +99,30 @@ export interface ProjectDetail extends ProjectSummary {
   chat: ChatMessage[]
   lastError: { code: string; userMessage: string } | null
   job: { id: string; kind: JobKind; message: string; pct: number; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean } | null
-  /** A small picture for each b-roll item with an image file (broll id -> reel-media URL). Animations and
+  /** A small picture for each b-roll item with an image file (broll id -> media). Animations and
    * text-only items have none (the Pictures list names them in words instead of a file name). */
-  brollThumbs: Record<string, string>
+  brollThumbs: Record<string, MediaRef>
   /** True when an AI editor made this video's edit. False = the simple no-AI edit (be honest about it). */
   aiEdited: boolean
 }
 
 // Loose mirror of project.json (docs/architecture.md section 3). The engine owns validation.
-export interface ProjectJson {
+export interface ProjectJson extends ProjectFields {
+  /** `mirror`: the take is mirrored, the engine flips the picture (absent = as filmed) */
+  sources?: { id: string; path: string; duration?: number; rotation?: number; mirror?: boolean }[]
+  transcript?: { file: string; language?: string }
+  [k: string]: unknown
+}
+
+/**
+ * project.json as the page gets it (store.ts `clientProject`): only the fields the page uses, and no path on the
+ * computer (a take's file, an absolute Library path). Unknown fields are left out, not passed through.
+ */
+export interface ClientProject extends ProjectFields {
+  sources?: { id: string; duration?: number; rotation?: number; mirror?: boolean }[]
+}
+
+export interface ProjectFields {
   schemaVersion: number
   id: string
   title: string
@@ -110,9 +131,6 @@ export interface ProjectJson {
   updatedAt: string
   version: number
   format?: { width: number; height: number; fps: number }
-  /** `mirror`: the take is mirrored, the engine flips the picture (absent = as filmed) */
-  sources?: { id: string; path: string; duration?: number; rotation?: number; mirror?: boolean }[]
-  transcript?: { file: string; language?: string }
   cut?: { keep: { from: string; to: string }[]; gapCap?: number; minSaving?: number }
   captions?: {
     enabled: boolean
@@ -139,7 +157,6 @@ export interface ProjectJson {
   cover?: { atSourceTime: number; source: string; text: string | null }
   post?: { caption: string; hashtags: string[]; keywords: string[] }
   notes?: { version: number; text: string; applied: string[]; at: string }[]
-  [k: string]: unknown
 }
 
 export type JobKind = 'first-edit' | 'note' | 'rerender' | 'export' | 'script'
@@ -175,8 +192,8 @@ export type JobEvent = Ids &
     /** overdue = past every estimate on the last step: show "Still working, almost there", no number. */
     | { type: 'status'; message: string; pct: number; phase?: Phase; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean }
     | { type: 'tool'; name: string; summary: string }
-    /** video = a playable reel-media URL of a stable copy (never the file the engine overwrites next). */
-    | { type: 'render'; version: number; draft: boolean; firstLook: boolean; video: string | null }
+    /** video = a stable copy (never the file the engine overwrites next). */
+    | { type: 'render'; version: number; draft: boolean; firstLook: boolean; video: MediaRef | null }
     | { type: 'reply'; text: string }
     | { type: 'heard'; words: string[] }
     | { type: 'done'; summary: string; version?: number }
@@ -184,10 +201,11 @@ export type JobEvent = Ids &
     | { type: 'cancelled' }
   )
 
+// The Library and exports are desktop-only (DesktopApi): their absolute paths never leave this computer's app.
 export interface LibraryFile {
   name: string
   path: string
-  url: string
+  url: MediaRef | null
   size: number
   modifiedAt: string
 }
@@ -215,18 +233,23 @@ export interface ProviderInfo {
   error?: UserError
 }
 
+/** What the page needs about the app. No folder on the computer: that is StorageInfo, desktop only. */
 export interface AppInfo {
   version: string
   platform: string
-  root: string
-  /** The root in friendly words: "Documents › Reel Studio". */
-  rootDisplay: string
   firstRunDone: boolean
-  engine: { mode: 'real' | 'fake'; dir: string; python: string }
+  engine: { mode: 'real' | 'fake' }
   ai: 'package' | 'mock'
   test: boolean
   /** REELSTUDIO_DEV=1: show the dev-only AI providers. */
   dev: boolean
+}
+
+/** Where videos are kept (Settings > Storage). Desktop only: the page in a browser never learns the folder. */
+export interface StorageInfo {
+  root: string
+  /** The root in friendly words: "Documents › Reel Studio". */
+  rootDisplay: string
 }
 
 /** The person's own Claude Code app: not found / found but will not start / not signed in / ready. */
@@ -261,7 +284,7 @@ export interface StyleRule {
 export interface ExportResult {
   folder: string
   video: string
-  cover: string | null
+  cover: MediaRef | null
   captionFile: string
   caption: string
 }
@@ -301,19 +324,25 @@ export interface UserError {
   link?: string
 }
 
+/**
+ * Everything the page can ask for. The calls and events listed in shared/contract.ts are the contract any page can use
+ * (desktop or browser); the rest are capabilities of the desktop app on this computer.
+ */
 export interface ReelApi {
   app: {
     info(): Promise<AppInfo>
+    /** Where videos are kept on this computer. */
+    storage(): Promise<StorageInfo>
     finishFirstRun(): Promise<void>
     openFolder(path: string): Promise<void>
     copyText(text: string): Promise<void>
     pathForFile(file: File): string
     chooseFolder(): Promise<string | null>
-    setRoot(path: string): Promise<AppInfo>
+    setRoot(path: string): Promise<StorageInfo>
     /** Menu items, keyboard shortcuts handled by the menu, and notification clicks. */
     onCommand(cb: (c: AppCommand) => void): () => void
-    /** Drag a finished file out of the app (desktop, folder, browser upload box). Call from dragstart. */
-    startDrag(file: string): void
+    /** Drag a finished video out of the app (desktop, folder, browser upload box). Call from dragstart. */
+    startDrag(video: MediaRef): void
   }
   model: {
     status(): Promise<ModelStatus>
@@ -342,7 +371,7 @@ export interface ReelApi {
     /** jobId null = no AI connected: the note and a plain reply were added to the chat, nothing runs.
      * `attachments`: `work/assets/attach-*` refs from notes.attach* (main re-checks each one). */
     note(slug: string, text: string, attachments?: string[]): Promise<{ jobId: string | null }>
-    update(slug: string, patch: Partial<ProjectJson>): Promise<ProjectDetail>
+    update(slug: string, patch: Partial<ClientProject>): Promise<ProjectDetail>
     /** `change`: what changed, in plain words ("bigger yellow subtitles"), for the chat and the version button.
      * `label`: what to call the work while it runs ("Updating your subtitles"). Render only, never the AI. */
     rerender(slug: string, change?: string, label?: string): Promise<{ jobId: string }>

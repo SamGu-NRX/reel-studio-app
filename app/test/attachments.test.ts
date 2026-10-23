@@ -1,7 +1,7 @@
 // Pictures, GIFs and clips on a note (0.1.2 F2): the shared rules (paste, drop, limits, chips) and the
 // main-process side (sidecar checks, removing, bytes with no file, the real engine when available).
 import { describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -21,6 +21,7 @@ import {
   slotsLeft
 } from '../src/shared/attachments'
 import { noAiReply } from '../src/shared/notes'
+import { setupPaths } from './helpers'
 import {
   attachBytes,
   attachPaths,
@@ -150,8 +151,7 @@ describe('no AI connected', () => {
 // ---------------------------------------------------------------- main process
 
 function project(): string {
-  const base = mkdtempSync(join(tmpdir(), 'rs-att-'))
-  const dir = join(base, 'Zoë Müller', 'Projects', 'my réel')
+  const dir = join(setupPaths().root, 'Projects', 'my réel')
   mkdirSync(join(dir, 'work', 'assets'), { recursive: true })
   mkdirSync(join(dir, 'work', 'thumbs'), { recursive: true })
   writeFileSync(join(dir, 'project.json'), JSON.stringify({ broll: [] }))
@@ -181,8 +181,7 @@ describe('main: sidecars are the only truth', () => {
     expect(s).toMatchObject({ asset: a, name: 'the ick.gif', kind: 'video', duration: 3, hasAudio: false, fromGif: true })
     expect(s).not.toHaveProperty('thumbUrl')
     const u = withThumbUrl(dir, s!)
-    expect(u.thumbUrl).toMatch(/^reel-media:\/\/f\//)
-    expect(decodeURIComponent(u.thumbUrl!)).toContain('thumbs')
+    expect(u.thumbUrl).toMatch(/^Projects\/my%20r%C3%A9el\/work\/thumbs\/attach-[a-f0-9]+-meme\.jpg$/)
     expect(forChat(u)).not.toHaveProperty('thumbUrl')
   })
   it('a note: at most four, deduped, every ref must have its own sidecar in THIS project', async () => {
@@ -235,7 +234,7 @@ describe('main: bytes with no file (paste of a screenshot)', () => {
     const r = await attachBytes(deps, dir, { name: 'image', mime: 'image/png', bytes: new Uint8Array([1, 2, 3]) })
     expect(r.errors).toEqual([])
     expect(r.attached).toHaveLength(1)
-    expect(r.attached[0].thumbUrl).toMatch(/^reel-media:/)
+    expect(r.attached[0].thumbUrl).toMatch(/^Projects\/my%20r%C3%A9el\/work\/thumbs\//)
     expect(calls[0].slice(0, 3)).toEqual(['attach', '--project', dir])
     expect(calls[0].slice(-2)).toEqual(['--name', 'image.png'])
     expect(existsSync(calls[0][3])).toBe(false) // temp deleted

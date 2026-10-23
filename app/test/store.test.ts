@@ -138,7 +138,7 @@ describe('project store', () => {
     const d = await detail('alpha')
     expect(d.versions.map((v) => v.n)).toEqual([1, 2])
     expect(d.keptIds).toEqual(['w0', 'w1'])
-    expect(d.versions[0].video.startsWith('reel-media://')).toBe(true)
+    expect(d.versions[0].video).toMatch(/^Projects\/alpha\/versions\/v1\/export\.mp4\?v=\d+$/)
   })
 
   it('cleans half-written versions and temp files', async () => {

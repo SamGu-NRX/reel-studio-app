@@ -3,7 +3,7 @@ import type { ChatAction, ChecklistItem, ExportResult, ProjectDetail, ProviderIn
 import { ACTION_LABELS } from '../../../shared/notes'
 import { clock } from '../../../shared/progress'
 import { EMPTY_LIVE, liveFromDetail, reduceLive, timeLeftWords, type LiveState } from '../../../shared/live'
-import { reel, userMessage } from '../api'
+import { mediaSrc, reel, userMessage } from '../api'
 import type { Go } from '../nav'
 import { Check, Confirm, FOLDER_APP, Modal, MoreMenu, Progress, Spinner, Thinking } from '../components/ui'
 import { SendToPhone } from '../components/SendToPhone'
@@ -309,7 +309,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
             original={d.sourceVideo}
             holdingOriginal={holding}
             onDuration={setDuration}
-            dragFile={version && !version.draft ? version.videoPath : null}
+            dragFile={version && !version.draft ? version.video : null}
           />
           {changePreview && (
             <p className="muted-sm center" data-testid="change-preview">Here's your change. I'm making the full-quality version.</p>
@@ -684,7 +684,7 @@ function ExportDialog({
   return (
     <Modal onClose={onClose} wide testid="export-dialog">
       <div className="export-head">
-        {result.cover && <img className="cover-img" style={{ width: 84 }} src={`reel-media://f/${encodeURIComponent(result.cover)}`} alt="" />}
+        {result.cover && <img className="cover-img" style={{ width: 84 }} src={mediaSrc(result.cover)} alt="" />}
         <div className="stack" style={{ gap: 6, minWidth: 0 }}>
           {/* says plainly that it is saved, and where (grandma3 #8, #17) */}
           <h2 data-testid="export-saved">Saved to your computer</h2>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AppInfo } from '../../../shared/api'
+import type { AppInfo, StorageInfo } from '../../../shared/api'
 import { RELEASES_URL } from '../../../shared/config'
 import { reel, userMessage } from '../api'
 import type { Go } from '../nav'
@@ -8,9 +8,13 @@ import { FOLDER_APP } from '../components/ui'
 import { Icon } from '../components/icons'
 import { useNotify } from '../App'
 
-export function Settings({ info, onInfo }: { info: AppInfo; onInfo: (i: AppInfo) => void; go?: Go }) {
+export function Settings({ info }: { info: AppInfo; go?: Go }) {
   const notify = useNotify()
   const [checkUpdates, setCheckUpdates] = useState<boolean | null>(null)
+  const [storage, setStorage] = useState<StorageInfo | null>(null)
+  useEffect(() => {
+    reel.app.storage().then(setStorage).catch(() => {})
+  }, [])
   useEffect(() => {
     reel.update
       .status()
@@ -31,7 +35,7 @@ export function Settings({ info, onInfo }: { info: AppInfo; onInfo: (i: AppInfo)
     const p = await reel.app.chooseFolder()
     if (!p) return
     try {
-      onInfo(await reel.app.setRoot(p))
+      setStorage(await reel.app.setRoot(p))
       notify('New videos will be kept there. Your old videos stay where they were.')
     } catch (e) {
       notify(userMessage(e), 'error')
@@ -62,17 +66,21 @@ export function Settings({ info, onInfo }: { info: AppInfo; onInfo: (i: AppInfo)
 
       <section className="panel">
         <h2>Where your videos are kept</h2>
-        <p className="folder-line" title={info.root} data-testid="root-display">
-          <Icon name="folder" /> {info.rootDisplay}
-        </p>
-        <div className="row">
-          <button className="btn" onClick={() => reel.app.openFolder(info.root)}>
-            Show in {FOLDER_APP}
-          </button>
-          <button className="btn ghost" onClick={change}>
-            Change…
-          </button>
-        </div>
+        {storage && (
+          <>
+            <p className="folder-line" title={storage.root} data-testid="root-display">
+              <Icon name="folder" /> {storage.rootDisplay}
+            </p>
+            <div className="row">
+              <button className="btn" onClick={() => reel.app.openFolder(storage.root)}>
+                Show in {FOLDER_APP}
+              </button>
+              <button className="btn ghost" onClick={change}>
+                Change…
+              </button>
+            </div>
+          </>
+        )}
       </section>
 
       {info.dev && (

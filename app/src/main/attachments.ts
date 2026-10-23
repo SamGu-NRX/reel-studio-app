@@ -13,7 +13,7 @@ import { basename, dirname, join } from 'node:path'
 import type { IpcMainInvokeEvent } from 'electron'
 import type { AttachResult, NoteAttachment, ProjectJson } from '../shared/api'
 import { ATTACH_EXTS, CLIP_MAX_BYTES, MAX_ATTACHMENTS_PER_NOTE, MSG, classify, isAttachmentRef, nameWithExt } from '../shared/attachments'
-import { mediaUrl } from './media-url'
+import { mediaRef } from './media-files'
 import type { RunEngine } from './engine'
 
 type Handle = (channel: string, fn: (e: IpcMainInvokeEvent, ...args: any[]) => unknown) => void
@@ -59,12 +59,13 @@ export async function readSidecar(dir: string, ref: unknown): Promise<NoteAttach
   return out
 }
 
-/** The same attachment with a reel-media URL for its still (for the page). Never trusts a stored URL. */
+/** The same attachment with a media ref for its still (for the page). Never trusts a stored one. */
 export function withThumbUrl(dir: string, a: NoteAttachment): NoteAttachment {
   const { thumbUrl: _old, ...rest } = a
   if (!a.thumb || !THUMB_REF.test(a.thumb)) return rest
   const p = join(dir, ...a.thumb.split('/'))
-  return existsSync(p) ? { ...rest, thumbUrl: mediaUrl(p) } : rest
+  const ref = existsSync(p) ? mediaRef(p) : null
+  return ref ? { ...rest, thumbUrl: ref } : rest
 }
 
 /** What is stored on a chat message: the sidecar facts, no URL (the root folder can move). */

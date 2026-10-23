@@ -8,7 +8,7 @@ import type { JobEvent } from '../src/shared/api'
 import { EMPTY_LIVE, PREVIEW_LABEL, liveFromDetail, reduceLive, type LiveState } from '../src/shared/live'
 import { createLiveVideos, LIVE_DIR } from '../src/main/live-video'
 import { createJobManager } from '../src/main/jobs'
-import { pathFromMediaUrl } from '../src/main/media-url'
+import { segmentsFromRef } from '../src/shared/media-ref'
 import { projectDir } from '../src/main/store'
 import { setupPaths } from './helpers'
 
@@ -30,14 +30,14 @@ describe('reduceLive (the renderer side of the contract)', () => {
   })
 
   it('first look plays, then the AI draft replaces it, never the other way round', () => {
-    const look: JobEvent = { ...J, type: 'render', version: 0, draft: true, firstLook: true, video: 'reel-media://f/look' }
-    const ai: JobEvent = { ...J, type: 'render', version: 0, draft: true, firstLook: false, video: 'reel-media://f/ai' }
-    expect(fold([look]).preview).toEqual({ kind: 'first-look', video: 'reel-media://f/look' })
-    expect(fold([look, ai]).preview).toEqual({ kind: 'ai-draft', video: 'reel-media://f/ai', version: 0 })
+    const look: JobEvent = { ...J, type: 'render', version: 0, draft: true, firstLook: true, video: 'Projects/s/look.mp4' }
+    const ai: JobEvent = { ...J, type: 'render', version: 0, draft: true, firstLook: false, video: 'Projects/s/ai.mp4' }
+    expect(fold([look]).preview).toEqual({ kind: 'first-look', video: 'Projects/s/look.mp4' })
+    expect(fold([look, ai]).preview).toEqual({ kind: 'ai-draft', video: 'Projects/s/ai.mp4', version: 0 })
     expect(fold([ai, look]).preview?.kind).toBe('ai-draft')
     // a render with no playable file, and a final render, change nothing on screen
     expect(fold([{ ...look, video: null }]).preview).toBeNull()
-    expect(fold([look, { ...J, type: 'render', version: 1, draft: false, firstLook: false, video: 'reel-media://f/v1' }]).preview?.kind).toBe('first-look')
+    expect(fold([look, { ...J, type: 'render', version: 1, draft: false, firstLook: false, video: 'Projects/s/v1.mp4' }]).preview?.kind).toBe('first-look')
     expect(PREVIEW_LABEL['first-look']).toBe("Here's a first look. I'm still adding pictures and music.")
   })
 
@@ -68,8 +68,10 @@ describe('reduceLive (the renderer side of the contract)', () => {
 
 describe('live videos (main): a draft plays from a copy the engine never overwrites', () => {
   it('first look keeps its own file; AI drafts alternate; finals play in place; outside paths are ignored', async () => {
-    const { home } = setupPaths()
-    const dir = join(home, 'p')
+    const { root } = setupPaths()
+    const dir = join(root, 'Projects', 'p')
+    // the file a ref names, read back the way main/media-files.ts does
+    const pathFromMediaUrl = (ref: string): string => join(root, ...segmentsFromRef(ref)!)
     const preview = join(dir, 'versions', 'preview')
     mkdirSync(preview, { recursive: true })
     const draft = join(preview, 'draft.mp4')
@@ -92,8 +94,8 @@ describe('live videos (main): a draft plays from a copy the engine never overwri
     writeFileSync(v1, 'final')
     expect(pathFromMediaUrl((await live(dir, { type: 'render', version: 1, draft: false }))!)).toBe(v1)
     // a path outside the project is not trusted: falls back to the project's own preview
-    expect(pathFromMediaUrl((await live(dir, { type: 'render', version: 0, draft: true, file: join(home, 'elsewhere.mp4') }))!)).toMatch(/look-[ab]\.mp4$/)
-    expect(await live(join(home, 'empty'), { type: 'render', version: 0, draft: true })).toBeNull()
+    expect(pathFromMediaUrl((await live(dir, { type: 'render', version: 0, draft: true, file: join(root, 'elsewhere.mp4') }))!)).toMatch(/look-[ab]\.mp4$/)
+    expect(await live(join(root, 'Projects', 'empty'), { type: 'render', version: 0, draft: true })).toBeNull()
   })
 })
 
@@ -107,7 +109,7 @@ describe('job manager (main): the contract on the wire', () => {
       (e) => events.push(e),
       () => undefined,
       { loadHistory: async () => ({ v: 1, phases: {} }), saveHistory: async () => undefined, mediaSeconds: async () => 30, tickMs: 15 },
-      async (s, e) => (e.firstLook ? `reel-media://f/${s}/look` : null)
+      async (s, e) => (e.firstLook ? `Projects/${s}/look.mp4` : null)
     )
     jobs.start(slug, 'first-edit', async (emit) => {
       emit({ type: 'status', message: 'Listening to your video', pct: 50, phase: 'listen' })
@@ -127,7 +129,7 @@ describe('job manager (main): the contract on the wire', () => {
     expect(between.every((e) => e.type === 'status' && e.thinking)).toBe(true)
     expect(events.slice(t).filter((e) => e.type === 'status').every((e) => e.type === 'status' && !e.thinking)).toBe(true)
     const render = events.find((e) => e.type === 'render')
-    expect(render).toEqual({ jobId: expect.any(String), slug, type: 'render', version: 0, draft: true, firstLook: true, video: `reel-media://f/${slug}/look` })
+    expect(render).toEqual({ jobId: expect.any(String), slug, type: 'render', version: 0, draft: true, firstLook: true, video: `Projects/${slug}/look.mp4` })
     expect(events.findIndex((e) => e.type === 'render')).toBeLessThan(events.findIndex((e) => e.type === 'done'))
     expect(events.find((e) => e.type === 'heard')).toMatchObject({ words: ['hello'] })
     expect(events.find((e) => e.type === 'reply')).toMatchObject({ text: 'Done soon.' })

@@ -4,7 +4,7 @@
 import { useCallback, useRef, useState } from 'react'
 import type { AttachResult, NoteAttachment } from '../../../shared/api'
 import { MSG, addChips, chipBadge, planDrop, planPaste, slotsLeft, type FileLike, type IncomingPlan } from '../../../shared/attachments'
-import { reel, userMessage } from '../api'
+import { mediaSrc, reel, userMessage } from '../api'
 import { Icon } from './icons'
 import { Spinner } from './ui'
 
@@ -149,7 +149,7 @@ export function AttachmentThumb({ a, size = 'chip' }: { a: NoteAttachment; size?
   const badge = chipBadge(a)
   return (
     <span className={`att-thumb ${size}`} title={a.name}>
-      {a.thumbUrl ? <img src={a.thumbUrl} alt={a.name} draggable={false} /> : <Icon name={a.kind === 'video' ? 'video' : 'image'} size={18} />}
+      {a.thumbUrl ? <img src={mediaSrc(a.thumbUrl)} alt={a.name} draggable={false} /> : <Icon name={a.kind === 'video' ? 'video' : 'image'} size={18} />}
       {badge && <span className="att-badge">{badge}</span>}
     </span>
   )

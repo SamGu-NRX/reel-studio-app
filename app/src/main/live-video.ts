@@ -1,4 +1,4 @@
-// A playable URL for every render a job reports (the job contract's `render.video`, shared/api.ts).
+// A playable media ref for every render a job reports (the job contract's `render.video`, shared/api.ts).
 // Drafts live in versions/preview/draft.mp4, which the engine overwrites on the next draft render,
 // while the Working screen may still be streaming it by HTTP ranges (a fresh file read per range),
 // so a draft is played from a COPY in work/live/: the first look keeps its own file, the AI's drafts
@@ -7,7 +7,7 @@
 import { existsSync, promises as fs } from 'node:fs'
 import { join, relative, isAbsolute } from 'node:path'
 import type { JobUpdate } from '../shared/api'
-import { mediaUrl } from './media-url'
+import { mediaRef } from './media-files'
 
 type Render = Extract<JobUpdate, { type: 'render' }>
 
@@ -25,7 +25,7 @@ export function createLiveVideos(): (projectDir: string, e: Render) => Promise<s
     const reported = e.file && inside(projectDir, e.file) && existsSync(e.file) ? e.file : null
     const src = reported ?? (e.draft ? join(projectDir, 'versions', 'preview', 'draft.mp4') : join(projectDir, 'versions', `v${e.version}`, 'export.mp4'))
     if (!existsSync(src)) return null
-    if (!e.draft) return mediaUrl(src, (await fs.stat(src)).mtimeMs)
+    if (!e.draft) return mediaRef(src, (await fs.stat(src)).mtimeMs)
     const n = (flip.get(projectDir) ?? 0) + (e.firstLook ? 0 : 1)
     if (!e.firstLook) flip.set(projectDir, n)
     const name = e.firstLook ? 'first-look.mp4' : `look-${n % 2 ? 'a' : 'b'}.mp4`
@@ -33,10 +33,10 @@ export function createLiveVideos(): (projectDir: string, e: Render) => Promise<s
     try {
       await fs.mkdir(join(projectDir, LIVE_DIR), { recursive: true })
       await fs.copyFile(src, dest)
-      return mediaUrl(dest, Date.now())
+      return mediaRef(dest, Date.now())
     } catch {
       // a locked copy target (Windows): the engine's own file still plays
-      return mediaUrl(src, (await fs.stat(src)).mtimeMs)
+      return mediaRef(src, (await fs.stat(src)).mtimeMs)
     }
   }
 }

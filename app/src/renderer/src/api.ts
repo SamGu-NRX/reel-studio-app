@@ -1,6 +1,14 @@
-import type { UserError } from '../../shared/api'
+import type { MediaRef, UserError } from '../../shared/api'
+import { MEDIA_SCHEME } from '../../shared/media-ref'
 
 export const reel = window.reel
+
+/** A media ref (shared/api.ts MediaRef) as something an <img> or <video> can load. */
+export function mediaSrc(ref: MediaRef): string
+export function mediaSrc(ref: MediaRef | null | undefined): string | undefined
+export function mediaSrc(ref: MediaRef | null | undefined): string | undefined {
+  return ref ? `${MEDIA_SCHEME}://f/${ref}` : undefined
+}
 
 export function userMessage(e: unknown): string {
   if (e && typeof e === 'object' && 'userMessage' in e) return String((e as UserError).userMessage)

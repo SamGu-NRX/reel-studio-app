@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { initPaths } from '../src/main/paths'
@@ -8,9 +8,16 @@ export const APP_DIR = resolve(__dirname, '..')
 export const FAKE_ENGINE = join(APP_DIR, 'dev', 'fake-engine')
 export const PYTHON = process.platform === 'win32' ? 'python' : 'python3'
 
-/** A temp "Documents" folder whose path has spaces and non-ASCII characters, like real users. */
+const bases: string[] = []
+/** Removes every tempHome() of this test file (test/setup.ts runs it after each file). */
+export function removeTempHomes(): void {
+  for (const b of bases.splice(0)) rmSync(b, { recursive: true, force: true })
+}
+
+/** A temp "Documents" folder whose path has spaces and non-ASCII characters, like real users. Removed after the test file. */
 export function tempHome(): string {
   const base = mkdtempSync(join(tmpdir(), 'rs-test-'))
+  bases.push(base)
   const home = join(base, 'Zoë Müller', 'Documents 文档')
   mkdirSync(home, { recursive: true })
   return home

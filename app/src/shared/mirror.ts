@@ -1,18 +1,19 @@
 // A mirrored take (front camera: wall text and shirts read backwards) is flipped by the engine when
 // `sources[].mirror` is true. The "Edit it myself" drawer has a toggle for it, so people without an
 // AI can flip too. Keep free of Node and DOM imports.
-import type { ProjectJson } from './api'
+import type { ClientProject, ProjectJson } from './api'
 
 type Sources = NonNullable<ProjectJson['sources']>
+type ClientSources = NonNullable<ClientProject['sources']>
 
 /** The toggle's state: on only when EVERY take is flipped (a mixed project shows off; turning it on flips them all). */
-export function isMirrored(p: Pick<ProjectJson, 'sources'>): boolean {
+export function isMirrored(p: Pick<ClientProject, 'sources'>): boolean {
   const s = p.sources ?? []
   return s.length > 0 && s.every((x) => x.mirror === true)
 }
 
 /** Every take flipped (on) or back as filmed (off: the flag is removed, so the project matches an old one). */
-export function withMirror(sources: Sources | undefined, on: boolean): Sources {
+export function withMirror(sources: ClientSources | undefined, on: boolean): ClientSources {
   return (sources ?? []).map((s) => {
     const { mirror: _old, ...rest } = s
     return on ? { ...rest, mirror: true } : rest

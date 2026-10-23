@@ -2,7 +2,7 @@
 import { existsSync, promises as fs } from 'node:fs'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { BIN_FOLDERS, binDir, libraryDir, reelStudioRoot, type BinKey } from './paths'
-import { mediaUrl } from './media-url'
+import { mediaRef } from './media-files'
 import type { DropResult, LibraryBin } from '../shared/api'
 import type { RunEngine } from './engine'
 import { logDuration } from './diagnostics'
@@ -40,7 +40,7 @@ export async function listLibrary(): Promise<LibraryBin[]> {
       const p = join(dir, name)
       const st = await fs.stat(p).catch(() => null)
       if (!st?.isFile()) continue
-      files.push({ name, path: p, url: mediaUrl(p, st.mtimeMs), size: st.size, modifiedAt: st.mtime.toISOString() })
+      files.push({ name, path: p, url: mediaRef(p, st.mtimeMs), size: st.size, modifiedAt: st.mtime.toISOString() })
     }
     files.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
     out.push({ key, label: LABELS[key], dir, files })

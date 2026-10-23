@@ -1,6 +1,6 @@
 // "Version 3: bigger yellow subtitles, moved up." Says in plain words what an "Edit it myself"
 // change did, so the chat and the version buttons mean something. Keep free of Node and DOM imports.
-import type { DropResult, ProjectJson } from './api'
+import type { ClientProject, DropResult } from './api'
 import { isMirrored } from './mirror'
 
 type Style = Record<string, unknown>
@@ -11,7 +11,7 @@ const look = (s: Style): string => (s.box ? 'box' : String(s.color ?? '#FFFFFF')
 const name = (p: string | null | undefined): string =>
   (p ?? '').split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() ?? ''
 
-function subtitles(before: ProjectJson['captions'], after: ProjectJson['captions']): string[] {
+function subtitles(before: ClientProject['captions'], after: ClientProject['captions']): string[] {
   if (!after) return []
   if (before?.enabled !== false && after.enabled === false) return ['no subtitles']
   if (before?.enabled === false && after.enabled !== false) return ['subtitles back on']
@@ -32,7 +32,7 @@ function subtitles(before: ProjectJson['captions'], after: ProjectJson['captions
 }
 
 /** A short lower-case phrase, or '' if nothing visible changed. `cutDelta` = words brought back (+) or cut (-). */
-export function describeChange(before: ProjectJson, patch: Partial<ProjectJson>, cutDelta = 0): string {
+export function describeChange(before: ClientProject, patch: Partial<ClientProject>, cutDelta = 0): string {
   const parts: string[] = []
   if (patch.sources && isMirrored({ sources: patch.sources }) !== isMirrored(before)) {
     parts.push(isMirrored({ sources: patch.sources }) ? 'flipped the picture' : 'picture back the way you filmed it')

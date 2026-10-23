@@ -18,10 +18,7 @@ import { logDuration } from './diagnostics'
 import { handleMediaProtocol, registerMediaScheme } from './media'
 import {
   addChat,
-  detail,
   ensureRoot,
-  listProjects,
-  listVersions,
   projectDir,
   readAppState,
   readProject,
@@ -30,9 +27,13 @@ import {
   titleFromFile,
   uniqueSlug,
   updateAppState,
+  versionFiles,
   writeJson,
   writeProject
 } from './store'
+import { mediaRef, resolveMediaRef } from './media-files'
+import { createService } from './service'
+import { METHODS, channelFor, type Method } from '../shared/contract'
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { createJobManager } from './jobs'
 import { createLiveVideos } from './live-video'
@@ -45,9 +46,9 @@ import { captureWebsite } from './capture'
 import { createModelManager } from './models'
 import { loadSettings, saveSettings } from './settings'
 import { createPidRegistry } from './orphans'
-import { openSignInWindow, publicInfo } from './claude-signin'
+import { openSignInWindow } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
-import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson } from '../shared/api'
+import type { AppInfo, ClientProject, DropResult, ExportResult, JobEvent, ProjectJson, StorageInfo } from '../shared/api'
 import { noAiReply } from '../shared/notes'
 import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
@@ -188,6 +189,18 @@ function handle(channel: string, fn: Handler): void {
 
 async function appInfo(): Promise<AppInfo> {
   const s = await loadSettings()
+  return {
+    version: app.getVersion(),
+    platform: process.platform,
+    firstRunDone: s.firstRunDone,
+    engine: { mode: engineMode() },
+    ai: aiSource,
+    test: TEST,
+    dev: DEV_PROVIDERS
+  }
+}
+
+function storageInfo(): StorageInfo {
   // The real long path, never an 8.3 short name like USERNA~1 (design critique 1.9).
   let root = reelStudioRoot()
   try {
@@ -195,22 +208,12 @@ async function appInfo(): Promise<AppInfo> {
   } catch {
     /* not created yet: show it as configured */
   }
-  return {
-    version: app.getVersion(),
-    platform: process.platform,
-    root,
-    rootDisplay: displayPath(
-      root,
-      { documents: app.getPath('documents'), desktop: app.getPath('desktop'), home: app.getPath('home') },
-      process.platform
-    ),
-    firstRunDone: s.firstRunDone,
-    engine: { mode: engineMode(), dir: engineDir(), python: pythonExe() },
-    ai: aiSource,
-    test: TEST,
-    dev: DEV_PROVIDERS
-  }
+  const places = { documents: app.getPath('documents'), desktop: app.getPath('desktop'), home: app.getPath('home') }
+  return { root, rootDisplay: displayPath(root, places, process.platform) }
 }
+
+// The contract's calls (main/service.ts): the same code for the desktop window and a browser.
+const service = createService({ info: appInfo, ai: () => ai, jobs, models, updates })
 
 function startFirstEdit(slug: string, initArgs: { title: string; files: string[] } | null): string {
   const dir = projectDir(slug)
@@ -276,7 +279,7 @@ function safeFileName(s: string): string {
 
 async function exportVersion(slug: string, n: number): Promise<ExportResult> {
   const dir = projectDir(slug)
-  let versions = await listVersions(dir)
+  let versions = await versionFiles(dir)
   let v = versions.find((x) => x.n === n) ?? versions[versions.length - 1]
   if (!v) throw { code: 'NO_VERSION', userMessage: 'This video is not ready yet. Wait for it to finish, then try again.' }
   if (jobs.forSlug(slug)) throw { code: 'BUSY', userMessage: 'I am still working on this video. Wait until it is done, then export.' }
@@ -296,7 +299,7 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
       return { summary: '', version, quiet: true }
     })
     await jobs.forSlug(slug)?.done
-    versions = await listVersions(dir)
+    versions = await versionFiles(dir)
     v = versions[versions.length - 1]
     if (!v || v.draft) throw { code: 'EXPORT_FAILED', userMessage: 'I could not make the full-quality video. Try Export again.' }
   }
@@ -307,9 +310,9 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
   const name = `${safeFileName(p.title || slug)} - Version ${v.n}`
   const video = uniqueDest(exportsDir, `${name}.mp4`)
   const stem = basename(video, '.mp4')
-  await fs.copyFile(v.videoPath, video)
+  await fs.copyFile(v.file, video)
   let cover: string | null = null
-  const coverSrc = join(dirname(v.videoPath), 'cover.png')
+  const coverSrc = join(dirname(v.file), 'cover.png')
   if (existsSync(coverSrc)) {
     cover = join(exportsDir, `${stem} cover.png`)
     await fs.copyFile(coverSrc, cover)
@@ -322,12 +325,13 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
   const captionFile = join(exportsDir, `${stem} caption.txt`)
   await fs.writeFile(captionFile, caption + '\n', 'utf8')
   if (!TEST) shell.showItemInFolder(video)
-  return { folder: exportsDir, video, cover, captionFile, caption }
+  return { folder: exportsDir, video, cover: cover && mediaRef(cover), captionFile, caption }
 }
 
 // ---- IPC ----------------------------------------------------------------------------------------
 function registerIpc(): void {
-  handle('app:info', () => appInfo())
+  for (const m of Object.keys(METHODS) as Method[]) handle(channelFor(m), (_e, ...args) => service.dispatch(m, args))
+  handle('app:storage', () => storageInfo())
   handle('app:finishFirstRun', async () => {
     await saveSettings({ firstRunDone: true })
   })
@@ -338,9 +342,12 @@ function registerIpc(): void {
     else shell.showItemInFolder(p)
   })
   handle('app:copyText', (_e, t: string) => clipboard.writeText(String(t)))
-  ipcMain.on('app:startDrag', (e, file: string) => {
+  // the page names the video by its media ref; only a file that ref resolves to inside the root is dragged
+  ipcMain.on('app:startDrag', (e, ref: unknown) => {
     try {
-      startDragOut(e.sender, file, [reelStudioRoot(), projectsDir()])
+      const media = typeof ref === 'string' ? resolveMediaRef(ref) : null
+      // media.file is a real path (symlinks resolved), so the root it is checked against must be one too
+      if (media?.ok) startDragOut(e.sender, media.file, [realpathSync.native(reelStudioRoot())])
     } catch (err) {
       log(`[drag] ${String(err)}`)
     }
@@ -356,7 +363,7 @@ function registerIpc(): void {
     await saveSettings({ root })
     setRootOverride(root)
     await ensureRoot()
-    return appInfo()
+    return storageInfo()
   })
 
   registerPhoneIpc({ handle, roots: () => [reelStudioRoot(), projectsDir()], send: broadcast, log, test: TEST })
@@ -384,20 +391,16 @@ function registerIpc(): void {
     }
   })
 
-  handle('model:status', () => models.status())
   handle('model:download', () => models.download())
   handle('model:cancel', () => models.cancel())
 
-  handle('ai:providers', () => ai.providers())
-  handle('ai:active', () => ai.active())
   handle('ai:setActive', (_e, id) => ai.setActive(id))
   handle('ai:signInChatGPT', () => ai.signInChatGPT((url) => shell.openExternal(url)))
   handle('ai:cancelSignIn', () => ai.cancelSignInChatGPT?.())
   handle('ai:signOutChatGPT', () => ai.signOutChatGPT())
   handle('ai:setClaudeKey', (_e, key: string | null) => ai.setClaudeKey(key))
-  // The person's own Claude Code app: the page gets the state only; the sign-in happens in Anthropic's CLI.
+  // The person's own Claude Code app: the sign-in happens in Anthropic's CLI.
   const claudeCode = async () => (await ai.claudeCodeStatus?.()) ?? { state: 'missing' as const }
-  handle('ai:claudeCodeStatus', async () => publicInfo(await claudeCode()))
   handle('ai:openClaudeSignIn', async () => {
     const st = await claudeCode()
     if (st.state === 'ready') return
@@ -405,16 +408,6 @@ function registerIpc(): void {
     await openSignInWindow(st.bin, { dir: join(settingsDir(), 'claude-sign-in'), platform: process.platform, open })
   })
 
-  handle('projects:list', () => listProjects())
-  handle('projects:get', async (_e, slug: string) => {
-    const d = await detail(slug)
-    const running = jobs.forSlug(slug)
-    d.job = running
-      ? { id: running.id, kind: running.kind, message: running.message, pct: running.pct, overall: running.overall, secondsLeft: running.secondsLeft, overdue: running.overdue, thinking: running.thinking }
-      : null
-    if (!running && d.status === 'working') d.status = 'interrupted'
-    return d
-  })
   handle('projects:create', async (_e, files: string[]) => {
     const videos = files.filter(isVideo)
     const others = files.filter((f) => !isVideo(f))
@@ -480,7 +473,7 @@ function registerIpc(): void {
     )
     return { jobId }
   })
-  handle('projects:update', async (_e, slug: string, patch: Partial<ProjectJson>) => {
+  handle('projects:update', async (_e, slug: string, patch: Partial<ClientProject>) => {
     if (jobs.forSlug(slug)) throw { code: 'BUSY', userMessage: 'I am still working on this video. Give me a moment, or press Stop.' }
     const p = await readProject(slug)
     for (const k of Object.keys(patch ?? {}) as (keyof ProjectJson)[]) {
@@ -493,8 +486,7 @@ function registerIpc(): void {
       ;(p as any)[k] = (patch as any)[k]
     }
     await writeProject(slug, p)
-    const d = await detail(slug)
-    return d
+    return service.dispatch('projects.get', [slug])
   })
   // `change` = what the user changed, in plain words ("bigger yellow subtitles"), for the chat and the version button.
   // A manual change is render-only (no AI), called what it is ("Updating your subtitles", never the engine's
@@ -559,7 +551,6 @@ function registerIpc(): void {
     return addToLibrary(r.filePaths, runEngine, log)
   })
 
-  handle('style:rules', () => ai.styleRules())
   handle('style:remove', (_e, id: string) => ai.removeStyleRule(id))
   // "Remember this for next time?" Yes saves the rule; either answer replaces the buttons with a plain reply.
   handle('style:answer', async (_e, slug: string, messageId: string, yes: boolean) => {
@@ -582,7 +573,6 @@ function registerIpc(): void {
     return ai.writeScript(String(idea), () => {})
   })
 
-  handle('update:status', () => updates.status())
   handle('update:setEnabled', (_e, on: unknown) => updates.setEnabled(on))
   handle('update:open', (_e, url: unknown) => updates.open(url))
   handle('update:dismiss', (_e, version: unknown) => updates.dismiss(version))
@@ -673,7 +663,7 @@ app.whenReady().then(async () => {
   aiSource = loaded.source
   await carryOverClaudeCode(settings).catch((e) => log(`[ai] carry-over: ${String(e)}`))
   log(`[start] root=${reelStudioRoot()} engine=${engineMode()}:${engineDir()} python=${pythonExe()} ai=${aiSource}`)
-  handleMediaProtocol(() => [reelStudioRoot(), projectsDir()])
+  handleMediaProtocol()
   registerIpc()
   createWindow()
   updates.start() // a few seconds after the window, so launch is never slower

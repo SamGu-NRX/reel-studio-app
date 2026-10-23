@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { LibraryBin } from '../../../shared/api'
-import { reel, userMessage } from '../api'
+import { mediaSrc, reel, userMessage } from '../api'
 import { FOLDER_APP, PickFiles, Spinner } from '../components/ui'
 import { Icon, type IconName } from '../components/icons'
 import { describeSorted } from './create'
@@ -91,10 +91,10 @@ export function Library({ refreshKey = 0 }: { refreshKey?: number }) {
                 {files.slice(0, 24).map((f) => (
                   <div key={f.path} className="file" title={f.name}>
                     <div className="file-thumb">
-                      {b.key === 'images' ? (
-                        <img src={f.url} alt="" loading="lazy" />
-                      ) : /\.(mp4|mov|m4v|webm)$/i.test(f.name) ? (
-                        <video src={`${f.url}#t=0.5`} preload="metadata" muted disablePictureInPicture />
+                      {f.url && b.key === 'images' ? (
+                        <img src={mediaSrc(f.url)} alt="" loading="lazy" />
+                      ) : f.url && /\.(mp4|mov|m4v|webm)$/i.test(f.name) ? (
+                        <video src={`${mediaSrc(f.url)}#t=0.5`} preload="metadata" muted disablePictureInPicture />
                       ) : (
                         <Icon name={ICON[b.key]} size={28} />
                       )}

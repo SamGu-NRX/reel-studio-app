@@ -8,6 +8,7 @@ import { BIN_FOLDERS, binDir, projectsDir, libraryDir, reelStudioRoot } from './
 import type {
   ChatMessage,
   ChecklistItem,
+  ClientProject,
   NoteAttachment,
   ProjectDetail,
   ProjectJson,
@@ -17,7 +18,7 @@ import type {
   Word,
   JobKind
 } from '../shared/api'
-import { mediaUrl } from './media-url'
+import { mediaRef } from './media-files'
 import { keptIds } from '../shared/cut'
 export { keptIds, rangesFromKept, rangesKeepingOrder } from '../shared/cut'
 
@@ -206,7 +207,16 @@ export async function addChat(
 
 const VIDEO_NAMES = ['export.mp4', 'draft.mp4']
 
-export async function listVersions(dir: string): Promise<VersionInfo[]> {
+/** One finished version on disk (main only: these are paths on this computer). */
+export interface VersionFile {
+  n: number
+  file: string
+  draft: boolean
+  cover: string | null
+  mtime: Date
+}
+
+export async function versionFiles(dir: string): Promise<VersionFile[]> {
   const vdir = join(dir, 'versions')
   let names: string[] = []
   try {
@@ -217,18 +227,11 @@ export async function listVersions(dir: string): Promise<VersionInfo[]> {
   // docs/versions.md: a version is a `vN` folder with `export.mp4`. Drafts live in `versions/preview/`
   // and are overwritten; they only show (as n = 0, "Preview") when no final version exists yet,
   // e.g. when an AI run's final render failed.
-  const out: VersionInfo[] = []
+  const out: VersionFile[] = []
   const push = async (n: number, d: string, video: string): Promise<void> => {
     const st = await fs.stat(video)
     const cover = join(d, 'cover.png')
-    out.push({
-      n,
-      video: mediaUrl(video, st.mtimeMs),
-      videoPath: video,
-      draft: basename(video) !== 'export.mp4',
-      cover: existsSync(cover) ? mediaUrl(cover, st.mtimeMs) : null,
-      createdAt: st.mtime.toISOString()
-    })
+    out.push({ n, file: video, draft: basename(video) !== 'export.mp4', cover: existsSync(cover) ? cover : null, mtime: st.mtime })
   }
   for (const name of names) {
     const m = /^v(\d+)$/.exec(name)
@@ -243,6 +246,17 @@ export async function listVersions(dir: string): Promise<VersionInfo[]> {
     if (existsSync(join(d, 'draft.mp4')) && !existsSync(join(d, '.rendering'))) await push(0, d, join(d, 'draft.mp4'))
   }
   return out.sort((a, b) => a.n - b.n)
+}
+
+/** The versions as the page sees them. A version whose file is not under the root is left out (it cannot be played). */
+export async function listVersions(dir: string): Promise<VersionInfo[]> {
+  const out: VersionInfo[] = []
+  for (const v of await versionFiles(dir)) {
+    const video = mediaRef(v.file, v.mtime.getTime())
+    if (!video) continue
+    out.push({ n: v.n, video, draft: v.draft, cover: v.cover ? mediaRef(v.cover, v.mtime.getTime()) : null, createdAt: v.mtime.toISOString() })
+  }
+  return out
 }
 
 /** The engine's scratch folder for drafts (docs/versions.md). */
@@ -432,7 +446,6 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
     const now = new Date().toISOString()
     return {
       slug,
-      dir,
       title: st.title ?? slug,
       createdAt: now,
       updatedAt: now,
@@ -453,7 +466,6 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
         : st.status
   return {
     slug,
-    dir,
     title: p.title || slug,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
@@ -493,26 +505,28 @@ export async function detail(slug: string): Promise<ProjectDetail> {
   const kept = keptIds(words, project.cut?.keep)
   const st = await readAppState(slug)
   const brollThumbs: Record<string, string> = {}
+  const thumb = (id: string, file: string): void => {
+    const ref = existsSync(file) ? mediaRef(file) : null
+    if (ref) brollThumbs[id] = ref
+  }
   for (const b of project.broll ?? []) {
     const a = typeof b.asset === 'string' ? b.asset : ''
     // an attached clip or GIF (work/assets/attach-*.mp4) shows the still `engine attach` made of it
     const clip = /^work\/assets\/(attach-[a-f0-9]{8}-[a-z0-9-]+)\.(mp4|mov|m4v|webm)$/.exec(a)
     if (clip) {
-      const t = join(dir, 'work', 'thumbs', `${clip[1]}.jpg`)
-      if (existsSync(t)) brollThumbs[b.id] = mediaUrl(t)
+      thumb(b.id, join(dir, 'work', 'thumbs', `${clip[1]}.jpg`))
       continue
     }
     if (!/\.(png|jpe?g|webp|gif)$/i.test(a)) continue
-    const p = a.startsWith('Library/') || isAbsolute(a) ? resolveRootPath(a) : join(dir, ...a.split('/'))
-    if (existsSync(p)) brollThumbs[b.id] = mediaUrl(p)
+    thumb(b.id, a.startsWith('Library/') || isAbsolute(a) ? resolveRootPath(a) : join(dir, ...a.split('/')))
   }
   // The raw footage, for "hold for Original" and the Working screen's first frame.
   const src = project.sources?.[0]?.path
   const srcPath = src ? (isAbsolute(src) ? src : join(dir, ...src.split('/'))) : null
   return {
     ...s,
-    sourceVideo: srcPath && existsSync(srcPath) ? mediaUrl(srcPath) : null,
-    project,
+    sourceVideo: srcPath && existsSync(srcPath) ? mediaRef(srcPath) : null,
+    project: clientProject(project),
     versions,
     words,
     keptIds: kept,
@@ -530,7 +544,41 @@ function chatThumb(dir: string, a: NoteAttachment): NoteAttachment {
   const { thumbUrl: _old, ...rest } = a
   if (typeof a.thumb !== 'string' || !/^work\/thumbs\/attach-[a-z0-9-]+\.jpg$/.test(a.thumb)) return rest
   const p = join(dir, ...a.thumb.split('/'))
-  return existsSync(p) ? { ...rest, thumbUrl: mediaUrl(p) } : rest
+  const ref = existsSync(p) ? mediaRef(p) : null
+  return ref ? { ...rest, thumbUrl: ref } : rest
+}
+
+/**
+ * project.json for the page: the fields it edits or shows, with no path on this computer. A take is named by its id
+ * (never its file); a b-roll file outside the project is named from the Reel Studio root ("Library/Images/a.png"),
+ * and one outside the root (an old absolute path) is left out. Unknown fields are dropped, not passed through.
+ */
+export function clientProject(p: ProjectJson): ClientProject {
+  const music = p.music?.track && isAbsolute(p.music.track) ? { ...p.music, track: rootRelativeOrNull(p.music.track) } : p.music
+  return {
+    schemaVersion: p.schemaVersion,
+    id: p.id,
+    title: p.title,
+    slug: p.slug,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+    version: p.version,
+    format: p.format,
+    sources: p.sources?.map(({ path: _path, ...s }) => s),
+    cut: p.cut,
+    captions: p.captions,
+    music,
+    broll: p.broll?.map((b) => (typeof b.asset === 'string' && isAbsolute(b.asset) ? { ...b, asset: rootRelativeOrNull(b.asset) } : b)),
+    zooms: p.zooms,
+    cover: p.cover,
+    post: p.post,
+    notes: p.notes
+  }
+}
+
+function rootRelativeOrNull(path: string): string | null {
+  const r = rootRelative(path)
+  return isAbsolute(r) ? null : r
 }
 
 /** Library paths in project.json are relative to the Reel Studio root (docs/architecture.md section 3). */

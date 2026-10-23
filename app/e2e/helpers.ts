@@ -1,13 +1,15 @@
 // Shared helpers for the Electron end-to-end tests.
 import { expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 export const APP_DIR = resolve(__dirname, '..')
 export const SHOTS = join(APP_DIR, 'e2e', 'screenshots')
 export const BASE = mkdtempSync(join(tmpdir(), 'rs-e2e-'))
+// Every process that loads this file (the runner and each worker) made its own BASE: it goes when that process ends.
+process.on('exit', () => rmSync(BASE, { recursive: true, force: true }))
 // Spaces and non-ASCII on purpose: real users have them.
 export const HOME = join(BASE, 'Zoë Müller', 'Documents')
 export const ROOT = join(HOME, 'Reel Studio')
@@ -51,13 +53,34 @@ export async function launch(extraEnv: Record<string, string> = {}): Promise<{ a
     for (const k of ['REELSTUDIO_ENGINE_DIR', 'REELSTUDIO_PYTHON', 'REELENGINE_FFMPEG', 'REELENGINE_FFPROBE', 'PYTHONPATH', 'FAKE_ENGINE_SLOW'])
       if (!(k in extraEnv)) delete env[k]
   } else if (!env.REELSTUDIO_ENGINE_DIR) env.REELSTUDIO_ENGINE_DIR = join(APP_DIR, 'dev', 'fake-engine')
+  // REELSTUDIO_E2E_REQUIRE=<file.cjs>: a local-only script Electron loads with -r before the app (e.g. one that keeps
+  // every window hidden). Passed as an argument, never through NODE_OPTIONS, which Electron's children would inherit.
+  const pre = process.env.REELSTUDIO_E2E_REQUIRE ? ['-r', process.env.REELSTUDIO_E2E_REQUIRE] : []
   const app = exe
-    ? await electron.launch({ executablePath: exe, args: [], cwd: BASE, env })
-    : await electron.launch({ args: [APP_DIR], cwd: APP_DIR, env })
+    ? await electron.launch({ executablePath: exe, args: [...pre], cwd: BASE, env })
+    : await electron.launch({ args: [...pre, APP_DIR], cwd: APP_DIR, env })
+  if (pre.length) await proveHidden(app)
   const page = await app.firstWindow()
   await page.setViewportSize({ width: 1280, height: 820 })
   await page.waitForLoadState('domcontentloaded')
   return { app, page }
+}
+
+/**
+ * With REELSTUDIO_E2E_REQUIRE, the run must not show a window: the preload's own proof line for this process
+ * (REELSTUDIO_E2E_PROOF_LOG, "loaded pid=<pid> ") and no visible window, or the app is closed and the test fails.
+ */
+async function proveHidden(app: ElectronApplication): Promise<void> {
+  const proof = process.env.REELSTUDIO_E2E_PROOF_LOG
+  const pid = app.process().pid
+  const loaded = !proof || (existsSync(proof) && readFileSync(proof, 'utf8').includes(`loaded pid=${pid} `))
+  const window = await app.firstWindow()
+  await window.waitForLoadState('domcontentloaded')
+  const visible = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.isVisible()))
+  if (!loaded || visible.some(Boolean)) {
+    await app.close().catch(() => {})
+    throw new Error(`hidden launch not proven (preload line: ${loaded}, visible windows: ${JSON.stringify(visible)})`)
+  }
 }
 
 export async function shot(page: Page, name: string): Promise<void> {

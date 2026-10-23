@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { reel, userMessage } from '../api'
+import { mediaSrc, reel, userMessage } from '../api'
 import type { Go } from '../nav'
 import { Confirm, Progress, Spinner, Thinking } from '../components/ui'
 import { Icon } from '../components/icons'
@@ -137,7 +137,7 @@ export function Working({ slug, go }: { slug: string; go: Go }) {
             <div className={`phone${running ? ' working' : ''}`}>
               <div className="phone-screen">
                 {source ? (
-                  <video className={`still${mirrored ? ' mirrored' : ''}`} src={`${source}#t=0.5`} preload="metadata" muted playsInline disablePictureInPicture data-testid="working-frame" />
+                  <video className={`still${mirrored ? ' mirrored' : ''}`} src={`${mediaSrc(source)}#t=0.5`} preload="metadata" muted playsInline disablePictureInPicture data-testid="working-frame" />
                 ) : (
                   <div className="phone-empty">{running ? <Spinner /> : null}</div>
                 )}

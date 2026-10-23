@@ -241,7 +241,7 @@ export function App() {
             {screen.name === 'reel' && <Reel key={screen.slug} slug={screen.slug} go={go} fresh={screen.fresh} />}
             {screen.name === 'library' && <Library refreshKey={libraryTick} />}
             {screen.name === 'style' && <MyStyle />}
-            {screen.name === 'settings' && <Settings info={info} onInfo={setInfo} go={go} />}
+            {screen.name === 'settings' && <Settings info={info} go={go} />}
             {screen.name === 'connect' && <Connect back={screen.back} go={go} />}
           </ErrorBoundary>
         </main>

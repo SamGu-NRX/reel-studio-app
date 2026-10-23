@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { LibraryFile, ProjectDetail, ProjectJson, VersionInfo, Word } from '../../../shared/api'
+import type { ClientProject, LibraryFile, ProjectDetail, VersionInfo, Word } from '../../../shared/api'
 import { rangesKeepingOrder } from '../../../shared/cut'
 import { describeChange } from '../../../shared/describe'
 import { isMirrored, withMirror } from '../../../shared/mirror'
-import { reel, userMessage } from '../api'
+import { mediaSrc, reel, userMessage } from '../api'
 import { useNotify } from '../App'
 import { IS_MAC } from '../components/ui'
 import { Icon } from '../components/icons'
@@ -37,7 +37,7 @@ function animationName(asset: string): string | null {
   return `Moving ${m[1].replace(/-/g, ' ')}`
 }
 
-function brollDetail(b: NonNullable<ProjectJson['broll']>[number]): string {
+function brollDetail(b: NonNullable<ClientProject['broll']>[number]): string {
   const asset = typeof b.asset === 'string' ? b.asset : ''
   const kind = animationName(asset) ?? TREATMENTS[b.treatment] ?? 'Picture'
   const text = typeof b.params?.text === 'string' && b.params.text ? `"${b.params.text}"` : ''
@@ -173,7 +173,7 @@ export function ShowMeHow({
     onTab?.(t)
   }
   const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({})
-  const [patch, setPatch] = useState<Partial<ProjectJson>>({})
+  const [patch, setPatch] = useState<Partial<ClientProject>>({})
   const [kept, setKept] = useState(() => new Set(d.keptIds))
   const [cutDirty, setCutDirty] = useState(false)
   const [music, setMusic] = useState<LibraryFile[]>([])
@@ -181,7 +181,7 @@ export function ShowMeHow({
   const [images, setImages] = useState<LibraryFile[]>([])
   // Adding a picture: which Library picture, then the word where it pops up.
   const [picking, setPicking] = useState<string | null>(null)
-  const p = { ...d.project, ...patch } as ProjectJson
+  const p = { ...d.project, ...patch } as ClientProject
   const dirty = cutDirty || Object.keys(patch).length > 0
 
   const loadLibrary = () =>
@@ -195,7 +195,7 @@ export function ShowMeHow({
 
   /** Pick files on this computer into the Library. Returns Library-relative paths (project.json refuses absolute ones). */
   // a picture's thumbnail: from main (saved items), or the Library file just picked here (not saved yet)
-  const thumbFor = (b: NonNullable<ProjectJson['broll']>[number]): string | null =>
+  const thumbFor = (b: NonNullable<ClientProject['broll']>[number]): string | null =>
     d.brollThumbs?.[b.id] ?? images.find((f) => b.asset === `Library/Images/${f.name}`)?.url ?? null
   const chooseInto = async (kind: 'music' | 'images'): Promise<string[]> => {
     try {
@@ -234,7 +234,7 @@ export function ShowMeHow({
     return d.words.slice(i, Math.min(j + 1, i + 8)).map((w) => w.w).join(' ')
   }
 
-  const set = <K extends keyof ProjectJson>(k: K, v: ProjectJson[K]) => setPatch((x) => ({ ...x, [k]: v }))
+  const set = <K extends keyof ClientProject>(k: K, v: ClientProject[K]) => setPatch((x) => ({ ...x, [k]: v }))
 
   const undo = () => {
     setPatch({})
@@ -272,7 +272,7 @@ export function ShowMeHow({
 
   const save = async () => {
     try {
-      const full: Partial<ProjectJson> = { ...patch }
+      const full: Partial<ClientProject> = { ...patch }
       if (cutDirty) full.cut = { ...(d.project.cut ?? { keep: [] }), keep: rangesKeepingOrder(d.words, d.project.cut?.keep, kept) }
       await reel.projects.update(d.slug, full)
       onChanged()
@@ -564,7 +564,7 @@ export function ShowMeHow({
                       <span className="muted-sm">Or use one from your Library:</span>
                       {images.slice(0, 8).map((f) => (
                         <button key={f.path} className="btn small" title={f.name} onClick={() => setPicking(`Library/Images/${f.name}`)}>
-                          <img src={f.url} alt="" style={{ width: 22, height: 22, objectFit: 'cover', borderRadius: 4 }} /> {f.name.replace(/\.[^.]+$/, '').slice(0, 18)}
+                          <img src={mediaSrc(f.url)} alt="" style={{ width: 22, height: 22, objectFit: 'cover', borderRadius: 4 }} /> {f.name.replace(/\.[^.]+$/, '').slice(0, 18)}
                         </button>
                       ))}
                     </div>
@@ -578,7 +578,7 @@ export function ShowMeHow({
                   {(p.broll ?? []).map((b) => (
                     <div key={b.id} className="list-item">
                       {thumbFor(b) ? (
-                        <img className="broll-thumb" src={thumbFor(b)!} alt="" data-testid="broll-thumb" />
+                        <img className="broll-thumb" src={mediaSrc(thumbFor(b))} alt="" data-testid="broll-thumb" />
                       ) : (
                         <span className="broll-thumb none" aria-hidden>
                           <Icon name={b.asset ? 'film' : 'type'} size={18} />
@@ -601,7 +601,7 @@ export function ShowMeHow({
 
           {tab === 'cover' && (
             <div className="stack">
-              {version?.cover ? <img className="cover-img" src={version.cover} alt="Cover" /> : <p className="muted-sm">No cover yet.</p>}
+              {version?.cover ? <img className="cover-img" src={mediaSrc(version.cover)} alt="Cover" /> : <p className="muted-sm">No cover yet.</p>}
               <h3 style={{ marginTop: 6 }}>Pick the moment for your cover</h3>
               <input
                 type="range"
@@ -612,7 +612,7 @@ export function ShowMeHow({
                 step={0.5}
                 value={coverTime}
                 onChange={(e) =>
-                  set('cover', { ...(p.cover ?? { source: 's1', text: null }), atSourceTime: Number(e.target.value) } as ProjectJson['cover'])
+                  set('cover', { ...(p.cover ?? { source: 's1', text: null }), atSourceTime: Number(e.target.value) } as ClientProject['cover'])
                 }
               />
               <p className="muted-sm">At {coverTime.toFixed(1)} seconds into your video.</p>
@@ -621,7 +621,7 @@ export function ShowMeHow({
                 className="input"
                 placeholder="Leave empty for no words"
                 value={p.cover?.text ?? ''}
-                onChange={(e) => set('cover', { ...(p.cover ?? { source: 's1', atSourceTime: 0 }), text: e.target.value || null } as ProjectJson['cover'])}
+                onChange={(e) => set('cover', { ...(p.cover ?? { source: 's1', atSourceTime: 0 }), text: e.target.value || null } as ClientProject['cover'])}
               />
             </div>
           )}
@@ -633,7 +633,7 @@ export function ShowMeHow({
               <textarea
                 className="textarea"
                 value={p.post?.caption ?? ''}
-                onChange={(e) => set('post', { ...(p.post ?? { hashtags: [], keywords: [] }), caption: e.target.value } as ProjectJson['post'])}
+                onChange={(e) => set('post', { ...(p.post ?? { hashtags: [], keywords: [] }), caption: e.target.value } as ClientProject['post'])}
               />
               <div className="row">
                 <button className="btn small" onClick={() => copy(p.post?.caption ?? '', 'Post caption')}>Copy post caption</button>
@@ -647,7 +647,7 @@ export function ShowMeHow({
                   set('post', {
                     ...(p.post ?? { caption: '', keywords: [] }),
                     hashtags: e.target.value.split(/[\s,]+/).filter(Boolean).map((h) => h.replace(/^#*/, ''))
-                  } as ProjectJson['post'])
+                  } as ClientProject['post'])
                 }
               />
               <div className="row">

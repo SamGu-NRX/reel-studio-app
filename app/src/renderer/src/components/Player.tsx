@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { clock } from '../../../shared/progress'
 import { Icon } from './icons'
-import { reel } from '../api'
+import { mediaSrc, reel } from '../api'
 
 /**
  * While our own reel is being dragged out, the window must not treat it as a new video dropped in.
@@ -110,6 +110,7 @@ export function PhonePlayer({
   testid = 'player',
   children
 }: {
+  /** The video, poster, original and still are media refs (shared/api.ts MediaRef). */
   src: string | null
   poster?: string | null
   /** First arrival after Working: start playing, muted, with a "Tap for sound" chip. */
@@ -127,7 +128,7 @@ export function PhonePlayer({
   /** The take is mirrored and the video flips it: show the still flipped too, so it matches. */
   stillMirrored?: boolean
   onDuration?: (seconds: number) => void
-  /** The file on disk: drag the phone out of the window to put the reel on the desktop or in an upload box. */
+  /** The finished video: drag the phone out of the window to put the reel on the desktop or in an upload box. */
   dragFile?: string | null
   className?: string
   /** The video's test id. The Working screen's first look uses its own, so "player" means the Reel screen. */
@@ -197,8 +198,8 @@ export function PhonePlayer({
             <video
               ref={video}
               key={src}
-              src={src}
-              poster={poster ?? undefined}
+              src={mediaSrc(src)}
+              poster={mediaSrc(poster)}
               preload="metadata"
               playsInline
               disablePictureInPicture
@@ -222,7 +223,7 @@ export function PhonePlayer({
               <video
                 ref={raw}
                 className={`raw-video${holdingOriginal ? ' on' : ''}`}
-                src={original}
+                src={mediaSrc(original)}
                 preload="metadata"
                 playsInline
                 muted={muted}
@@ -231,7 +232,7 @@ export function PhonePlayer({
               />
             )}
             {still && subtitle && !holdingOriginal && (
-              <video className={`raw-video on${stillMirrored ? ' mirrored' : ''}`} key={still} src={still} preload="auto" muted playsInline disablePictureInPicture aria-hidden />
+              <video className={`raw-video on${stillMirrored ? ' mirrored' : ''}`} key={still} src={mediaSrc(still)} preload="auto" muted playsInline disablePictureInPicture aria-hidden />
             )}
             {holdingOriginal && <div className="phone-tag">Original</div>}
             {subtitle && !holdingOriginal && <SubtitleSample look={subtitle.look} text={subtitle.text} width={width} testid="sub-preview" />}

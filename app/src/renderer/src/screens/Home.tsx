@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ProjectSummary } from '../../../shared/api'
-import { niceDate, reel } from '../api'
+import { mediaSrc, niceDate, reel } from '../api'
 import type { Go } from '../nav'
 import { Icon } from '../components/icons'
 
@@ -77,7 +77,7 @@ export function Home({ go }: { go: Go }) {
           {projects.map((p) => (
             <button key={p.slug} className="card" onClick={() => open(p)} data-testid="project-card" title={p.title}>
               <div className="thumb">
-                {p.thumbnail ? <img src={p.thumbnail} alt="" /> : <Icon name="video" size={34} className="placeholder" />}
+                {p.thumbnail ? <img src={mediaSrc(p.thumbnail)} alt="" /> : <Icon name="video" size={34} className="placeholder" />}
               </div>
               <div className="card-body">
                 <div className="card-title">{middle(p.title)}</div>
