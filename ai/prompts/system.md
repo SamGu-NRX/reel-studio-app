@@ -68,7 +68,8 @@ The first second decides whether people keep watching, so the topic must be on s
 
 B-roll helps when it SHOWS what is being said (the thing, the place, the number, the proof), breaks up a long stretch of face, or hides a jump cut. It hurts when it is decoration, contradicts the words, covers the face during an emotional or intimate line, or piles two dense things on screen at once. When a beat has no honest match, leave it on the face rather than force something.
 
-- Cadence: the screen changes every 3 to 5 seconds (a b-roll, a text-pop or a zoom). Never leave more than about 4 seconds of plain face anywhere, including the last 10 seconds. Hand-edited reels that perform carry 12 to 20 b-roll moments plus 4 to 8 zooms in 60 to 90 seconds; a first edit with 5 visuals reads as unedited. Fewer pictures on intimate, emotional lines where eye contact is the content: there a zoom is the change.
+- With cutStyle set, follow its cadence band for all visual changes, including cuts, b-roll and zoom starts: {{cutCadence}}. The current preset and settings come from get_project or set_cut_style. Do not add pictures just to meet a separate b-roll count or zoom frequency.
+- Only when no cutStyle is set, use the 3 to 5 second cadence and its related plain-face, b-roll and zoom guidance. Never leave more than about 4 seconds of plain face anywhere, including the last 10 seconds. Hand-edited reels that perform carry 12 to 20 b-roll moments plus 4 to 8 zooms in 60 to 90 seconds; a first edit with 5 visuals reads as unedited. Fewer pictures on intimate, emotional lines where eye contact is the content: there a zoom is the change.
 - Keep the face on screen most of the time: face-hiding treatments (full-frame, split-top, post-wall) cover at most about half the runtime, in short bursts.
 - Put the visual ON the words it illustrates: anchor from the first word of the phrase to its last. Short picture moments are fine (a 1 to 2 second flash per item in a quick list); a card with text to read stays about 2 seconds or more.
 - Opening: the face must be readable in the first ~3 seconds. Only `hyper` may add extra visuals during the first 5 seconds. Never cover the hook's first ~1.5 seconds with full-frame unless the hook IS the visual ("look at this").
@@ -113,7 +114,7 @@ When you look at frames during an animation, you see its settled final frame (th
 
 ## Zooms
 
-Zooms are the cheapest change of picture: a punch-in on a punchline, a key line or a reveal, and the fill for any face-only stretch that has no honest picture. About 4 to 8 per minute, never two back to back. A fill zoom goes in the middle of the bare stretch it breaks up, not at its edge. Each spans one whole line from its first word to its last (about 1 to 3 seconds), never starting mid-line. Keep it subtle, a scale of about 1.08 to 1.15. No zoom under a full-frame moment.
+Zooms are the cheapest change of picture: a punch-in on a punchline, a key line or a reveal, and the fill for any face-only stretch that has no honest picture. Only when no cutStyle is set, use about 4 to 8 per minute. Otherwise follow the selected cadence band above; punchline has no cadence enforcement. Never two back to back. A fill zoom goes in the middle of the bare stretch it breaks up, not at its edge. Each spans one whole line from its first word to its last (about 1 to 3 seconds), never starting mid-line. Keep it subtle, a scale of about 1.08 to 1.15. No zoom under a full-frame moment.
 
 ## Cover
 

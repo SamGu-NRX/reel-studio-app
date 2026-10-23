@@ -1,6 +1,7 @@
 // Prompts live in ai/prompts/*.md and are loaded at runtime (so they can be tuned without a rebuild).
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { CUT_STYLES } from './cut-style';
 
 export type PromptName = 'system' | 'firstEdit' | 'applyNote' | 'writeScript' | 'pickTakes' | 'review' | 'proofread';
 
@@ -29,6 +30,13 @@ export class Prompts {
   }
 
   render(name: PromptName, vars: Record<string, string> = {}): string {
+    if (name === 'system') {
+      const cutCadence = Object.entries(CUT_STYLES).map(([preset, style]) => {
+        const band = style.secondsPerVisualChange;
+        return band === null ? `${preset}: no cadence enforcement, hold then hit` : `${preset}: every ${band[0]} to ${band[1]} seconds`;
+      }).join('; ');
+      vars = { ...vars, cutCadence };
+    }
     return this.raw(name).replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars ? vars[k] : m));
   }
 }

@@ -133,7 +133,7 @@ export function validateProject(p: unknown, transcript?: Transcript): string[] {
   for (const k of ['id', 'title', 'slug']) if (!isStr(q[k])) out.push(`${k} must be a string`);
   if (q.cutStyle !== undefined) {
     if (!q.cutStyle || typeof q.cutStyle !== 'object' || !Object.prototype.hasOwnProperty.call(q.cutStyle, 'preset') || !Object.prototype.hasOwnProperty.call(q.cutStyle, 'seed')) out.push('cutStyle needs preset and seed');
-    else if (!Object.prototype.hasOwnProperty.call(CUT_STYLES, q.cutStyle.preset)) out.push('cutStyle.preset must be clean, standard, hyper, or punchline');
+    else if (typeof q.cutStyle.preset !== 'string' || !Object.prototype.hasOwnProperty.call(CUT_STYLES, q.cutStyle.preset)) out.push('cutStyle.preset must be clean, standard, hyper, or punchline');
     else if (!Number.isInteger(q.cutStyle.seed)) out.push('cutStyle.seed must be an integer');
   }
   if (!q.format || !isNum(q.format.width) || !isNum(q.format.height) || !isNum(q.format.fps)) out.push('format needs width/height/fps');

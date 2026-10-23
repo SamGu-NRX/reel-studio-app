@@ -10,16 +10,20 @@ CUT_STYLES = {
 }
 
 
-def visual_change_meter(duration, segments, broll, zooms):
+def visual_change_meter(duration, segments, broll, zooms, *, visual_offset=0.0):
+    """Segments are render-relative; b-roll and zooms use the full output clock.
+
+    Count starts in [0, duration), excluding visuals already active before a window.
+    """
     duration = max(0.0, float(duration or 0.0))
     events = {
         "cuts": [float(s.out_start) for s in list(segments)[1:]],
-        "brollStarts": [float(x.get("t0")) for x in broll if isinstance(x, dict) and x.get("t0") is not None and not x.get("skipped") and int(x.get("layers", 1) or 0) > 0],
-        "zoomStarts": [float(getattr(z, "t0", 0.0)) for z in zooms],
+        "brollStarts": [float(x.get("t0")) - visual_offset for x in broll if isinstance(x, dict) and x.get("t0") is not None and not x.get("skipped") and int(x.get("layers", 1) or 0) > 0],
+        "zoomStarts": [float(z.t0) - visual_offset for z in zooms],
     }
     def window(seconds):
         end = min(duration, seconds)
-        counts = {k: sum(t < end for t in ts) for k, ts in events.items()}
+        counts = {k: sum(0 <= t < end for t in ts) for k, ts in events.items()}
         total = sum(counts.values())
         return {"seconds": round(end, 3), **counts, "total": total, "perMinute": round(total * 60 / end, 3) if end else 0}
     return {"overall": window(duration), "first5": window(5), "first30": window(30)}

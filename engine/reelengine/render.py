@@ -775,12 +775,14 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
 
     # 2. b-roll layers + zooms (A2)
     t = time.time()
-    layers, zooms = [], []
+    layers, zooms, raw_broll = [], [], []
     broll = _opt_module("broll")
     if broll is not None and proj.get("broll"):
         progress(STAGE, 12, "Placing your pictures", force=True)
         try:
             layers = list(broll.build_layers(ctx) or [])
+            if layers:
+                raw_broll = projmod.read_json(project_dir / "work" / "layers" / "layers.json").get("items", [])
         except EngineError as exc:
             log(f"# b-roll skipped: {exc.message}")
             warnings.append(f"The b-roll was left out of this version: {exc.user_message}")
@@ -895,13 +897,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
             warnings.append("libass did not report its font choice; caption font unverified")
     os.replace(out_part, out)
 
-    # Count visible event starts on the rendered output timeline. These values are lead decisions and have not been tested on Reel Studio output yet.
-    raw_broll = []
-    try:
-        raw_broll = json.loads((Path(project_dir) / "work" / "layers" / "layers.json").read_text()).get("items", [])
-    except (OSError, ValueError):
-        pass
-    visual_changes = visual_change_meter(dur, segments, raw_broll, zooms)
+    visual_changes = visual_change_meter(dur, segments, raw_broll, zooms, visual_offset=t_shift)
     result = {"version": version, "preview": preview, "versionDir": str(vdir), "file": str(out),
               "draft": draft, "window": list(win) if win else None, "firstLook": first_look,
               "duration": round(dur, 3), "segments": len(segments), "encoder": encoder,

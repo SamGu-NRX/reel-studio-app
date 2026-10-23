@@ -1259,13 +1259,17 @@ const tools: ToolDef[] = [
         return { id: b.id, problem: b.remake, covers: b.clash ?? [],
           fix: item ? { tool: 'update_broll', args: { id: b.id, anchor: { from: item.anchor.from, to: item.anchor.to } } } : null };
       });
-      const bare = ctx.transcript ? faceOnlyStretches(p, ctx.transcript) : [];
-      if (bare.length) notes.push(`${bare.length} stretch${bare.length > 1 ? 'es' : ''} of plain face over 4 s (see faceOnly): the screen should change every 3 to 5 s. Fill each now: first a picture, an animation or a label for something said there (search for it in this same reply); a zoom on a whole line in its MIDDLE only where nothing there can be shown (set_zoom replaces the list: send every zoom).`);
+      const cadence = p.cutStyle ? CUT_STYLES[p.cutStyle.preset].secondsPerVisualChange : undefined;
+      // The rendered meter includes cuts; the anchor estimate only sees b-roll and zooms.
+      const cadenceMet = p.cutStyle && visualChanges?.overall?.verdict === 'in band';
+      const bare = ctx.transcript && cadence !== null && !cadenceMet ? faceOnlyStretches(p, ctx.transcript, cadence?.[1] ?? 4.5) : [];
+      const cadenceAdvice = cadence ? `over ${cadence[1]} s (see faceOnly): the screen should change every ${cadence[0]} to ${cadence[1]} s` : 'over 4 s (see faceOnly): the screen should change every 3 to 5 s';
+      if (bare.length) notes.push(`${bare.length} stretch${bare.length > 1 ? 'es' : ''} of plain face ${cadenceAdvice}. Fill each now: first a picture, an animation or a label for something said there (search for it in this same reply); a zoom on a whole line in its MIDDLE only where nothing there can be shown (set_zoom replaces the list: send every zoom).`);
       // pictures clumped in one half: a long run held up by zooms alone reads as unedited
-      const noPicture = ctx.transcript ? faceOnlyStretches(p, ctx.transcript, 10, false) : [];
+      const noPicture = !p.cutStyle && ctx.transcript ? faceOnlyStretches(p, ctx.transcript, 10, false) : [];
       if (noPicture.length) notes.push(`${noPicture.length === 1 ? 'One stretch has' : `${noPicture.length} stretches have`} no picture for over 10 s (see noPicture; zooms alone): the pictures are clumped. Put a picture or an animation on something said in the middle of each (a word card does not count: a real thing, place, number, list or quote).`);
       const perMin = (p.zooms.length * 60) / Math.max(20, typeof r.duration === 'number' ? r.duration : 60);
-      if (perMin > 10) notes.push(`${p.zooms.length} zooms is about ${Math.round(perMin)} a minute, which reads as constant: keep 4 to 8 a minute, on punchlines and in the middle of bare stretches (set_zoom replaces the list).`);
+      if (!p.cutStyle && perMin > 10) notes.push(`${p.zooms.length} zooms is about ${Math.round(perMin)} a minute, which reads as constant: keep 4 to 8 a minute, on punchlines and in the middle of bare stretches (set_zoom replaces the list).`);
       const pops = popCards(p);
       if (pops.length > 2) notes.push(`${pops.length} big word cards (see wordCards): they read as filler and each one stays up about 2 s, past the end of a short line. Keep at most 2 (a number or a name the viewer must remember); replace the rest with a picture or an animation, or remove them.`);
       const flashes = await shortFlashes(ctx, p, ctx.transcript);
@@ -1274,7 +1278,7 @@ const tools: ToolDef[] = [
       if (names.length) notes.push(`Named things the viewer hears but never sees (see namedNotShown). A brand, app, product, company or show: search_images "<name> logo" and place it on its words; a place or event: "<name> photo". Skip people the viewer would not know and anything that is not really a name.`);
       const moments = brollMoments(p);
       const want = Math.round((typeof r.duration === 'number' ? r.duration : 60) / 6);
-      if (moments < Math.round(want * 0.75)) notes.push(`Only ${moments} b-roll moments (pictures, animations, labels; the hook title not counted) for a ${Math.round(r.duration ?? 60)} s video: hand edits carry about ${want}. Before finishing, add pictures or animations for the named things, places, numbers and examples still bare: search_images for them now, all in one reply.`);
+      if (!p.cutStyle && moments < Math.round(want * 0.75)) notes.push(`Only ${moments} b-roll moments (pictures, animations, labels; the hook title not counted) for a ${Math.round(r.duration ?? 60)} s video: hand edits carry about ${want}. Before finishing, add pictures or animations for the named things, places, numbers and examples still bare: search_images for them now, all in one reply.`);
       if (remakeAnimations.length) notes.push(`Animation${remakeAnimations.length > 1 ? 's' : ''} ${remakeAnimations.map((a: any) => a.id).join(', ')} now cover${remakeAnimations.length > 1 ? '' : 's'} the face or captions because the edit changed after ${remakeAnimations.length > 1 ? 'they were' : 'it was'} made. Remake each one now with its "fix" call (update_broll with the same anchor re-renders it into the free space), then render_draft again.`);
       return { content: { ok: true, version: info.version, duration: r.duration ?? null, verify: r.verify ?? null, warnings: r.warnings ?? null,
         ...(shown.length ? { brollShownDifferently: shown.map((b: any) => ({ id: b.id, treatment: b.treatment, ...(b.fallback ? { shownAs: b.shownAs, why: b.fallback } : { skipped: b.skipped }) })) } : {}),
@@ -1284,7 +1288,7 @@ const tools: ToolDef[] = [
         ...(pops.length > 2 ? { wordCards: pops } : {}),
         ...(flashes.length ? { tooShort: flashes } : {}),
         ...(names.length ? { namedNotShown: names } : {}),
-        brollMoments: { have: moments, handEditsCarry: want },
+        brollMoments: { have: moments, ...(!p.cutStyle ? { handEditsCarry: want } : {}) },
         ...(visualChanges ? { visualChanges, settings: p.cutStyle ? CUT_STYLES[p.cutStyle.preset] : undefined } : {}),
         ...(notes.length ? { note: notes.join(' ') } : {}) } };
     },
