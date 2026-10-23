@@ -16,7 +16,7 @@ test('fails if player controls start file drag or picture drag-out stops working
     await page.getByTestId('file-input').setInputFiles(media.video)
     const player = page.getByTestId('player')
     await expect(player).toBeVisible({ timeout: 120_000 })
-    await expect(page.getByTestId('export')).toBeEnabled()
+    await expect(page.getByTestId('share')).toBeEnabled()
     await player.evaluate((v: HTMLVideoElement) => { v.pause(); v.currentTime = 0 })
     const track = page.getByRole('slider', { name: 'Position in the video' })
     await track.hover()

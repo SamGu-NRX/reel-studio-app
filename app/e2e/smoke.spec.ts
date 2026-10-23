@@ -122,15 +122,15 @@ test('make a reel end to end', async () => {
   }
   await shot(page, '12-reel-no-ai')
 
-  // ---- export ----
-  await page.getByTestId('export').click()
-  await expect(page.getByText('Saved to your computer')).toBeVisible({ timeout: 120_000 })
-  await shot(page, '13-export')
+  // ---- share ----
+  await page.getByTestId('share').click()
+  await page.getByTestId('share-finder').click()
+  await expect(page.getByTestId('share-pop')).toContainText('- Version 2.mp4', { timeout: 120_000 })
+  await shot(page, '13-share')
   const exported = readdirSync(join(profile.root, 'Library', 'Exports'))
   expect(exported.some((f) => / - Version 2\.mp4$/.test(f))).toBe(true)
-  await expect(page.getByTestId('export-name')).toContainText('- Version 2.mp4')
   expect(exported.some((f) => f.endsWith('caption.txt'))).toBe(true)
-  await page.getByText('Done', { exact: true }).click()
+  await page.keyboard.press('Escape')
 
   // ---- my style, settings, script ----
   await page.getByTestId('nav-style').click()

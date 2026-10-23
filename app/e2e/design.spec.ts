@@ -150,14 +150,13 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   // ---- Ctrl+E exports (Windows; on a Mac the File menu owns Cmd+E) ----
   if (process.platform !== 'darwin') {
     await page.keyboard.press('Control+E')
-    await expect(page.getByText('Saved to your computer')).toBeVisible({ timeout: 120_000 })
-    await page.getByTestId('export-caption').fill('Three things I wish I knew')
-    await page.getByTestId('copy-caption').click()
-    await expect(page.getByTestId('copy-caption')).toHaveText('Copied')
-    await shot(page, 'd-09-export-with-caption')
+    await page.getByTestId('share-caption').fill('Three things I wish I knew')
+    await page.getByTestId('share-instagram').click()
+    await expect(page.getByTestId('share-pop')).toContainText('caption copied', { timeout: 120_000 })
+    await shot(page, 'd-09-share-with-caption')
     await page.keyboard.press('Escape')
-    await expect(page.getByTestId('export-dialog')).toHaveCount(0)
-    // The caption typed in the export box is saved with the video.
+    await expect(page.getByTestId('share-pop')).toBeHidden()
+    // The caption typed in Share is saved with the reel.
     await expect.poll(() => JSON.parse(readFileSync(join(projectDir(), 'project.json'), 'utf8')).post.caption).toBe('Three things I wish I knew')
   }
 
@@ -201,7 +200,7 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   const opened = Date.now()
   await page.getByTestId('project-card').first().click()
   await expect(page.getByTestId('player')).toBeVisible({ timeout: 1000 })
-  await expect(page.getByTestId('export')).toBeEnabled({ timeout: 1000 })
+  await expect(page.getByTestId('share')).toBeEnabled({ timeout: 1000 })
   await expect(page.getByTestId('edit-myself')).toBeEnabled({ timeout: 1000 })
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
   const wasPaused = await paused()

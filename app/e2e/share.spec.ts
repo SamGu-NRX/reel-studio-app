@@ -1,0 +1,71 @@
+// Share's popover: Help improve is asked once, only after a share that worked, and the last destination used comes first.
+//
+// Run: npx playwright test e2e/share.spec.ts (after npm run build).
+import { test, expect } from '@playwright/test'
+import { chmodSync, mkdirSync, mkdtempSync } from 'node:fs'
+import { join } from 'node:path'
+import { BASE, launch, makeMedia, passFirstRun } from './helpers'
+
+test('fails if Help improve is asked before a share that worked or a second time, or the last destination used is not first', async () => {
+  test.skip(process.platform !== 'darwin', 'Uses a macOS iCloud Drive folder to make a save fail.')
+  test.setTimeout(15 * 60_000)
+  const dir = mkdtempSync(join(BASE, 'share-'))
+  const home = join(dir, 'home')
+  const icloud = join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs')
+  mkdirSync(icloud, { recursive: true })
+  const media = makeMedia()
+  const { app, page } = await launch({ REELSTUDIO_USER_DATA: join(dir, 'data'), REELSTUDIO_ROOT: join(dir, 'Reel Studio') })
+  const sharing = () => page.evaluate(() => window.reel.app.info().then((i) => i.sharing))
+  try {
+    await app.evaluate(({ app }, folder) => app.setPath('home', folder), home)
+    await passFirstRun(page)
+    // The first run still asks today; Share takes the question over, so start from "never asked".
+    await page.evaluate(() => window.reel.app.setSharing({ asked: false, on: false, usage: true, quality: true, posts: true }))
+    await page.getByTestId('new-video').click()
+    await page.getByTestId('file-input').setInputFiles([media.video])
+    await expect(page.getByTestId('share')).toBeEnabled({ timeout: 10 * 60_000 })
+
+    const pop = page.getByTestId('share-pop')
+    const ask = pop.getByTestId('help-improve')
+    await page.getByTestId('share').click()
+    await expect(pop).toBeVisible()
+    await expect(ask).toHaveCount(0)
+
+    // A save that fails is not a share.
+    chmodSync(icloud, 0o500)
+    await pop.getByTestId('save-icloud').click()
+    await expect(pop.locator('.sp-fail')).toContainText("isn't allowed to write to iCloud Drive")
+    await expect(ask).toHaveCount(0)
+    chmodSync(icloud, 0o700)
+
+    await pop.getByTestId('share-finder').click()
+    await expect(pop).toContainText('Saved as', { timeout: 120_000 })
+    await expect(ask).toBeVisible()
+    await expect(ask).toContainText('Never your videos, words, notes or file names.')
+    expect((await sharing()).asked).toBe(true)
+    await ask.getByTestId('help-no').click()
+    await expect(ask).toHaveCount(0)
+    expect(await sharing()).toMatchObject({ asked: true, on: false })
+    await page.keyboard.press('Escape')
+    await expect(pop).toBeHidden()
+
+    await page.getByTestId('share').click()
+    await expect(pop.locator('.sp-go').first()).toHaveAttribute('data-testid', 'share-finder')
+    await pop.getByTestId('share-instagram').click()
+    await expect(pop).toContainText('caption copied')
+    await expect(ask).toHaveCount(0)
+
+    // Another visit to the reel: still asked once, and Instagram now comes first.
+    await page.keyboard.press('Escape')
+    await page.getByTestId('nav-home').click()
+    await page.getByTestId('project-card').first().click()
+    await page.getByTestId('share').click()
+    await expect(pop.locator('.sp-go').first()).toHaveAttribute('data-testid', 'share-instagram')
+    await pop.getByTestId('share-finder').click()
+    await expect(pop).toContainText('Saved as')
+    await expect(ask).toHaveCount(0)
+  } finally {
+    chmodSync(icloud, 0o700)
+    await app.close()
+  }
+})

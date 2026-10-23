@@ -44,7 +44,7 @@ test('Home reopens a running note or rerender on the Reel screen', async () => {
     }, detail)
     await page.getByTestId('nav-home').click()
     await page.getByTestId('project-card').click()
-    await expect(page.getByTestId('export')).toBeEnabled()
+    await expect(page.getByTestId('share')).toBeEnabled()
 
     await app.evaluate(({ ipcMain }, d) => {
       ipcMain.removeHandler('projects:get')
