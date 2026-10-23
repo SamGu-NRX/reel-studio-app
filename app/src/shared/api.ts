@@ -12,7 +12,8 @@ export type { CoverCandidate } from './cover'
 
 export type AppCommand = { type: 'new-video' | 'settings' | 'export' | 'library' } | { type: 'open-reel'; slug: string }
 
-export type ScreenStatus = 'new' | 'working' | 'ready' | 'interrupted' | 'failed'
+/** planned: a reel with no video yet (New reel); its notes column is for planning and scripts. */
+export type ScreenStatus = 'planned' | 'new' | 'working' | 'ready' | 'interrupted' | 'failed'
 
 export interface ProjectSummary {
   slug: string
@@ -80,6 +81,10 @@ export interface ChatMessage {
   /** The job this note started, and how that job ended (the marks on the scrub bar, shared/moments.ts). */
   jobId?: string
   outcome?: NoteOutcome
+  /** Said while planning, before the reel had a video. */
+  plan?: true
+  /** The script the editor wrote for a planned reel (an editor message). */
+  script?: ScriptResult
 }
 
 /** done: the note made a new version. failed: an error, or nothing changed. stopped: Stop, or the app quit. */
@@ -89,6 +94,8 @@ export type NoteOutcome = 'done' | 'failed' | 'stopped'
 export interface NoteMoment {
   /** seconds into `version` (0 = the Preview) */
   at: number
+  /** the end of a range dragged on the timeline; absent for one moment */
+  to?: number
   version: number
   /** transcript word ids, in the order they play */
   words: string[]
@@ -428,6 +435,8 @@ export interface ScriptResult {
   hook: string
   script: string
   onScreenText: string[]
+  /** A short title for the reel, when the editor gave one. */
+  title?: string
 }
 
 export interface UserError {
@@ -498,7 +507,14 @@ export interface ReelApi {
     list(): Promise<ProjectSummary[]>
     get(slug: string): Promise<ProjectDetail>
     create(files: string[]): Promise<{ slug: string; jobId: string; skipped: DropResult[] }>
-    resume(slug: string): Promise<{ jobId: string }>
+    /** New reel: a reel with no video yet, titled "New reel" until the editor titles it. */
+    plan(): Promise<{ slug: string }>
+    /** The video for a planned reel: its first edit starts, and the editor gets the reel's script. */
+    addVideo(slug: string, files: string[]): Promise<{ jobId: string; skipped: DropResult[] }>
+    /** The editor writes a script for a planned reel from `idea` (a job: its status line, Stop, the script in the chat). */
+    script(slug: string, idea: string): Promise<{ jobId: string }>
+    /** `basic`: make the version without the editor (a failed Version 1's "Make a basic version"). */
+    resume(slug: string, basic?: boolean): Promise<{ jobId: string }>
     /** jobId null = no AI connected: the note and a plain reply were added to the chat, nothing runs.
      * `attachments`: `work/assets/attach-*` refs from notes.attach* (main re-checks each one).
      * `moment`: a "Just here" note's place; main writes it into the text the AI reads.
@@ -575,9 +591,6 @@ export interface ReelApi {
     remove(id: string): Promise<void>
     /** Answer "Remember this for next time?" on a chat message: Yes saves the rule, No only says so. */
     answer(slug: string, messageId: string, yes: boolean): Promise<void>
-  }
-  script: {
-    write(idea: string): Promise<ScriptResult>
   }
   dev: {
     /** Test builds only. `template` defaults to the bundled self-test template. */

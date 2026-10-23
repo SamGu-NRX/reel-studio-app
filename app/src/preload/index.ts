@@ -65,7 +65,10 @@ const api: ReelApi = {
     list: () => call('projects:list'),
     get: (slug) => call('projects:get', slug),
     create: (files) => call('projects:create', files),
-    resume: (slug) => call('projects:resume', slug),
+    plan: () => call('projects:plan'),
+    addVideo: (slug, files) => call('projects:addVideo', slug, files),
+    script: (slug, idea) => call('projects:script', slug, idea),
+    resume: (slug, basic) => call('projects:resume', slug, basic),
     note: (slug, text, attachments, moment, onVersion) => call('projects:note', slug, text, attachments, moment, onVersion),
     timeline: (slug, n) => call('projects:timeline', slug, n),
     versionRows: (slug, n) => call('projects:versionRows', slug, n),
@@ -115,9 +118,6 @@ const api: ReelApi = {
     rules: () => call('style:rules'),
     remove: (id) => call('style:remove', id),
     answer: (slug, messageId, yes) => call('style:answer', slug, messageId, yes)
-  },
-  script: {
-    write: (idea) => call('script:write', idea)
   },
   dev: {
     renderTestAnimation: (out, full, template, params) => call('dev:renderTestAnimation', out, full, template, params)

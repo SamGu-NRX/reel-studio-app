@@ -2,7 +2,7 @@
 // goes to the renderer; app.json records the running job so a crash can be recovered at startup.
 import { randomUUID } from 'node:crypto'
 import type { JobEvent, JobKind, JobUpdate, Phase, VersionMade } from '../shared/api'
-import { addChat, cleanPartialVersions, listVersions, projectDir, recordVersionMade, settleNote, updateAppState, settleInterrupted, stamp, type AppState } from './store'
+import { cleanPartialVersions, listVersions, projectDir, recordVersionMade, settleNote, updateAppState, settleInterrupted, stamp, type AppState } from './store'
 import { claimProject, type ProjectOwner } from './owner'
 import type { ChatLine } from './style-consent'
 import { toUserError } from './engine'
@@ -212,7 +212,8 @@ export function createJobManager(
         if (slug) {
           await updateAppState(slug, (s) => {
             s.job = null
-            s.status = 'ready'
+            // a script is written for a reel with no video yet: it stays planned
+            if (kind !== 'script') s.status = 'ready'
             settleNote(s, id, res.outcome ?? 'done')
             if (!res.quiet) s.chat.push(...(res.chat ?? [{ from: 'editor', text: res.summary, version: res.version }]).map(stamp))
           }).catch((e) => log(`[job ${kind}] saved, but app.json was not updated: ${String(e)}`))
@@ -243,7 +244,8 @@ export function createJobManager(
             settleNote(s, id, cancelled ? 'stopped' : 'failed')
           }).catch(() => {})
         }
-        if (slug && !cancelled && kind !== 'first-edit') await addChat(slug, 'editor', err.userMessage).catch(() => {})
+        if (slug && !cancelled && kind !== 'first-edit')
+          await updateAppState(slug, (s) => void s.chat.push(stamp({ from: 'editor', text: err.userMessage, ...(kind === 'script' ? { plan: true as const } : {}) }))).catch(() => {})
         send(cancelled ? { jobId: id, slug, type: 'cancelled' } : { jobId: id, slug, type: 'error', code: err.code, userMessage: err.userMessage })
       } finally {
         clearInterval(tick)
