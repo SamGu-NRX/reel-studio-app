@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { clock } from '../../../shared/progress'
-import { BOX_PAD, MARGIN_FRAC, SIZE_PER_EM, fitCaption, type Measure } from '../../../shared/caption-fit'
+import { BOX_PAD, SIZE_PER_EM, type Measure } from '../../../shared/caption-fit'
+import { fitLook, type SubtitleLook } from '../../../shared/caption-presets'
 import { groupMarks, type NoteMark } from '../../../shared/moments'
 import { Icon } from './icons'
 import { reel } from '../api'
@@ -26,32 +27,7 @@ export function markDraggingOut(): void {
 }
 export const draggingOut = (): boolean => !!(window as { __rsDraggingOut?: boolean }).__rsDraggingOut
 
-/** The subtitle look, in the engine's own units (1080 x 1920 frame). */
-export interface SubtitleLook {
-  size: number
-  position: number
-  color: string
-  outlineColor: string
-  outline: number
-  box: boolean
-  upper: boolean
-}
-
-export const ENGINE_WIDTH = 1080
-
-export function lookFromStyle(st: Record<string, unknown> | undefined): SubtitleLook {
-  const s = st ?? {}
-  return {
-    size: Number(s.size ?? 105),
-    position: Number(s.position ?? 0.75),
-    color: String(s.color ?? '#FFFFFF'),
-    outlineColor: String(s.outlineColor ?? '#000000'),
-    outline: Number(s.outline ?? 8),
-    box: !!s.box,
-    upper: (s.case ?? 'upper') === 'upper'
-  }
-}
-
+const ENGINE_WIDTH = 1080
 const SUB_FONT = "'Reel Subtitles'"
 let subFontReady = false
 const subFontLoad = document.fonts.load(`600 16px ${SUB_FONT}`).then(() => {
@@ -76,15 +52,14 @@ const measure: Measure = (text, size, outline) => {
 }
 
 /**
- * The engine's subtitle look drawn in CSS at the size of `width` (the preview's width in px). It sizes and
- * breaks the lines with the engine's own rule (shared/caption-fit.ts), so a word is never split.
+ * The engine's subtitle look drawn in CSS at the size of `width` (the preview's width in px), with the lines
+ * broken where the engine breaks them (shared/caption-fit.ts), so a word is never split. The sample shows the
+ * moment its first word is spoken, so a highlight lights that word.
  */
 export function SubtitleSample({ look, text, width, testid }: { look: SubtitleLook; text: string; width: number; testid?: string }) {
   const fontReady = useSubtitleFont()
   const k = width / ENGINE_WIDTH
-  const shown = look.upper ? text.toUpperCase() : text
-  const outline = look.box ? Math.max(look.outline, BOX_PAD) : look.outline
-  const fit = fitCaption(shown, look.size, ENGINE_WIDTH * (1 - 2 * MARGIN_FRAC), outline, measure)
+  const fit = fitLook(look, text, measure)
   const style: React.CSSProperties = {
     top: `${look.position * 100}%`,
     fontSize: (fit.size / SIZE_PER_EM) * k,
@@ -93,17 +68,24 @@ export function SubtitleSample({ look, text, width, testid }: { look: SubtitleLo
     visibility: fontReady ? undefined : 'hidden'
   }
   if (look.box) {
-    // libass draws the box as the outline: `outline` of padding all round each line.
-    Object.assign(style, { background: look.outlineColor, padding: outline * k })
+    // libass draws the box as the outline: that much padding all round each line.
+    Object.assign(style, { background: look.outlineColor, padding: Math.max(look.outline, BOX_PAD) * k })
   } else {
     // Stroke is centred on the glyph edge, so twice the engine's outline, painted under the fill.
     Object.assign(style, { WebkitTextStroke: `${Math.max(0.6, look.outline * k) * 2}px ${look.outlineColor}`, paintOrder: 'stroke fill' })
   }
   return (
-    <div className="sub-sample" style={style} data-testid={testid} data-lines={fit.lines.length} aria-hidden>
-      {fit.lines.map((line, i) => (
-        <span key={i}>{line}</span>
-      ))}
+    <div className={`sub-sample${look.pop ? ' pop' : ''}`} style={style} data-testid={testid} data-lines={fit.lines.length} aria-hidden>
+      {fit.lines.map((line, i) => {
+        if (!look.highlight || i > 0) return <span key={i}>{line}</span>
+        const [first, ...rest] = line.split(' ')
+        return (
+          <span key={i}>
+            <span style={{ color: look.highlight }}>{first}</span>
+            {rest.length ? ` ${rest.join(' ')}` : ''}
+          </span>
+        )
+      })}
     </div>
   )
 }

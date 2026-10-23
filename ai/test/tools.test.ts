@@ -357,6 +357,12 @@ describe('tool implementations', () => {
     expect((await executeTool(ctx, 'set_cover', { atSourceTime: 6.2, source: 's9', text: null })).isError).toBe(true);
     expect((await executeTool(ctx, 'set_caption_style', { size: 70, maxWords: 2, case: 'title', color: '#AABBCC88', position: 0.72 })).isError).toBe(false);
     expect((await loadProject(dir)).captions.style).toMatchObject({ size: 70, maxWords: 2, case: 'title', color: '#AABBCC88', position: 0.72 });
+    await executeTool(ctx, 'set_caption_style', { highlight: '#34C759' });
+    expect(ctx.project!.captions.style.highlight).toBe('#34C759');
+    expect((await executeTool(ctx, 'set_caption_style', { highlight: '#34C75980' })).isError).toBe(true); // the engine draws no see-through highlight
+    expect((await executeTool(ctx, 'set_caption_style', { highlight: '' })).isError).toBe(true);
+    await executeTool(ctx, 'set_caption_style', { highlight: 'none' });
+    expect(ctx.project!.captions.style).not.toHaveProperty('highlight');
     const seeded = await loadProject(dir);
     seeded.captions.corrections = [{ from: 'and', to: 'And', at: 'w35' }];
     await saveProject(dir, seeded);
