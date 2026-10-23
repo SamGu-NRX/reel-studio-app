@@ -40,6 +40,13 @@ export interface EditorDeps {
   firstLook?: boolean;
   /** apply unambiguous whole-video notes without the AI (default true) */
   fastNotes?: boolean;
+  /** the model that proofreads Version 1's subtitles (Settings: Checks each edit); default the editor's */
+  checker?: ModelProvider | null;
+  /** the model that writes the caption the editor left out (Settings: Writes titles); default the editor's */
+  writer?: ModelProvider | null;
+  /** An AI failure the host pauses on (a plan at its limit, no internet): Version 1 is not made without the editor
+   * then, it waits to continue (the app's Paused without you). Default: none, so a basic version stands in. */
+  pauseOn?: (e: AIError) => boolean;
 }
 
 export interface EditResult extends AgentResult {
@@ -301,6 +308,7 @@ async function editNewVideo(deps: EditorDeps, provider: ModelProvider | null, pr
   } catch (e: any) {
     await ctx.renderGate?.catch(() => undefined);   // never two renders at once
     if (signal?.aborted || e?.code === 'cancelled') { await removeStyleRules(deps, ctx.state); throw e; }
+    if (e instanceof AIError && !ctx.state.renders.length && deps.pauseOn?.(e)) { await removeStyleRules(deps, ctx.state); throw e; }
     if (e instanceof AIError && !ctx.state.renders.length) {
       await removeStyleRules(deps, ctx.state);
       // The AI stopped (limit, sign-in, network). Make a simple version so the user still gets a video,
@@ -323,8 +331,8 @@ ${summary}
     }
     throw e;
   }
-  await proofreadCaptions(deps, provider, ctx, onEvent, signal);
-  await wrapUpPost(deps, provider, ctx, onEvent, signal);
+  await proofreadCaptions(deps, deps.checker ?? provider, ctx, onEvent, signal);
+  await wrapUpPost(deps, deps.writer ?? provider, ctx, onEvent, signal);
   onEvent({ type: 'status', message: 'Finishing your reel', pct: 94, phase: 'final' });
   const version = await finalize(deps, ctx, onEvent);
   const summary = withStyleEcho(honestSummary(run, ctx.state)

@@ -7,7 +7,7 @@ import type { StyleProposal } from './style';
 export type Phase = 'listen' | 'analyze' | 'firstLook' | 'edit' | 'final';
 
 export type AgentEvent =
-  | { type: 'status'; message: string; pct?: number; phase?: Phase; /** waiting on the model's answer */ thinking?: boolean; /** from the simple edit, made without the AI */ noAI?: boolean }
+  | { type: 'status'; message: string; pct?: number; phase?: Phase; /** waiting on the model's answer */ thinking?: boolean; /** the message is the wait itself (agent.ts waitWords), not the step's work */ waiting?: boolean; /** from the simple edit, made without the AI */ noAI?: boolean }
   | { type: 'tool'; name: string; summary: string }
   | { type: 'render'; version: number; draft: boolean; /** the no-AI first look, shown while the AI edits */ firstLook?: boolean; file?: string }
   /** a note's reply, known before the render that makes it true (fast notes): the app shows it at once */
@@ -61,7 +61,7 @@ export class AIError extends Error implements UserFacingError {
   constructor(
     public readonly code: string,
     public readonly userMessage: string,
-    opts: { detail?: string; link?: string; retryable?: boolean; status?: number; requestId?: string } = {},
+    opts: { detail?: string; link?: string; retryable?: boolean; status?: number; requestId?: string; resetsAt?: string } = {},
   ) {
     super(opts.detail ?? userMessage);
     this.name = 'AIError';
@@ -69,13 +69,16 @@ export class AIError extends Error implements UserFacingError {
     this.retryable = opts.retryable ?? false;
     this.status = opts.status;
     this.requestId = opts.requestId;
+    this.resetsAt = opts.resetsAt;
   }
   link?: string;
   retryable: boolean;
   status?: number;
   requestId?: string;
-  toJSON(): UserFacingError & { status?: number; requestId?: string } {
-    return { code: this.code, userMessage: this.userMessage, link: this.link, retryable: this.retryable, status: this.status, requestId: this.requestId };
+  /** A plan at its limit: when it resets (ISO), when the service said. */
+  resetsAt?: string;
+  toJSON(): UserFacingError & { status?: number; requestId?: string; resetsAt?: string } {
+    return { code: this.code, userMessage: this.userMessage, link: this.link, retryable: this.retryable, status: this.status, requestId: this.requestId, ...(this.resetsAt ? { resetsAt: this.resetsAt } : {}) };
   }
 }
 
@@ -102,7 +105,12 @@ export interface CompletionRequest {
   /** When set, the model must answer with JSON only (no tools). */
   jsonOnly?: boolean;
   signal?: AbortSignal;
+  /** What the provider learns while it waits, from a provider that reports it (ModelProvider.reportsWaits). */
+  onWait?: (w: WaitSignal) => void;
 }
+/** `retrying`: the service refused or did not answer and the CLI tries again after `delayMs`; `answering`: the
+ * answer has started to arrive. */
+export type WaitSignal = { kind: 'retrying'; attempt: number; max: number; delayMs: number; status: number | null } | { kind: 'answering' };
 export interface TokenUsage { input?: number; output?: number; cacheRead?: number; cacheWrite?: number }
 export interface CompletionResponse {
   text: string; toolCalls: ToolCall[]; raw?: unknown; usage?: TokenUsage;
@@ -116,6 +124,8 @@ export interface ModelProvider {
   readonly id: ProviderId | 'fake';
   readonly model?: string;
   readonly supportsImages: boolean;
+  /** Calls req.onWait: so silence before the answer starts means waiting, not working. */
+  readonly reportsWaits?: boolean;
   complete(req: CompletionRequest): Promise<CompletionResponse>;
   /** Release anything kept between turns (a live CLI session). Called when an agent run ends; the run
    * ends only once the returned promise settles (its processes have exited). */

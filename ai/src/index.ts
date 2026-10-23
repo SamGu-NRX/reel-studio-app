@@ -43,6 +43,29 @@ export type { ApplyNoteOptions } from './editor';
 export { ATTACHMENT_REF, MAX_ATTACHMENTS_PER_NOTE, readAttachment, listAttachments, validateAttachments, placedAssets } from './attachments';
 export type { AttachmentInfo } from './attachments';
 
+/** The parts of the work Settings › Editor › Models lets the person pick a model for. */
+export type ModelRole = 'editor' | 'checker' | 'writer';
+/** A model per role; missing or 'auto' leaves it to the editor's own default. */
+export type RoleModels = Partial<Record<ModelRole, string>>;
+/** Claude Code's model names, as `claude --help` lists them for `--model` (2.1.308). The app's picker offers these. */
+export const CLAUDE_CODE_MODELS = ['fable', 'opus', 'sonnet'];
+const ROLE_NAMES: Record<ModelRole, string> = { editor: 'Edits', checker: 'Checks each edit', writer: 'Writes titles' };
+
+/**
+ * The model `role` asks the active editor for. Claude Code and your own server take a model name; ChatGPT and a Claude
+ * key pick their own, so a choice does not apply to them. A name Claude Code cannot run (left from another editor) is
+ * refused by name rather than sent.
+ */
+export function modelForRole(provider: ProviderId, role: ModelRole, choices: RoleModels): string | undefined {
+  const m = choices[role];
+  if (!m || m === 'auto') return undefined;
+  if (provider === 'claude-cli') {
+    if (CLAUDE_CODE_MODELS.includes(m) || /^claude-[\w.-]+$/.test(m)) return m;
+    throw new AIError('model_not_offered', `Your Claude Code app doesn't offer "${m}", the model chosen for ${ROLE_NAMES[role]}. Choose another in Settings, under Editor, or Auto.`);
+  }
+  return provider === 'custom' ? m : undefined;
+}
+
 export interface AISettings {
   active?: ProviderId;
   claudeModel?: string;
@@ -109,6 +132,8 @@ export interface CreateAIOptions {
   anthropicBaseURL?: string;
   /** Force a specific model provider (tests). */
   providerOverride?: ModelProvider;
+  /** The person's model per role (the app's Settings › Editor › Models), read at the start of each job. */
+  roleModels?: () => RoleModels | Promise<RoleModels>;
   finalRender?: boolean;
   maxSteps?: number;
 }
@@ -124,6 +149,7 @@ const PEOPLE_PROVIDERS: ProviderId[] = ['chatgpt', 'claude', 'claude-cli', 'cust
 const LOCAL_CLAUDE_TTL_MS = 60_000;
 
 export function createAI(opts: CreateAIOptions) {
+  let checking: AbortController | null = null;
   let localCache: { at: number; v: LocalClaude } | null = null;
   async function localClaude(fresh = false): Promise<LocalClaude> {
     if (!fresh && localCache && Date.now() - localCache.at < LOCAL_CLAUDE_TTL_MS) return localCache.v;
@@ -314,24 +340,28 @@ export function createAI(opts: CreateAIOptions) {
     return models[0].slug;
   }
 
-  async function modelProvider(): Promise<ModelProvider | null> {
+  const roleChoices = async (): Promise<RoleModels> => (await opts.roleModels?.()) ?? {};
+
+  /** The active editor, asking for `role`'s model. */
+  async function modelProvider(role: ModelRole = 'editor'): Promise<ModelProvider | null> {
     if (opts.providerOverride) return opts.providerOverride;
     const st = await active();
     const s = await settings();
+    const chosen = modelForRole(st.id, role, await roleChoices());
     switch (st.id) {
       case 'chatgpt': return new OpenAIResponsesProvider({ auth: siwc, model: await chatgptModel(), baseURL: opts.openaiBaseURL, fetch: opts.fetch });
       case 'claude': return new AnthropicProvider({ apiKey: (await claudeKey())!, model: s.claudeModel, baseURL: opts.anthropicBaseURL, fetch: opts.fetch });
       case 'claude-cli': {
         const bin = (await localClaude()).bin;
         // one live `claude` process per run (providers/cli.ts): ~2.5 s less per model turn
-        return new ClaudeCliProvider({ model: s.cliModel, session: true, ...(bin ? { bin } : {}) });
+        return new ClaudeCliProvider({ model: chosen ?? s.cliModel, session: true, ...(bin ? { bin } : {}) });
       }
       case 'custom':
         // read the address and its key together, never halfway through a save that changes both
         return oneAtATime(async () => {
           const c = activeConnection(await settings());
           if (!c) throw new AIError('no_ai', 'That connection is no longer saved. Pick your editor again in Settings.');
-          return connectionProvider(c, await readSecret(connectionSecret(c.id)));
+          return connectionProvider(chosen ? { ...c, model: chosen } : c, await readSecret(connectionSecret(c.id)));
         });
       case 'codex-cli': return new CodexCliProvider({ model: s.cliModel });
       case 'replay': return new ReplayProvider((s.replayFixture ?? process.env.REELSTUDIO_REPLAY)!);
@@ -426,10 +456,18 @@ export function createAI(opts: CreateAIOptions) {
       if (id === 'claude-cli') {
         const lc = await localClaude(true);
         if (lc.state !== 'ready') throw new AIError('not_available', lc.reason ?? 'Your Claude Code app is not ready.');
-        // signed in is not the same as able to answer (a plan at its limit, a broken install): one tiny real call
+        // signed in is not the same as able to answer (a plan at its limit, a broken install): one tiny real call,
+        // which cancelCheck stops
         const s = await settings();
-        await new ClaudeCliProvider({ model: s.cliModel, timeoutMs: CHECK_TIMEOUT_MS, ...(lc.bin ? { bin: lc.bin } : {}) })
-          .complete({ system: '', messages: [{ role: 'user', content: [{ type: 'text', text: 'Reply with the word OK.' }] }], tools: [], jsonOnly: true });
+        checking?.abort();
+        const check = (checking = new AbortController());
+        try {
+          const model = modelForRole('claude-cli', 'editor', await roleChoices()) ?? s.cliModel;
+          await new ClaudeCliProvider({ model, timeoutMs: CHECK_TIMEOUT_MS, ...(lc.bin ? { bin: lc.bin } : {}) })
+            .complete({ system: '', messages: [{ role: 'user', content: [{ type: 'text', text: 'Reply with the word OK.' }] }], tools: [], jsonOnly: true, signal: check.signal });
+        } finally {
+          if (checking === check) checking = null;
+        }
       } else if (!opts.dev && !PEOPLE_PROVIDERS.includes(id)) {
         throw new AIError('not_available', 'That option is not available.');
       }
@@ -446,6 +484,8 @@ export function createAI(opts: CreateAIOptions) {
       return statusOf('chatgpt');
     },
     cancelSignInChatGPT(): void { siwc.cancelSignIn(); },
+    /** Stops the check call setActive('claude-cli') is making; setActive then throws AIError 'cancelled' and saves nothing. */
+    cancelCheck(): void { checking?.abort(); },
     /** A fresh look at the person's own Claude Code app: state, version, plan kind and the binary path (for the
      * app's sign-in window). Never an e-mail, organization or token. */
     async claudeCodeStatus(): Promise<LocalClaude> { return localClaude(true); },
@@ -513,8 +553,14 @@ export function createAI(opts: CreateAIOptions) {
       const r = await p.complete({ system: 'Reply with exactly the word OK.', messages: [{ role: 'user', content: [{ type: 'text', text: 'Say OK.' }] }], tools: [], jsonOnly: true, signal });
       return { provider: p.id, model: p.model, reply: r.text.trim() };
     },
-    async firstEdit(projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: { owner?: string; basic?: boolean } = {}): Promise<AgentResult & { notice?: any }> {
-      return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => editor.firstEdit(d, opts.basic ? null : await modelProvider(), projectDir, onEvent, signal)));
+    /** `opts.pauseOn`: an AI failure the app pauses on (editor.ts EditorDeps.pauseOn) instead of a basic version. */
+    async firstEdit(projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: { owner?: string; basic?: boolean; pauseOn?: (e: AIError) => boolean } = {}): Promise<AgentResult & { notice?: any }> {
+      return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => {
+        if (opts.basic) return editor.firstEdit(d, null, projectDir, onEvent, signal);
+        // each role asks for its own model (Settings › Editor › Models)
+        const roles = { checker: await modelProvider('checker'), writer: await modelProvider('writer') };
+        return editor.firstEdit({ ...d, ...roles, pauseOn: opts.pauseOn }, await modelProvider('editor'), projectDir, onEvent, signal);
+      }));
     },
     async applyNote(projectDir: string, note: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: editor.ApplyNoteOptions & { owner?: string } = {}): Promise<AgentResult> {
       return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => editor.applyNote(d, await modelProvider(), projectDir, note, onEvent, signal, opts)));
@@ -525,7 +571,7 @@ export function createAI(opts: CreateAIOptions) {
       return !!planFastNote(note, await loadProject(projectDir));
     },
     async writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult> {
-      return editor.writeScript(deps(opts.host), await modelProvider(), idea, onEvent, signal);
+      return editor.writeScript(deps(opts.host), await modelProvider('writer'), idea, onEvent, signal);
     },
     /** Rewords a committed version's title and summary with one small-model call. null: the connection
      * has no small model, or the reply was not the JSON asked for. The app checks the words against the

@@ -6,7 +6,7 @@ import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { AIError, ChatMessage, CompletionRequest, CompletionResponse, ImagePart, ModelProvider, ToolCall, ToolSchema } from '../types';
+import { AIError, ChatMessage, CompletionRequest, CompletionResponse, ImagePart, ModelProvider, ToolCall, ToolSchema, WaitSignal } from '../types';
 import { childEnv } from '../safety';
 
 export function protocolPrompt(tools: ToolSchema[], jsonOnly: boolean): string {
@@ -179,11 +179,33 @@ export function parseProtocolReply(text: string, tools: ToolSchema[] = []): Comp
 
 export interface RunResult { code: number | null; stdout: string; stderr: string }
 
-export function runProcess(cmd: string, args: string[], input: string, opts: { cwd?: string; signal?: AbortSignal; timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): Promise<RunResult> {
+/**
+ * When a Claude plan at its limit resets, from the CLI's own words (ISO), or null when they don't say. Two forms are
+ * known: "Claude AI usage limit reached|1761170400" (epoch seconds) and "... resets 3pm" or "resets 3:40pm", the next
+ * such time on this computer's clock.
+ */
+export function limitResetsAt(text: string, now: Date): string | null {
+  const epoch = /\|(\d{10})\b/.exec(text);
+  if (epoch) return new Date(Number(epoch[1]) * 1000).toISOString();
+  const at = /resets\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b/i.exec(text);
+  if (!at) return null;
+  const h = (Number(at[1]) % 12) + (at[3].toLowerCase() === 'p' ? 12 : 0);
+  const d = new Date(now);
+  d.setHours(h, Number(at[2] ?? 0), 0, 0);
+  if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
+  return d.toISOString();
+}
+
+export function runProcess(cmd: string, args: string[], input: string, opts: { cwd?: string; signal?: AbortSignal; timeoutMs?: number; env?: NodeJS.ProcessEnv; onLine?: (line: string) => void } = {}): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env ?? childEnv(), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = ''; let stderr = ''; let killed = false;
-    child.stdout.setEncoding('utf8').on('data', (d) => { stdout += d; });
+    let stdout = ''; let stderr = ''; let killed = false; let seen = 0;
+    child.stdout.setEncoding('utf8').on('data', (d) => {
+      stdout += d;
+      if (!opts.onLine) return;
+      let i: number;
+      while ((i = stdout.indexOf('\n', seen)) >= 0) { opts.onLine(stdout.slice(seen, i)); seen = i + 1; }
+    });
     child.stderr.setEncoding('utf8').on('data', (d) => { stderr += d; });
     const kill = () => { killed = true; child.kill(); };
     const timer = opts.timeoutMs ? setTimeout(kill, opts.timeoutMs) : null;
@@ -225,7 +247,25 @@ function conversationKey(req: CompletionRequest): string {
   return `${req.system.length}:${req.system.slice(0, 200)}|${text.length}:${text.slice(0, 2000)}`;
 }
 
-interface Waiter { resolve: (r: any) => void; reject: (e: unknown) => void }
+interface Waiter { resolve: (r: any) => void; reject: (e: unknown) => void; onWait?: (w: WaitSignal) => void; answering?: boolean }
+
+/** A stream-json line's news for the caller while it waits: a retry (`system`/`api_retry`, Claude Code 2.1.308's
+ * SDKAPIRetryMessage) or the first piece of the answer (`stream_event`, from --include-partial-messages). */
+export function waitSignal(j: any): WaitSignal | null {
+  if (j?.type === 'system' && j.subtype === 'api_retry') {
+    return { kind: 'retrying', attempt: Number(j.attempt) || 1, max: Number(j.max_retries) || 0, delayMs: Number(j.retry_delay_ms) || 0, status: typeof j.error_status === 'number' ? j.error_status : null };
+  }
+  return j?.type === 'stream_event' ? { kind: 'answering' } : null;
+}
+
+/** Passes a line's wait news on, saying "answering" once per turn. */
+function relayWait(w: Pick<Waiter, 'onWait' | 'answering'>, j: any): void {
+  const sig = waitSignal(j);
+  if (!sig || !w.onWait) return;
+  if (sig.kind === 'answering') { if (w.answering) return; w.answering = true; }
+  else w.answering = false;
+  w.onWait(sig);
+}
 
 interface LiveSession {
   child: ChildProcessWithoutNullStreams;
@@ -246,6 +286,7 @@ interface LiveSession {
 export class ClaudeCliProvider implements ModelProvider {
   readonly id = 'claude-cli' as const;
   readonly supportsImages = true;
+  readonly reportsWaits = true;
   readonly model: string;
   private live: LiveSession | null = null;
   /** settles once every session process this provider ended has exited */
@@ -255,7 +296,7 @@ export class ClaudeCliProvider implements ModelProvider {
   private args(): string[] {
     return [
       ...(this.o.binArgs ?? []),
-      '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+      '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
       '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--disable-slash-commands', '--no-session-persistence',
       '--model', this.model,
       ...(this.o.effort ? ['--effort', this.o.effort] : []),
@@ -292,6 +333,7 @@ export class ClaudeCliProvider implements ModelProvider {
         const l = s.buf.slice(0, i); s.buf = s.buf.slice(i + 1);
         let j: any; try { j = JSON.parse(l); } catch { continue; }
         if (j?.type === 'result' && s.waiter) { const w = s.waiter; s.waiter = null; w.resolve(j); }
+        else if (s.waiter) relayWait(s.waiter, j);
       }
     });
     const gone = (why: string) => {
@@ -326,7 +368,7 @@ export class ClaudeCliProvider implements ModelProvider {
       const abort = () => finish(() => { s.waiter = null; void this.dispose(); reject(new AIError('cancelled', 'Stopped.')); });
       if (req.signal?.aborted) return abort();
       req.signal?.addEventListener('abort', abort, { once: true });
-      s.waiter = { resolve: (r) => finish(() => resolve(r)), reject: (e) => finish(() => reject(e)) };
+      s.waiter = { resolve: (r) => finish(() => resolve(r)), reject: (e) => finish(() => reject(e)), onWait: req.onWait };
       try { s.child.stdin.write(userLine(rendered.text, rendered.images)); } catch (e) {
         finish(() => { s.waiter = null; reject(new AIError('cli_error', 'The AI did not answer.', { retryable: true, detail: String(e) })); });
       }
@@ -345,7 +387,9 @@ export class ClaudeCliProvider implements ModelProvider {
     const args = this.args();
     let r: RunResult;
     try {
-      r = await runProcess(this.o.bin ?? 'claude', args, line, { cwd: this.o.cwd ?? workDir(), signal: req.signal, timeoutMs: this.o.timeoutMs ?? 600_000 });
+      const waiting: Pick<Waiter, 'onWait' | 'answering'> = { onWait: req.onWait };
+      const onLine = (l: string) => { try { relayWait(waiting, JSON.parse(l)); } catch { /* not JSON */ } };
+      r = await runProcess(this.o.bin ?? 'claude', args, line, { cwd: this.o.cwd ?? workDir(), signal: req.signal, timeoutMs: this.o.timeoutMs ?? 600_000, onLine });
     } catch (e: any) {
       if (e instanceof AIError) throw e;
       throw new AIError('cli_missing', 'The claude command line tool is not installed or not on PATH.', { detail: e?.message });
@@ -357,8 +401,10 @@ export class ClaudeCliProvider implements ModelProvider {
 
   private toResponse(result: any, req: CompletionRequest): CompletionResponse {
     if (result.is_error) {
-      const limited = /limit|quota|rate/i.test(String(result.result ?? '')) || result.api_error_status === 429;
-      throw new AIError(limited ? 'cli_limited' : 'cli_error', limited ? 'The AI hit its usage limit. Try again later.' : 'The AI had a problem answering.', { retryable: !limited, detail: String(result.result ?? '').slice(0, 500) });
+      const text = String(result.result ?? '');
+      const limited = /limit|quota|rate/i.test(text) || result.api_error_status === 429;
+      const resetsAt = limited ? limitResetsAt(text, new Date()) : null;
+      throw new AIError(limited ? 'cli_limited' : 'cli_error', limited ? 'The AI hit its usage limit. Try again later.' : 'The AI had a problem answering.', { retryable: !limited, detail: text.slice(0, 500), ...(resetsAt ? { resetsAt } : {}) });
     }
     const reply = String(result.result ?? '');
     const parsed = req.jsonOnly ? { text: reply, toolCalls: [] } : parseProtocolReply(reply, req.tools);
