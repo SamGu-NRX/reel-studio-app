@@ -379,7 +379,11 @@ export interface AppInfo {
   models: ModelChoice
   /** Settings › Privacy. Nothing is sent anywhere: there is no place to send it yet. */
   sharing: DataSharing
+  /** How the phone preview shows a reel: under Instagram's Reels screen, or the video alone. */
+  phoneView: PhoneView
 }
+
+export type PhoneView = 'instagram' | 'clean'
 
 export type ModelRole = 'editor' | 'checker' | 'writer'
 export type ModelChoice = Record<ModelRole, string>
@@ -511,6 +515,7 @@ export interface ReelApi {
     setFasterExports(on: boolean): Promise<AppInfo>
     setModels(models: ModelChoice): Promise<AppInfo>
     setSharing(sharing: DataSharing): Promise<AppInfo>
+    setPhoneView(view: PhoneView): Promise<AppInfo>
     /** Menu items, keyboard shortcuts handled by the menu, and notification clicks. */
     onCommand(cb: (c: AppCommand) => void): () => void
     /** Drag a finished file out of the app (desktop, folder, browser upload box). Call from dragstart. */

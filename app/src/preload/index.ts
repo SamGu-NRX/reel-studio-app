@@ -33,6 +33,7 @@ const api: ReelApi = {
     setFasterExports: (on) => call('app:setFasterExports', on),
     setModels: (models) => call('app:setModels', models),
     setSharing: (sharing) => call('app:setSharing', sharing),
+    setPhoneView: (view) => call('app:setPhoneView', view),
     onCommand: (cb) => on<AppCommand>('app:command', cb),
     startDrag: (file) => ipcRenderer.send('app:startDrag', file),
     legal: (doc) => call('app:legal', doc),

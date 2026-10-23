@@ -96,13 +96,14 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await page.keyboard.press('Space')
   await expect.poll(paused).toBe(!before)
 
-  // Instagram view.
-  await page.getByTestId('ig-toggle').click()
+  // Instagram view is the default; Clean shows the reel alone.
   await expect(page.getByTestId('ig-overlay')).toBeVisible()
   await page.evaluate(() => (document.querySelector('[data-testid=player]') as HTMLVideoElement).pause())
   await shot(page, 'd-04-reel-instagram-view')
-  await page.getByTestId('ig-toggle').click()
-  await expect(page.getByTestId('ig-overlay')).toHaveCount(0)
+  await page.getByTestId('view-clean').click()
+  await expect(page.getByTestId('ig-overlay')).toBeHidden()
+  await page.getByTestId('view-instagram').click()
+  await expect(page.getByTestId('ig-overlay')).toBeVisible()
 
   // Hold for original.
   const hold = page.getByTestId('hold-original')

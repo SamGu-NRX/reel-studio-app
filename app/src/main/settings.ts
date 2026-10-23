@@ -6,7 +6,7 @@ import { writeJson } from './store'
 import type { SpeechCheckResult } from './models'
 import type { ReleaseEntry } from '../shared/update'
 import type { Dismissal, RememberedRelease } from './update-machine'
-import type { DataSharing, ModelChoice } from '../shared/api'
+import type { DataSharing, ModelChoice, PhoneView } from '../shared/api'
 
 export interface Settings {
   checkUpdates: boolean
@@ -29,6 +29,7 @@ export interface Settings {
   checkEdits: boolean
   models: ModelChoice
   sharing: DataSharing
+  phoneView: PhoneView
 }
 
 const DEFAULTS: Settings = {
@@ -46,7 +47,8 @@ const DEFAULTS: Settings = {
   updateHistory: null,
   checkEdits: false,
   models: { editor: 'auto', checker: 'auto', writer: 'auto' },
-  sharing: { asked: false, on: false, usage: true, quality: true, posts: true }
+  sharing: { asked: false, on: false, usage: true, quality: true, posts: true },
+  phoneView: 'instagram'
 }
 
 export async function loadSettings(): Promise<Settings> {
