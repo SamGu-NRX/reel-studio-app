@@ -49,7 +49,6 @@ test('add your own AI server from Settings', async () => {
   try {
     await passFirstRun(page)
     await openSettings(page)
-    await page.getByTestId('settings-advanced').click()
     await page.getByTestId('own-server-toggle').click()
     const dialog = page.getByTestId('connection-dialog')
     await expect(page.getByTestId('connection-kind-openai')).toBeFocused()

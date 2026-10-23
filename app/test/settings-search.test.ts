@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findSettings, SETTING_IDS, SETTINGS, type SettingId } from '../src/renderer/src/components/settings-index'
+import { findSettings, matchedSynonym, matchRanges, SECTIONS, SETTING_IDS, SETTINGS, type SettingId } from '../src/renderer/src/components/settings-index'
 
 const finds = (query: string, id: SettingId): void => {
   expect(findSettings(query), `"${query}" should find ${id}`).toContain(id)
@@ -33,5 +33,42 @@ describe('Settings search', () => {
 
   it('fails if a found setting shows without the switch it needs to be usable', () => {
     expect(findSettings('quality scores')).toEqual(new Set(['sharing', 'sharing-quality']))
+  })
+})
+
+describe('Settings sections', () => {
+  it("fails if the sections leave spec section 8's order, or Advanced loses a row it holds", () => {
+    expect(Object.keys(SECTIONS)).toEqual(['editor', 'privacy', 'reels', 'posting', 'about', 'advanced'])
+    const advanced = SETTING_IDS.filter((id) => SETTINGS[id].section === 'advanced')
+    expect(advanced).toEqual(['model-edits', 'model-checks', 'model-titles', 'own-server', 'api-key', 'engine-cache', 'logs', 'first-run'])
+  })
+
+  it('fails if the Advanced rows are missed by the words people use for them', () => {
+    expect(findSettings('cache')).toEqual(new Set(['engine-cache']))
+    finds('logs', 'logs')
+    finds('onboarding', 'first-run')
+    finds('reset', 'first-run')
+  })
+})
+
+describe('Settings search highlight', () => {
+  const marked = (text: string, q: string): string[] => matchRanges(text, q).map(([a, b]) => text.slice(a, b))
+
+  it('fails if it marks anything but the start of each word a typed word begins', () => {
+    expect(marked('Clear cache', 'cac')).toEqual(['cac'])
+    expect(marked('Notify when a reel is ready', 're')).toEqual(['re', 're'])
+    expect(marked('Library folder', 'fold lib')).toEqual(['Lib', 'fold'])
+    expect(marked('What’s new', "what's")).toEqual(['What', 's'])
+    expect(marked('Écran', 'ecr')).toEqual(['Écr'])
+    expect(marked('Library folder', 'older')).toEqual([])
+    expect(marked('Library folder', '  ')).toEqual([])
+  })
+
+  it('fails if a row found by a synonym does not say which, or one its label explains says one anyway', () => {
+    expect(matchedSynonym('sharing', 'telemetry')).toBe('telemetry')
+    expect(matchedSynonym('faster-exports', '30fps')).toBe('30fps')
+    expect(matchedSynonym('engine-cache', 'clear')).toBe('clear cache')
+    expect(matchedSynonym('engine-cache', 'cache')).toBeNull()
+    expect(matchedSynonym('model-edits', 'advanced')).toBeNull()
   })
 })

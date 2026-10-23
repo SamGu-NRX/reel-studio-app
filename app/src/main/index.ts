@@ -13,6 +13,7 @@ import { assertIpcSender, validateIpcArgs } from './ipc-guard'
 import {
   appIconPath,
   binDir,
+  engineCacheDir,
   engineDir,
   engineEnv,
   engineMode,
@@ -23,6 +24,7 @@ import {
   libraryPreviewDir,
   noteStagingDir,
   noteStagingRoot,
+  logsDir,
   projectsDir,
   pythonExe,
   reelStudioRoot,
@@ -84,18 +86,19 @@ import { closeAnimationRenderer, renderAnimation, TEST_TEMPLATE } from './animat
 import { captureWebsite } from './capture'
 import { createModelManager } from './models'
 import { createWorkGate } from './work-gate'
-import { loadSettings, saveSettings, settleLibraryRoot } from './settings'
 import { TikTokService } from './tiktok'
 import { registerTikTokIpc } from './tiktok-ipc'
 import { InstagramService } from './instagram'
 import { registerInstagramIpc } from './instagram-ipc'
 import { registerInsightsIpc } from './insights-ipc'
 import { InstagramError } from './instagram-http'
+import { loadSettings, saveSettings, settleLibraryRoot, showsFirstRun } from './settings'
+import { clearEngineCache, engineCacheSize } from './engine-cache'
 import { createPidRegistry } from './orphans'
 import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
-import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord, PlatformExportResult, VersionInfo, LearnedRule, MergeRequest, StyleRule } from '../shared/api'
+import type { AppInfo, DropResult, EngineCache, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord, PlatformExportResult, VersionInfo, LearnedRule, MergeRequest, StyleRule } from '../shared/api'
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { coverScanOwner, createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
@@ -148,7 +151,7 @@ initPaths({
 })
 
 // ---- logging ------------------------------------------------------------------------------------
-const logFile = (): string => join(settingsDir(), 'logs', 'main.log')
+const logFile = (): string => join(logsDir(), 'main.log')
 function log(line: string): void {
   const s = `${new Date().toISOString()} ${line}`
   if (!app.isPackaged) console.log(s)
@@ -438,6 +441,10 @@ const rootDisplay = (root: string): string =>
 // Read once: the sidebar shows it on every screen. Tests show no name, so screenshots never carry one.
 let accountNameRead: Promise<string | null> | null = null
 
+/** firstRunAgain as it was when this launch started (settings.ts showsFirstRun). */
+let firstRunAgainAtLaunch = false
+const firstRunShows = async (): Promise<boolean> => showsFirstRun(await loadSettings(), firstRunAgainAtLaunch)
+
 async function appInfo(): Promise<AppInfo> {
   const s = await loadSettings()
   accountNameRead ??= TEST ? Promise.resolve(null) : accountName()
@@ -454,7 +461,8 @@ async function appInfo(): Promise<AppInfo> {
     platform: process.platform,
     root,
     rootDisplay: rootDisplay(root),
-    firstRunDone: s.firstRunDone,
+    firstRunDone: !showsFirstRun(s, firstRunAgainAtLaunch),
+    firstRunAgain: s.firstRunAgain,
     fasterExports: s.fasterExports,
     footageIndex: footageIndex.status(),
     engine: { mode: engineMode(), dir: engineDir(), python: pythonExe() },
@@ -690,8 +698,28 @@ function registerIpc(): void {
     await saveSettings({ fasterExports: on })
     return appInfo()
   })
+  handle('app:setFirstRunAgain', async (_e, on: unknown) => {
+    if (typeof on !== 'boolean') throw { code: 'BAD_INPUT', userMessage: 'Choose whether to show the first run again.' }
+    await saveSettings({ firstRunAgain: on })
+    return appInfo()
+  })
+  const engineCache = async (): Promise<EngineCache> => {
+    const path = engineCacheDir()
+    return { path, pathDisplay: rootDisplay(path), bytes: await engineCacheSize(path) }
+  }
+  handle('app:engineCache', engineCache)
+  handle('app:clearEngineCache', async () => {
+    if (jobs.runningCount()) throw { code: 'BUSY', userMessage: 'Wait until no reel is being made, then clear the cache.' }
+    await clearEngineCache(engineCacheDir())
+    return engineCache()
+  })
+  handle('app:showLogs', async () => {
+    await fs.mkdir(logsDir(), { recursive: true })
+    const failed = await shell.openPath(logsDir())
+    if (failed) throw { code: 'OPEN_FAILED', userMessage: `Couldn't open the logs folder: ${failed}` }
+  })
   handle('app:clipboardFiles', () => clipboardFiles(TEST ? async () => testClipboard.items : undefined))
-  handle('app:takeOpenFiles', async () => (await loadSettings()).firstRunDone ? pendingOpenFiles.splice(0) : [])
+  handle('app:takeOpenFiles', async () => ((await firstRunShows()) ? [] : pendingOpenFiles.splice(0)))
   handle('app:finishFirstRun', async () => {
     // The first run never asks about the folder (ux-foundation-b.md section 4), so the library is made here.
     await ensureRoot().catch((e) => log(`[root] ${String(e)}`))
@@ -699,7 +727,8 @@ function registerIpc(): void {
     const s = await loadSettings()
     // Notifications start off on a new Mac, so the first Version 1 asks for them (screens/Reel.tsx notifyAsk).
     const patch = process.platform === 'darwin' && s.notifications === null ? { notifications: false } : {}
-    const next = await saveSettings({ firstRunDone: true, ...patch })
+    const next = await saveSettings({ firstRunDone: true, firstRunAgain: false, ...patch })
+    firstRunAgainAtLaunch = false // a reset pressed later in this launch waits for the next one
     notificationsOn = notificationsWanted(next, process.platform)
   })
   handle('app:openFolder', async (_e, p: string) => {
@@ -1431,6 +1460,8 @@ app.whenReady().then(async () => {
   pidRegistry = createPidRegistry(settingsDir())
   // an engine that would not stop may be encoding: only its own video waits for it, the others render
   const settings = await settleLastRun(pidRegistry, (slug) => jobs.keepClosed(slug), log, (slug) => jobs.reopen(slug))
+  // Settings › Advanced › Reset first run asks for the first run at the next launch (settings-sections)
+  firstRunAgainAtLaunch = settings.firstRunAgain
   notificationsOn = notificationsWanted(settings, process.platform)
   perms = createPermissions({
     platform: process.platform,

@@ -444,6 +444,8 @@ export interface AppInfo {
   /** The root in friendly words: "Documents › Reel Studio". */
   rootDisplay: string
   firstRunDone: boolean
+  /** Settings › Advanced › Reset first run was pressed: the first run shows the next time the app opens. */
+  firstRunAgain: boolean
   fasterExports: boolean
   footageIndex: FootageIndexStatus
   engine: { mode: 'real' | 'fake'; dir: string; python: string }
@@ -464,6 +466,14 @@ export interface AppInfo {
 }
 
 export type PhoneView = 'instagram' | 'clean'
+
+/** Settings › Advanced › Cache: where the engine keeps its cache and how much it holds. */
+export interface EngineCache {
+  path: string
+  /** The folder in friendly words: "Home › Library › Caches › ReelStudio". */
+  pathDisplay: string
+  bytes: number
+}
 
 export type ModelRole = 'editor' | 'checker' | 'writer'
 export type ModelChoice = Record<ModelRole, string>
@@ -628,6 +638,13 @@ export interface ReelApi {
     setSharing(sharing: DataSharing): Promise<AppInfo>
     setPhoneView(view: PhoneView): Promise<AppInfo>
     setSoundEffects(on: boolean): Promise<AppInfo>
+    engineCache(): Promise<EngineCache>
+    /** Refused while a reel is being made: a job can be between a picture search and its download. */
+    clearEngineCache(): Promise<EngineCache>
+    /** Opens the folder of Reel Studio's logs in Finder or Explorer. */
+    showLogs(): Promise<void>
+    /** true: the first run shows the next time the app opens; false takes that back. */
+    setFirstRunAgain(on: boolean): Promise<AppInfo>
     /** Menu items, keyboard shortcuts handled by the menu, and notification clicks. */
     onCommand(cb: (c: AppCommand) => void): () => void
     /** Drag a finished file out of the app (desktop, folder, browser upload box). Call from dragstart. */

@@ -1,27 +1,27 @@
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { AppInfo, PermissionStatus } from '../../../shared/api'
+import type { AppInfo, EngineCache, PermissionStatus } from '../../../shared/api'
+import { sizeLine } from '../../../shared/size'
 import { RELEASES_REPO } from '../../../shared/config'
 import { reel, userMessage } from '../api'
 import type { Go, SettingsSection } from '../nav'
 import { AnthropicKey, ConnectAI, DevProviders, downloadLine, useActiveEditor, useModelStatus } from '../components/connect'
 import { Connections } from '../components/Connections'
 import { usePermissionStatus } from '../components/permissions'
-import { Button, FOLDER_APP, IS_MAC, Progress, Spinner } from '../components/ui'
+import { Button, Confirm, FOLDER_APP, IS_MAC, Progress, Spinner } from '../components/ui'
 import { Icon } from '../components/icons'
 import { useUpdateState } from '../components/update'
 import { UpdateSettingsRow, WhatsNew } from '../components/UpdateSettings'
 import { useNotify } from '../App'
 import { Models, Privacy } from '../components/ModelsAndPrivacy'
 import { TitleBarSlot } from '../components/titlebar'
-import { Disclosure } from '../components/provider-row'
 import { findSettings, SECTIONS, SETTING_IDS, SETTINGS, type SectionId, type SettingId } from '../components/settings-index'
-import { SearchHits, SettingRow, Switch } from '../components/settings-rows'
+import { Marked, SearchHits, SearchScope, SettingRow, Switch, useShown } from '../components/settings-rows'
 import '../components/settings.css'
 import { StockKeys } from '../components/stock-keys'
 
-/** Where the older section names (nav.ts) land now. */
-const SECTION_OF: Record<SettingsSection, SectionId> = { ai: 'editor', listen: 'storage', where: 'storage', notify: 'notifications', privacy: 'privacy', about: 'about' }
-const ADVANCED: SettingId[] = ['model-edits', 'model-checks', 'model-titles', 'own-server', 'api-key', 'stock-keys']
+/** Where the older section names (nav.ts) land now: a section, or one row of it. */
+const TARGET: Record<SettingsSection, SectionId | SettingId> = { ai: 'editor', listen: 'listening-model', where: 'library-folder', notify: 'notifications', privacy: 'privacy', about: 'about' }
+const sectionOf = (t: SectionId | SettingId): SectionId => (t in SECTIONS ? (t as SectionId) : SETTINGS[t as SettingId].section)
 const REPO_FILE = (f: string): string => `https://github.com/${RELEASES_REPO}/blob/main/${f}`
 
 export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i: AppInfo) => void; go?: Go; section?: SettingsSection }) {
@@ -29,8 +29,7 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
   const [query, setQuery] = useState('')
   const hits = useMemo(() => findSettings(query), [query])
   const search = useRef<HTMLInputElement>(null)
-  const [current, setCurrent] = useState<SectionId>(SECTION_OF[section ?? 'ai'])
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [current, setCurrent] = useState<SectionId>(sectionOf(TARGET[section ?? 'ai']))
   const lock = useRef(0)
   const page = useRef<HTMLDivElement>(null)
   const [active, setActive] = useActiveEditor()
@@ -54,7 +53,8 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
   }, [hits])
 
   useEffect(() => {
-    if (section && section !== 'ai') document.getElementById(`sec-${SECTION_OF[section]}`)?.scrollIntoView({ block: 'start' })
+    const t = section && section !== 'ai' ? TARGET[section] : null
+    if (t) (t in SECTIONS ? document.getElementById(`sec-${t}`) : document.querySelector(`[data-setting="${t}"]`))?.scrollIntoView({ block: 'start' })
     search.current?.focus({ preventScroll: true })
   }, [section])
 
@@ -150,15 +150,6 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
     }
   }
 
-  const advanced = (
-    <>
-      <Models info={info} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
-      <Connections onConnected={setActive} />
-      <AnthropicKey active={active} onConnected={setActive} />
-      <StockKeys />
-    </>
-  )
-
   return (
     <div className="page settings-page" ref={page}>
       <TitleBarSlot title="Settings" />
@@ -201,7 +192,7 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
             {hits ? (hits.size === 1 ? '1 setting matches' : hits.size ? `${hits.size} settings match` : 'No settings match') : ''}
           </p>
 
-          <SearchHits.Provider value={hits}>
+          <SearchScope hits={hits} query={query}>
             {hits?.size === 0 && (
               <div className="snone" data-testid="settings-no-match">
                 <p>No settings match “{query.trim()}”.</p>
@@ -223,38 +214,23 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
                   control={<Switch on={checkEdits} disabled={savingChecks} labelledBy="set-check-edits" onToggle={() => void toggleCheckEdits()} testid="check-edits" />}
                 />
               )}
-              {hits ? (
-                ADVANCED.some(shown) && advanced
-              ) : (
-                <Disclosure label="Advanced" hint="Models by role, your own AI server, API keys" open={advancedOpen} onToggle={() => setAdvancedOpen((o) => !o)} testid="settings-advanced">
-                  {advanced}
-                </Disclosure>
-              )}
             </Section>
 
-            <Section id="posting">
-              <SettingRow id="instagram" line="Posting from Reel Studio isn’t ready yet. Share saves your reel and sends it to your phone." control={<span className="sval">Not connected</span>} />
+            <Section id="privacy">
+              <Privacy info={info} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
             </Section>
 
-            <Section id="storage">
+            <Section id="reels">
               <SettingRow
                 id="library-folder"
-                line={
-                  <span className="sval-path" title={info.root} data-testid="root-display">
-                    {info.rootDisplay}
-                  </span>
-                }
+                line="New reels are saved here."
                 control={
-                  <span className="sctl">
-                    <Button size="small" onClick={() => reel.app.openFolder(info.root)}>
-                      Show in {FOLDER_APP}
-                    </Button>
-                    <Button size="small" kind="tertiary" onClick={() => void change()}>
-                      Change…
-                    </Button>
-                  </span>
+                  <Button size="small" onClick={() => void change()}>
+                    Change…
+                  </Button>
                 }
               >
+                <PathLine path={info.root} display={info.rootDisplay} testid="root-display" />
                 {perm && perm.folder !== 'allowed' && (
                   <div className="srow-more row">
                     <p className="pv-note error" role="alert" data-testid="folder-problem">
@@ -278,9 +254,6 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
                 line="Makes new reels at 30 fps, which is quicker. Leave off to keep the smoother motion of 60 fps video."
                 control={<Switch on={info.fasterExports} disabled={savingExports} labelledBy="set-faster-exports" onToggle={() => void toggleExports()} testid="faster-exports" />}
               />
-            </Section>
-
-            <Section id="notifications">
               {alerts === undefined || alerts === 'unsupported' ? (
                 <SettingRow id="notifications" line="This computer doesn't show notifications from Reel Studio." />
               ) : (
@@ -324,8 +297,8 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
               )}
             </Section>
 
-            <Section id="privacy">
-              <Privacy info={info} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
+            <Section id="posting">
+              <SettingRow id="instagram" line="Posting from Reel Studio isn’t ready yet. Share saves your reel and sends it to your phone." control={<span className="sval">Not connected</span>} />
             </Section>
 
             <Section id="about">
@@ -356,6 +329,26 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
               </SettingRow>
             </Section>
 
+            <Section id="advanced">
+              <Models info={info} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
+              <Subhead ids={['own-server', 'api-key']}>Other editors</Subhead>
+              <Connections onConnected={setActive} />
+              <AnthropicKey active={active} onConnected={setActive} />
+              <StockKeys />
+              <Subhead ids={['engine-cache', 'logs', 'first-run']}>Troubleshooting</Subhead>
+              <CacheRow onError={(m) => notify(m, 'error')} />
+              <SettingRow
+                id="logs"
+                line="What Reel Studio did and any errors, for when something goes wrong."
+                control={
+                  <button className="btn small" onClick={() => void reel.app.showLogs().catch((e) => notify(userMessage(e), 'error'))} data-testid="show-logs">
+                    Show logs
+                  </button>
+                }
+              />
+              <FirstRunRow info={info} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
+            </Section>
+
             {info.dev && !hits && (
               <section className="ssec" id="sec-dev">
                 <h2>Developer: AI provider</h2>
@@ -363,7 +356,7 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
                 <DevProviders />
               </section>
             )}
-          </SearchHits.Provider>
+          </SearchScope>
         </div>
       </div>
     </div>
@@ -381,7 +374,9 @@ function Section({ id, desc, children }: { id: SectionId; desc?: string; childre
       hidden={!!hits && !SETTING_IDS.some((s) => SETTINGS[s].section === id && hits.has(s))}
       data-testid={`settings-${id}`}
     >
-      <h2 id={`sec-${id}-h`}>{SECTIONS[id]}</h2>
+      <h2 id={`sec-${id}-h`}>
+        <Marked text={SECTIONS[id]} />
+      </h2>
       {desc && !hits && <p className="ssec-desc">{desc}</p>}
       <div className="srows">{children}</div>
     </section>
@@ -436,6 +431,137 @@ function ListeningModel() {
         <p className="muted-sm srow-more" data-testid="model-check-failed">
           Reel Studio couldn't work out the fastest settings for this computer, so the listening model uses its usual ones. Everything still works.
         </p>
+      )}
+    </SettingRow>
+  )
+}
+
+/** A heading inside a section, shown while any of its rows is. */
+function Subhead({ ids, children }: { ids: SettingId[]; children: ReactNode }) {
+  const hits = useContext(SearchHits)
+  if (hits && !ids.some((id) => hits.has(id))) return null
+  return <h3 className="ssub">{children}</h3>
+}
+
+/** A folder on this computer: small and muted, never the row's headline, with the way to open it. */
+function PathLine({ path, display, testid }: { path: string; display: string; testid: string }) {
+  return (
+    <div className="spath">
+      <span title={path} data-testid={testid}>
+        <bdi dir="ltr">{display}</bdi>
+      </span>
+      <button className="btn small ghost" onClick={() => void reel.app.openFolder(path)}>
+        Show in {FOLDER_APP}
+      </button>
+    </div>
+  )
+}
+
+/** The engine's cache: its size, where it is, and Clear cache behind a confirm. */
+function CacheRow({ onError }: { onError: (m: string) => void }) {
+  const [cache, setCache] = useState<EngineCache | null>(null)
+  const [asking, setAsking] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const shown = useShown('engine-cache')
+  const failed = useRef(onError)
+  failed.current = onError
+  // measured each time the row comes into view, so a search for "cache" shows the size as it is now
+  useEffect(() => {
+    if (!shown) return
+    let live = true
+    reel.app
+      .engineCache()
+      .then((c) => live && setCache(c))
+      .catch((e) => live && failed.current(userMessage(e)))
+    return () => {
+      live = false
+    }
+  }, [shown])
+  const clear = async () => {
+    setAsking(false)
+    setClearing(true)
+    try {
+      setCache(await reel.app.clearEngineCache())
+      // Clear cache is disabled once there's nothing to clear; focus stays in the row instead of falling to the page
+      requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-setting="engine-cache"] .spath button')?.focus())
+    } catch (e) {
+      onError(userMessage(e))
+    } finally {
+      setClearing(false)
+    }
+  }
+  const empty = cache?.bytes === 0
+  return (
+    <SettingRow
+      id="engine-cache"
+      line="Song analysis and picture lookups kept so the next reel is quicker. Clearing it is safe."
+      control={
+        <span className="sctl">
+          <span className="sval" data-testid="cache-size">
+            {cache ? sizeLine(cache.bytes) : <Spinner />}
+          </span>
+          <button className="btn small" disabled={!cache || empty} aria-busy={clearing} onClick={() => !clearing && setAsking(true)} data-testid="clear-cache">
+            {clearing && <Spinner />} Clear cache
+          </button>
+        </span>
+      }
+    >
+      {cache && <PathLine path={cache.path} display={cache.pathDisplay} testid="cache-path" />}
+      {asking && cache && (
+        <Confirm
+          title="Clear the cache?"
+          body={`This deletes ${sizeLine(cache.bytes)} of saved song analysis and picture lookups. Your reels, Library and settings stay. The next reel may take a little longer.`}
+          yes="Clear cache"
+          no="Cancel"
+          danger
+          onYes={() => void clear()}
+          onNo={() => setAsking(false)}
+        />
+      )}
+    </SettingRow>
+  )
+}
+
+/** Reset first run: the welcome and the sample show again the next time the app opens, never in the middle of this run. */
+function FirstRunRow({ info, onInfo, onError }: { info: AppInfo; onInfo: (i: AppInfo) => void; onError: (m: string) => void }) {
+  const [asking, setAsking] = useState(false)
+  const set = async (on: boolean) => {
+    setAsking(false)
+    try {
+      onInfo(await reel.app.setFirstRunAgain(on))
+    } catch (e) {
+      onError(userMessage(e))
+    }
+  }
+  return (
+    <SettingRow
+      id="first-run"
+      line={
+        <span data-testid="first-run-line">
+          {info.firstRunAgain ? 'The welcome and the sample show the next time Reel Studio opens.' : 'Shows the welcome and the sample again the next time Reel Studio opens. Your reels stay.'}
+        </span>
+      }
+      control={
+        info.firstRunAgain ? (
+          <button className="btn small ghost" onClick={() => void set(false)} data-testid="first-run-undo">
+            Undo
+          </button>
+        ) : (
+          <button className="btn small" onClick={() => setAsking(true)} data-testid="reset-first-run">
+            Reset…
+          </button>
+        )
+      }
+    >
+      {asking && (
+        <Confirm
+          title="Reset the first run?"
+          body="The welcome, the sample and Choose your editor show the next time Reel Studio opens. Your reels, Library and settings stay."
+          yes="Reset first run"
+          no="Cancel"
+          onYes={() => void set(true)}
+          onNo={() => setAsking(false)}
+        />
       )}
     </SettingRow>
   )

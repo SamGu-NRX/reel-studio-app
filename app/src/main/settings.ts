@@ -20,6 +20,11 @@ export interface Settings extends InstagramSettings, TikTokSettings {
   updateDismissed: Dismissal | null
   updateHistory: ReleaseEntry[] | null
   firstRunDone: boolean
+  /**
+   * Settings › Advanced › Reset first run: the next launch shows the first run again. firstRunDone stays true, so
+   * that launch still recovers interrupted reels; finishing the first run clears this.
+   */
+  firstRunAgain: boolean
   root: string | null
   fasterExports: boolean
   /** Written by the 0.1.0/0.1.1 local-Claude-Code builds (a one-time automatic AI pick); read once by ai-carryover.ts. */
@@ -41,6 +46,7 @@ export interface Settings extends InstagramSettings, TikTokSettings {
 
 const DEFAULTS: Settings = {
   firstRunDone: false,
+  firstRunAgain: false,
   root: null,
   fasterExports: false,
   aiAutoPicked: false,
@@ -61,6 +67,12 @@ const DEFAULTS: Settings = {
   instagramEnabled: false, instagramAppId: null, instagramBrokerUrl: null, instagramUploadOrigins: [],
   // Posting requires explicit developer configuration and approval of the requested scopes.
   tiktokEnabled: false, tiktokClientKey: null, tiktokBrokerUrl: null, tiktokAudited: false, tiktokDirectPost: false
+}
+
+/** Whether this launch shows the first run. `againAtLaunch`: firstRunAgain as it was when the app started, so a
+ * reset takes effect on the next launch and never in the middle of this one. */
+export function showsFirstRun(s: Pick<Settings, 'firstRunDone' | 'firstRunAgain'>, againAtLaunch: boolean): boolean {
+  return !s.firstRunDone || (againAtLaunch && s.firstRunAgain)
 }
 
 export async function loadSettings(): Promise<Settings> {
