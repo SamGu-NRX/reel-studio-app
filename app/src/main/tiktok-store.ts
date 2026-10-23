@@ -21,6 +21,7 @@ export interface TikTokCredentials {
   // Legacy credential files have no broker credential and must reconnect.
   installToken?: string
 }
+export interface PendingRevocation { installToken: string; clientKey: string; brokerUrl: string }
 export function strings(value: unknown): string[] {
   if (!Array.isArray(value)) return invalid()
   return value.map(text)
@@ -41,7 +42,7 @@ export class TikTokTokenStore {
     if (!this.secrets.isEncryptionAvailable() || this.secrets.getSelectedStorageBackend?.() === 'basic_text')
       fail('TT_SECURE_STORAGE', 'This computer cannot store TikTok securely. Enable its system keychain and try again.')
   }
-  async load(): Promise<TikTokCredentials | null> {
+  private async read(): Promise<{ credentials?: TikTokCredentials; pendingRevocations: PendingRevocation[] } | null> {
     let bytes: Buffer
     try { bytes = await fs.readFile(this.file()) } catch (e) {
       if (e && typeof e === 'object' && 'code' in e && e.code === 'ENOENT') return null
@@ -50,19 +51,37 @@ export class TikTokTokenStore {
     this.assertSecure()
     try {
       const c = object(JSON.parse(this.secrets.decryptString(bytes)))
-      return { accessToken: text(c.accessToken), refreshToken: text(c.refreshToken), expiresAt: positive(c.expiresAt),
+      const pendingRevocations = c.pendingRevocations === undefined ? [] : this.pending(c.pendingRevocations)
+      if (c.accessToken === undefined && c.pendingRevocations === undefined) return localError()
+      const credentials = c.accessToken === undefined ? undefined : {
+        accessToken: text(c.accessToken), refreshToken: text(c.refreshToken), expiresAt: positive(c.expiresAt),
         refreshExpiresAt: positive(c.refreshExpiresAt), accountId: text(c.accountId), displayName: text(c.displayName),
         scopes: strings(c.scopes), clientKey: text(c.clientKey), brokerUrl: text(c.brokerUrl),
-        ...(c.installToken === undefined ? {} : { installToken: text(c.installToken) }) }
+        ...(c.installToken === undefined ? {} : { installToken: text(c.installToken) })
+      }
+      return { credentials, pendingRevocations }
     } catch { return localError() }
   }
-  async save(c: TikTokCredentials): Promise<void> {
-    this.assertSecure()
-    const encrypted = this.secrets.encryptString(JSON.stringify(c))
-    await fs.mkdir(this.dir, { recursive: true })
-    await atomicSocialFile(this.file(), encrypted)
+  private pending(value: unknown): PendingRevocation[] {
+    if (!Array.isArray(value)) return localError()
+    return value.map((v) => { const p = object(v); return { installToken: text(p.installToken), clientKey: text(p.clientKey), brokerUrl: text(p.brokerUrl) } })
   }
-  async clear(): Promise<void> { await fs.rm(this.file(), { force: true }) }
+  async load(): Promise<TikTokCredentials | null> { return (await this.read())?.credentials ?? null }
+  async pendingRevocations(): Promise<PendingRevocation[]> { return (await this.read())?.pendingRevocations ?? [] }
+  async save(c: TikTokCredentials, pendingRevocations?: PendingRevocation[]): Promise<void> {
+    await this.write({ credentials: c, pendingRevocations: pendingRevocations ?? await this.pendingRevocations() })
+  }
+  async savePending(pendingRevocations: PendingRevocation[]): Promise<void> { await this.write({ credentials: (await this.read())?.credentials, pendingRevocations }) }
+  private async write(data: { credentials?: TikTokCredentials; pendingRevocations: PendingRevocation[] }): Promise<void> {
+    this.assertSecure()
+    // Keep the user-requested 20 most recent orphaned installs in the same encrypted, atomic write.
+    const encrypted = this.secrets.encryptString(JSON.stringify({ ...data.credentials, pendingRevocations: data.pendingRevocations.slice(-20) }))
+    await fs.mkdir(this.dir, { recursive: true }); await atomicSocialFile(this.file(), encrypted)
+  }
+  async clear(): Promise<void> {
+    const pendingRevocations = await this.pendingRevocations()
+    if (pendingRevocations.length) await this.write({ pendingRevocations }); else await fs.rm(this.file(), { force: true })
+  }
 }
 interface ReceiptBase { accountId: string; inputHash: string }
 export type TikTokReceipt = ReceiptBase & (

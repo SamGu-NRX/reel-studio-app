@@ -4,7 +4,7 @@
 export type TikTokFetch = (url: string, init: RequestInit) => Promise<Response>
 export const TIKTOK_API = 'https://open.tiktokapis.com/v2'
 export class TikTokError extends Error {
-  constructor(readonly code: string, readonly userMessage: string) { super(userMessage) }
+  constructor(readonly code: string, readonly userMessage: string, readonly status?: number) { super(userMessage) }
 }
 export function fail(code: string, message: string): never { throw new TikTokError(code, message) }
 export function invalid(): never { return fail('TT_RESPONSE', 'TikTok returned incomplete data. Try again later.') }
@@ -63,14 +63,14 @@ export function apiError(code: string, status = 400): TikTokError {
   }
   const alias = Object.values(messages).find(([mapped]) => mapped === code)
   const known = Object.hasOwn(messages, code) ? messages[code] : alias
-  if (known) return new TikTokError(...known)
-  if (status === 429 || ['rate_limit_exceeded', 'TT_RATE_LIMIT'].includes(code)) return new TikTokError('TT_RATE_LIMIT', 'TikTok has reached a request limit. Wait a few minutes before trying again.')
-  if (status === 401) return new TikTokError('TT_TOKEN', 'Your TikTok connection expired. Connect TikTok again in Settings.')
+  if (known) return new TikTokError(...known, status)
+  if (status === 429 || ['rate_limit_exceeded', 'TT_RATE_LIMIT'].includes(code)) return new TikTokError('TT_RATE_LIMIT', 'TikTok has reached a request limit. Wait a few minutes before trying again.', status)
+  if (status === 401) return new TikTokError('TT_TOKEN', 'Your TikTok connection expired. Connect TikTok again in Settings.', status)
   if (['TT_SETUP', 'invalid_client', 'unauthorized_client', 'unsupported_grant_type', 'unsupported_response_type'].includes(code))
-    return new TikTokError('TT_SETUP', 'The TikTok app or authorization server is not configured correctly. Check developer settings.')
-  if (['TT_INPUT', 'invalid_param', 'invalid_request'].includes(code)) return new TikTokError('TT_INPUT', 'TikTok could not use this request. Check the export and settings.')
-  if (status === 403) return new TikTokError('TT_PERMISSION', 'TikTok did not allow this action. Check your account permissions and app approval.')
-  return new TikTokError('TT_API', 'TikTok could not finish this request. Try again later.')
+    return new TikTokError('TT_SETUP', 'The TikTok app or authorization server is not configured correctly. Check developer settings.', status)
+  if (['TT_INPUT', 'invalid_param', 'invalid_request'].includes(code)) return new TikTokError('TT_INPUT', 'TikTok could not use this request. Check the export and settings.', status)
+  if (status === 403) return new TikTokError('TT_PERMISSION', 'TikTok did not allow this action. Check your account permissions and app approval.', status)
+  return new TikTokError('TT_API', 'TikTok could not finish this request. Try again later.', status)
 }
 export async function transport(fetcher: TikTokFetch, url: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
   signal.throwIfAborted()

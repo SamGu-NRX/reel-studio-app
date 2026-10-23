@@ -84,10 +84,11 @@ async function world(opts: { dev?: boolean; enabled?: boolean; audited?: boolean
     return Response.json(step.raw ? step.body : { data: step.body ?? {}, error: { code: 'ok', message: '' } }, { status: step.status ?? 200 })
   }
   let browser = async (_url: string): Promise<void> => { throw new Error('Unexpected browser') }
-  const service = new TikTokService({ dev: opts.dev ?? true, settings: async () => settings, settingsDir: join(dir, 'settings'),
+  const options = { dev: opts.dev ?? true, settings: async () => settings, settingsDir: join(dir, 'settings'),
     projectsDir: () => join(dir, 'projects'), secrets, now: () => now,
     fetch: fetchFixture,
-    openExternal: (url) => browser(url) })
+    openExternal: (url: string) => browser(url) }
+  const service = new TikTokService(options)
   cleanup.push({ service, dir })
   const store = new TikTokTokenStore(join(dir, 'settings'), secrets)
   const seed = (extra = {}) => store.save({ accessToken: TOKEN, refreshToken: REFRESH, expiresAt: NOW + 86400000,
@@ -135,10 +136,102 @@ async function world(opts: { dev?: boolean; enabled?: boolean; audited?: boolean
   }
   const published = async (input = INPUT) => { success(); return service.publish(input) }
   return { service, store, settings, steps, calls, dir, project, version, seed, creator, init, status, put, success, stats, oauth, published,
-    encryptAction: (fn: () => void) => { encryptAction = fn }, tick: (ms: number) => { now += ms }, done: () => expect(steps).toEqual([]) }
+    restart: () => {
+      service.stop()
+      const next = new TikTokService(options)
+      cleanup.push({ dir, service: next })
+      return next
+    },
+    encryptAction: (fn: () => void) => { encryptAction = fn }, tick: (ms: number) => { now += ms }, done: () => expect(steps.length).toBe(0) }
 }
 
 describe('TikTok fixture HTTP', () => {
+  it('revokes the previous install after saving a reconnect', async () => {
+    const w = await world(); await w.seed({ installToken: 'previous-install' }); w.oauth()
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, inspect: async (init) => {
+      expect(new Headers(init.headers).get('x-reel-install-token')).toBe('previous-install')
+      expect(await w.store.load()).toMatchObject({ installToken: INSTALL })
+    } })
+    await w.service.connect(); w.done()
+  })
+  it('persists a failed revoke privately and retries it on the next start', async () => {
+    const w = await world(); await w.seed({ installToken: 'previous-install' }); w.oauth()
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, status: 503 })
+    const result = await w.service.connect()
+    expect(await w.store.pendingRevocations()).toEqual([{ installToken: 'previous-install', clientKey: 'fixture-key', brokerUrl: BROKER }])
+    expect(result).toEqual({ connected: true, accountId: 'fixture-open-id', displayName: 'Fixture creator', expiresAt: NOW + 86400000, scopes: SCOPES })
+    expect(await w.service.session()).toEqual(result)
+    const bytes = await fs.readFile(join(w.dir, 'settings', 'tiktok-credentials.bin'))
+    for (const secret of [TOKEN, REFRESH, INSTALL, 'previous-install']) expect(bytes.includes(Buffer.from(secret))).toBe(false)
+    const next = w.restart()
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, inspect: (init) => expect(new Headers(init.headers).get('x-reel-install-token')).toBe('previous-install') })
+    await next.start()
+    expect(await w.store.pendingRevocations()).toEqual([])
+    expect(await next.session()).toEqual(result); w.done()
+  })
+  it('keeps a cancelled install pending without an active connection until startup gets a 401', async () => {
+    const w = await world(); w.oauth(); w.encryptAction(() => w.service.cancelConnect())
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, status: 503 })
+    await expect(w.service.connect()).rejects.toMatchObject({ code: 'TT_CANCELLED' })
+    expect(await w.store.load()).toBeNull()
+    expect(await w.store.pendingRevocations()).toEqual([{ installToken: INSTALL, clientKey: 'fixture-key', brokerUrl: BROKER }])
+    expect(await w.service.session()).toEqual({ connected: false })
+    const bytes = await fs.readFile(join(w.dir, 'settings', 'tiktok-credentials.bin'))
+    expect(bytes.includes(Buffer.from(INSTALL))).toBe(false)
+    const next = w.restart()
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, status: 401 })
+    await next.start()
+    expect(await w.store.pendingRevocations()).toEqual([])
+    expect(await w.store.load()).toBeNull(); w.done()
+  })
+  it('retries pending revocations before a broker refresh', async () => {
+    const w = await world(); await w.seed({ installToken: 'previous-install' }); w.oauth()
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, status: 503 })
+    await w.service.connect()
+    w.tick(86400000)
+    w.steps.push({ path: `${BROKER}/api/install/revoke` })
+    w.steps.push({ path: `${BROKER}/api/tiktok/oauth/token`, body: token() }); w.creator()
+    await w.service.creator()
+    expect(await w.store.pendingRevocations()).toEqual([]); w.done()
+  })
+  it('retries pending revocations on disconnect and keeps failures after local sign-out', async () => {
+    const w = await world(); await w.seed({ installToken: 'previous-install' }); w.oauth()
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, status: 503 })
+    await w.service.connect()
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, status: 503 }, { path: `${BROKER}/api/install/revoke` })
+    await w.service.disconnect()
+    expect(await w.store.load()).toBeNull()
+    expect(await w.store.pendingRevocations()).toHaveLength(1)
+    expect(await w.service.session()).toEqual({ connected: false }); w.done()
+  })
+  it('caps the encrypted pending list at the 20 newest installs', async () => {
+    const w = await world(); await w.seed()
+    const pending = Array.from({ length: 21 }, (_, i) => ({ installToken: `pending-${i}`, clientKey: 'fixture-key', brokerUrl: BROKER }))
+    await w.store.savePending(pending)
+    expect(await w.store.pendingRevocations()).toEqual(pending.slice(1))
+    await w.store.clear()
+    expect(await w.store.load()).toBeNull()
+    expect(await w.store.pendingRevocations()).toEqual(pending.slice(1))
+    const bytes = await fs.readFile(join(w.dir, 'settings', 'tiktok-credentials.bin'))
+    expect(bytes.includes(Buffer.from('pending-'))).toBe(false)
+    expect((await fs.stat(join(w.dir, 'settings', 'tiktok-credentials.bin'))).mode & 0o777).toBe(0o600)
+    expect(await fs.readdir(join(w.dir, 'settings'))).toEqual(['tiktok-credentials.bin'])
+  })
+  it('does not send pending install tokens to an unconfigured origin', async () => {
+    const w = await world()
+    const pending = [{ installToken: INSTALL, clientKey: 'fixture-key', brokerUrl: 'https://other.example' }]
+    await w.store.savePending(pending)
+    await w.service.start()
+    expect(await w.store.pendingRevocations()).toEqual(pending)
+    expect(w.calls).toEqual([])
+  })
+  it('clears local credentials when the install is already invalid', async () => {
+    const w = await world(); await w.seed()
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, status: 401, body: { error: 'invalid_install' } })
+    await w.service.disconnect()
+    expect(await w.store.load()).toBeNull()
+    expect(await w.service.session()).toEqual({ connected: false }); w.done()
+  })
   it('connects with state-bound hex PKCE through the broker and encrypts both tokens', async () => {
     const w = await world({ direct: false }); w.oauth(SCOPES.slice(0, 3).join(','))
     const result = await w.service.connect()
@@ -194,10 +287,12 @@ describe('TikTok fixture HTTP', () => {
     await expect(w.service.connect()).rejects.toMatchObject({ code: 'TT_DECLINED' })
     expect(await w.store.load()).toBeNull()
     w.oauth('user.info.basic,video.upload')
+    w.steps.push({ path: `${BROKER}/api/install/revoke` })
     await expect(w.service.connect()).rejects.toMatchObject({ code: 'TT_PERMISSION' }); expect(await w.store.load()).toBeNull(); w.done()
   })
   it('rolls back a connection cancelled during encryption', async () => {
     const w = await world(); w.oauth(); w.encryptAction(() => w.service.cancelConnect())
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, inspect: (init) => expect(new Headers(init.headers).get('x-reel-install-token')).toBe(INSTALL) })
     await expect(w.service.connect()).rejects.toMatchObject({ code: 'TT_CANCELLED' })
     expect(await w.store.load()).toBeNull(); w.done()
   })

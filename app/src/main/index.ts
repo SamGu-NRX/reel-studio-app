@@ -338,6 +338,7 @@ function registerIpc(): void {
     dev: DEV_PROVIDERS && !TEST, settings: loadSettings, settingsDir: settingsDir(), projectsDir,
     secrets: safeStorage, fetch: (url, init) => fetch(url, init), openExternal: (url) => shell.openExternal(url)
   })
+  if (DEV_PROVIDERS && !TEST) void tiktok.start().catch(() => console.warn('TikTok pending install revocations could not be retried.'))
   registerTikTokIpc({ handle, service: tiktok, dev: DEV_PROVIDERS && !TEST, saveSettings })
   app.on('before-quit', () => { tiktok.stop() })
   const instagram = new InstagramService({

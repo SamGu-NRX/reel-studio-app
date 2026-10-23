@@ -11,7 +11,7 @@ import type { InstagramSecretStore } from './instagram-store'
 import type { TikTokCreator, TikTokOutcome, TikTokPrivacy, TikTokPublishInput, TikTokPublishResult, TikTokSession, TikTokSettings } from '../shared/tiktok'
 import { apiError, count, fail, httpsUrl, invalid, jsonPost, object, positive, request, text, TikTokError, TIKTOK_API, transport, type TikTokFetch } from './tiktok-http'
 import { tiktokCallback } from './tiktok-oauth'
-import { clearReceipt, receipt, saveOutcome, saveReceipt, strings, TikTokTokenStore, uploadUrl, type TikTokCredentials, type TikTokReceipt } from './tiktok-store'
+import { clearReceipt, receipt, saveOutcome, saveReceipt, strings, TikTokTokenStore, uploadUrl, type PendingRevocation, type TikTokCredentials, type TikTokReceipt } from './tiktok-store'
 
 interface Options {
   dev: boolean
@@ -98,7 +98,32 @@ export class TikTokService {
       refreshExpiresAt: this.now() + positive(data.refresh_expires_in) * 1000, accountId: text(data.open_id), displayName, scopes,
       clientKey: config.tiktokClientKey, brokerUrl: config.tiktokBrokerUrl, installToken: text(installToken) }
   }
-  private async broker(c: TikTokCredentials, path: '/api/tiktok/oauth/token' | '/api/install/revoke', body: unknown, signal: AbortSignal): Promise<Record<string, unknown>> {
+  start(): Promise<void> { return this.run((signal) => this.retryPending(signal)) }
+  private async retryPending(signal: AbortSignal): Promise<void> {
+    for (const pending of await this.tokens.pendingRevocations()) {
+      try { await this.revoke(pending, signal) } catch { continue }
+      const remaining = await this.tokens.pendingRevocations()
+      await this.tokens.savePending(remaining.filter((p) => p.installToken !== pending.installToken || p.brokerUrl !== pending.brokerUrl))
+    }
+  }
+  private async revoke(c: PendingRevocation, signal: AbortSignal): Promise<'revoked' | 'already-invalid'> {
+    try { await this.sendBroker(c, '/api/install/revoke', {}, signal); return 'revoked' } catch (e) {
+      // An invalid broker install permits local sign-out, not a claim about platform permissions.
+      if (e instanceof TikTokError && e.status === 401) return 'already-invalid'
+      throw e
+    }
+  }
+  private async revokeOrQueue(c: PendingRevocation): Promise<void> {
+    const pending = await this.tokens.pendingRevocations()
+    await this.tokens.savePending([...pending.filter((p) => p.installToken !== c.installToken || p.brokerUrl !== c.brokerUrl), c])
+    try { await this.revoke(c, AbortSignal.any([this.connection.signal, AbortSignal.timeout(30_000)])) } catch { return }
+    await this.tokens.savePending((await this.tokens.pendingRevocations()).filter((p) => p.installToken !== c.installToken || p.brokerUrl !== c.brokerUrl))
+  }
+  private async broker(c: TikTokCredentials, path: '/api/tiktok/oauth/token', body: unknown, signal: AbortSignal): Promise<Record<string, unknown>> {
+    await this.retryPending(signal)
+    return this.sendBroker(c, path, body, signal)
+  }
+  private async sendBroker(c: Pick<TikTokCredentials, 'installToken' | 'clientKey' | 'brokerUrl'>, path: '/api/tiktok/oauth/token' | '/api/install/revoke', body: unknown, signal: AbortSignal): Promise<Record<string, unknown>> {
     const config = await this.config()
     if (!c.installToken || c.brokerUrl !== config.tiktokBrokerUrl || c.clientKey !== config.tiktokClientKey)
       return fail('TT_TOKEN', 'Connect TikTok again in Settings.')
@@ -149,15 +174,19 @@ export class TikTokService {
       const state = randomBytes(32).toString('base64url'), verifier = randomBytes(32).toString('base64url')
       const listener = await tiktokCallback(state, signal)
       const scopes = ['user.info.basic', 'video.list', 'video.upload', ...(config.tiktokDirectPost ? ['video.publish'] : [])]
+      let issued: PendingRevocation | undefined
+      let committed = false
       try {
         const url = new URL('https://www.tiktok.com/v2/auth/authorize/')
         url.search = new URLSearchParams({ client_key: config.tiktokClientKey, response_type: 'code', scope: scopes.join(','), state,
           redirect_uri: listener.redirectUri, code_challenge: createHash('sha256').update(verifier).digest('hex'), code_challenge_method: 'S256' }).toString()
         signal.throwIfAborted(); await this.o.openExternal(url.toString())
         const code = await listener.result
+        await this.retryPending(signal)
         const data = await request(this.o.fetch, `${config.tiktokBrokerUrl}/api/tiktok/oauth/token`, jsonPost({
           client_key: config.tiktokClientKey, grant_type: 'authorization_code', code, redirect_uri: listener.redirectUri, code_verifier: verifier
         }), signal, false)
+        issued = { installToken: text(data.install_token), clientKey: config.tiktokClientKey, brokerUrl: config.tiktokBrokerUrl }
         let credentials = this.parseToken(data, config, 'TikTok creator', data.install_token)
         if (!['video.list', 'video.upload'].every((s) => credentials.scopes.includes(s))) throw apiError('scope_not_authorized')
         const profile = object((await request(this.o.fetch, `${TIKTOK_API}/user/info/?fields=open_id,display_name`, {
@@ -171,8 +200,12 @@ export class TikTokService {
           if (previous) await this.tokens.save(previous); else await this.tokens.clear()
           signal.throwIfAborted()
         }
+        committed = true
+        if (previous?.installToken && previous.installToken !== credentials.installToken)
+          await this.revokeOrQueue({ installToken: previous.installToken, clientKey: previous.clientKey, brokerUrl: previous.brokerUrl })
         return { connected: true, accountId: credentials.accountId, displayName: credentials.displayName, expiresAt: credentials.expiresAt, scopes: credentials.scopes }
       } catch (e) {
+        if (issued && !committed) await this.revokeOrQueue(issued)
         if (signal.aborted) return fail('TT_CANCELLED', 'TikTok connection was cancelled.')
         throw e
       } finally { listener.close(); if (this.connecting === ac) this.connecting = undefined }
@@ -183,8 +216,10 @@ export class TikTokService {
   async disconnect(): Promise<void> {
     this.stop(); this.connection = new AbortController()
     const clear = async () => {
+      const signal = AbortSignal.any([this.connection.signal, AbortSignal.timeout(30_000)])
+      await this.retryPending(signal)
       const saved = await this.tokens.load()
-      if (saved?.installToken) await this.broker(saved, '/api/install/revoke', {}, AbortSignal.any([this.connection.signal, AbortSignal.timeout(30_000)]))
+      if (saved?.installToken) await this.revoke({ installToken: saved.installToken, clientKey: saved.clientKey, brokerUrl: saved.brokerUrl }, signal)
       await this.tokens.clear()
     }
     const result = this.queue.then(clear, clear)
