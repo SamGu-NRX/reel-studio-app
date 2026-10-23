@@ -278,7 +278,7 @@ export function Outs({
           return null
         })
     },
-    ...drives.map((drive) => {
+    ...(drives ?? []).map((drive) => {
       const name = driveName(drive)
       const id = `drive:${drive.folder}`
       return {

@@ -1,22 +1,35 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { CloudDrive } from '../../../shared/api'
+import { driveNames } from '../../../shared/cloud-drive-names'
 import { errorCode, reel, userMessage } from '../api'
-import { Icon } from './icons'
 import { FOLDER_APP } from './ui'
 
-/** The cloud drives on this computer, and the name each goes by ("Google Drive · Work" when there are two). */
+const ICLOUD_URL = 'https://www.icloud.com/iclouddrive/'
+const GDRIVE_URL = 'https://drive.google.com/drive/my-drive'
+
+const ON_PHONE: Record<CloudDrive['label'], string> = {
+  'iCloud Drive': 'On your iPhone, open the Files app, then iCloud Drive › Reel Studio.',
+  'Google Drive': 'On your phone, open the Drive app and find the Reel Studio folder.'
+}
+
+/**
+ * The cloud drives on this computer (null while they are being looked for), and the name each goes by:
+ * "Google Drive (G:)" or "Google Drive (sam)" when there are two (shared/cloud-drive-names.ts).
+ */
 export function useCloudDrives() {
-  const [drives, setDrives] = useState<CloudDrive[]>([])
+  const [drives, setDrives] = useState<CloudDrive[] | null>(null)
   useEffect(() => {
     let live = true
-    void reel.cloud.drives().then((drives) => { if (live) setDrives(drives) }).catch(() => {})
-    return () => { live = false }
+    reel.cloud.drives().then(
+      (found) => live && setDrives(found),
+      () => live && setDrives([])
+    )
+    return () => {
+      live = false
+    }
   }, [])
-  const label = (drive: CloudDrive) => {
-    if (drives.filter((other) => other.label === drive.label).length === 1) return drive.label
-    const account = drive.folder.match(/GoogleDrive-([^/\\]+)/)?.[1] ?? drive.folder
-    return `${drive.label} · ${account}`
-  }
+  const names = drives ? driveNames(drives) : []
+  const label = (drive: CloudDrive): string => names[drives?.indexOf(drive) ?? -1] ?? drive.label
   return { drives, label }
 }
 
@@ -36,11 +49,14 @@ export function saveToDrive(video: string, drive: CloudDrive, onPct: (pct: numbe
 
 type SaveState = { kind: 'idle' } | { kind: 'saving'; drive: CloudDrive; pct: number } | { kind: 'saved'; drive: CloudDrive; path: string } | { kind: 'error'; message: string }
 
-/** "Phone can't open it?": the drives as one of the other ways, for a video that is already exported. */
-export function CloudSave({ video }: { video: string }) {
+/**
+ * "Phone can't open it?": iCloud Drive or Google Drive as one of the other ways. With a drive app on this computer,
+ * one click copies the video into a Reel Studio folder on the drive; without one, the drive websites, for uploading
+ * by hand. Either way it says where the video turns up on the phone.
+ */
+export function CloudSave({ video, icon }: { video: string; icon: ReactNode }) {
   const { drives, label } = useCloudDrives()
   const [state, setState] = useState<SaveState>({ kind: 'idle' })
-  if (!drives.length) return null
   const save = async (drive: CloudDrive) => {
     setState({ kind: 'saving', drive, pct: 0 })
     try {
@@ -50,28 +66,65 @@ export function CloudSave({ video }: { video: string }) {
       setState({ kind: 'error', message: userMessage(e) })
     }
   }
+  const buttons = drives?.length ? drives : null
   return (
     <div className="phone-way" data-testid="cloud-save">
-      <Icon name="folder" />
-      <div className="stack" style={{ gap: 8 }}>
-        <div className="row wrap" style={{ gap: 8 }}>
-          {drives.map((drive) => (
-            <button className="btn small" key={drive.folder} disabled={state.kind === 'saving'} onClick={() => void save(drive)}>
-              Save to {label(drive)}
-            </button>
-          ))}
-        </div>
-        <div role="status" className="muted-sm">
-          {state.kind === 'saving' && `Saving to ${label(state.drive)} · ${state.pct}%`}
+      {icon}
+      <div>
+        <b>Put it in iCloud Drive or Google Drive</b>
+        {drives === null && <p className="muted-sm">Looking for your drives…</p>}
+        {drives && (
+          <p className="muted-sm">
+            {buttons
+              ? 'Saves a copy of the video in a Reel Studio folder on your drive. Then open it on your phone and save it from there.'
+              : 'Upload the video at icloud.com/iclouddrive or drive.google.com (the buttons open them). Then open the Files app (iPhone) or Drive app (Android) on your phone and save it from there.'}
+          </p>
+        )}
+        {buttons && (
+          <div className="row wrap cloud-buttons">
+            {buttons.map((drive) => (
+              // aria-disabled, not disabled: a disabled button drops keyboard focus to the page mid-save
+              <button
+                className="btn small"
+                key={drive.folder}
+                aria-disabled={state.kind === 'saving'}
+                onClick={() => state.kind !== 'saving' && void save(drive)}
+              >
+                Save to {label(drive)}
+              </button>
+            ))}
+          </div>
+        )}
+        <div role="status" data-testid="cloud-status">
+          {state.kind === 'saving' && <p className="muted-sm cloud-note">Saving to {label(state.drive)} · {state.pct}%</p>}
           {state.kind === 'saved' && (
-            <span className="row wrap" style={{ gap: 6 }}>
-              Saved to {label(state.drive)} ·
-              <button className="link inline" onClick={() => void reel.app.openFolder(state.path)}>Show in {FOLDER_APP}</button>
-            </span>
+            <div className="cloud-note">
+              <p>
+                <b>Saved to {label(state.drive)}.</b> It shows up on your phone once your drive finishes syncing.
+              </p>
+              <p className="muted-sm">{ON_PHONE[state.drive.label]}</p>
+              <button className="link inline" onClick={() => void reel.app.openFolder(state.path)}>
+                Show in {FOLDER_APP}
+              </button>
+            </div>
           )}
         </div>
-        {state.kind === 'error' && <p role="alert" className="phone-note">{state.message}</p>}
+        {state.kind === 'error' && (
+          <p role="alert" className="phone-note cloud-note">
+            {state.message}
+          </p>
+        )}
       </div>
+      {drives && !buttons && (
+        <div className="stack cloud-sites">
+          <a className="btn small" href={ICLOUD_URL} target="_blank" rel="noreferrer" data-testid="phone-icloud">
+            iCloud Drive
+          </a>
+          <a className="btn small" href={GDRIVE_URL} target="_blank" rel="noreferrer" data-testid="phone-gdrive">
+            Google Drive
+          </a>
+        </div>
+      )}
     </div>
   )
 }

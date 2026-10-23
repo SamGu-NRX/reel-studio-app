@@ -37,6 +37,7 @@ const G: Record<string, ReactNode> = {
       <path d="M7 5a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1V3" />
     </>
   ),
+  cloud: <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />,
   wifi: (
     <>
       <path d="M12 20h.01" />
@@ -149,7 +150,7 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
         </button>
       </div>
     ),
-    cloud: <CloudSave video={video} />,
+    cloud: <CloudSave video={video} icon={<Glyph name="cloud" />} />,
     email: (
       <div className="phone-way">
         <Glyph name="mail" />
