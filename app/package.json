@@ -18,13 +18,15 @@
     "e2e": "electron-vite build && playwright test"
   },
   "dependencies": {
-    "@reelstudio/ai": "*"
+    "@reelstudio/ai": "*",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@playwright/test": "1.64",
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^6.1.2",
     "electron": "^44.8.0",
     "electron-vite": "^6.0.0",

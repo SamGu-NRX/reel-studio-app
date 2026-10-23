@@ -85,7 +85,7 @@ export function createMainWindow(opts: { preload: string; stateFile: string; tes
  * (pasting a key fails). Windows gets no menu bar: Ctrl+C/V work natively there and the renderer
  * handles the app shortcuts itself.
  */
-export function installMenu(send: (c: AppCommand) => void, dev: boolean): void {
+export function installMenu(send: (c: AppCommand) => void, dev: boolean, openInBrowser?: () => void): void {
   if (process.platform !== 'darwin') {
     Menu.setApplicationMenu(null)
     return
@@ -115,6 +115,7 @@ export function installMenu(send: (c: AppCommand) => void, dev: boolean): void {
         { label: 'Export for Instagram', accelerator: 'Cmd+E', click: () => send({ type: 'export' }) },
         { type: 'separator' },
         { label: 'Library', accelerator: 'Cmd+L', click: () => send({ type: 'library' }) },
+        ...(openInBrowser ? ([{ label: 'Open in Browser', click: openInBrowser }] as MenuItemConstructorOptions[]) : []),
         { type: 'separator' },
         { role: 'close' }
       ]

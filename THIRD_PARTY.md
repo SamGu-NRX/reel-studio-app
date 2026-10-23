@@ -147,6 +147,7 @@ Production dependency tree of the app plus the front-end libraries vite bundles 
 | standardwebhooks 1.1.1 | MIT (package.json; its repository root file is Apache-2.0, both texts shipped) | Standard Webhooks |
 | @stablelib/base64 1.0.1 | MIT | Dmitry Chestnykh |
 | fast-sha256 1.3.0 | Unlicense | Dmitry Chestnykh |
+| ws 8.22.0 | MIT | Einar Otto Stangvik, Arnout Kazemier, Luigi Pinca and contributors |
 
 ### QR Code generator library (vendored source, MIT)
 

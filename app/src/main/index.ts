@@ -33,7 +33,8 @@ import {
 } from './store'
 import { mediaRef, resolveMediaRef } from './media-files'
 import { createService } from './service'
-import { METHODS, channelFor, type Method } from '../shared/contract'
+import { EVENTS, METHODS, channelFor, type EventName, type Method } from '../shared/contract'
+import { startBrowserServer, type BrowserServer } from './server'
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { createJobManager } from './jobs'
 import { createLiveVideos } from './live-video'
@@ -60,6 +61,8 @@ import { createJobFeedback, createMainWindow, feedbackLog, installMenu, startDra
 
 const TEST = process.env.REELSTUDIO_TEST === '1'
 const DEV_PROVIDERS = process.env.REELSTUDIO_DEV === '1'
+// Prototype: REELSTUDIO_BROWSER=1 also serves the app to a browser on this computer (main/server).
+const BROWSER = process.env.REELSTUDIO_BROWSER === '1'
 if (process.env.REELSTUDIO_USER_DATA) app.setPath('userData', process.env.REELSTUDIO_USER_DATA)
 
 registerMediaScheme()
@@ -125,9 +128,23 @@ const host: EngineHost = {
 let ai: AI
 let aiSource: 'package' | 'mock' = 'mock'
 let win: BrowserWindow | null = null
+let browser: BrowserServer | null = null
+
+const EVENT_OF_CHANNEL = new Map(Object.entries(EVENTS).map(([e, c]) => [c as string, e as EventName]))
 
 function broadcast(channel: string, payload: unknown): void {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(channel, payload)
+  const event = EVENT_OF_CHANNEL.get(channel)
+  if (event) browser?.publish(event, payload)
+}
+
+/** Opens a fresh one-time pairing link in the default browser (File > Open in Browser, and at start). */
+function openInBrowser(): void {
+  if (!browser) return
+  const url = browser.pairingUrl()
+  // tests read the link instead (e2e/browser.spec.ts); a test run never opens a browser on the screen
+  if (TEST) (globalThis as { __reelPairingUrl?: string }).__reelPairingUrl = url
+  else void shell.openExternal(url)
 }
 
 // The window, menu, Dock/taskbar and notifications (window.ts) hear about every job too.
@@ -606,7 +623,7 @@ async function carryOverClaudeCode(settings: { aiAutoPicked: boolean; aiCarriedO
 // ---- window -------------------------------------------------------------------------------------
 function createWindow(): void {
   win = createMainWindow({ preload: join(__dirname, '../preload/index.js'), stateFile: windowStateFile(settingsDir()), test: TEST })
-  installMenu(sendCommand, DEV_PROVIDERS || !app.isPackaged)
+  installMenu(sendCommand, DEV_PROVIDERS || !app.isPackaged, browser ? openInBrowser : undefined)
   win.once('ready-to-show', () => win?.show())
   // Stop flashing the taskbar once the person is back.
   win.on('focus', () => win?.flashFrame(false))
@@ -665,7 +682,12 @@ app.whenReady().then(async () => {
   log(`[start] root=${reelStudioRoot()} engine=${engineMode()}:${engineDir()} python=${pythonExe()} ai=${aiSource}`)
   handleMediaProtocol()
   registerIpc()
+  if (BROWSER) {
+    browser = await startBrowserServer({ port: Number(process.env.REELSTUDIO_BROWSER_PORT) || 0, service, log })
+    log(`[browser] serving ${browser.auth.origin} (this computer only)`)
+  }
   createWindow()
+  openInBrowser()
   updates.start() // a few seconds after the window, so launch is never slower
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -675,6 +697,7 @@ app.whenReady().then(async () => {
 let quitting = false
 app.on('before-quit', (e) => {
   void stopPhoneShare() // the "Send to my phone" link never outlives the app
+  void browser?.close() // nor does the browser server: its session dies with this launch
   if (quitting || !jobs.runningCount()) {
     void killAllEngines()
     return
