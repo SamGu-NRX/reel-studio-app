@@ -81,6 +81,16 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
   const checking = useRef(false)
   const announce = useRef(onConnected)
   announce.current = onConnected
+  const box = useRef<HTMLDivElement>(null)
+  const wasBusy = useRef(busy)
+
+  // The pill pressed is gone while the check runs; when it ends, focus goes to the row's new pill, not the page.
+  useEffect(() => {
+    const row = wasBusy.current === 'claude' ? 'claude-cli' : wasBusy.current
+    if (row && !busy && document.activeElement === document.body)
+      box.current?.querySelector<HTMLElement>(`[data-provider="${row}"] .pv-main > button`)?.focus({ preventScroll: true })
+    wasBusy.current = busy
+  }, [busy])
 
   const connected = useCallback(
     (p: ProviderInfo) => {
@@ -320,7 +330,7 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
   )
 
   return (
-    <div className="picker">
+    <div className="picker" ref={box}>
       <div className="prov" role="group" aria-label="Choose your editor" data-testid="ai-picker">
         {otherRow}
         {claudeLeads ? [claudeRow, chatgptRow] : [chatgptRow, claudeRow]}
