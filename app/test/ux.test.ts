@@ -11,7 +11,7 @@ const words: Word[] = [
   { id: 'w1', w: 'hi', s: 0.4, e: 0.7 },
   { id: 'w2', w: 'there', s: 0.8, e: 1.1 }
 ]
-const versions: VersionInfo[] = [{ n: 1, video: 'x', videoPath: 'x', draft: false, cover: 'c', createdAt: '' }]
+const versions: VersionInfo[] = [{ n: 1, parent: null, video: 'x', videoPath: 'x', draft: false, cover: 'c', createdAt: '' }]
 const project = (caption: string): ProjectJson =>
   ({
     schemaVersion: 1,

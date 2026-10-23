@@ -7,7 +7,7 @@ never a pile of preview-only folders an AI run left behind.
 
 ```
 <project>/versions/
-  v1/            a VERSION: export.mp4 + cover.png + verify.json + render.json + project.json (+ notes.md),
+  v1/            a VERSION: export.mp4 + cover.png + verify.json + render.json + project.json + version.json (+ notes.md),
                  and the reports that describe this video: captions.json, layers.json, mix.json
   v2/
   preview/       the ONE scratch folder for previews, overwritten every time:
@@ -37,6 +37,13 @@ Rules:
 7. `--project-file work/...` makes `render`, `anim-context` and `cover-candidates` read (and `render`
    patch `version` into) that document instead of `project.json`. A final rendered from such a copy
    never takes a number `project.json` has already saved: the engine refuses it (`PROJECT_CHANGED`).
+8. `version.json` records `{ "parent": N }`, or null for Version 1. The engine writes it before
+   advancing the project counter. Saved folders without this file have parent N-1, with null for
+   Version 1; reading them never backfills the file. Previews have no parent.
+9. `render --parent N` records an explicit parent. When N is older than the live counter carried by
+   the edit, it creates the next version even if the result matches the newest video. This preserves
+   branch ancestry without rewriting a saved folder. Rendering without an explicit older parent
+   keeps the reuse rule above.
 
 ## Render result (engine `done.result`)
 
@@ -59,6 +66,8 @@ Rules:
   no `export.mp4` (a first edit whose final render failed fell back to its preview), show
   `versions/preview/draft.mp4` and offer to try the final render again.
 - `versions/vN/notes.md` (written by the ai package) is the note text for that chip.
+- `VersionInfo.parent` accompanies each version in project detail. The note IPC accepts an optional
+  base number; choosing and displaying branches in the renderer is a later slice.
 
 ## ai package
 
@@ -72,6 +81,18 @@ Rules:
   that `project.json` is still what the note started from and Stop was not pressed. A note that fails,
   is stopped, hits its step limit with something changed, or whose final render fails changes nothing
   the user can see; its downloads stay in `work/assets` but are not offered again.
+- `applyNote(..., { base: N })` edits the saved `vN/project.json` snapshot. It retains live identity,
+  title, timestamps, note history, manual-edit history and the highest version counter. Omitting
+  `base` uses the live edit, including unrendered changes. Explicit bases are checked before staging
+  for a finished snapshot, available assets and valid word anchors. The live bytes remain the
+  compare-and-swap target. Preference-only notes do not switch the edit to the selected base.
+- After an ordinary failed final, the note removes its unpublished next-version folder while still
+  holding the edit lock. If the engine is stuck, or the live counter now includes that version,
+  it leaves the folder alone. Crash leftovers still follow rule 3 and app recovery.
+
+Snapshots do not freeze transcripts. Missing word anchors are refused, but a re-transcription that
+reuses word ids can change their meaning. Restoring those earlier meanings requires transcript
+history and is outside this first slice.
 
 ## One writer per project
 

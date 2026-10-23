@@ -49,6 +49,7 @@ def test_the_same_edit_gets_its_saved_version_back_untouched(project):
     first = engine(project, "render")
     assert first["version"] == 1
     v1 = project / "versions" / "v1"
+    assert json.loads((v1 / "version.json").read_text()) == {"parent": None}
     before = {f.name: f.read_bytes() for f in v1.iterdir() if f.is_file()}
     p = json.loads((project / "project.json").read_text())
     p["post"]["caption"] = "A new caption changes no picture"
@@ -70,6 +71,7 @@ def test_changed_words_make_a_new_version_with_their_subtitles(project):
 
     again = engine(project, "render")
     assert again["version"] == 2 and not again.get("reused")
+    assert json.loads((project / "versions/v2/version.json").read_text()) == {"parent": 1}
     shown = lambda v: " ".join(c["text"] for c in json.loads((project / "versions" / v / "captions.json").read_text())["cues"]).lower()
     assert "loaves" in shown("v2") and "loaves" not in shown("v1")
 
@@ -114,4 +116,25 @@ def test_a_note_never_replaces_a_version_saved_while_it_ran(project):
 
     refused = last_event(project, "render", "--project-file", "work/notes/n1/edit.json")
     assert refused["event"] == "error" and refused["code"] == "PROJECT_CHANGED"
+    assert {f.name: f.read_bytes() for f in v2.iterdir() if f.is_file()} == saved
+
+
+def test_branch_parent_allocates_a_child_even_when_the_edit_matches_latest(project):
+    engine(project, "render")
+    p = json.loads((project / "project.json").read_text())
+    p["cut"]["gapCap"] = 0.3
+    (project / "project.json").write_text(json.dumps(p))
+    assert engine(project, "render")["version"] == 2
+    v2 = project / "versions/v2"
+    saved = {f.name: f.read_bytes() for f in v2.iterdir() if f.is_file()}
+    note = project / "work/notes/branch"
+    note.mkdir(parents=True)
+    live = (project / "project.json").read_bytes()
+    (note / "edit.json").write_bytes(live)
+
+    result = engine(project, "render", "--project-file", "work/notes/branch/edit.json", "--parent", "1")
+
+    assert result["version"] == 3 and not result.get("reused")
+    assert json.loads((project / "versions/v3/version.json").read_text()) == {"parent": 1}
+    assert (project / "project.json").read_bytes() == live
     assert {f.name: f.read_bytes() for f in v2.iterdir() if f.is_file()} == saved

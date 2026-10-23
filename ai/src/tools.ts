@@ -51,7 +51,7 @@ export interface ToolContext {
   userNote?: string;
   /** A note edits `file`, its private copy of project.json, and renders its previews into `dir`;
    * project.json changes only when the whole note is done (editor.ts applyNote). */
-  note?: { id: string; file: string; dir: string };
+  note?: { id: string; file: string; dir: string; parent?: number };
   /** DNS lookup used to refuse private/loopback hosts (test hook; default node:dns) */
   lookupImpl?: LookupFn;
   /** whole-download timeout for in-process image fetches (test hook; default 30 s) */
@@ -451,7 +451,8 @@ export async function doRender(ctx: ToolContext, draft: boolean, announce = true
   if (ctx.renderGate) await ctx.renderGate.catch(() => undefined);
   ctx.state.dirty = new Set();
   const out = draft && ctx.note ? ['--out', ctx.note.dir] : [];
-  const result = await engine(ctx, 'render', draft ? ['--draft', ...out] : [], draft ? 'Making a preview' : 'Making the final video');
+  const parent = ctx.note?.parent ? ['--parent', String(ctx.note.parent)] : [];
+  const result = await engine(ctx, 'render', [...(draft ? ['--draft', ...out] : []), ...parent], draft ? 'Making a preview' : 'Making the final video');
   const p = await loadProject(ctx.projectDir, ctx.note?.file);
   const version = Number(result?.version ?? p.version ?? 0);
   ctx.project = p;

@@ -10,7 +10,7 @@ import { planFastNote } from './fastnote';
 import { AttachmentInfo, attachmentStills, attachmentsSection, earlierUnplaced, placedAssets, validateAttachments } from './attachments';
 import {
   Analysis, NoteEntry, PROJECT_FILE, Project, withDefaults, Transcript, WordAnchor, hasTranscript, loadProject, normalizeAnalysis, normalizeKeep, saveProject,
-  snapshotVersion, LIBRARY_FOLDERS, anchorText, writeFileAtomic, keptWords, projectBytes, versionDir,
+  snapshotVersion, LIBRARY_FOLDERS, anchorText, writeFileAtomic, keptWords, projectBytes, versionDir, loadTranscript, validateProject,
 } from './project';
 import { extractJson } from './providers/cli';
 import * as fsp from 'node:fs/promises';
@@ -276,6 +276,8 @@ ${summary}
 // ---------------------------------------------------------------- apply a note
 
 export interface ApplyNoteOptions {
+  /** saved snapshot to edit; omitted uses the live edit after acquiring the project lock */
+  base?: number;
   /** files attached to this note: `work/assets/attach-*` refs (re-checked against the project's sidecars) */
   attachments?: string[];
   /** names the note in project.json (the app passes its job id); default a new id */
@@ -297,6 +299,42 @@ function unfinished(state: ToolState): AIError {
   return new AIError('note_unfinished', `I ran out of time before I finished this note, so I did not change your video.${did.length ? ` I had started to: ${did.join('; ')}.` : ''} Try asking for one thing at a time.`);
 }
 
+/** A snapshot's version counter can lag its folder. Keep allocation and history from the live
+ * project; only the edit comes from the selected version. Validate before creating note scratch. */
+async function noteBase(ctx: ToolContext, live: Project, n: number): Promise<Project> {
+  const invalid = (detail: string) => new AIError('bad_note_base', `Version ${n} cannot be changed. Choose another saved version.`, { detail });
+  if (!Number.isSafeInteger(n) || n < 1 || n > live.version) throw invalid('The base is not a saved version number.');
+  const dir = versionDir(ctx.projectDir, n);
+  let snapshot: Project;
+  try {
+    await fsp.access(path.join(dir, 'export.mp4'));
+    try {
+      await fsp.access(path.join(dir, '.rendering'));
+      throw invalid('This version did not finish rendering.');
+    } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
+    snapshot = await loadProject(ctx.projectDir, path.join(dir, PROJECT_FILE));
+    const problems = validateProject(snapshot, await loadTranscript(ctx.projectDir, snapshot));
+    if (problems.length) throw invalid(problems.join('; '));
+    const refs = [
+      ...snapshot.sources.map((s) => s.path), snapshot.music.track,
+      ...snapshot.broll.flatMap((b) => [b.asset, ...(['post-wall', 'icon-wall'].includes(b.treatment) && Array.isArray(b.params?.items) ? b.params.items.filter((x): x is string => typeof x === 'string') : [])]),
+    ];
+    for (const ref of refs) {
+      if (!ref) continue;
+      const asset = resolveAsset(ctx, ref);
+      if (!asset) throw invalid(`The file ${ref} is missing.`);
+    }
+  } catch (e) {
+    if (e instanceof AIError) throw e;
+    throw invalid(e instanceof Error ? e.message : String(e));
+  }
+  return {
+    ...snapshot, id: live.id, slug: live.slug, title: live.title,
+    version: live.version, createdAt: live.createdAt, updatedAt: live.updatedAt,
+    notes: live.notes, handEdits: live.handEdits,
+  };
+}
+
 /**
  * A note is all-or-nothing. It edits a private copy of project.json (work/notes/<id>/edit.json) and
  * renders its previews beside it; its final video goes to versions/v(N+1), which counts as a version
@@ -313,11 +351,14 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   if (!/^[\w-]+$/.test(id)) throw new AIError('bad_note_id', 'Something went wrong starting your note. Try again.', { detail: `note id ${JSON.stringify(id)}` });
   const dir = path.join(projectDir, 'work', 'notes', id);
   const base = await fsp.readFile(path.join(projectDir, PROJECT_FILE));
-  const baseVersion = withDefaults(JSON.parse(base.toString('utf8'))).version;
+  const liveProject = withDefaults(JSON.parse(base.toString('utf8')));
+  const baseVersion = liveProject.version;
+  const parent = opts.base ?? baseVersion;
+  const edit = opts.base === undefined ? base : JSON.stringify(await noteBase(newCtx(deps, projectDir, provider, onEvent, signal), liveProject, opts.base));
   const begin = async (): Promise<ToolContext> => {
     const file = path.join(dir, 'edit.json');
-    await writeFileAtomic(file, base);
-    return { ...newCtx(deps, projectDir, provider, onEvent, signal, 2), userNote: note, note: { id, file, dir } };
+    await writeFileAtomic(file, edit);
+    return { ...newCtx(deps, projectDir, provider, onEvent, signal, 2), userNote: note, note: { id, file, dir, parent } };
   };
   const label = noteLabel(note, attached);
   try {
@@ -366,8 +407,8 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     const recorded = [...refs, ...earlier.map((a) => a.asset).filter((r) => placedNow.has(r) && !refs.includes(r))];
     return await saveNote(deps, ctx, base, baseVersion, { text: note.trim(), label, summary, attachments: recorded }, opts.saveStyleRules !== false);
   } finally {
-    // only what this note made under its own id; a final it started stays above project.json's
-    // version, never shown, and the app's job lane clears it (app store.ts cleanPartialVersions)
+    // Only this note's scratch. saveNote handles failed finals; crash leftovers stay unpublished
+    // until the app's job lane clears them (app store.ts cleanPartialVersions).
     await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
@@ -384,46 +425,61 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
   const unchanged = async (): Promise<void> => {
     if (!(await fsp.readFile(live)).equals(base)) throw changedElsewhere();
   };
-  let final: RenderInfo | null = null;
-  if (ctx.state.changed.size) {
-    ctx.emit({ type: 'status', message: 'Making the new version', pct: 90, phase: 'final' });
-    await unchanged();
-    await refreshCredits(ctx);
-    // the engine refuses that number too (render.py PROJECT_CHANGED), for a save that lands meanwhile
-    final = await doRender(ctx, false, false).catch((e) => { throw e?.code === 'PROJECT_CHANGED' ? changedElsewhere() : e; });
-  }
-  const version = final?.version ?? baseVersion;
-  const p = await loadProject(ctx.projectDir, ctx.note!.file);
-  const { styleRulesAdded, styleSuggestions } = ctx.state;
-  const entry: NoteEntry = {
-    version, text: n.text, applied: [...ctx.state.changed], at: new Date().toISOString(),
-    ...(n.attachments.length ? { attachments: n.attachments } : {}),
-    id: ctx.note!.id, reply: n.summary,
-    ...(styleRulesAdded.length ? { styleRulesAdded } : {}), ...(styleSuggestions.length ? { styleSuggestions } : {}),
-  };
-  p.notes = [...(p.notes ?? []), entry];
-  const bytes = projectBytes(p);
-  // a new version folder is complete, snapshot and notes included, before project.json points at it;
-  // an unchanged video keeps its version, whose folder is never rewritten
-  if (version > baseVersion) {
-    await unchanged();
-    const vdir = versionDir(ctx.projectDir, version);
-    await writeFileAtomic(path.join(vdir, PROJECT_FILE), bytes);
-    await fsp.writeFile(path.join(vdir, 'notes.md'), `# v${version}\n\nNote: ${n.label}\n\n${n.summary}\n`);
-  }
-  await writeFileAtomic(live, bytes, undefined, async () => {
-    if (!deps.owner) refuseIfOpen(ctx.projectDir);
-    await unchanged();
-    if (ctx.signal?.aborted) throw new AIError('cancelled', 'Stopped.');
-  });
+  let renderStarted = false;
   try {
-    if (saveStyle) for (const rule of styleRulesAdded) await deps.style.add(rule);
-    if (final) ctx.emit(renderEvent(final));
-    ctx.emit({ type: 'status', message: 'Done', pct: 100 });
-  } catch {
-    // the note is saved: a My style write or a listener that fails now must not report it as failed
+    let final: RenderInfo | null = null;
+    if (ctx.state.changed.size) {
+      ctx.emit({ type: 'status', message: 'Making the new version', pct: 90, phase: 'final' });
+      await unchanged();
+      await refreshCredits(ctx);
+      // the engine refuses that number too (render.py PROJECT_CHANGED), for a save that lands meanwhile
+      renderStarted = true;
+      final = await doRender(ctx, false, false).catch((e) => { throw e?.code === 'PROJECT_CHANGED' ? changedElsewhere() : e; });
+    }
+    const version = final?.version ?? baseVersion;
+    // A preference-only note must not replace the live edit with its selected historical base.
+    const p = ctx.state.changed.size ? await loadProject(ctx.projectDir, ctx.note!.file) : withDefaults(JSON.parse(base.toString('utf8')));
+    const { styleRulesAdded, styleSuggestions } = ctx.state;
+    const entry: NoteEntry = {
+      version, text: n.text, applied: [...ctx.state.changed], at: new Date().toISOString(),
+      ...(n.attachments.length ? { attachments: n.attachments } : {}),
+      id: ctx.note!.id, reply: n.summary,
+      ...(styleRulesAdded.length ? { styleRulesAdded } : {}), ...(styleSuggestions.length ? { styleSuggestions } : {}),
+    };
+    p.notes = [...(p.notes ?? []), entry];
+    const bytes = projectBytes(p);
+    // a new version folder is complete, snapshot and notes included, before project.json points at it;
+    // an unchanged video keeps its version, whose folder is never rewritten
+    if (version > baseVersion) {
+      await unchanged();
+      const vdir = versionDir(ctx.projectDir, version);
+      await writeFileAtomic(path.join(vdir, PROJECT_FILE), bytes);
+      await fsp.writeFile(path.join(vdir, 'notes.md'), `# v${version}\n\nNote: ${n.label}\n\n${n.summary}\n`);
+    }
+    await writeFileAtomic(live, bytes, undefined, async () => {
+      if (!deps.owner) refuseIfOpen(ctx.projectDir);
+      await unchanged();
+      if (ctx.signal?.aborted) throw new AIError('cancelled', 'Stopped.');
+    });
+    try {
+      if (saveStyle) for (const rule of styleRulesAdded) await deps.style.add(rule);
+      if (final) ctx.emit(renderEvent(final));
+      ctx.emit({ type: 'status', message: 'Done', pct: 100 });
+    } catch {
+      // the note is saved: a My style write or a listener that fails now must not report it as failed
+    }
+    return { summary: n.summary, version, styleRulesAdded, styleSuggestions, changed: [...ctx.state.changed] };
+  } catch (e) {
+    // Only our next unpublished number, under the edit lock, after the engine has settled.
+    // A stuck engine may still be writing; recovery owns its files instead.
+    if (renderStarted && (e as { code?: string })?.code !== 'ENGINE_STUCK') {
+      const saved = await loadProject(ctx.projectDir).catch(() => null);
+      if (saved && saved.version <= baseVersion) {
+        await fsp.rm(versionDir(ctx.projectDir, baseVersion + 1), { recursive: true, force: true }).catch(() => undefined);
+      }
+    }
+    throw e;
   }
-  return { summary: n.summary, version, styleRulesAdded, styleSuggestions, changed: [...ctx.state.changed] };
 }
 
 // ---------------------------------------------------------------- idea -> script

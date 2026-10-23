@@ -227,8 +227,22 @@ export async function listVersions(dir: string): Promise<VersionInfo[]> {
   const push = async (n: number, d: string, video: string): Promise<void> => {
     const st = await fs.stat(video)
     const cover = join(d, 'cover.png')
+    let parent: number | null = n > 1 ? n - 1 : null
+    if (n > 0) {
+      let metadata: string | undefined
+      try { metadata = await fs.readFile(join(d, 'version.json'), 'utf8') }
+      catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e }
+      if (metadata !== undefined) {
+        const value: unknown = JSON.parse(metadata)?.parent
+        if (n === 1 ? value !== null : typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value >= n) {
+          throw new Error(`Invalid parent for Version ${n}`)
+        }
+        parent = value as number | null
+      }
+    }
     out.push({
       n,
+      parent,
       video: mediaUrl(video, st.mtimeMs),
       videoPath: video,
       draft: basename(video) !== 'export.mp4',

@@ -20,6 +20,7 @@ export interface ProjectSummary {
 
 export interface VersionInfo {
   n: number
+  parent: number | null
   video: string
   videoPath: string
   draft: boolean
@@ -341,7 +342,7 @@ export interface ReelApi {
     resume(slug: string): Promise<{ jobId: string }>
     /** jobId null = no AI connected: the note and a plain reply were added to the chat, nothing runs.
      * `attachments`: `work/assets/attach-*` refs from notes.attach* (main re-checks each one). */
-    note(slug: string, text: string, attachments?: string[]): Promise<{ jobId: string | null }>
+    note(slug: string, text: string, attachments?: string[], base?: number): Promise<{ jobId: string | null }>
     update(slug: string, patch: Partial<ProjectJson>): Promise<ProjectDetail>
     /** `change`: what changed, in plain words ("bigger yellow subtitles"), for the chat and the version button.
      * `label`: what to call the work while it runs ("Updating your subtitles"). Render only, never the AI. */

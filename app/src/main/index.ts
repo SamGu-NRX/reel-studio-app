@@ -457,9 +457,9 @@ function registerIpc(): void {
     }
     return { jobId: startFirstEdit(slug, null) }
   })
-  handle('projects:note', async (_e, slug: string, text: string, attachments?: unknown) => {
+  handle('projects:note', async (_e, slug: string, text: string, attachments?: unknown, requestedBase?: unknown) => {
     const dir = projectDir(slug)
-    const { note, files } = await takeNote(jobs, slug, text, attachments)
+    const { note, files, base } = await takeNote(jobs, slug, text, attachments, requestedBase)
     await addChat(slug, 'you', note, undefined, undefined, undefined, files.map(forChat))
     const active = await ai.active().catch(() => null)
     if (!active || !active.connected || active.id === 'none') {
@@ -474,7 +474,7 @@ function registerIpc(): void {
       'note',
       async (emit, signal, { id, owner }) => {
         // the note is saved under the job's id; the app asks before anything goes into My style
-        const opts = { attachments: files.map((f) => f.asset), id, saveStyleRules: false, ...(owner ? { owner } : {}) }
+        const opts = { attachments: files.map((f) => f.asset), id, base, saveStyleRules: false, ...(owner ? { owner } : {}) }
         const r: AgentResult = await ai.applyNote(dir, note, (e) => emit(e), signal, opts)
         const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
         return replyAskingAboutStyle(r, r.summary + extra)

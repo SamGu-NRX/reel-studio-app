@@ -721,10 +721,14 @@ def first_look_project(project_dir: Path, proj: dict, music: Optional[str] = Non
 def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
         root: Optional[Path] = None, verify: bool = True, first_look: bool = False,
         music: Optional[str] = None, cover: bool = True, project_file: Optional[Path] = None,
-        out: Optional[Path] = None) -> dict:
+        out: Optional[Path] = None, parent: Optional[int] = None) -> dict:
     t_start = time.time()
     project_dir = Path(project_dir).resolve()
     proj = projmod.load(project_dir, file=project_file)
+    committed = int(proj.get("version") or 0)
+    if parent is not None and (type(parent) is not int or not 1 <= parent <= committed):
+        raise EngineError("BAD_NOTE_BASE", f"invalid parent {parent} at version {committed}",
+                          "Choose a saved version to change.")
     if first_look:
         draft = True
         proj = first_look_project(project_dir, proj, music)
@@ -738,8 +742,9 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
     if win:
         draft = True        # a window is a preview: always the fast encoder
 
-    committed = int(proj.get("version") or 0)
-    version = pick_version(project_dir, proj, root)  # for a preview: the number this edit WILL get
+    # A branch records a new child even if its result matches the latest video. Reusing that
+    # folder would lose the selected parent, and saved metadata must never be rewritten.
+    version = committed + 1 if parent is not None and parent < committed else pick_version(project_dir, proj, root)
     preview = bool(draft)
     vdir = (Path(out) if out else preview_dir(project_dir)) if preview else project_dir / "versions" / f"v{version}"
     if not preview and version == committed and (vdir / "export.mp4").exists() and (vdir / "render.json").exists():
@@ -954,6 +959,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
         projmod.write_json(vdir / ("render_draft.json" if draft else "render.json"), manifest)
         if not preview:
             projmod.write_json(vdir / "assets.json", asset_fingerprint(project_dir, proj, root))
+            projmod.write_json(vdir / "version.json", {"parent": parent if parent is not None else committed or None})
         if not preview and int(proj.get("version") or 0) != version:
             # Re-read: an edit saved during this 1-2 minute render must survive. Patch the one field
             # render owns instead of writing back the dict loaded at the start.
