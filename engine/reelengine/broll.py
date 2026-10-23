@@ -69,6 +69,7 @@ LEAD = 0.13
 MIN_GAP = 0.22
 STILL_MIN_HOLD = 2.0
 VIDEO_MIN_HOLD = 0.6
+MIN_WINDOW = 0.05
 LABEL_SIZE = 0.075             # text-pop style "label": ~81 px type at 1080 wide (hand-edit labels), one or two lines
 ANIM_TAIL = 0.35              # an animation stays this long after its last word (its last reveal settles)
 TEMPLATES = Path(__file__).resolve().parent / "templates" / "treatments"
@@ -156,7 +157,7 @@ def plan_windows(ctx) -> list[dict]:
     """[{id, index, treatment, t0, t1, words, item}] for every broll item whose anchor is in the cut,
     in start order, with hold, handoff and gap rules applied. Cheap: renders nothing."""
     items = list((ctx.project or {}).get("broll") or [])
-    plans = []
+    anchored = []
     for i, it in enumerate(items):
         anc = it.get("anchor") or {}
         a, b = anc.get("from"), anc.get("to") or anc.get("from")
@@ -166,7 +167,14 @@ def plan_windows(ctx) -> list[dict]:
             log(f"broll {it.get('id', i)}: anchor {a}..{b} is not in the cut; skipped")
             continue
         lead = float(it.get("leadIn", LEAD) if it.get("leadIn") is not None else LEAD)
-        t0 = accent_time(ctx, max(0.0, s - lead), earliest=max(0.0, s - lead))
+        anchored.append((max(0.0, s - lead), i, it, a, b, e))
+    anchored.sort(key=lambda row: (row[0], row[1]))
+    plans = []
+    for k, (t0, i, it, a, b, e) in enumerate(anchored):
+        t0 = accent_time(ctx, t0, earliest=t0,
+                         previous=plans[-1]["t0"] if plans else None,
+                         following=anchored[k + 1][0] if k + 1 < len(anchored) else None,
+                         min_gap=MIN_WINDOW)
         params = it.get("params") or {}
         is_video = _is_video_item(ctx, it)
         hold = params.get("hold")
@@ -181,7 +189,6 @@ def plan_windows(ctx) -> list[dict]:
         t1 = max(e + tail, t0 + min_hold)
         plans.append({"id": it.get("id", f"b{i + 1}"), "index": i, "treatment": it.get("treatment", "card-above-head"),
                       "t0": t0, "t1": t1, "word_from": a, "word_to": b, "item": it})
-    plans.sort(key=lambda p: (p["t0"], p["index"]))
     dur = float(getattr(ctx, "duration", 0.0) or 0.0)
     for k, p in enumerate(plans):
         if k + 1 < len(plans):
@@ -192,7 +199,7 @@ def plan_windows(ctx) -> list[dict]:
                 p["t1"] = nxt
         if dur:
             p["t1"] = min(p["t1"], dur)
-    return [p for p in plans if p["t1"] - p["t0"] > 0.05]
+    return [p for p in plans if p["t1"] - p["t0"] > MIN_WINDOW]
 
 
 def _anim_of(ctx, it) -> Optional[dict]:

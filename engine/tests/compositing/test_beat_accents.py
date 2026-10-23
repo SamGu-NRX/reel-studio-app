@@ -146,3 +146,63 @@ def test_schema_requires_boolean_beat_accents():
         assert project.validate(proj) == []
     proj["beatAccents"] = "true"
     assert any("beatAccents" in error for error in project.validate(proj))
+
+
+def boundary_context(tmp_path, word_times, keep):
+    proj = project.new_project("Accent boundaries")
+    proj.update(beatAccents=True, sources=[{"id": "s1", "path": "media/take.mp4", "duration": 6, "fps": 30}],
+                cut={"keep": keep, "gapCap": 5})
+    words = [{"id": f"w{i}", "source": "s1", "s": a, "e": b, "w": "word"}
+             for i, (a, b) in enumerate(word_times)]
+    tl = project.timeline(tmp_path, proj, words)
+    return render.make_ctx(tmp_path, proj, tl, True, tmp_path, tmp_path / "work")
+
+
+@pytest.mark.parametrize("beat", [35 / 30, 34 / 30])
+def test_snapping_cannot_remove_a_neighbouring_card(tmp_path, monkeypatch, beat):
+    ctx = boundary_context(tmp_path, [(0.1, 0.4), (1.2, 1.25), (1.3, 1.4), (3, 3.3)],
+                           [{"from": "w0", "to": "w3"}])
+    ctx.project["broll"] = [
+        {"id": f"b{i}", "anchor": {"from": f"w{i}", "to": f"w{i}"},
+         "treatment": "text-pop", "leadIn": 4 / 30} for i in (1, 2)]
+    monkeypatch.setattr(music, "accent_beats", lambda ctx: [beat])
+    plans = broll.plan_windows(ctx)
+    assert [p["id"] for p in plans] == ["b1", "b2"]
+    assert plans[0]["t0"] == pytest.approx(32 / 30)
+    assert plans[0]["t1"] - plans[0]["t0"] > 0.05
+
+
+@pytest.mark.parametrize("kind,direction", [
+    ("sfx", "backward"), ("sfx", "forward"), ("sfx", "from-cut"), ("broll", "forward"),
+])
+def test_snapping_cannot_cross_a_shot_boundary(tmp_path, monkeypatch, kind, direction):
+    word_times = [(0.1, 0.4), (1, 1.02), (1.2, 3), (3.05, 3.35), (3.6, 4)]
+    if direction == "from-cut":
+        word_times[1], word_times[3] = (0.9, 0.98), (3, 3.35)
+    ctx = boundary_context(tmp_path, word_times,
+                           [{"from": "w0", "to": "w1"}, {"from": "w3", "to": "w4"}])
+    assert len(ctx.out_timeline) == 2
+    cut = ctx.out_timeline[1].out_start
+    word = "w1" if direction == "forward" else "w3"
+    original = round(ctx.word_out_time(word) * 30) / 30
+    beat = cut if direction == "forward" else round(cut * 30) / 30 - 1 / 30
+    monkeypatch.setattr(music, "accent_beats", lambda ctx: [beat])
+    if kind == "sfx":
+        ctx.project["sfx"] = [{"at": {"word": word}, "sound": "click-tick"}]
+        placed, left = sfx.plan(ctx)
+        assert left == []
+        assert placed[0]["t"] == pytest.approx(original)
+    else:
+        ctx.project["broll"] = [{"id": "b1", "anchor": {"from": word, "to": word},
+                                  "treatment": "text-pop", "leadIn": 0}]
+        assert broll.plan_windows(ctx)[0]["t0"] == pytest.approx(ctx.word_out_time(word))
+
+
+def test_snapping_cannot_drop_a_neighbouring_sfx_hit(tmp_path, monkeypatch):
+    ctx = boundary_context(tmp_path, [(0.1, 0.4), (1.1, 1.4), (3.1, 3.4)],
+                           [{"from": "w0", "to": "w2"}])
+    ctx.project["sfx"] = [{"at": {"word": f"w{i}"}, "sound": "click-tick"} for i in (1, 2)]
+    monkeypatch.setattr(music, "accent_beats", lambda ctx: [1.2, 3.1])
+    placed, left = sfx.plan(ctx)
+    assert left == []
+    assert [p["t"] for p in placed] == pytest.approx([1.1, 3.1])

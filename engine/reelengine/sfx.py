@@ -101,9 +101,7 @@ def hit_time(ctx, at: dict) -> Optional[float]:
     if t is None:
         return None
     fps = fmt_of(ctx)[2]
-    t = round(t * fps) / fps
-    # B-roll has already checked its word lead; snapping again could move its sound off the card.
-    return t if at.get("broll") else accent_time(ctx, t)
+    return round(t * fps) / fps
 
 
 def plan(ctx) -> tuple[list, list]:
@@ -134,7 +132,16 @@ def plan(ctx) -> tuple[list, list]:
             cands.append((t, i, {"t": t, "start": start, "end": start + snd["seconds"], "sound": snd,
                                  "gainDb": float(e.get("gainDb") or 0.0), "at": at}))
     placed = []
-    for t, _, c in sorted(cands, key=lambda k: k[:2]):
+    cands.sort(key=lambda k: k[:2])
+    for k, (t, _, c) in enumerate(cands):
+        # B-roll has already checked its word lead; snapping again could move its sound off the card.
+        if not c["at"].get("broll"):
+            onset = c["sound"]["onsetMs"] / 1000
+            earliest = onset + (placed[-1]["end"] if placed else 0.0)
+            t = accent_time(ctx, t, earliest=earliest,
+                            previous=placed[-1]["t"] if placed else None,
+                            following=cands[k + 1][0] if k + 1 < len(cands) else None, min_gap=MIN_GAP)
+            c.update(t=t, start=t - onset, end=t - onset + c["sound"]["seconds"])
         if placed and (t - placed[-1]["t"] < MIN_GAP or c["start"] < placed[-1]["end"]):
             left.append({"at": c["at"], "sound": c["sound"]["id"],
                          "skipped": f"it is too close to another sound effect (one at a time, {MIN_GAP:g} seconds apart)"})
