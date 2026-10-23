@@ -7,6 +7,7 @@ import {
   ensureRoot,
   keptIds,
   listProjects,
+  searchProjects,
   listVersions,
   rangesFromKept,
   rangesKeepingOrder,
@@ -139,6 +140,21 @@ describe('project store', () => {
     expect(d.versions.map((v) => v.n)).toEqual([1, 2])
     expect(d.keptIds).toEqual(['w0', 'w1'])
     expect(d.versions[0].video.startsWith('reel-media://')).toBe(true)
+  })
+
+  it('fails if a reel is not found by a word said in it, or by its title', async () => {
+    setupPaths()
+    await ensureRoot()
+    const dir = fakeProject('starter', { versions: [1] })
+    fakeProject('other', { versions: [1] })
+    const said = ['So', 'my', 'sourdough', 'starter', 'died,', 'twice.', 'Crème', 'fraîche', 'helps']
+    writeFileSync(join(dir, 'work', 'transcript.json'), JSON.stringify({ words: said.map((w, i) => ({ id: `w${i}`, w, s: i, e: i + 0.5 })) }))
+    expect(await searchProjects('died')).toEqual(['starter'])
+    expect(await searchProjects('DIED twice')).toEqual(['starter'])
+    expect(await searchProjects('creme fraiche')).toEqual(['starter'])
+    expect(await searchProjects('starter cat')).toEqual([])
+    expect(await searchProjects('ied')).toEqual([])
+    expect(await searchProjects('title other')).toEqual(['other'])
   })
 
   it('cleans half-written versions and temp files', async () => {
