@@ -252,7 +252,7 @@ async function editNewVideo(deps: EditorDeps, provider: ModelProvider | null, pr
   if (deps.firstLook !== false) {
     ctx.renderGate = firstLook(deps, ctx, onEvent);
   }
-  const task = `${deps.prompts.render('firstEdit')}\n\nVideo title: ${p.title}`;
+  const task = `${deps.prompts.render('firstEdit')}\n\nVideo title: ${p.title}${plannedScript(p)}`;
   let run: Pick<RunAgentResult, 'finished' | 'stoppedBy'> = { finished: null, stoppedBy: null };
   try {
     run = await runAgent({ provider, system: await systemPrompt(deps), task, ctx, onEvent, signal, maxSteps: deps.maxSteps ?? 45, tokenBudget: deps.tokenBudget, preload: ['get_project', 'get_transcript'] });
@@ -451,6 +451,14 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
 
 // ---------------------------------------------------------------- idea -> script
 
+/** The script the person planned with the editor before filming (the app keeps it in project.json), for the first edit. */
+export function plannedScript(p: object): string {
+  const s = (p as { script?: { hook?: unknown; script?: unknown } }).script;
+  if (typeof s?.script !== 'string' || !s.script.trim()) return '';
+  const hook = typeof s.hook === 'string' && s.hook.trim() ? `${s.hook.trim()}\n` : '';
+  return `\n\nThe script they planned before filming. Their takes follow it loosely; use it to tell which lines they meant to say:\n${hook}${s.script.trim()}`;
+}
+
 export async function writeScript(deps: EditorDeps, provider: ModelProvider | null, idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult> {
   if (!provider) throw new AIError('no_ai', 'Connect an AI editor in Settings so I can help write your script.');
   onEvent({ type: 'status', message: 'Writing your script', pct: 10 });
@@ -464,10 +472,11 @@ export async function writeScript(deps: EditorDeps, provider: ModelProvider | nu
       return {
         hook: cleanSummary(j.hook), script: cleanSummary(j.script),
         onScreenText: Array.isArray(j.onScreenText) ? j.onScreenText.map((x: unknown) => cleanSummary(String(x))) : [],
+        ...(typeof j.title === 'string' && j.title.trim() ? { title: cleanSummary(j.title).slice(0, 80) } : {}),
       };
     }
     messages.push({ role: 'assistant', text: res.text, toolCalls: [] });
-    messages.push({ role: 'user', content: [{ type: 'text', text: 'That was not valid. Reply with ONLY the JSON object {"hook": string, "script": string, "onScreenText": string[]}.' }] });
+    messages.push({ role: 'user', content: [{ type: 'text', text: 'That was not valid. Reply with ONLY the JSON object {"title": string, "hook": string, "script": string, "onScreenText": string[]}.' }] });
   }
   throw new AIError('script_failed', 'I could not write the script this time. Try again.');
 }

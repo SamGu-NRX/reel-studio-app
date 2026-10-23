@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { launch, makeMedia, passFirstRun, newReel } from './helpers'
+import { launch, makeMedia, makeReel, passFirstRun } from './helpers'
 
 test('fails if player controls start file drag or picture drag-out stops working', async () => {
   const media = makeMedia()
@@ -12,13 +12,11 @@ test('fails if player controls start file drag or picture drag-out stops working
   })
   try {
     await passFirstRun(page)
-    await newReel(app)
-    await page.getByTestId('file-input').setInputFiles(media.video)
+    await makeReel(page, media.video, 120_000)
     const player = page.getByTestId('player')
-    await expect(player).toBeVisible({ timeout: 120_000 })
     await expect(page.getByTestId('export')).toBeEnabled()
     await player.evaluate((v: HTMLVideoElement) => { v.pause(); v.currentTime = 0 })
-    const track = page.getByRole('slider', { name: 'Position in the video' })
+    const track = page.getByTestId('timeline')
     await track.hover()
     const box = await track.boundingBox()
     if (!box) throw new Error('The scrub track has no bounds')

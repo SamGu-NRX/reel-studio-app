@@ -9,17 +9,14 @@ import { Sidebar, useRail } from './components/Sidebar'
 import { TitleBar, TitleBarProvider } from './components/titlebar'
 import { useInputMode } from './components/motion'
 import { Home } from './screens/Home'
-import { NewVideo } from './screens/NewVideo'
-import { Working } from './screens/Working'
 import { Reel } from './screens/Reel'
 import { Library } from './screens/Library'
 import { MyStyle } from './screens/MyStyle'
 import { Insights } from './screens/Insights'
 import { Settings } from './screens/Settings'
 import { FirstRun } from './screens/FirstRun'
-import { Script } from './screens/Script'
 import { Connect } from './screens/Connect'
-import { createFromFiles, describeSorted } from './screens/create'
+import { createFromFiles, describeSorted, newReel } from './screens/create'
 import { DropVeil, draggedFiles, droppedFiles, intentFor, launchFlight, type Intent, type Veil } from './components/Intake'
 import { reducedMotion } from './components/motion'
 import { markSeen } from './seen'
@@ -75,13 +72,13 @@ export function App() {
   useEffect(
     () =>
       reel.app.onCommand((c: AppCommand) => {
-        if (c.type === 'new-video') go({ name: 'new' })
+        if (c.type === 'new-video') void newReel(go, notify)
         else if (c.type === 'settings') go({ name: 'settings' })
         else if (c.type === 'library') go({ name: 'library' })
         else if (c.type === 'export') window.dispatchEvent(new Event(EXPORT_EVENT))
         else if (c.type === 'open-reel') go({ name: 'reel', slug: c.slug })
       }),
-    [go]
+    [go, notify]
   )
 
   // Keyboard shortcuts. On a Mac the menu owns Cmd+N / Cmd+, / Cmd+E (it sees them first); on
@@ -91,7 +88,7 @@ export function App() {
     const key = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return
       const k = e.key.toLowerCase()
-      if (k === 'n') go({ name: 'new' })
+      if (k === 'n') void newReel(go, notify)
       else if (k === ',') go({ name: 'settings' })
       else if (k === 'e') window.dispatchEvent(new Event(EXPORT_EVENT))
       else return
@@ -99,11 +96,11 @@ export function App() {
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [go])
+  }, [go, notify])
 
   // A reel was on screen: what it showed then is watched, so its card stops saying New (seen.ts).
   useEffect(() => {
-    if (screen.name !== 'reel' && screen.name !== 'working') return
+    if (screen.name !== 'reel') return
     const slug = screen.slug
     markSeen(slug)
     return () => markSeen(slug)
@@ -142,9 +139,9 @@ export function App() {
   useEffect(() => {
     if (!firstRunDone) return
     const open = () => {
-      // A file opened with Reel Studio (AirDrop's "Opens with", Finder's Open With): New video, ready to start.
+      // A file opened with Reel Studio (AirDrop's "Opens with", Finder's Open With): a new reel from it.
       void reel.app.takeOpenFiles().then((paths) => {
-        if (paths.length) go({ name: 'new', files: paths })
+        if (paths.length) void intake(paths)
       }).catch((err) => notify(userMessage(err), 'error'))
     }
     const off = reel.app.onFilesAvailable(open)
@@ -242,21 +239,18 @@ export function App() {
   }
 
   const shown = screen.name === 'connect' ? (screen.back ?? { name: 'home' }) : screen
-  const section = shown.name === 'new' || shown.name === 'working' || shown.name === 'reel' || shown.name === 'script' ? 'home' : shown.name
+  const section = shown.name === 'reel' ? 'home' : shown.name
 
   return (
     <NotifyCtx.Provider value={notify}>
       <TitleBarProvider>
         <div className={`shell ${platform}${rail ? ' rail' : ''}`}>
           <TitleBar rail={rail} onToggle={toggleRail} />
-          <Sidebar section={section} go={go} provider={provider} userName={info.userName} />
+          <Sidebar section={section} go={go} provider={provider} userName={info.userName} onNewReel={() => void newReel(go, notify)} />
           <main className="main">
             <ErrorBoundary resetKey={JSON.stringify(screen)} onReset={() => go({ name: 'home' })}>
               {screen.name === 'home' && <Home go={go} />}
-              {screen.name === 'new' && <NewVideo key={screen.files?.join('\n') ?? ''} go={go} files={screen.files} />}
-              {screen.name === 'script' && <Script go={go} />}
-              {screen.name === 'working' && <Working key={screen.slug} slug={screen.slug} go={go} />}
-              {screen.name === 'reel' && <Reel key={screen.slug} slug={screen.slug} go={go} fresh={screen.fresh} />}
+              {screen.name === 'reel' && <Reel key={screen.slug} slug={screen.slug} go={go} />}
               {screen.name === 'library' && <Library refreshKey={libraryTick} />}
               {screen.name === 'style' && <MyStyle />}
               {screen.name === 'insights' && <Insights />}

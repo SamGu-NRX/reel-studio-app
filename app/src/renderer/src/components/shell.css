@@ -52,6 +52,9 @@ html.side-resizing, html.side-resizing * { cursor: col-resize !important; user-s
 .nav button.on .icon { color: var(--ink); }
 @media (hover: hover) and (pointer: fine) { .nav button:not(.on):hover { background: rgba(22, 30, 26, .04); color: var(--ink); } }
 .rail .nav button { width: 40px; padding: 0 12px; }
+/* New reel: a plain row with a plus at the top, like T3's New thread, so it never competes with Share */
+.nav .new-reel { margin-bottom: 8px; color: var(--ink); }
+.nav .new-reel .icon { color: var(--ink-2); }
 
 .side-foot { margin-top: auto; position: relative; display: grid; gap: 4px; }
 .side-update:empty { display: none; }

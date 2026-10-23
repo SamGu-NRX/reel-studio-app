@@ -100,6 +100,22 @@ export async function passMacStage(page: Page): Promise<void> {
   await expect(ai).toBeVisible()
 }
 
+/** New reel from the sidebar, then its video from the stage's file picker: Version 1 is made on the Reel screen. */
+export async function startReel(page: Page, video: string): Promise<void> {
+  // on another planned reel already, wait for the new one to replace it before giving it the video
+  const stage = page.getByTestId('planned-stage')
+  const old = (await stage.count()) ? await stage.elementHandle() : null
+  await page.getByTestId('new-reel').click()
+  if (old) await expect.poll(() => old.evaluate((el) => el.isConnected)).toBe(false)
+  await stage.getByTestId('file-input').setInputFiles([video])
+}
+
+/** startReel, then waits for Version 1's line in the notes. */
+export async function makeReel(page: Page, video: string, timeout = 240_000): Promise<void> {
+  await startReel(page, video)
+  await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout })
+}
+
 /** The listening model's line in the setup panel, once it has settled. */
 export async function modelReady(page: Page): Promise<void> {
   await expect(page.getByTestId('model-line')).toContainText('Listening model ready', { timeout: 30_000 })

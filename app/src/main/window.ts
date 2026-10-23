@@ -127,7 +127,7 @@ export function installMenu(send: (c: AppCommand) => void, dev: boolean, checkFo
     {
       label: 'File',
       submenu: [
-        { label: 'New Video', accelerator: 'Cmd+N', click: () => send({ type: 'new-video' }) },
+        { label: 'New Reel', accelerator: 'Cmd+N', click: () => send({ type: 'new-video' }) },
         { label: 'Export for Instagram', accelerator: 'Cmd+E', click: () => send({ type: 'export' }) },
         { type: 'separator' },
         { label: 'Library', accelerator: 'Cmd+L', click: () => send({ type: 'library' }) },

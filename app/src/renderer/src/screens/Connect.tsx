@@ -6,9 +6,6 @@ import { TitleBarSlot } from '../components/titlebar'
 
 const BACK_LABEL: Record<Exclude<Screen, { name: 'connect' }>['name'], string> = {
   home: 'Reels',
-  new: 'Back',
-  script: 'Back to the script',
-  working: 'Back to the reel',
   reel: 'Back to the reel',
   library: 'Library',
   style: 'My style',

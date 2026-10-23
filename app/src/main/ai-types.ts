@@ -28,6 +28,7 @@ export interface ScriptResult {
   hook: string
   script: string
   onScreenText: string[]
+  title?: string
 }
 
 export interface EngineHost {
@@ -97,7 +98,8 @@ export interface AI {
   signInChatGPT(openExternal: (url: string) => Promise<void>): Promise<ProviderStatus>
   signOutChatGPT(): Promise<void>
   setClaudeKey(key: string | null): Promise<ProviderStatus>
-  firstEdit(projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts?: { owner?: string }): Promise<AgentResult>
+  /** `opts.basic`: the simple edit without a model, whatever editor is connected. */
+  firstEdit(projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts?: { owner?: string; basic?: boolean }): Promise<AgentResult>
   /** `opts.attachments`: `work/assets/attach-*` refs main already checked (the AI checks them again).
    * `opts.id`: the job id the note is saved under. `opts.saveStyleRules: false`: return rules, the app asks.
    * `opts.owner`: the job's owner token, which the note joins instead of taking the project. */

@@ -23,7 +23,7 @@ export interface AgentResult {
   /** a typed rule to ask about ("Use lowercase captions."): Yes = approveStyleProposal(it) */
   styleProposal?: StyleProposal;
 }
-export interface ScriptResult { hook: string; script: string; onScreenText: string[] }
+export interface ScriptResult { hook: string; script: string; onScreenText: string[]; title?: string }
 
 export interface EngineProgress { stage: string; pct: number; message: string }
 export interface EngineHost {

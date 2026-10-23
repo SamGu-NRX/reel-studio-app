@@ -50,4 +50,24 @@ describe('notesLog', () => {
     })
     expect(log[1].result).toMatchObject({ kind: 'reply', actions: ['open-captions'] })
   })
+
+  // fails if a planned reel shows a video it does not have, or its script moves below the video once one arrives
+  it('puts the planning first: the idea, then the script, with no video until there is one', () => {
+    const script = { hook: 'No mixer.', script: 'Flour, water, salt.', onScreenText: [] }
+    const planning = [
+      msg('you', 'sourdough without a mixer', { plan: true, jobId: 's1', outcome: 'done' }),
+      msg('editor', 'No mixer.', { plan: true, script }),
+      msg('you', 'shorter please', { plan: true, jobId: 's2' })
+    ]
+    const base = { made: [], sourceName: null, now }
+    expect(notesLog({ ...base, chat: planning, versions: [], running: { id: 's2', kind: 'script' }, planned: true }).map((e) => [e.ask.text, e.result])).toEqual([
+      ['sourdough without a mixer', { kind: 'script', script }],
+      ['shorter please', { kind: 'writing' }]
+    ])
+    const filmed = notesLog({ ...base, chat: [...planning.slice(0, 2), msg('editor', 'Here it is.', { version: 1 })], versions: [v(1)], running: null })
+    expect(filmed.map((e) => [e.ask.kind, e.result?.kind])).toEqual([
+      ['note', 'script'],
+      ['video', 'version']
+    ])
+  })
 })

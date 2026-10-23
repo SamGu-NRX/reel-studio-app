@@ -12,7 +12,7 @@ import { byKeyboard, reducedMotion } from '../components/motion'
 import { SampleReel } from '../components/SampleReel'
 import { PickFiles } from '../components/ui'
 import { useModelStatus } from '../components/connect'
-import { createFromFiles } from './create'
+import { createFromFiles, newReel } from './create'
 import '../components/home.css'
 
 type View = 'activity' | 'all'
@@ -81,7 +81,6 @@ export function Home({ go }: { go: Go }) {
   const [found, setFound] = useState<Set<string> | null>(null)
   const page = useRef<HTMLDivElement>(null)
   const cols = useColumns(page)
-  const opening = useRef<string | null>(null)
   const known = useRef(new Set<string>())
 
   useEffect(() => {
@@ -103,7 +102,6 @@ export function Home({ go }: { go: Go }) {
     const offQueue = reel.queue.onChange(() => void load())
     return () => {
       alive = false
-      opening.current = null
       off()
       offQueue()
     }
@@ -126,18 +124,7 @@ export function Home({ go }: { go: Go }) {
     }
   }, [query, notify])
 
-  const open = (p: ProjectSummary) => {
-    opening.current = p.slug
-    const show = (name: 'reel' | 'working') => {
-      if (opening.current === p.slug) go({ name, slug: p.slug })
-    }
-    if (stateOf(p) === 'ready' || p.noVideo) go({ name: 'reel', slug: p.slug })
-    else
-      void reel.projects.get(p.slug).then(
-        (d) => show(d.job?.kind === 'note' || d.job?.kind === 'rerender' || (!d.job && d.versions.length > 0) ? 'reel' : 'working'),
-        () => show('working')
-      )
-  }
+  const open = (p: ProjectSummary) => go({ name: 'reel', slug: p.slug })
   // Resume and Try again start the job here; the card moves to Making.
   const resume = (p: ProjectSummary) =>
     void reel.projects.resume(p.slug).then(
@@ -423,7 +410,7 @@ function Empty({ go }: { go: Go }) {
       <h2>Drop a video of you talking anywhere in this window, or start with an idea.</h2>
       <div className="row">
         <PickFiles label="Choose video" accept="video/*" className="btn primary" onFiles={(paths) => void createFromFiles(paths, go, notify)} />
-        <button className="btn" onClick={() => go({ name: 'new' })} data-testid="plan-reel">
+        <button className="btn" onClick={() => void newReel(go, notify)} data-testid="plan-reel">
           Plan a reel
         </button>
       </div>

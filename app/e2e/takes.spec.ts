@@ -82,31 +82,31 @@ takes.forEach((take, i) => {
       }
 
       await page.getByTestId('nav-home').click()
-      await newReel(app)
+      await page.getByTestId('new-reel').click()
       const t0 = Date.now()
-      await dropFiles(page, 'drop-zone', [take.path])
-      await expect(page.getByText('Making your reel')).toBeVisible()
+      await dropFiles(page, 'planned-stage', [take.path])
+      await expect(page.getByTestId('note-progress')).toContainText('Making Version 1')
       let n = 0
-      const look = page.getByTestId('first-look')
+      const look = page.getByTestId('first-tag').filter({ hasText: 'First look' })
       const seen = { timeLeft: new Set<string>(), thinking: false }
       // poll every 1 s: the first look's arrival, time left and "thinking" on the Working screen
-      while (!(await page.getByTestId('player').isVisible())) {
+      while (!(await page.getByTestId('log-play-1').isVisible())) {
         if (await page.getByTestId('screen-error').isVisible()) throw new Error('screen error')
         if (Date.now() - t0 > 60 * 60_000) throw new Error('first edit took over an hour')
         if (timings.firstLookSec === undefined && (await look.isVisible())) {
           timings.firstLookSec = Math.round((Date.now() - t0) / 1000)
           result.firstLookLabel = await look.innerText()
-          result.firstLookKind = await look.getAttribute('data-kind')
+          result.firstLookKind = 'first-look'
           // a real, playing video: a reel-media URL, decoded frames, time moving
           await page.waitForTimeout(2500)
           result.firstLookVideo = await page.evaluate(() => {
-            const v = document.querySelector('[data-testid=first-look-video]') as HTMLVideoElement | null
+            const v = document.querySelector('[data-testid=player]') as HTMLVideoElement | null
             return v ? { src: v.currentSrc, readyState: v.readyState, t: v.currentTime, w: v.videoWidth, h: v.videoHeight, paused: v.paused } : null
           })
           await shot(page, `takes/${i}-01-first-look`)
           save()
         }
-        const tl = await page.getByTestId('time-left').innerText().catch(() => '')
+        const tl = await page.getByTestId('note-time-left').innerText().catch(() => '')
         if (tl) seen.timeLeft.add(tl)
         if (!seen.thinking && (await page.getByTestId('thinking').isVisible())) {
           seen.thinking = true

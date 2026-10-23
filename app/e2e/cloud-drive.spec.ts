@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun, newReel } from './helpers'
+import { BASE, launch, makeMedia, makeReel, passFirstRun } from './helpers'
 
 test('fails if cloud save copies the wrong export or uses the wrong drive', async () => {
   test.skip(process.platform !== 'darwin', 'The native Windows flow runs on a Windows host.')
@@ -18,9 +18,7 @@ test('fails if cloud save copies the wrong export or uses the wrong drive', asyn
   try {
     await app.evaluate(({ app }, folder) => app.setPath('home', folder), home)
     await passFirstRun(page)
-    await newReel(app)
-    await page.getByTestId('file-input').setInputFiles([media.video])
-    await expect(page.getByTestId('player')).toBeVisible()
+    await makeReel(page, media.video)
     await page.getByTestId('export').click()
     await expect(page.getByTestId('export-saved')).toBeVisible()
     await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -28,13 +26,15 @@ test('fails if cloud save copies the wrong export or uses the wrong drive', asyn
     await page.getByTestId('phone-cant').click()
     await page.locator('.phone-fallbacks .phone-way').nth(1).scrollIntoViewIfNeeded()
     await page.getByTestId('phone-back').click()
-    const save = page.getByRole('button', { name: 'Save to iCloud Drive', exact: true })
+    // the export dialog's own saves (Share in the title bar has the same buttons, behind the dialog)
+    const dialog = page.getByTestId('export-dialog')
+    const save = dialog.getByRole('button', { name: 'Save to iCloud Drive', exact: true })
     await expect(save).toBeVisible({ timeout: 5000 })
-    await expect(page.getByRole('button', { name: 'Save to Google Drive · Personal', exact: true })).toBeVisible({ timeout: 5000 })
-    await expect(page.getByRole('button', { name: 'Save to Google Drive · Work', exact: true })).toBeVisible({ timeout: 5000 })
+    await expect(dialog.getByRole('button', { name: 'Save to Google Drive · Personal', exact: true })).toBeVisible({ timeout: 5000 })
+    await expect(dialog.getByRole('button', { name: 'Save to Google Drive · Work', exact: true })).toBeVisible({ timeout: 5000 })
     await save.focus()
     await page.keyboard.press('Enter')
-    await expect(page.getByRole('status')).toContainText('Saved to iCloud Drive')
+    await expect(dialog.getByRole('status')).toContainText('Saved to iCloud Drive')
     const saved = join(drive, 'Reel Studio')
     const files = readdirSync(saved)
     expect(files).toHaveLength(1)
@@ -44,9 +44,9 @@ test('fails if cloud save copies the wrong export or uses the wrong drive', asyn
     await page.getByRole('button', { name: 'Show in Finder', exact: true }).last().focus()
     await page.keyboard.press('Enter')
     await page.setViewportSize({ width: 1440, height: 900 })
-    await page.getByRole('button', { name: 'Save to Google Drive · Work', exact: true }).focus()
+    await dialog.getByRole('button', { name: 'Save to Google Drive · Work', exact: true }).focus()
     await page.keyboard.press('Enter')
-    await expect(page.getByRole('status')).toContainText('Saved to Google Drive · Work')
+    await expect(dialog.getByRole('status')).toContainText('Saved to Google Drive · Work')
     const workFiles = readdirSync(join(work, 'Reel Studio'))
     expect(workFiles).toHaveLength(1)
     expect(readFileSync(join(work, 'Reel Studio', workFiles[0]))).toEqual(readFileSync(exportFile))
