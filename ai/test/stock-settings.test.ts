@@ -37,3 +37,25 @@ it('fails if stock keys fall back to plaintext without secure storage or an inva
   await expect(failing.setStockKey('pexels', 'fabricated-key')).rejects.toMatchObject({ code: 'stock_key_save_failed' });
   expect(await fs.readdir(settingsDir)).toEqual([]);
 });
+it('fails if the basic_text backend saves stock keys or loads existing keys as connected', async () => {
+  const settingsDir = tmpDir('stock-keys '); roots.push(settingsDir);
+  let backend = 'gnome_libsecret';
+  const opts = { settingsDir, host: new FakeHost(settingsDir), secretStore: { ...secretStore,
+    getSelectedStorageBackend: () => backend } };
+  const ai = createAI(opts);
+  await ai.setStockKey('pexels', 'fabricated-pexels-key');
+  await ai.setStockKey('pixabay', 'fabricated-pixabay-key');
+  backend = 'basic_text';
+  const restarted = createAI(opts);
+  expect(await restarted.stockProviders()).toEqual([
+    { id: 'pexels', connected: false }, { id: 'pixabay', connected: false }, { id: 'openverse', connected: true },
+  ]);
+  const before = await fs.readFile(path.join(settingsDir, 'pexels-key.bin'));
+  await expect(restarted.setStockKey('pexels', 'fabricated-replacement')).rejects.toMatchObject({ code: 'no_secure_storage' });
+  expect(await fs.readFile(path.join(settingsDir, 'pexels-key.bin'))).toEqual(before);
+  await restarted.setStockKey('pixabay', null);
+  await expect(restarted.setStockKey('pixabay', 'fabricated-new-key')).rejects.toMatchObject({ code: 'no_secure_storage' });
+  expect(await fs.readdir(settingsDir)).toEqual(['pexels-key.bin']);
+  backend = 'gnome_libsecret';
+  expect(await restarted.stockProviders()).toContainEqual({ id: 'pexels', connected: true });
+});

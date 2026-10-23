@@ -138,9 +138,13 @@ export function createAI(opts: CreateAIOptions) {
   }
 
   async function stockKey(provider: 'pexels' | 'pixabay'): Promise<string | null> {
-    if (!opts.secretStore?.isEncryptionAvailable()) return null;
+    if (!protectedSecretStore(opts.secretStore)) return null;
     try { return opts.secretStore.decryptString(await fsp.readFile(path.join(opts.settingsDir, `${provider}-key.bin`))); }
     catch { return null; }
+  }
+
+  function protectedSecretStore(store: SecretStore | undefined): store is SecretStore {
+    return !!store && store.isEncryptionAvailable() && store.getSelectedStorageBackend?.() !== 'basic_text';
   }
 
   async function statusOf(id: ProviderId): Promise<ProviderStatus> {
@@ -259,7 +263,7 @@ export function createAI(opts: CreateAIOptions) {
       const file = path.join(opts.settingsDir, `${provider}-key.bin`);
       const trimmed = key?.trim();
       if (!trimmed) { await fsp.rm(file, { force: true }); return; }
-      if (!opts.secretStore?.isEncryptionAvailable()) throw new AIError('no_secure_storage', 'This computer cannot securely save stock API keys. Enable secure storage and try again.');
+      if (!protectedSecretStore(opts.secretStore)) throw new AIError('no_secure_storage', 'This computer does not have a protected password store, so the stock API key was not saved.');
       try { await writeFileAtomic(file, opts.secretStore.encryptString(trimmed), 0o600); }
       catch { throw new AIError('stock_key_save_failed', 'The stock API key could not be saved securely. Try again.'); }
     },

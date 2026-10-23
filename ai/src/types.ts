@@ -38,6 +38,8 @@ export interface ProviderStatus { id: ProviderId; connected: boolean; label: str
 /** Mirrors Electron's safeStorage. The app passes `safeStorage`; tests pass a fake. */
 export interface SecretStore {
   isEncryptionAvailable(): boolean;
+  /** Electron Linux reports `basic_text` when it falls back to a hardcoded password. */
+  getSelectedStorageBackend?(): string;
   encryptString(plain: string): Buffer;
   decryptString(encrypted: Buffer): string;
 }

@@ -55,6 +55,7 @@ export interface ProviderStatus {
 /** Mirrors Electron's safeStorage. */
 export interface SecretStore {
   isEncryptionAvailable(): boolean
+  getSelectedStorageBackend?(): string
   encryptString(s: string): Buffer
   decryptString(b: Buffer): string
 }
