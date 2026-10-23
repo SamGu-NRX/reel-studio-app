@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdirSync } from 'node:fs'
+import { createJobManager } from '../src/main/jobs'
 import { createPauser, pauseFor, quitQuestion } from '../src/main/pause'
+import { projectDir, readAppState, updateAppState } from '../src/main/store'
+import { setupPaths } from './helpers'
 import { pausedSentence, pausedWords } from '../src/shared/pause'
 
 describe('pauseFor: what pauses instead of failing (ux-foundation-b.md 3.4, 7)', () => {
@@ -50,6 +54,7 @@ describe('createPauser: it goes on by itself', () => {
   it('continues no-internet once online, sleep on wake (or once online), a quit at once; a cancelled one never', () => {
     const { p, resumed, goOffline, goOnline } = setup()
     goOffline()
+    p.slept()
     p.schedule('net', { reason: 'offline', until: null, editor: null })
     p.schedule('nap', { reason: 'sleep', until: null, editor: null })
     p.schedule('gone', { reason: 'offline', until: null, editor: null })
@@ -63,6 +68,33 @@ describe('createPauser: it goes on by itself', () => {
     p.schedule('quit', { reason: 'quit', until: null, editor: null })
     expect(resumed).toContain('quit')
     expect(p.pending()).toEqual([])
+  })
+
+  // fails if a sleep pause that lands after the wake (a request that timed out on waking) waits for another wake
+  it('continues a sleep pause scheduled after the wake once online, without another wake', () => {
+    const { p, resumed } = setup()
+    p.slept()
+    p.woke()
+    p.schedule('late', { reason: 'sleep', until: null, editor: null })
+    vi.advanceTimersByTime(5_000)
+    expect(resumed).toEqual(['late'])
+  })
+})
+
+describe('a pause in app.json', () => {
+  // fails if an export (or a script) while a note waits for its plan's reset wipes the pause, so nothing continues it
+  it('stays through an export and goes when the paused work itself starts again', async () => {
+    setupPaths()
+    const slug = 'paused-reel'
+    mkdirSync(projectDir(slug), { recursive: true })
+    const paused = { reason: 'limit' as const, until: '2026-10-23T20:40:00.000Z', editor: 'Claude' }
+    await updateAppState(slug, (s) => void ((s.status = 'ready'), (s.paused = paused)))
+    const jobs = createJobManager(() => undefined, () => undefined)
+    const run = async (kind: 'export' | 'note') => jobs.get(jobs.start(slug, kind, async () => ({ summary: 'ok', quiet: true })))!.done
+    await run('export')
+    expect((await readAppState(slug)).paused).toEqual(paused)
+    await run('note')
+    expect((await readAppState(slug)).paused).toBeUndefined()
   })
 })
 

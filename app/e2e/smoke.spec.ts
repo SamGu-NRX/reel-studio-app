@@ -45,7 +45,8 @@ test('make a reel end to end', async () => {
   await expect(page.getByTestId('planned-stage')).toBeVisible()
   await shot(page, '04-your-turn')
   await page.getByTestId('nav-home').click()
-  await expect(page.getByTestId('project-card')).toHaveCount(1)
+  // left untouched, that new reel goes with it (main store.ts isUntouchedPlanned)
+  await expect(page.getByTestId('project-card')).toHaveCount(0)
   await shot(page, '04-home')
 
   // nothing posted yet, so no Insights in the sidebar
@@ -182,23 +183,20 @@ test('make a reel end to end', async () => {
   const realProbe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_streams', real]).toString())
   expect([realProbe.streams[0].codec_name, realProbe.streams[0].width, realProbe.streams[0].height]).toEqual(['qtrle', 1080, 1920])
 
-  // ---- quit mid-job, reopen, pick up where we left off ----
+  // ---- quit mid-job (the quit asks, and the test answers Quit), reopen: it goes on by itself ----
   await startReel(page, media.video)
   await expect(page.getByTestId('note-progress')).toContainText(/Listening/, { timeout: 60_000 })
   await app.close()
 
   ;({ app, page } = await launch(profile.env))
   await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
-  await expect(page.locator('[data-testid="project-card"][data-state="paused"]')).toBeVisible()
+  await expect(page.locator('[data-testid="project-card"][data-state="making"]')).toBeVisible()
   await shot(page, '17-home-after-quit')
-  await page.locator('[data-testid="project-card"][data-state="paused"]').click()
-  await expect(page.getByTestId('first-paused')).toContainText('Paused')
-  await shot(page, '18-paused')
-  await page.getByTestId('resume').click()
+  await page.locator('[data-testid="project-card"][data-state="making"]').click()
   await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 240_000 })
   await page.getByTestId('nav-home').click()
-  // the first run's new reel, the first reel, the planned one, and the one that was paused
-  await expect(page.getByTestId('project-card')).toHaveCount(4)
+  // the first reel and the one the quit interrupted (the New reels nobody touched are gone; the last took the video)
+  await expect(page.getByTestId('project-card')).toHaveCount(2)
   await shot(page, '19-home')
   await app.close()
 })
