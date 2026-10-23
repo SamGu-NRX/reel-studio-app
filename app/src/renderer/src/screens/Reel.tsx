@@ -417,7 +417,9 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       moment = m
     }
     const spot = chip?.spot
-    const words = spot ? `${text || 'Change this'} (${region(spot.x, spot.y) === 'the middle' ? 'in the middle' : `at the ${region(spot.x, spot.y)}`} of the picture)` : text
+    // the editor reads where the spot is in words; the note says it the way a person would
+    const where = spot && (region(spot.x, spot.y) === 'the middle' ? 'in the middle of the picture' : `at the ${region(spot.x, spot.y)} of the picture`)
+    const words = where ? `${(text || 'Change this').replace(/[.!?]+$/, '')}, ${where}.` : text
     setDraft('')
     setChip(null)
     att.clear()
