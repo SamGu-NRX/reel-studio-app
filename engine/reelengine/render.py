@@ -278,12 +278,13 @@ def voice_signature(segments: list, src_paths: dict) -> str:
             return [str(p), s.st_size, s.st_mtime_ns]
         except OSError:
             return [str(p), None, None]
-    data = [1, [[s.source, round(s.src_start, 6), round(s.src_end, 6)] for s in segments],
+    # Version 2 pads short audio and retains late stream offsets. Older cached cuts can be early.
+    data = [2, [[s.source, round(s.src_start, 6), round(s.src_end, 6)] for s in segments],
             {k: st(v) for k, v in sorted(src_paths.items())}]
     return hashlib.sha1(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path) -> Path:
+def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path, source_audio: dict) -> Path:
     """The cut voice: atrim/concat of exactly the picture's segments, 48 kHz stereo wav.
     Kept (same file, same mtime) when the segments and sources are unchanged, so music.build_audio's
     mix cache, keyed on this file's mtime, hits on every render that did not change the cut."""
@@ -301,10 +302,7 @@ def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path) -> 
     chains, labels = [], []
     for li, lane in enumerate(lanes):
         source = lane["source"]
-        probe = tools.text_run([ctx.ffprobe, "-v", "error", "-select_streams", "a:0",
-                                "-show_entries", "stream=index", "-of", "csv=p=0", str(src_paths[source])],
-                               30, "audio probe")
-        has_audio = bool((probe.stdout or "").strip())
+        has_audio = source_audio[source]
         if has_audio and lane["seek"] > 0:
             cmd += ["-ss", _f(lane["seek"])]
         if has_audio:
@@ -324,8 +322,12 @@ def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path) -> 
         pad, seek = seg_input[i]
         d = seg.src_end - seg.src_start
         f = min(fade, d / 4)
+        samples = round(d * 48000)
+        # Subtract the clip start, not the first decoded audio timestamp. A late stream needs
+        # leading silence; an early EOF needs a tail so the next clip keeps its output position.
         chains.append(f"[{pad}]atrim=start={_f(seg.src_start - seek)}:end={_f(seg.src_end - seek)},"
-                      f"asetpts=PTS-STARTPTS,aresample=48000,"
+                      f"asetpts=PTS-{_f(seg.src_start - seek)}/TB,aresample=48000:async=1:first_pts=0,"
+                      f"apad=whole_len={samples},atrim=end_sample={samples},"
                       f"afade=t=in:d={_f(f)},afade=t=out:st={_f(max(0.0, d - f))}:d={_f(f)}[a{i}]")
         labels.append(f"[a{i}]")
     if len(segments) == 1:
@@ -376,9 +378,11 @@ def measure_lufs(ffmpeg: str, wav: Path) -> Optional[float]:
     return v if v is not None and v > -70 else None
 
 
-def normalize_voice(ctx: RenderCtx, voice: Path, out: Path) -> Path:
+def normalize_voice(ctx: RenderCtx, voice: Path, out: Path, expected_silence: bool = False) -> Path:
     """Voice only (no music module): measured gain to -14 LUFS, then a peak limiter at ~-1.9 dBFS.
     loudnorm resamples to 192 kHz and costs ~7 s a pass; this is two fast decodes."""
+    if expected_silence:
+        return voice
     gain = 0.0
     lufs = measure_lufs(ctx.ffmpeg, voice)
     if lufs is not None:
@@ -397,7 +401,17 @@ def normalize_voice(ctx: RenderCtx, voice: Path, out: Path) -> Path:
 
 
 def build_audio(ctx: RenderCtx, segments: list, src_paths: dict, rwork: Path, warnings: list) -> Path:
-    voice = render_voice(ctx, segments, src_paths, rwork / "voice.wav")
+    source_audio = {}
+    for sid in sorted({seg.source for seg in segments}):
+        probe = tools.text_run([ctx.ffprobe, "-v", "error", "-select_streams", "a:0",
+                                "-show_entries", "stream=index", "-of", "csv=p=0", str(src_paths[sid])],
+                               30, "audio probe")
+        source_audio[sid] = bool((probe.stdout or "").strip())
+    mcfg = ctx.project.get("music") or {}
+    # Silence is intentional only when every kept source lacks audio and no music is requested.
+    # An unexpectedly silent recording or failed music mix must still fail loudness verification.
+    ctx.expected_silence = not any(source_audio.values()) and not (mcfg.get("enabled", True) and mcfg.get("track"))
+    voice = render_voice(ctx, segments, src_paths, rwork / "voice.wav", source_audio)
     music = _opt_module("music")
     if music is not None and hasattr(music, "build_audio"):
         try:
@@ -411,7 +425,7 @@ def build_audio(ctx: RenderCtx, segments: list, src_paths: dict, rwork: Path, wa
         except Exception as exc:    # noqa: BLE001 -- music must never cost the render
             warnings.append(f"music skipped: {type(exc).__name__}: {exc}")
             log(f"# music.build_audio crashed: {exc!r}")
-    return normalize_voice(ctx, voice, rwork / "voice_norm.wav")
+    return normalize_voice(ctx, voice, rwork / "voice_norm.wav", expected_silence=ctx.expected_silence)
 
 
 # --- video graph --------------------------------------------------------------------------------
@@ -910,7 +924,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
               "draft": draft, "window": list(win) if win else None, "firstLook": first_look,
               "duration": round(dur, 3), "segments": len(segments), "encoder": encoder,
               "size": [out_w, out_h], "layers": len(layers), "zooms": len(zooms),
-              "captions": len(cap_report), "warnings": warnings,
+              "captions": len(cap_report), "warnings": warnings, "expectedSilence": ctx.expected_silence,
               "broll": [r for r in broll_report if r.get("fallback") or r.get("skipped") or r.get("remake")]}
 
     # 5. cover (full renders only; a preview may skip it). It ran beside the encode (above).
@@ -928,7 +942,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
         from . import verify as verifymod
         rep = verifymod.check(out, expect_duration=dur, expect_w=out_w, expect_h=out_h, expect_fps=fps,
                               captions=cap_report if not win else None, fmt=(W, H),
-                              draft=draft)
+                              draft=draft, expected_silence=ctx.expected_silence)
         projmod.write_json(vdir / ("verify.json" if not win else f"verify_{name[:-4]}.json"), rep)
         result["verify"] = {"ok": rep["ok"], "fails": rep["fails"], "warns": rep["warns"]}
         timings["verify"] = round(time.time() - t, 2)

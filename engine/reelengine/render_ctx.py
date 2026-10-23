@@ -94,6 +94,7 @@ class RenderCtx:
     out_dir: Optional[Path] = None                          # versions/vN
 
     src_to_out: Optional[Callable[[str, float], Optional[float]]] = None
+    expected_silence: bool = False
 
     def resolve_path(self, p: str) -> Path:
         """Resolve a project.json asset path: 'Library/...' against root, else project-relative.

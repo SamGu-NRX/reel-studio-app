@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from conftest import mkwords
-from reelengine import broll, captions, cut, init, project, render, tools
+from reelengine import audio_env, broll, captions, cut, init, project, render, tools, transcribe, verify
 from reelengine.proto import EngineError
 
 
@@ -152,13 +152,94 @@ def test_silent_sources_render_silence(tmp_path, media, mixed):
         paths["s2"] = media["s2"]
         keep += [clip("c2", "s2", 2, 3), clip("c3", "s1", 3, 4)]
     pdir, _ = make_project(tmp_path, paths, keep)
-    result = render.run(pdir, root=tmp_path, cover=False, verify=False)
+    result = render.run(pdir, root=tmp_path, cover=False)
+    assert result["verify"]["ok"], result["verify"]
+    assert not result["warnings"], result["warnings"]
+    # A later standalone verify must retain the render's explicit silence expectation.
+    assert verify.run(Path(result["file"]))["ok"]
+    if not mixed:
+        # A file without the explicit expectation must still fail the normal loudness check.
+        assert "loudness" in verify.check(Path(result["file"]), expect_w=96, expect_h=64)["fails"]
     frames, sound = decode(result["file"])
     assert len(frames) == (90 if mixed else 30)
     assert np.max(np.abs(sound[4800:43200])) < 0.0001
     if mixed:
         assert np.max(np.abs(sound[52800:91200])) > 0.01
         assert np.max(np.abs(sound[100800:139200])) < 0.0001
+
+
+@pytest.mark.parametrize("start,audio_at,video_duration", [
+    (0, 0, 3),        # audio ends two seconds before the picture
+    (0.5, 1, 3),      # trim starts before a late audio stream
+    (2, 0, 3),        # trim is entirely beyond the audio stream
+    (7.5, 8, 10),     # late audio after a nonzero input seek
+])
+def test_short_or_delayed_audio_preserves_clip_clock(tmp_path, media, start, audio_at, video_duration):
+    source = tmp_path / "short-audio.mov"
+    subprocess.run([tools.ffmpeg(), "-y", "-v", "error", "-f", "lavfi", "-i",
+                    f"color=c=gray:s=96x64:r=30:d={video_duration}",
+                    "-itsoffset", str(audio_at), "-f", "lavfi", "-i", "sine=f=440:r=48000:d=1",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "pcm_s16le", str(source)],
+                   check=True, capture_output=True, timeout=60)
+    keep = [clip("c1", "s1", start, video_duration), clip("c2", "s2", 0, 1)]
+    pdir, p = make_project(tmp_path, {"s1": source, "s2": media["s2"]}, keep)
+    p["sources"][0]["duration"] = video_duration
+    project.save(pdir, p)
+    result = render.run(pdir, root=tmp_path, cover=False)
+    frames, sound = decode(result["file"])
+    first_duration = video_duration - start
+    assert len(frames) == round((first_duration + 1) * 30)
+    assert len(sound) / 48000 == pytest.approx(first_duration + 1, abs=1 / 30)
+
+    def peak(a, b):
+        return np.max(np.abs(sound[round(a * 48000):round(b * 48000)]))
+
+    for at in np.arange(0.1, first_duration - 0.05, 0.1):
+        source_time = start + at
+        if audio_at + 0.05 < source_time < audio_at + 0.95:
+            assert peak(at - 0.02, at + 0.02) > 0.01, source_time
+        elif source_time < audio_at - 0.05 or source_time > audio_at + 1.05:
+            assert peak(at - 0.02, at + 0.02) < 0.0001, source_time
+    # The following clip's distinct tone must begin on its planned output clock.
+    assert peak(first_duration + 0.1, first_duration + 0.4) > 0.01
+    samples = sound[round((first_duration + 0.1) * 48000):round((first_duration + 0.4) * 48000)]
+    spectrum = np.abs(np.fft.rfft(samples * np.hanning(len(samples))))
+    hz = np.fft.rfftfreq(len(samples), 1 / 48000)[spectrum.argmax()]
+    assert hz == pytest.approx(350, abs=10)
+    assert result["verify"]["ok"], result["verify"]
+
+
+@pytest.mark.parametrize("all_silent", [False, True])
+def test_transcribe_skips_silent_sources_and_keeps_voiced_source_words(tmp_path, media, monkeypatch, all_silent):
+    paths = {"s1": media["silent"], "s2": media["silent"] if all_silent else media["s2"]}
+    pdir, _ = make_project(tmp_path, paths,
+                           [clip("c1", "s1", 0, 1), clip("c2", "s2", 0, 1)])
+
+    def recognize(model, wav, language, prompt, dur, p0, p1, hotwords=None):
+        # Only the recognizer is stubbed. Probing, extraction and word refinement are real.
+        samples = audio_env.read_wav(wav)
+        if not np.any(samples):
+            return [], [], "en"
+        return ([{"s": 0.1, "e": 0.4, "w": "Goal", "p": 0.99}],
+                [{"s": 0.1, "e": 0.4, "text": "Goal", "n": 1}], "en")
+
+    monkeypatch.setattr(transcribe, "require_model", lambda name: tmp_path)
+    monkeypatch.setattr(transcribe, "load_model", lambda name, prefer=None: (object(), "cpu", "int8"))
+    monkeypatch.setattr(transcribe, "_transcribe_one", recognize)
+    monkeypatch.setenv("REELENGINE_HINTS", "0")
+    monkeypatch.setenv("REELENGINE_VOCAB", "0")
+    if all_silent:
+        with pytest.raises(EngineError) as exc:
+            transcribe.run(pdir)
+        assert exc.value.code == "NO_SPEECH"
+        assert not project.transcript_path(pdir).exists()
+        return
+    result = transcribe.run(pdir)
+    transcript = project.load_transcript(pdir, project.load(pdir))
+    assert result["words"] == 1
+    assert [(w["w"], w["source"]) for w in transcript["words"]] == [("Goal", "s2")]
+    assert [s["source"] for s in transcript["segments"]] == ["s2"]
+    assert result["timings"]["audioSeconds"] == 6
 
 
 def test_init_accepts_silent_video(tmp_path, media):

@@ -305,8 +305,10 @@ def _limit(ctx, x: np.ndarray, work: Path, tag: str) -> np.ndarray:
     return y
 
 
-def normalize(ctx, x: np.ndarray, work: Path, tag: str = "mix") -> tuple[np.ndarray, dict]:
+def normalize(ctx, x: np.ndarray, work: Path, tag: str = "mix", expected_silence: bool = False) -> tuple[np.ndarray, dict]:
     """Two-pass loudness to TARGET_LUFS with a true-peak ceiling. Returns (audio, readings)."""
+    if expected_silence and not np.any(x):
+        return x, {"expectedSilence": True, "inputLUFS": None, "pass1LUFS": None, "finalLUFS": None}
     I0 = integrated(x)
     if not math.isfinite(I0):
         raise EngineError("SILENT", "mix is silent", "Your video seems to have no sound. Check the microphone and try again.")
@@ -340,7 +342,8 @@ def build_audio(ctx, voice_wav) -> Path:
         if not track.exists():
             raise EngineError("MUSIC_MISSING", f"music not found: {track}",
                               "The song for this video is missing. Pick another song.")
-    sig = hashlib.sha1(json.dumps([3, str(voice_wav), voice_wav.stat().st_size, voice_wav.stat().st_mtime_ns,
+    expected_silence = getattr(ctx, "expected_silence", False)
+    sig = hashlib.sha1(json.dumps([4, expected_silence, str(voice_wav), voice_wav.stat().st_size, voice_wav.stat().st_mtime_ns,
                                    mcfg, str(track) if track else None,
                                    track.stat().st_mtime_ns if track else None, offset], sort_keys=True,
                                   default=str).encode()).hexdigest()[:12]
@@ -391,7 +394,7 @@ def build_audio(ctx, voice_wav) -> Path:
                      "gapP10Db": None if gap_p10 is None else round(gap_p10, 2)})
         rep["music"] = mrep
     report(ctx, "music", 70, "Balancing the sound")
-    mix, lrep = normalize(ctx, mix, work)
+    mix, lrep = normalize(ctx, mix, work, expected_silence=expected_silence)
     rep.update(lrep)
     write_wav(out, mix, ctx=ctx)
     # every render writes a fresh voice wav (new mtime -> new hash): keep only the latest mixes,

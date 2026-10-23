@@ -25,7 +25,7 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from . import audio_env, project as projmod, tools, vocab as vocabmod
+from . import audio_env, probe as probemod, project as projmod, tools, vocab as vocabmod
 from .proto import EngineError, log, progress
 
 DEFAULT_MODEL = "small.en"          # measured: best WER on CPU int8 at RTF ~0.19
@@ -639,13 +639,24 @@ def run(project_dir: Path, model_name: Optional[str] = None, language: Optional[
     progress(STAGE, 1, "Getting your video ready", force=True)
     t0 = time.time()
     wavs = {}
+    audio_sources = []
     for i, src in enumerate(proj["sources"]):
         sp = projmod.source_path(project_dir, src)
+        has_audio = any(stream.get("codec_type") == "audio"
+                        for stream in probemod.ffprobe_json(sp).get("streams", []))
+        if not has_audio:
+            progress(STAGE, 2 + 6 * (i + 1) / len(proj["sources"]), "Skipping silent source")
+            continue
         wav = audio_path(project_dir, src["id"])
         if not wav.exists() or wav.stat().st_mtime < sp.stat().st_mtime:
             extract_audio(sp, wav)
         wavs[src["id"]] = wav
+        audio_sources.append(src)
         progress(STAGE, 2 + 6 * (i + 1) / len(proj["sources"]), "Getting your video ready")
+    if not audio_sources:
+        raise EngineError("NO_SPEECH", "project has no audio sources",
+                          "I couldn't hear anyone talking in this video. Check that the sound is on "
+                          "and try again.")
     t_extract = time.time() - t0
 
     progress(STAGE, 9, "Waking up the listening model", force=True)
@@ -681,11 +692,11 @@ def run(project_dir: Path, model_name: Optional[str] = None, language: Optional[
             log(f"# vocabulary skipped: {exc}")
             terms = []
 
-    total_dur = sum(float(s.get("duration") or 0.0) for s in proj["sources"]) or 1.0
+    total_dur = sum(float(s.get("duration") or 0.0) for s in audio_sources) or 1.0
     done_dur = 0.0
     all_words, all_segs, lang = [], [], language
     t2 = time.time()
-    for src in proj["sources"]:
+    for src in audio_sources:
         dur = float(src.get("duration") or 0.0)
         p0 = 10 + 80 * done_dur / total_dur
         p1 = 10 + 80 * (done_dur + dur) / total_dur
