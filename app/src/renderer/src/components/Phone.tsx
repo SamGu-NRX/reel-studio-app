@@ -39,16 +39,16 @@ export function usePhoneView(): [PhoneView, (next: PhoneView) => Promise<unknown
  * Gives the phone inside it the full height it has, at 9:16. Its column takes its width from the phone, so the
  * width can only come from the height; a ResizeObserver writes it, on resize only, without rendering.
  */
-export function PhoneFill({ children }: { children: ReactNode }) {
+export function PhoneFill({ children, wide }: { children: ReactNode; wide?: boolean }) {
   const slot = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const el = slot.current!
-    const ro = new ResizeObserver(([e]) => el.style.setProperty('--phone-w', `${(e.contentRect.height * 9) / 16}px`))
+    const ro = new ResizeObserver(([e]) => el.style.setProperty('--phone-w', `${wide ? (e.contentRect.height * 16) / 9 : (e.contentRect.height * 9) / 16}px`))
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [wide])
   return (
-    <div className="phone-fill" ref={slot}>
+    <div className={`phone-fill${wide ? ' wide' : ''}`} ref={slot}>
       {children}
     </div>
   )

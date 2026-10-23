@@ -97,3 +97,11 @@
 @media (prefers-reduced-motion: reduce) {
   @keyframes igc-tick { to { transform: none; } }
 }
+
+/* A landscape film (16:9) plays on a wide screen, centred on the stage, with no phone or Instagram chrome. */
+.phone-fill.wide { align-items: center; }
+.phone.wide { border-radius: var(--r-md); box-shadow: 0 0 0 1px rgba(10, 20, 15, .12), 0 30px 60px -32px rgba(10, 20, 15, .55), 0 14px 24px -18px rgba(10, 20, 15, .3); }
+.phone.wide .phone-screen { aspect-ratio: 16 / 9; }
+.phone.wide .phone-screen > video { object-fit: contain; }
+/* real fullscreen on the video element (Full screen, F): the whole picture, letterboxed on black */
+.phone-screen > video:fullscreen { object-fit: contain; background: #000; cursor: default; }

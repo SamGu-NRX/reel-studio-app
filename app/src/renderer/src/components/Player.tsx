@@ -280,6 +280,7 @@ export function PhonePlayer({
   className,
   over,
   testid = 'player',
+  wide,
   children
 }: {
   src: string | null
@@ -335,6 +336,8 @@ export function PhonePlayer({
   over?: ReactNode
   /** The video's test id. The Working screen's first look uses its own, so "player" means the Reel screen. */
   testid?: string
+  /** A landscape film (16:9): a wide screen with no Instagram chrome. */
+  wide?: boolean
   children?: ReactNode
 }) {
   const screenRef = useRef<HTMLDivElement>(null)
@@ -599,7 +602,7 @@ export function PhonePlayer({
 
   const phone = (
     <div
-      className={`phone${className ? ` ${className}` : ''}`}
+      className={`phone${wide ? ' wide' : ''}${className ? ` ${className}` : ''}`}
       draggable={!!dragFile}
       title={dragFile ? 'Drag the reel out of the window to the desktop or an upload box' : undefined}
       onPointerDown={(e) => {
@@ -717,7 +720,7 @@ export function PhonePlayer({
               {holdTag}
             </div>
             {subtitle && !holdingOriginal && <SubtitleSample look={subtitle.look} text={subtitle.text} width={width} testid="sub-preview" />}
-            <InstagramChrome on={view === 'instagram' && !holdingOriginal} caption={caption} playing={playing} />
+            <InstagramChrome on={!wide && view === 'instagram' && !holdingOriginal} caption={caption} playing={playing} />
             {subtitle && !holdingOriginal && <SafeBand />}
             {over}
             {!bare && !playing && !holdingOriginal && !(still && subtitle) && (
@@ -793,5 +796,5 @@ export function PhonePlayer({
       </div>
     </div>
   )
-  return <PhoneFill>{phone}</PhoneFill>
+  return <PhoneFill wide={wide}>{phone}</PhoneFill>
 }

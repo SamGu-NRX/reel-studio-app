@@ -311,13 +311,26 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const aiOff = providerChecked && (!provider || !provider.connected || provider.id === 'none')
   const canPoint = !!version && !aiOff && !compare && !drawer
 
-  // Hold O for the original; C points at a spot; Esc stops pointing, then comparing.
+  // A landscape film (the 16:9 launch film) plays wide, and goes full screen on a projector.
+  const wide = !!d?.project.format && d.project.format.width > d.project.format.height
+  const fullscreen = useCallback(() => {
+    if (document.fullscreenElement) return void document.exitFullscreen()
+    const v = document.querySelector<HTMLVideoElement>('.reel-page video[data-testid="player"]')
+    if (!v) return
+    v.muted = false
+    v.requestFullscreen()
+      .then(() => (v.paused ? v.play() : undefined))
+      .catch(() => notify('Full screen did not open.', 'error'))
+  }, [notify])
+
+  // Hold O for the original; C points at a spot; F goes full screen (a wide film); Esc stops pointing, then comparing.
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target) || document.querySelector('.modal-backdrop')) return
       const k = e.key.toLowerCase()
       if (k === 'o' && !e.repeat) setHolding(true)
       else if (k === 'c' && !e.repeat && canPoint) setPointing((p) => !p)
+      else if (k === 'f' && !e.repeat && wide) fullscreen()
       else if (e.key === 'Escape' && pointing) (setPointing(false), keyboardBackToTimeline())
       else if (e.key === 'Escape' && compare) (setCompare(null), keyboardBackToTimeline())
       else return
@@ -333,7 +346,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [canPoint, pointing, compare])
+  }, [canPoint, pointing, compare, wide, fullscreen])
 
   const entries = useMemo(
     () =>
@@ -759,6 +772,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   playhead={playhead}
                   transport={transport}
                   bare
+                  wide={wide}
                   onShown={(shown) => {
                     setShownSrc(shown)
                     if (landing !== null && shown && shown === d.versions.find((v) => v.n === landing)?.video)
@@ -799,7 +813,13 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     onPlay={(n) => !drawer && watch(n)}
                   />
                   <TransportRow transport={transport} playhead={playhead}>
-                    <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
+                    {wide ? (
+                      <Button kind="secondary" size="small" onClick={fullscreen} aria-keyshortcuts="F" title="Full screen (F). Esc leaves." data-testid="fullscreen">
+                        <Icon name="maximize" size={14} stroke={2} /> Full screen
+                      </Button>
+                    ) : (
+                      <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
+                    )}
                   </TransportRow>
                 </>
               )}
