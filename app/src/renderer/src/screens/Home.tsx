@@ -19,7 +19,7 @@ const RECENT_DAYS = 14
 /** A first cut or a new version being made: how far along, from the job's own events. */
 type Live = { overall: number; left: string | null }
 
-const needsYou = (p: ProjectSummary) => p.status === 'interrupted' || p.status === 'failed'
+const needsYou = (p: ProjectSummary) => p.status === 'interrupted' || p.status === 'failed' || p.status === 'planned'
 const making = (p: ProjectSummary) => p.status === 'working' || p.status === 'new'
 
 export function Home({ go }: { go: Go }) {

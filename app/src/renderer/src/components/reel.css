@@ -6,7 +6,7 @@
 
 /* ---- the title-bar row: the title (click to rename), the version on screen, Back to latest ---- */
 .rt-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.reel-title { min-width: 0; cursor: text; border-radius: 6px; padding: 2px 6px; margin-left: -6px; }
+.reel-title { -webkit-app-region: no-drag; pointer-events: auto; min-width: 0; cursor: text; border-radius: 6px; padding: 2px 6px; margin-left: -6px; }
 @media (hover: hover) and (pointer: fine) { .reel-title:hover { background: var(--wash); } }
 .reel-title-input { height: 30px; min-height: 30px; padding: 2px 8px; font-size: var(--fs-md); font-weight: 620; width: min(420px, 40vw); }
 .rt-ver { flex: none; font-size: var(--fs-base); color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -14,6 +14,7 @@
 .rt-title .btn.ghost.small { flex: none; }
 .tb-actions .btn.ghost.on { color: var(--ink); text-decoration-color: currentColor; }
 .rt-more { position: relative; display: flex; }
+.rt-more .pop { pointer-events: auto; -webkit-app-region: no-drag; }
 /* Share sits in the row until it becomes one pill with its popover (components/Outs.tsx) */
 .tb-actions .outs { display: flex; align-items: center; gap: 6px; width: auto; margin: 0; }
 .tb-actions .outs .row { gap: 6px; flex-wrap: nowrap; }
@@ -146,8 +147,9 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .ncol { min-width: 0; min-height: 0; display: flex; flex-direction: column; box-shadow: inset 1px 0 0 var(--line); padding: 4px 20px 14px; position: relative; }
 .notes-h { height: 32px; display: flex; align-items: center; flex: none; }
 .notes-h h2 { font-size: var(--fs-section); line-height: var(--lh-section); font-weight: 620; }
-/* a short log starts at the top; a long one folds its oldest entries behind one line */
+/* a short log sits just above the note box, as the prototype's does; a long one folds its oldest entries behind one line */
 .log { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 12px; padding: 6px 2px 14px; margin: 0 -2px; }
+.log > :first-child { margin-top: auto; }
 .log-empty { margin: auto 0; padding: 0 12px; text-align: center; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-3); }
 .fold {
   align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 26px; border: 0; background: none; padding: 0 8px 0 2px;
@@ -281,7 +283,7 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 @media (hover: hover) and (pointer: fine) { .cin .att:not(:disabled):hover { background: var(--sunk); color: var(--ink); } }
 .cfield { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px; }
 .cfield textarea {
-  flex: 1 1 160px; min-width: 120px; border: 0; resize: none; background: transparent; padding: 6px 2px; font: inherit; font-size: var(--fs-md); line-height: var(--lh-md);
+  flex: 1 1 110px; min-width: 100px; border: 0; resize: none; background: transparent; padding: 6px 2px; font: inherit; font-size: var(--fs-md); line-height: var(--lh-md);
   color: var(--ink); max-height: 132px; field-sizing: content; min-height: 32px; outline: none;
 }
 /* the moment chip: shows the playhead, attaches it in one click; its menu points at a spot */
