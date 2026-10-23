@@ -228,7 +228,14 @@ async function act(page: Page, app: ElectronApplication, action: Action, random:
 
 const explicit = process.env.REELSTUDIO_INVARIANT_SEEDS
 if (explicit && !/^\d+(,\d+)*$/.test(explicit)) throw new Error('REELSTUDIO_INVARIANT_SEEDS must be comma-separated unsigned integers')
-const seeds = explicit ? explicit.split(',').map(Number) : process.env.REELSTUDIO_INVARIANTS_LONG === '1' ? Array.from({ length: 100 }, () => Math.floor(Math.random() * 0xffffffff)) : FIXED_SEEDS
+// Playwright loads this file in the runner and again in each worker, so long-run seeds must come out the same in
+// every process: they follow from REELSTUDIO_INVARIANTS_BASE (today's date unless set).
+const longBase = Number(process.env.REELSTUDIO_INVARIANTS_BASE ?? new Date().toISOString().slice(0, 10).replace(/-/g, ''))
+const longSeeds = (() => {
+  const next = rng(longBase)
+  return Array.from({ length: 100 }, () => Math.floor(next() * 0xffffffff))
+})()
+const seeds = explicit ? explicit.split(',').map(Number) : process.env.REELSTUDIO_INVARIANTS_LONG === '1' ? longSeeds : FIXED_SEEDS
 const collect = process.env.REELSTUDIO_INVARIANTS_COLLECT === '1'
 
 for (const seed of seeds) {
