@@ -151,13 +151,12 @@ takes.forEach((take, i) => {
       await shot(page, `takes/${i}-03-after-note`)
 
       const t2 = Date.now()
-      await page.getByTestId('export').click()
-      await expect(page.getByText('Saved to your computer')).toBeVisible({
-        timeout: 30 * 60_000
-      })
+      await page.getByTestId('share').click()
+      await page.getByTestId('share-instagram').click()
+      await expect(page.getByTestId('share-pop')).toContainText('Ready for Instagram', { timeout: 30 * 60_000 })
       timings.exportSec = Math.round((Date.now() - t2) / 1000)
       await shot(page, `takes/${i}-04-exported`)
-      await page.getByRole('button', { name: 'Done' }).click()
+      await page.keyboard.press('Escape')
 
       const exportFile = newest(join(ROOT, 'Library', 'Exports'), (f) => f.endsWith('.mp4'))
       const project = newest(join(ROOT, 'Projects'), (f) => existsSync(join(ROOT, 'Projects', f, 'project.json')))

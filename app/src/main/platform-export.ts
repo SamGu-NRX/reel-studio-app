@@ -60,7 +60,7 @@ async function readFinishedVideo(source: string, runEngine: RunEngine, label: st
   const video = await runEngine('export-probe', [source], undefined, signal) as Partial<FinishedVideo & { hasVideo: boolean }> | null
   if (video?.hasVideo !== true || typeof video.duration !== 'number' || !Number.isFinite(video.duration) || video.duration <= 0 || typeof video.fps !== 'number' ||
       typeof video.vduration !== 'number' || typeof video.sizeBytes !== 'number' || (video.audioBitrate !== null && typeof video.audioBitrate !== 'number') || typeof video.editList !== 'boolean') {
-    throw { code: 'EXPORT_FAILED', userMessage: `${label}I could not read the finished video. Render this version again before exporting.` }
+    throw { code: 'EXPORT_FAILED', userMessage: `${label}The finished video couldn’t be read. Make this version again, then share it.` }
   }
   return video as FinishedVideo
 }

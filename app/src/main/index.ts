@@ -484,8 +484,8 @@ async function finishedExportVersion(slug: string, n: number): Promise<VersionIn
   const dir = projectDir(slug)
   let versions = await listVersions(dir)
   let v = versions.find((x) => x.n === n) ?? versions[versions.length - 1]
-  if (!v) throw { code: 'NO_VERSION', userMessage: 'This video is not ready yet. Wait for it to finish, then try again.' }
-  if (jobs.forSlug(slug)) throw { code: 'BUSY', userMessage: 'I am still working on this video. Wait until it is done, then export.' }
+  if (!v) throw { code: 'NO_VERSION', userMessage: 'This reel has no version yet. Wait for Version 1, then share it.' }
+  if (jobs.forSlug(slug)) throw { code: 'BUSY', userMessage: 'A version is still being made. Share once it’s ready.' }
   if (v.draft) {
     // A preview is not the full-quality file: make it first, as a normal job (progress, Stop, and
     // nothing else can run on this video meanwhile) (review 25).
@@ -507,7 +507,7 @@ async function finishedExportVersion(slug: string, n: number): Promise<VersionIn
     if (stopped?.aborted) throw { code: 'CANCELLED', userMessage: 'Stopped.' }
     versions = await listVersions(dir)
     v = versions[versions.length - 1]
-    if (!v || v.draft) throw { code: 'EXPORT_FAILED', userMessage: 'I could not make the full-quality video. Try Export again.' }
+    if (!v || v.draft) throw { code: 'EXPORT_FAILED', userMessage: 'The full-quality video didn’t finish. Try again.' }
   }
   return v
 }
@@ -535,7 +535,6 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
   const caption = [p.post?.caption ?? '', tags].filter(Boolean).join('\n\n')
   const captionFile = join(exportsDir, `${stem} caption.txt`)
   await fs.writeFile(captionFile, caption + '\n', 'utf8')
-  if (!TEST) shell.showItemInFolder(video)
   return { folder: exportsDir, video, cover, captionFile, caption }
 }
 
@@ -904,6 +903,11 @@ function registerIpc(): void {
     exportsWriting++ // the updater will not restart the app while an export writes its file
     try {
       return await exportVersion(slug, n)
+    } catch (e) {
+      const code = e && typeof e === 'object' && 'code' in e ? String(e.code) : ''
+      if (code === 'ENOSPC') throw { code: 'NO_SPACE', userMessage: `There isn't enough space on this ${process.platform === 'darwin' ? 'Mac' : 'PC'}. Free some up, then try again.` }
+      if (code === 'EACCES' || code === 'EPERM') throw { code: 'NO_ACCESS', userMessage: "Reel Studio isn't allowed to write to its Library folder. Check the folder in Settings, then try again." }
+      throw e
     } finally {
       exportsWriting--
     }

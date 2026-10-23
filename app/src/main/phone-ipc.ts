@@ -22,10 +22,21 @@ export interface PhoneIpcDeps {
 const EMAIL_LIMIT = 20_000_000 // most mail services stop at 20-25 MB per message
 
 let current: ShareServer | null = null
+/** Cloud saves running now, by the id the renderer gave each, so Cancel stops the right one. */
+const saves = new Map<string, AbortController>()
+
+/** Why a copy onto a drive failed, in words: the error code says which. */
+function cloudFailure(error: unknown, drive: string): string {
+  const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
+  if (code === 'ENOSPC' || code === 'EDQUOT') return `There isn't enough space on ${drive}. Free some up, then try again.`
+  if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') return `Reel Studio isn't allowed to write to ${drive}. Check the drive is signed in and its Reel Studio folder isn't read-only, then try again.`
+  if (code === 'ENOENT' || code === 'ENOTCONN' || code === 'EIO') return `${drive} isn't reachable right now. Check it's signed in and connected, then try again.`
+  return `The copy to ${drive} stopped partway. Check it's connected, then try again.`
+}
 
 /** Only an .mp4 that really sits inside the Reel Studio folder (symlinks resolved), never anything else. */
 function checkedVideo(p: unknown, roots: string[]): string {
-  const bad = { code: 'NOT_FOUND', userMessage: 'I could not find that video. Export it again, then try once more.' }
+  const bad = { code: 'NOT_FOUND', userMessage: "That video isn't in the Reel Studio folder any more. Share it again." }
   if (typeof p !== 'string' || extname(p).toLowerCase() !== '.mp4') throw bad
   let real: string
   try {
@@ -82,20 +93,28 @@ export async function cloudSavesSettled(): Promise<void> {
 export function registerPhoneIpc(d: PhoneIpcDeps): void {
   const where = () => ({ platform: process.platform, home: app.getPath('home') })
   d.handle('cloud:drives', () => detectCloudDrives(where()))
-  d.handle('cloud:save', async (_e, video: unknown, folder: unknown) => {
+  d.handle('cloud:save', async (_e, video: unknown, folder: unknown, id: unknown) => {
     const file = checkedVideo(video, d.roots())
     const drive = typeof folder === 'string' ? await cloudDriveAt(folder, where()) : null
-    if (!drive) throw { code: 'CLOUD_MISSING', userMessage: 'That drive is no longer available. Open iCloud Drive or Google Drive on this computer, then try again.' }
-    const save = copyToCloudDrive(file, drive.folder)
+    if (!drive) throw { code: 'CLOUD_MISSING', userMessage: `${typeof folder === 'string' && folder.includes('GoogleDrive') ? 'Google Drive' : 'That drive'} isn't on this computer any more. Open it, then try again.` }
+    if (typeof id !== 'string' || saves.has(id)) throw { code: 'BAD_INPUT', userMessage: 'Try saving again.' }
+    const stop = new AbortController()
+    saves.set(id, stop)
+    const save = copyToCloudDrive(file, drive.folder, { signal: stop.signal, onProgress: (pct) => d.send('cloud:progress', { id, pct }) })
     saving.add(save)
     try {
       return await save
     } catch (error) {
+      if (stop.signal.aborted) throw { code: 'CANCELLED', userMessage: 'Stopped.' }
       d.log(`[cloud] save failed: ${error instanceof Error ? error.message : String(error)}`)
-      throw { code: 'CLOUD_SAVE', userMessage: `I could not save to ${drive.label}. Check that the drive has space and is connected, then try again.` }
+      throw { code: 'CLOUD_SAVE', userMessage: cloudFailure(error, drive.label) }
     } finally {
       saving.delete(save)
+      saves.delete(id)
     }
+  })
+  d.handle('cloud:cancel', (_e, id: unknown) => {
+    if (typeof id === 'string') saves.get(id)?.abort()
   })
 
   d.handle('phone:start', async (_e, video: unknown, caption: unknown, address?: unknown): Promise<PhoneShare> => {
@@ -122,7 +141,7 @@ export function registerPhoneIpc(d: PhoneIpcDeps): void {
       })
     } catch (err) {
       d.log(`[phone] could not start on ${pick.name}: ${(err as NodeJS.ErrnoException)?.code ?? 'error'}`)
-      throw { code: 'PHONE_START', userMessage: 'I could not open a link on this network. Try a different network below, or use one of the other ways.' }
+      throw { code: 'PHONE_START', userMessage: "A link couldn't open on this network. Try a different network below, or use one of the other ways." }
     }
     current = s
     d.log(`[phone] link open on ${pick.name} for 15 minutes`) // no token, no file name

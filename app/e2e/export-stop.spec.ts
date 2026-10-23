@@ -23,20 +23,15 @@ test('Stop while a preview is made full quality for a platform export ends quiet
   try {
     await passFirstRun(page)
     await page.getByText('My reel', { exact: true }).first().click()
-    await page.getByTestId('export-more').click()
-    await page.getByRole('menuitem', { name: 'Other platforms…' }).click()
-    const dialog = page.getByTestId('platform-export-dialog')
-    await dialog.getByRole('checkbox', { name: /^TikTok\b/ }).check()
-    // A limit warns next to its platform and leaves Export enabled.
-    await dialog.locator('#platform-caption').fill('x'.repeat(2201))
-    await expect(dialog.getByTestId('platform-warnings-tiktok')).toHaveText('Caption is 2201 of 2200. Shorten it before posting.')
-    await dialog.getByTestId('export-selected').click()
-    await dialog.getByRole('button', { name: 'Stop export' }).click()
-    await expect(dialog.getByTestId('export-selected')).toBeEnabled()
-    await expect(dialog.locator('.platform-errors')).toHaveCount(0)
-    // Closing the dialog returns focus to the menu button that opened it.
-    await dialog.getByRole('button', { name: 'Cancel' }).click()
-    await expect(page.getByTestId('export-more')).toBeFocused()
+    await page.getByTestId('share').click()
+    await page.getByTestId('share-platforms-toggle').click()
+    const platforms = page.getByTestId('share-platforms')
+    await platforms.getByRole('checkbox', { name: /^TikTok\b/ }).check()
+    await platforms.getByRole('checkbox', { name: /I checked the edges/ }).check()
+    await platforms.getByTestId('export-selected').click()
+    await platforms.getByRole('button', { name: 'Cancel' }).click()
+    await expect(platforms.getByTestId('export-selected')).toBeEnabled()
+    await expect(platforms.locator('.sp-fail')).toHaveCount(0)
   } finally {
     await app.close()
   }

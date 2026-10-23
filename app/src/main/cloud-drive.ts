@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { constants, promises as fs, type BigIntStats } from 'node:fs'
+import { constants, promises as fs, type BigIntStats, createReadStream, createWriteStream } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import type { CloudDrive } from '../shared/api'
 
 interface DriveOptions {
@@ -71,17 +73,34 @@ function errorCode(error: unknown): unknown {
   return error instanceof Error && 'code' in error ? error.code : undefined
 }
 
+/** Streamed, not cloned, so a slow drive reports `pct` (0-100) as it goes and the copy can be stopped. */
+async function copyWithProgress(source: string, target: string, signal?: AbortSignal, onProgress?: (pct: number) => void): Promise<void> {
+  const size = (await fs.stat(source)).size
+  let copied = 0
+  let reported = -1
+  const count = new Transform({
+    transform(chunk: Buffer, _encoding, done) {
+      copied += chunk.length
+      const pct = size ? Math.floor((copied * 100) / size) : 100
+      if (pct !== reported) onProgress?.((reported = pct))
+      done(null, chunk)
+    }
+  })
+  await pipeline(createReadStream(source), count, createWriteStream(target, { flags: 'wx' }), { signal })
+}
+
 /**
  * Copies `source` into `<folder>/Reel Studio/`, numbering the name when it is taken, and returns the new file.
  * The video is copied in full under a hidden temporary name first, so the drive never syncs a partial reel,
- * and the publish step never replaces a file the user or the sync client put at that name.
+ * and the publish step never replaces a file the user or the sync client put at that name. The copy reports
+ * `pct` (0-100) as it goes and stops with `signal`.
  */
-export async function copyToCloudDrive(source: string, folder: string): Promise<string> {
+export async function copyToCloudDrive(source: string, folder: string, { signal, onProgress }: { signal?: AbortSignal; onProgress?: (pct: number) => void } = {}): Promise<string> {
   const destination = join(folder, 'Reel Studio')
   await fs.mkdir(destination, { recursive: true })
   const temp = join(destination, `.${randomUUID()}.tmp`)
   try {
-    await fs.copyFile(source, temp, constants.COPYFILE_EXCL)
+    await copyWithProgress(source, temp, signal, onProgress)
     const ext = extname(source)
     const stem = basename(source, ext)
     let hardLinks = true

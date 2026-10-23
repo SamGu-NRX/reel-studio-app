@@ -1,11 +1,10 @@
-import { test, expect, type Page } from '@playwright/test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
-import { basename, join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun, newReel, makeReel } from './helpers'
+import { test, expect } from '@playwright/test'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { BASE, launch, makeMedia, makeReel, passFirstRun } from './helpers'
 
-test.skip(process.platform !== 'darwin', 'The fake drive folders follow the macOS layout; the native Windows flow runs on a Windows host.')
-
-async function launchWithHome() {
+test('fails if cloud save copies the wrong export, uses the wrong drive, or fails without saying why', async () => {
+  test.skip(process.platform !== 'darwin', 'The native Windows flow runs on a Windows host.')
   const dir = mkdtempSync(join(BASE, 'cloud-'))
   const home = join(dir, 'home')
   mkdirSync(home)
@@ -39,38 +38,45 @@ test('fails if the drive way loses its web links, saves the wrong export or to t
     await app.evaluate(({ app }, folder) => app.setPath('home', folder), home)
     await passFirstRun(page)
     await makeReel(page, media.video)
-    await page.getByTestId('export').click()
-    await expect(page.getByTestId('export-saved')).toBeVisible()
+    await expect(page.getByTestId('share')).toBeEnabled({ timeout: 10 * 60_000 })
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await page.getByTestId('send-to-phone').click()
-    await page.getByTestId('phone-cant').click()
-    await page.locator('.phone-fallbacks .phone-way').nth(1).scrollIntoViewIfNeeded()
-    await page.getByTestId('phone-back').click()
-    // the export dialog's own saves (Share in the title bar has the same buttons, behind the dialog)
-    const dialog = page.getByTestId('export-dialog')
-    const save = dialog.getByRole('button', { name: 'Save to iCloud Drive', exact: true })
+    await page.getByTestId('share').click()
+    const pop = page.getByTestId('share-pop')
+    const save = pop.getByRole('button', { name: /^Save to iCloud Drive\b/ })
     await expect(save).toBeVisible({ timeout: 5000 })
-    await expect(dialog.getByRole('button', { name: 'Save to Google Drive · Personal', exact: true })).toBeVisible({ timeout: 5000 })
-    await expect(dialog.getByRole('button', { name: 'Save to Google Drive · Work', exact: true })).toBeVisible({ timeout: 5000 })
+    await expect(pop.getByRole('button', { name: /^Save to Google Drive · Personal\b/ })).toBeVisible()
+    await expect(pop.getByRole('button', { name: /^Save to Google Drive · Work\b/ })).toBeVisible()
     await save.focus()
     await page.keyboard.press('Enter')
-    await expect(dialog.getByRole('status')).toContainText('Saved to iCloud Drive')
+    await expect(pop).toContainText('Saved to iCloud Drive')
     const saved = join(drive, 'Reel Studio')
     const files = readdirSync(saved)
     expect(files).toHaveLength(1)
-    const exportFile = await page.getByTestId('export-name').getAttribute('title')
-    if (!exportFile) throw new Error('The export dialog has no video path')
+    const exports = join(dir, 'Reel Studio', 'Library', 'Exports')
+    const exported = readdirSync(exports).filter((f) => f.endsWith('.mp4'))
+    expect(exported).toHaveLength(1)
+    const exportFile = join(exports, exported[0])
     expect(readFileSync(join(saved, files[0]))).toEqual(readFileSync(exportFile))
-    await page.getByRole('button', { name: 'Show in Finder', exact: true }).last().focus()
+    await pop.getByRole('button', { name: 'Show in Finder', exact: true }).first().focus()
     await page.keyboard.press('Enter')
     await page.setViewportSize({ width: 1440, height: 900 })
-    await dialog.getByRole('button', { name: 'Save to Google Drive · Work', exact: true }).focus()
+    await pop.getByRole('button', { name: /^Save to Google Drive · Work\b/ }).focus()
     await page.keyboard.press('Enter')
-    await expect(dialog.getByRole('status')).toContainText('Saved to Google Drive · Work')
+    await expect(pop).toContainText('Saved to Google Drive · Work')
     const workFiles = readdirSync(join(work, 'Reel Studio'))
     expect(workFiles).toHaveLength(1)
     expect(readFileSync(join(work, 'Reel Studio', workFiles[0]))).toEqual(readFileSync(exported))
     expect(readdirSync(personal)).toEqual([])
+
+    // A drive Reel Studio can't write to: the line says so, in words, and nothing is left behind.
+    chmodSync(personal, 0o500)
+    try {
+      await pop.getByRole('button', { name: /^Save to Google Drive · Personal\b/ }).click()
+      await expect(pop.getByRole('alert')).toContainText("Reel Studio isn't allowed to write to Google Drive.")
+      expect(readdirSync(personal)).toEqual([])
+    } finally {
+      chmodSync(personal, 0o700)
+    }
   } finally {
     await app.close()
   }

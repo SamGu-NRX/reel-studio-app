@@ -106,7 +106,9 @@ const api: ReelApi = {
   },
   cloud: {
     drives: () => call('cloud:drives'),
-    save: (video, folder) => call('cloud:save', video, folder)
+    save: (video, folder, id) => call('cloud:save', video, folder, id),
+    cancel: (id) => call('cloud:cancel', id),
+    onProgress: (cb) => on<{ id: string; pct: number }>('cloud:progress', cb)
   },
   phone: {
     start: (video, caption, address) => call('phone:start', video, caption, address),
