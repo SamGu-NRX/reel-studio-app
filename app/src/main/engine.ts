@@ -116,12 +116,12 @@ export function createEngineRunner(cfg: RunnerConfig) {
     args: string[],
     onProgress?: (p: EngineProgress) => void,
     signal?: AbortSignal,
-    /** Called once the engine process is gone (or never started). A cancel rejects at once, before that. */
-    onProcessExit?: () => void
+    /** Called once the process is gone. Cancelling rejects at once, before the process has exited. */
+    onExit?: () => void
   ): Promise<unknown> {
     return new Promise((resolvePromise, rejectPromise) => {
       if (signal?.aborted) {
-        onProcessExit?.()
+        onExit?.()
         rejectPromise(cancelled())
         return
       }
@@ -147,6 +147,12 @@ export function createEngineRunner(cfg: RunnerConfig) {
       })
       running.add(child)
       if (child.pid) cfg.onSpawn?.(child.pid)
+      let gone = false
+      const markGone = (): void => {
+        if (gone) return
+        gone = true
+        onExit?.()
+      }
 
       const finish = (fn: () => void): void => {
         if (settled) return
@@ -200,7 +206,7 @@ export function createEngineRunner(cfg: RunnerConfig) {
       child.stderr!.on('data', (c: Buffer) => err.push(c))
 
       child.on('error', (e: NodeJS.ErrnoException) => {
-        onProcessExit?.()
+        if (!child.pid) markGone() // never started, so no 'close' follows
         finish(() =>
           rejectPromise({
             code: e.code === 'ENOENT' ? 'ENGINE_MISSING' : 'ENGINE_START_FAILED',
@@ -211,7 +217,7 @@ export function createEngineRunner(cfg: RunnerConfig) {
       })
       child.on('close', (code, exitSignal) => {
         if (child.pid) cfg.onExit?.(child.pid)
-        onProcessExit?.()
+        markGone()
         out.end()
         err.end()
         log(`[engine ${command}] closed exitCode=${code} signal=${exitSignal ?? 'none'}`)

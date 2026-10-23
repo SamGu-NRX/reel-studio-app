@@ -26,6 +26,13 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
   `duration`, `hasAudio`, `fromGif`, `thumb`, `createdAt`). The sidecar is not part of project.json. A note
   may have empty `text` when it has attachments.
 
+## 2026-10-21 (cover picker)
+
+- `cover.manual` (bool): the person picked `cover.atSourceTime` from the cover suggestions in the app, so the
+  engine renders that exact frame and does no search around it. The app clears it when the slider moves,
+  and the AI's `set_cover` clears it. `cover.exact` (the AI looked at this frame; search 0.2 s around it)
+  is unchanged.
+
 ## 2026-10-20 (mirror)
 
 - `sources[].mirror` (boolean, absent = false): the take is mirrored (a front-camera selfie: posters, shirts and

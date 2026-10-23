@@ -49,6 +49,9 @@ export async function listLibrary(): Promise<LibraryBin[]> {
   return out
 }
 
+/** A Library file's URL. A symlink the person put in a Library folder may point anywhere; its target is
+ * theirs to show, so it is registered with the media protocol (which serves nothing else outside the
+ * Reel Studio folder). */
 export async function libraryMediaUrl(p: string, bust?: number): Promise<string> {
   if (binForFolder(p) !== null && (await fs.lstat(p).catch(() => null))?.isSymbolicLink()) {
     const target = await fs.realpath(p).catch(() => null)
