@@ -27,8 +27,8 @@ async function playheadTo(page: Page, seconds: number): Promise<void> {
 }
 
 async function addSound(page: Page, choice: string): Promise<void> {
-  await page.getByRole('button', { name: /^Add a sound at \d:\d\d$/ }).click()
-  const picker = page.getByRole('group', { name: /^Add a sound at/ })
+  await page.getByRole('button', { name: /^Add a sound effect at \d:\d\d$/ }).click()
+  const picker = page.getByRole('group', { name: /^Add a sound effect at/ })
   await expect(picker).toBeVisible()
   await picker.getByRole('radio', { name: choice }).click()
   await expect(picker.getByRole('radio', { name: choice })).toHaveAttribute('aria-checked', 'true')
@@ -63,11 +63,12 @@ test('sounds: add at the playhead, a level, a removal and a fade, carried by the
   // on the timeline, and a mark picks its row
   const marks = page.getByRole('group', { name: 'Sound effects on the timeline' }).getByRole('button')
   await expect(marks).toHaveCount(2)
+  await expect(marks.nth(0)).toHaveAccessibleName(/^Whoosh at 0:0[23], on “\w+”$/)
   await expect(page.getByTestId('timeline-music')).toBeVisible()
   await marks.nth(1).click()
   await expect(rows.nth(1)).toHaveAttribute('aria-current', 'true')
   await expect(rows.nth(1)).toBeInViewport()
-  await expect(marks.nth(1)).toHaveAttribute('aria-pressed', 'true')
+  await expect(marks.nth(1)).toHaveAttribute('aria-current', 'true')
 
   await page.getByRole('button', { name: 'Make Version 2' }).click()
   await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 })
@@ -79,10 +80,17 @@ test('sounds: add at the playhead, a level, a removal and a fade, carried by the
   // ---- a level, a removal, a sound added at the playhead, the music's fade-in ----
   await page.getByRole('button', { name: 'Edit it myself' }).click()
   await page.getByRole('tab', { name: 'Sound' }).click()
-  const level = page.getByRole('slider', { name: /^Level of Whoosh at/ })
+  const level = page.getByRole('slider', { name: /^How loud the whoosh at \d:\d\d is$/ })
   await level.focus()
   for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowLeft')
   await expect(rows.nth(0)).toContainText('−6 dB')
+  // Escape closes an open picker wherever focus is, and leaves Edit it myself open
+  await page.getByRole('button', { name: /^Add a sound effect at/ }).click()
+  await expect(page.getByTestId('sfx-picker')).toBeVisible()
+  await level.focus()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('sfx-picker')).toHaveCount(0)
+  await expect(page.getByTestId('drawer')).toBeVisible()
   await page.getByRole('button', { name: /^Remove Hit at/ }).click()
   await expect(rows).toHaveCount(1)
   await playheadTo(page, 9)
@@ -90,7 +98,8 @@ test('sounds: add at the playhead, a level, a removal and a fade, carried by the
   await expect(rows.nth(1).getByRole('button').first()).toHaveText(/^Ding at 0:(09|10) · on “\w+”$/)
   const fadeIn = page.getByRole('slider', { name: 'Music fade-in' })
   await fadeIn.focus()
-  for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowRight')
+  // 0.6 s to 1.2 s in steps of 0.05 s
+  for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowRight')
   await expect(page.getByTestId('fades')).toContainText('1.2 s')
   await expect(page.getByTestId('change-count')).toHaveText('4 changes')
   await shot(page, 'sounds-01-edited')
@@ -106,7 +115,7 @@ test('sounds: add at the playhead, a level, a removal and a fade, carried by the
   expect(v3.sfx[1].at.word).toBeTruthy()
   // the version's line says what changed
   await expect(page.locator('.nt-res[data-v="3"]')).toContainText('music fades in over 1.2 s')
-  await expect(page.locator('.nt-res[data-v="3"] + .acc')).toContainText('Whoosh level')
+  await expect(page.locator('.nt-res[data-v="3"] + .acc')).toContainText('Whoosh volume')
 
   await app.close()
 })

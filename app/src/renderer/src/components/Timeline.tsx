@@ -18,11 +18,11 @@ export interface TimelineMark {
 
 /** What Edit it myself adds to the timeline while it is open (ShowMeHow.tsx). Times are on the version's clock. */
 export interface TimelineAudio {
-  /** each sound effect at its hit, by its moment key, with its name and why it plays there */
-  sounds: { key: string; at: number; label: string }[]
+  /** each sound effect at its hit, by its moment key, with its name and why it plays there; `off`: it won't play */
+  sounds: { key: string; at: number; label: string; off: boolean }[]
   /** the song's fade-in and fade-out in seconds, or null with no song */
   music: { fadeIn: number; fadeOut: number } | null
-  /** where one kept span meets the next: the voice blends there */
+  /** the cuts: where one kept span meets the next, and the voice fades out and in */
   joins: number[]
 }
 
@@ -181,12 +181,12 @@ export function Timeline({
   const groups = markGroups(marks, duration, width)
   const sounds = audio ? markGroups(audio.sounds, duration, width) : []
   const tipSide = (at: number): string => (at / duration < 0.2 ? ' start' : at / duration > 0.8 ? ' end' : '')
-  // the song's level under the rail: up over its fade-in, down over its fade-out (the two never overlap)
+  // the song's fades under the rail: a ramp up at the start and down at the end, joined by a hairline at full level
   const ramp = (() => {
-    if (!audio?.music || !duration) return ''
-    const fi = Math.min(audio.music.fadeIn / duration, 0.5) * 1000
-    const fo = Math.min(audio.music.fadeOut / duration, 0.5) * 1000
-    return `M0 6L${fi.toFixed(1)} 0H${(1000 - fo).toFixed(1)}L1000 6Z`
+    if (!audio?.music || !duration) return null
+    const fi = (Math.min(audio.music.fadeIn / duration, 0.5) * 1000).toFixed(1)
+    const fo = (1000 - Math.min(audio.music.fadeOut / duration, 0.5) * 1000).toFixed(1)
+    return { fades: `M0 6L${fi} 0V6ZM${fo} 0L1000 6H${fo}Z`, level: `M${fi} 0.5H${fo}` }
   })()
   return (
     <div className="tl" onPointerDown={down}>
@@ -208,7 +208,8 @@ export function Timeline({
         <span className="tl-fill" ref={fill} aria-hidden />
         {ramp && (
           <svg className="tl-music" viewBox="0 0 1000 6" preserveAspectRatio="none" aria-hidden data-testid="timeline-music">
-            <path d={ramp} />
+            <path className="fade" d={ramp.fades} />
+            <path className="level" d={ramp.level} />
           </svg>
         )}
         {duration > 0 && audio?.joins.map((t) => <span key={t} className="tl-join" style={{ left: pct(t) }} aria-hidden data-testid="timeline-join" />)}
@@ -265,13 +266,14 @@ export function Timeline({
           {sounds.map(({ at, items }) => {
             const key = items[0].key
             const on = items.some((m) => m.key === selectedSound)
+            const off = items.every((m) => m.off)
             return (
               <button
                 key={key}
-                className={`tl-sound${on ? ' on' : ''}`}
+                className={`tl-sound${on ? ' on' : ''}${off ? ' off' : ''}`}
                 style={{ left: pct(at) }}
-                aria-label={items.map((m) => m.label).join('; ')}
-                aria-pressed={on}
+                aria-label={items.map((m) => `${m.label.replace(' · ', ', ')}${m.off ? ", won't play" : ''}`).join('; ')}
+                aria-current={on || undefined}
                 onPointerEnter={() => setLit(key)}
                 onPointerLeave={() => setLit(null)}
                 onFocus={() => setLit(key)}
@@ -282,6 +284,9 @@ export function Timeline({
                 }}
                 data-testid="timeline-sound"
               >
+                <svg viewBox="0 0 10 12" aria-hidden>
+                  <path d="M1.5 1h7a.5.5 0 0 1 .5.5V7l-4 4-4-4V1.5a.5.5 0 0 1 .5-.5z" />
+                </svg>
                 {lit === key && (
                   <span className={`tl-tip${tipSide(at)}`}>
                     {items.map((m) => {
@@ -289,6 +294,7 @@ export function Timeline({
                       return (
                         <span key={m.key}>
                           <b>{what}</b> {why}
+                          {m.off && " · won't play"}
                         </span>
                       )
                     })}

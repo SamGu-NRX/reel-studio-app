@@ -57,7 +57,7 @@ export function versionRows(before: ProjectJson | null, after: ProjectJson, leng
   const was = new Map((before?.sfx ?? []).map((x) => [momentKey(x.at), x]))
   for (const x of after.sfx ?? []) {
     const a = was.get(momentKey(x.at))
-    if (a && a.sound === x.sound) add(`${sfxName(x.sound).kind} level`, gainText(gainOf(a)), gainText(gainOf(x)))
+    if (a && a.sound === x.sound) add(`${sfxName(x.sound).kind} volume`, gainText(gainOf(a)), gainText(gainOf(x)))
   }
   add('Pictures', count(before?.broll?.length ?? 0, 'picture', 'pictures'), count(after.broll?.length ?? 0, 'picture', 'pictures'))
   add('Zooms', count(before?.zooms?.length ?? 0, 'zoom', 'zooms'), count(after.zooms?.length ?? 0, 'zoom', 'zooms'))

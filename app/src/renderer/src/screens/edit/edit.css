@@ -59,7 +59,7 @@ label.edit-row-main { flex-direction: row; align-items: center; gap: 10px; curso
 .edit-sliders { display: flex; flex-direction: column; gap: 2px; }
 .edit-slider { display: grid; grid-template-columns: 104px minmax(0, 1fr) 52px; align-items: center; gap: 10px; min-height: 28px; }
 .edit-slider-label { color: var(--ink-2); font-size: var(--fs-sm); line-height: var(--lh-sm); }
-.edit-slider .slider { max-width: none; margin: 0; }
+.edit-slider .slider { max-width: none; height: 24px; margin: 0; }
 .edit-slider-value { text-align: right; color: var(--ink-2); font-size: var(--fs-sm); }
 
 /* Each sound effect: what, when and why (picks it), Remove; which one and Preview; its level. The row picked here or
@@ -76,7 +76,7 @@ html.kb .sfx-row { transition: none; }
 @media (hover: hover) and (pointer: fine) { .sfx-name:hover .edit-row-title { text-decoration: underline; text-decoration-color: var(--ink-4); text-underline-offset: 3px; } }
 .sfx-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .sfx-controls select.input { height: 28px; width: auto; max-width: 100%; font-size: var(--fs-sm); padding: 0 30px 0 10px; background-position: right 8px center; }
-.sfx-row .edit-slider { grid-template-columns: 40px minmax(0, 1fr) 52px; margin-top: 4px; }
+.sfx-row .edit-slider { grid-template-columns: 64px minmax(0, 1fr) 52px; margin-top: 4px; }
 
 /* Add a sound: grows from its button, in the list's flow, so nothing covers the sounds above it. */
 .sfx-picker {
@@ -94,7 +94,9 @@ html.kb .sfx-picker { transition: none; }
 .sfx-chip {
   height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong);
   font: inherit; font-size: var(--fs-sm); font-weight: 520; color: var(--ink-2); cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease, transform 120ms var(--ease-out);
+  transition: background-color 150ms cubic-bezier(.2, .8, .2, 1), color 150ms cubic-bezier(.2, .8, .2, 1), transform 150ms cubic-bezier(.2, .8, .2, 1);
+  /* the arrow keys move focus along the chips: the sticky footer never covers the focused one */
+  scroll-margin-bottom: 64px;
 }
 .sfx-chip.on { background: var(--ink); color: #fff; box-shadow: none; }
 .sfx-chip:active { transform: scale(.97); }
@@ -102,7 +104,12 @@ html.kb .sfx-picker { transition: none; }
 html.kb .sfx-chip { transition: none; }
 html.kb .sfx-chip:active { transform: none; }
 html.kb :is(.sfx-chip, .sfx-name):focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-.sfx-picker-f { display: flex; justify-content: flex-end; gap: 6px; }
+/* Add stays in reach while the person listens down the list: the footer sticks to the panel's bottom edge. */
+.sfx-picker-f {
+  position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 6px;
+  margin: 0 -12px -12px; padding: 10px 12px 12px; background: var(--surface); border-radius: 0 0 var(--r-lg) var(--r-lg);
+  box-shadow: 0 -1px 0 var(--line);
+}
 
 .picture-thumb { width: 36px; height: 48px; flex: none; border: 0; padding: 0; border-radius: var(--r-sm); overflow: hidden; background: var(--sunk); color: var(--ink-3); display: grid; place-items: center; cursor: pointer; }
 .picture-thumb:disabled { cursor: default; }
@@ -142,7 +149,8 @@ html.kb .library-pick:active { transform: none; }
 .edit-picture { position: absolute; top: 12%; left: 22%; width: 56%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 3cqw; box-shadow: 0 2cqw 6cqw rgba(0, 0, 0, .35); }
 
 @media (prefers-reduced-motion: reduce) {
-  .sfx-picker { transition: opacity 150ms ease; }
+  .sfx-picker { transition: opacity 150ms cubic-bezier(.2, .8, .2, 1); }
+  .sfx-chip, .sfx-chip:active { transition-property: background-color, color; transform: none; }
   @starting-style { .sfx-picker { transform: none; } }
   .edit-during { transition: none; }
   .library-pick, .library-pick:active { transition: none; transform: none; }

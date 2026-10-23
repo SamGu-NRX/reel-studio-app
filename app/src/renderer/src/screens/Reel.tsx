@@ -84,6 +84,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   // while Edit it myself is open: what the timeline draws for its Sound tab, and the sound picked there or on it
   const [audio, setAudio] = useState<TimelineAudio | null>(null)
   const [sound, setSound] = useState<string | null>(null)
+  const [reveal, setReveal] = useState(0)
   // the waiting hand edit Edit it myself is changing (its Edit in the log), or null for a new one
   const [handId, setHandId] = useState<string | null>(null)
   const [stage, setStage] = useState<HTMLElement | null>(null)
@@ -758,7 +759,10 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     marks={drawer ? [] : marks}
                     audio={drawer ? audio : null}
                     selectedSound={sound}
-                    onSound={setSound}
+                    onSound={(k) => {
+                      setSound(k)
+                      setReveal((n) => n + 1)
+                    }}
                     onRange={(r) => {
                       if (!hasVersions || aiOff) return
                       setChip(r)
@@ -794,6 +798,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
               onPreview={setPreview}
               onTab={(t) => setDrawer(t)}
               sound={sound}
+              reveal={reveal}
               onSound={setSound}
               onAudio={setAudio}
             />

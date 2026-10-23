@@ -21,7 +21,7 @@ export interface SoundEffect {
 
 /** Each job in the pack, named for a person, with what it is for. The order is the picker's. */
 export const JOBS: { kind: string; name: string; purpose: string }[] = [
-  { kind: 'whoosh', name: 'Whoosh', purpose: 'for a change of picture' },
+  { kind: 'whoosh', name: 'Whoosh', purpose: 'for a cut' },
   { kind: 'impact', name: 'Hit', purpose: 'to land a big moment' },
   { kind: 'pop', name: 'Pop', purpose: 'when something appears' },
   { kind: 'riser', name: 'Build-up', purpose: 'rises into a moment' },
@@ -61,6 +61,19 @@ export const gainOf = (s: Sfx): number => Math.min(SFX_GAIN.max, Math.max(SFX_GA
 
 /** How loud a preview plays a sound, from its level: half volume at 0 dB, full at the top of the slider. */
 export const sfxVolume = (s: Sfx): number => Math.min(1, 0.5 * 10 ** (gainOf(s) / 20))
+
+/**
+ * The sounds the player has to add while Edit it myself is open: those the version on screen doesn't already
+ * play, because their moment or their sound is new. A sound that only changed level is left to the version, which
+ * plays it at the old level: adding it again would play it twice, louder even when it was turned down.
+ */
+export function newToTheEar(before: Sfx[], now: Sfx[]): Sfx[] {
+  const had = new Map(before.map((x) => [momentKey(x.at), x.sound]))
+  return now.filter((x) => had.get(momentKey(x.at)) !== x.sound)
+}
+
+/** "a quieter whoosh", "a louder hit": a level change on one sound, in words. */
+export const levelChange = (before: Sfx, after: Sfx): string => `a ${gainOf(after) < gainOf(before) ? 'quieter' : 'louder'} ${sfxName(after.sound).kind.toLowerCase()}`
 
 /** The engine plays one sound at a time, at most one every two seconds (sfx.py MIN_GAP). */
 export const SFX_GAP = 2
@@ -119,9 +132,12 @@ export function sfxWord(s: Sfx, broll: ProjectJson['broll']): string | null {
   return null
 }
 
-/** Why a sound plays where it does: "as the picture changes", "as a picture comes in", "on “flour”". */
+/**
+ * Why a sound plays where it does: "on a cut", "as a picture comes in", "on “flour”". A join is called a cut
+ * on screen: it is where the Cut tab took something out, and "join" already means joining subtitle lines.
+ */
 export function momentWhy(at: SfxMoment, said: (id: string) => string | undefined): string {
-  if (at.cut) return 'as the picture changes'
+  if (at.cut) return 'on a cut'
   if (at.broll) return 'as a picture comes in'
   const w = at.word ? said(at.word)?.trim().replace(/[.,!?;:]+$/, '') : undefined
   return w ? `on “${w}”` : 'on a word'
@@ -145,7 +161,7 @@ export function momentAt(t: number, c: VersionClock, joins: Join[], taken: Set<s
  * doesn't cover its mark. */
 export const leadIn = (t: number): number => Math.max(0, t - 1)
 
-/** The sound the picker offers first for a moment: a whoosh on a change of picture, a pop on a word. */
+/** The sound the picker offers first for a moment: a whoosh on a cut, a pop on a word. */
 export const firstChoice = (at: SfxMoment): string => (at.word ? 'pop-soft' : 'whoosh-quick')
 
 /** The music's fade-in and fade-out in seconds, as music.py fade_lengths reads them (absent: its defaults). */
@@ -161,3 +177,57 @@ export const FADE_MAX = 2
 
 /** "0.6 s", "0.05 s", "2 s". */
 export const secondsText = (s: number): string => `${Number(s.toFixed(2))} s`
+
+/** One placed sound, in the words and the time the person sees. */
+export interface SoundRow {
+  s: Sfx
+  key: string
+  t: number | null
+  title: string
+  why: string
+  /** why the engine will leave it out, or null */
+  warn: string | null
+}
+
+/**
+ * The reel's sounds in the order they play, each with what it is, when, why there, and whether it will play. With
+ * the pack (`timing`, by sound id), the engine's other reasons hold too (sfx.py plan): a sound whose lead-up would
+ * start before the video, and one that starts before the last placed one ends.
+ */
+export function soundRows(
+  sfx: Sfx[],
+  c: VersionClock,
+  joins: Join[],
+  broll: ProjectJson['broll'],
+  keptNow: Set<string>,
+  said: (id: string) => string | undefined,
+  timing?: Map<string, Pick<SoundEffect, 'onsetMs' | 'seconds'>>
+): SoundRow[] {
+  const rows = sfx
+    .map((s) => {
+      const t = soundTime(s, c, joins, broll)
+      const word = sfxWord(s, broll)
+      const cut = !!word && !keptNow.has(word)
+      return { s, key: momentKey(s.at), t, title: soundTitle(s, t), why: momentWhy(s.at, said), warn: cut ? "Its word is cut, so it won't play." : t === null ? "Its moment isn't in this version, so it won't play." : null }
+    })
+    .sort((a, b) => (a.t ?? Infinity) - (b.t ?? Infinity))
+  // the engine plays one at a time, two seconds apart, each after the last one placed has ended
+  let last: { t: number; end: number } | null = null
+  for (const r of rows) {
+    if (r.warn || r.t === null) continue
+    const snd = timing?.get(r.s.sound)
+    const start = r.t - (snd?.onsetMs ?? 0) / 1000
+    if (start < 0) r.warn = "Too close to the start, so it won't play."
+    else if (last && r.t - last.t < SFX_GAP) r.warn = "Less than 2 seconds after the sound before it, so it won't play. Remove one of them."
+    else if (last && start < last.end) r.warn = "It starts before the sound before it ends, so it won't play. Remove one of them."
+    else last = { t: r.t, end: start + (snd?.seconds ?? 0) }
+  }
+  return rows
+}
+
+/** The moments a new sound can't go on: one that has a sound, and a word (or the cut it starts) this edit cuts. */
+export function takenMoments(rows: SoundRow[], c: VersionClock, keptNow: Set<string>): Set<string> {
+  const taken = new Set(rows.map((r) => r.key))
+  for (const id of c.placed.keys()) if (!keptNow.has(id)) taken.add(momentKey({ word: id })).add(momentKey({ cut: id }))
+  return taken
+}

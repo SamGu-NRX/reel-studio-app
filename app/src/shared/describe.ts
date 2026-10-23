@@ -3,7 +3,7 @@
 import type { DropResult, ProjectJson } from './api'
 import { CAPTION_PRESETS, presetOf } from './caption-presets'
 import { isMirrored } from './mirror'
-import { gainOf, momentKey, musicFades, secondsText } from './sfx'
+import { gainOf, levelChange, momentKey, musicFades, secondsText } from './sfx'
 
 type Style = Record<string, unknown>
 
@@ -71,11 +71,11 @@ export function describeChange(before: ProjectJson, patch: Partial<ProjectJson>,
     const removed = [...was.keys()].filter((k) => !now.has(k)).length
     const kept = patch.sfx.flatMap((x) => (was.has(momentKey(x.at)) ? [[was.get(momentKey(x.at))!, x] as const] : []))
     const swapped = kept.filter(([a, b]) => a.sound !== b.sound).length
-    const levelled = kept.filter(([a, b]) => a.sound === b.sound && gainOf(a) !== gainOf(b)).length
+    const levelled = kept.filter(([a, b]) => a.sound === b.sound && gainOf(a) !== gainOf(b))
     if (added) parts.push(added === 1 ? 'added a sound effect' : `added ${added} sound effects`)
     if (removed) parts.push(removed === 1 ? 'removed a sound effect' : `removed ${removed} sound effects`)
     if (swapped) parts.push(swapped === 1 ? 'a different sound effect' : `${swapped} different sound effects`)
-    if (levelled) parts.push(levelled === 1 ? 'a sound effect at a new level' : `${levelled} sound effects at new levels`)
+    if (levelled.length) parts.push(levelled.length === 1 ? levelChange(...levelled[0]) : `${levelled.length} sound effects louder or quieter`)
   }
   if (patch.cover) {
     if ((patch.cover.text ?? null) !== (before.cover?.text ?? null)) parts.push(patch.cover.text ? 'new words on the cover' : 'no words on the cover')

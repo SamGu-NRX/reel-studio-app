@@ -14,10 +14,10 @@ import { CutTab, type CutMode } from './edit/CutTab'
 import { PicturesTab, pictureUrl } from './edit/PicturesTab'
 import { During, OnPhone, SkipRanges, SoundCues, type PlayerHandle } from './edit/preview'
 import { useEditSession } from './edit/session'
-import { soundPack, soundRows, SoundTab } from './edit/SoundTab'
+import { soundPack, SoundTab } from './edit/SoundTab'
 import { SubtitlesTab } from './edit/SubtitlesTab'
 import type { RenderSegment } from '../../../shared/moments'
-import { joinsOf, musicFades, sfxVolume, soundTime, type SoundEffect, type VersionClock } from '../../../shared/sfx'
+import { joinsOf, musicFades, newToTheEar, sfxVolume, soundRows, soundTime, type SoundEffect, type VersionClock } from '../../../shared/sfx'
 import type { TimelineAudio } from '../components/Timeline'
 import './edit/edit.css'
 
@@ -50,6 +50,7 @@ export function ShowMeHow({
   onPreview,
   onTab,
   sound = null,
+  reveal = 0,
   onSound,
   onAudio
 }: {
@@ -66,6 +67,8 @@ export function ShowMeHow({
   onTab?: (t: Tab) => void
   /** The sound picked here or on the timeline (its moment), and a pick from either. */
   sound?: string | null
+  /** Counts picks on the timeline (Reel.tsx). */
+  reveal?: number
   onSound?: (key: string | null) => void
   /** What the timeline draws while this is open: the sounds, the music's fades and the joins. */
   onAudio?: (a: TimelineAudio | null) => void
@@ -191,28 +194,30 @@ export function ShowMeHow({
   const vclock = useMemo((): VersionClock => ({ placed, segments, words: d.words, kept: base.kept }), [placed, segments, d.words, base.kept])
   const joins = useMemo(() => joinsOf(vclock), [vclock])
   const cues = useMemo(() => {
-    const had = new Set((base.p.sfx ?? []).map((x) => JSON.stringify(x)))
     const byId = new Map(pack.map((p) => [p.id, p]))
-    return (now.p.sfx ?? []).flatMap((x) => {
+    return newToTheEar(base.p.sfx ?? [], now.p.sfx ?? []).flatMap((x) => {
       const sound = byId.get(x.sound)
       const at = soundTime(x, vclock, joins, now.p.broll)
-      if (had.has(JSON.stringify(x)) || !sound || at === null) return []
+      if (!sound || at === null) return []
       return [{ at: Math.max(0, at - sound.onsetMs / 1000), url: sound.url, volume: sfxVolume(x) }]
     })
   }, [base.p.sfx, now.p.sfx, now.p.broll, pack, vclock, joins])
 
-  // The timeline under the phone shows what this tab changes: each sound at its moment, the music's ramps, the joins.
+  // The timeline under the phone shows what the Sound tab changes: each sound at its moment, the music's fades, the cuts.
   const said = useCallback((id: string) => d.words.find((w) => w.id === id)?.w, [d.words])
   const music = now.p.music
   const audio = useMemo((): TimelineAudio => {
-    const rows = soundRows(now.p.sfx ?? [], vclock, joins, now.p.broll, now.kept, said)
+    const rows = soundRows(now.p.sfx ?? [], vclock, joins, now.p.broll, now.kept, said, new Map(pack.map((p) => [p.id, p])))
     return {
-      sounds: rows.flatMap((r) => (r.t === null ? [] : [{ key: r.key, at: r.t, label: `${r.title} · ${r.why}` }])),
+      sounds: rows.flatMap((r) => (r.t === null ? [] : [{ key: r.key, at: r.t, label: `${r.title} · ${r.why}`, off: !!r.warn }])),
       music: music?.enabled !== false && music?.track ? musicFades(music) : null,
       joins: joins.map((j) => j.t)
     }
-  }, [now.p.sfx, now.p.broll, now.kept, music, vclock, joins, said])
-  useEffect(() => onAudio?.(audio), [audio, onAudio])
+  }, [now.p.sfx, now.p.broll, now.kept, music, vclock, joins, said, pack])
+  // a level or a fade being dragged changes the project, not always what the timeline draws: Reel re-renders only
+  // when it does
+  const audioKey = JSON.stringify(audio)
+  useEffect(() => onAudio?.(audio), [audioKey, onAudio]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => onAudio?.(null), [onAudio])
   // a sound picked on the timeline opens this tab on it
   useEffect(() => {
@@ -322,7 +327,7 @@ export function ShowMeHow({
       <div className="edit-b" role="tabpanel" id="edit-panel" aria-labelledby={`tab-${tab}`}>
         {tab === 'cut' && <CutTab {...tabProps} mode={cutMode} onMode={setCutMode} onLine={setLine} />}
         {tab === 'captions' && <SubtitlesTab {...tabProps} sample={sample.text} />}
-        {tab === 'music' && <SoundTab {...tabProps} vclock={vclock} joins={joins} selected={sound} onSelect={(k) => onSound?.(k)} />}
+        {tab === 'music' && <SoundTab {...tabProps} vclock={vclock} joins={joins} selected={sound} onSelect={(k) => onSound?.(k)} reveal={reveal} />}
         {tab === 'broll' && <PicturesTab {...tabProps} images={images} reloadImages={reloadImages} />}
         {tab === 'cover' && <CoverTab {...tabProps} loadPicks={loadPicks} />}
       </div>
