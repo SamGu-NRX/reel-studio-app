@@ -3,7 +3,7 @@
 import type { Phase } from './api'
 
 export type StepId = 'copy' | 'listen' | 'retakes' | 'edit' | 'sound' | 'subtitles' | 'video' | 'cover' | 'check'
-/** skipped = passed over without its work ever starting; stopped = started, then the AI editor gave up. */
+/** skipped = passed over without its work ever starting; stopped = started, then the editor gave up. */
 export type StepState = 'todo' | 'now' | 'done' | 'skipped' | 'stopped'
 export interface Step {
   id: StepId
@@ -28,9 +28,9 @@ const ORDER = Object.keys(STEP_LABEL) as StepId[]
 
 /** What a row says beside its label when its work did not happen. */
 export function stepNote(s: Step): string | null {
-  if (s.state === 'stopped') return 'Stopped: your AI editor gave up'
+  if (s.state === 'stopped') return 'Stopped: your editor gave up'
   if (s.state !== 'skipped') return null
-  return s.id === 'edit' ? 'Skipped: no AI editor' : 'Skipped'
+  return s.id === 'edit' ? 'Skipped: no editor' : 'Skipped'
 }
 
 // The final render's own messages (engine render.py), in the order it says them.
