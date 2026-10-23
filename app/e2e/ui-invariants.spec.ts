@@ -1,10 +1,8 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Locator, type Page } from '@playwright/test'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { APP_DIR, BASE, SHOTS, makeMedia, makeReel, passFirstRun } from './helpers'
 
-const BOOT = '/Users/samgu/Programming Projects/reel-studio-app-wt/redesign-build/tools/hidden-bootstrap.cjs'
-const PROOF = '/Users/samgu/Programming Projects/reel-studio-app-wt/redesign-build/logs/hidden-proof.log'
 const FIXED_SEEDS = [11, 29, 47, 83, 101, 149, 211, 307, 401, 503]
 type Action = 'play' | 'pause' | 'seek' | 'holdOriginal' | 'point' | 'compare' | 'edit' | 'switchVersion' | 'collapseSidebar' | 'resize' | 'escape'
 type Invariant = 'a' | 'b' | 'c' | 'd' | 'e' | 'f'
@@ -31,10 +29,11 @@ function rng(seed: number): () => number {
   }
 }
 
-async function launchHidden(mine: string): Promise<{ app: ElectronApplication; page: Page }> {
+/** The app on an isolated profile. Whatever runs the suite decides how its windows show (helpers.ts launch). */
+async function launchIsolated(mine: string): Promise<{ app: ElectronApplication; page: Page }> {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value
-  for (const key of ['ELECTRON_RUN_AS_NODE', 'CLIPROXY_API_KEY', 'NODE_OPTIONS']) delete env[key]
+  for (const key of ['ELECTRON_RUN_AS_NODE', 'NODE_OPTIONS']) delete env[key]
   Object.assign(env, {
     REELSTUDIO_TEST: '1',
     REELSTUDIO_USER_DATA: join(mine, 'user data'),
@@ -49,15 +48,10 @@ async function launchHidden(mine: string): Promise<{ app: ElectronApplication; p
     REELSTUDIO_MOCK_NOTE: '800'
   })
   mkdirSync(mine, { recursive: true })
-  const app = await electron.launch({ args: ['-r', BOOT, APP_DIR], cwd: APP_DIR, env })
+  const app = await electron.launch({ args: [APP_DIR], cwd: APP_DIR, env })
   try {
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
-    const pid = app.process().pid
-    if (!pid || !existsSync(PROOF) || !readFileSync(PROOF, 'utf8').includes(`loaded pid=${pid} `)) throw new Error(`hidden-window preload proof missing for pid ${pid}`)
-    const windows = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((win) => ({ visible: win.isVisible() })))
-    if (!windows.length || windows.some((win) => win.visible)) throw new Error(`Electron windows were not hidden: ${JSON.stringify(windows)}`)
-    console.log(`[ui-invariants] hidden pid=${pid} proof=loaded windows=${JSON.stringify(windows)}`)
     return { app, page }
   } catch (error) {
     await app.close().catch(() => {})
@@ -250,7 +244,7 @@ for (const seed of seeds) {
     const log: Step[] = []
     const recorded: RecordedViolation[] = []
     const media = makeMedia()
-    const { app, page } = await launchHidden(join(BASE, `ui-invariants-${seed}-${testInfo.retry}`))
+    const { app, page } = await launchIsolated(join(BASE, `ui-invariants-${seed}-${testInfo.retry}`))
     try {
       await passFirstRun(page)
       // REELSTUDIO_MOCK_NOTE connects the practice editor, so notes make versions and the moment chip exists
