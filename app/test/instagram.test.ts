@@ -232,6 +232,17 @@ describe('Instagram fixture HTTP', () => {
     await w.service.disconnect()
     expect(await w.store.load()).toBeNull(); w.done()
   })
+  it('lets quitting end a revoke that never answers and keeps the install token', async () => {
+    const w = await world(); await w.seed()
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', respond: (init) => new Promise((_, reject) => {
+      init.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+    }) })
+    const pending = w.service.disconnect()
+    await vi.waitFor(() => expect(w.steps).toEqual([]))
+    w.service.stop()
+    await expect(pending).rejects.toBeDefined()
+    expect(await w.store.load()).toMatchObject({ installToken: INSTALL }); w.done()
+  }, 2000)
   it('refuses to send a saved install token to a broker other than the configured origin', async () => {
     const w = await world(); await w.seed({ brokerUrl: 'https://other.example' })
     await expect(w.service.disconnect()).rejects.toMatchObject({ code: 'IG_TOKEN' })
