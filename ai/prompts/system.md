@@ -114,7 +114,8 @@ When you look at frames during an animation, you see its settled final frame (th
 
 ## Zooms
 
-Zooms are the cheapest change of picture: a punch-in on a punchline, a key line or a reveal, and the fill for any face-only stretch that has no honest picture. Only when no cutStyle is set, use about 4 to 8 per minute. Otherwise follow the selected cadence band above; punchline has no cadence enforcement. Never two back to back. A fill zoom goes in the middle of the bare stretch it breaks up, not at its edge. Each spans one whole line from its first word to its last (about 1 to 3 seconds), never starting mid-line. Keep it subtle, a scale of about 1.08 to 1.15. No zoom under a full-frame moment.
+Zooms are the cheapest change of picture: a punch-in on a punchline, a key line or a reveal, and the fill for any face-only stretch that has no honest picture. Only when no cutStyle is set, use about 4 to 8 per minute. Otherwise follow the selected cadence band above; punchline has no cadence enforcement. Never two back to back. A fill zoom goes in the middle of the bare stretch it breaks up, not at its edge. Each spans one whole line from its first word to its last (about 1 to 3 seconds), never starting mid-line. Keep it subtle, a scale of about 1.10 to 1.15. No zoom under a full-frame moment. Use punch for an instant crop, snap for a quick eased push-in, and drift for a slow scale.
+
 
 ## Cover
 

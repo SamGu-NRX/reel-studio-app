@@ -1128,15 +1128,13 @@ const tools: ToolDef[] = [
   },
   {
     name: 'set_zoom',
-    description: 'Replace authored zoom accents. Each spans a whole line. With cutStyle, the engine uses the preset framing and chooses one eligible moment per accentGroup using the seed; style framing continues with an empty list. Without cutStyle, scale ~1.08-1.15 and an empty list removes all zooms.',
-    parameters: S.obj({ zooms: S.arr(S.obj({ anchor: ANCHOR, scale: S.num('1.0-1.5', { minimum: 1, maximum: 1.6 }),
-      accentGroup: S.opt(S.str('same group for equally good candidate moments; with cutStyle the seed chooses one per group')) })) }),
+    description: 'Replace authored zoom accents. Choose punch for an instant crop, snap for a quick eased push-in, or drift for a slow scale. With cutStyle, the seed chooses one moment per accentGroup and style framing continues with an empty list. Without cutStyle, an empty list removes zooms.',
+    parameters: S.obj({ zooms: S.arr(S.obj({ anchor: ANCHOR, scale: S.opt(S.num('1.0-1.5', { minimum: 1, maximum: 1.6 })), kind: S.opt(S.enum(['punch', 'snap', 'drift'])), style: S.opt(S.enum(['snap'], 'legacy alias')),
+      accentGroup: S.opt(S.str('same group for equally good candidate moments')) })) }),
     async run(ctx, args) {
       const { t } = await load(ctx);
       args.zooms.forEach((z: any, i: number) => checkAnchor(t, z.anchor, `zooms[${i}]`));
-      await mutate(ctx, 'zooms', (p) => { p.zooms = args.zooms.filter((z: { scale: number }) => z.scale > 1.001)
-        .map((z: { anchor: WordAnchor; scale: number; accentGroup?: string | null }) => ({ anchor: z.anchor, scale: z.scale,
-          ...(z.accentGroup ? { accentGroup: z.accentGroup } : {}) })); });
+      await mutate(ctx, 'zooms', (p) => { p.zooms = args.zooms.filter((z: any) => z.scale == null || z.scale > 1.001).map((z: any) => ({ anchor: z.anchor, ...(z.scale == null ? {} : { scale: z.scale }), ...(z.kind ? { kind: z.kind } : {}), ...(z.style ? { style: z.style } : {}), ...(z.accentGroup ? { accentGroup: z.accentGroup } : {}) })); });
       return { content: { ok: true, count: ctx.project!.zooms.length }, summary: args.zooms.length ? 'Added a few zoom-ins on the big moments' : 'Took out the zooms' };
     },
   },
