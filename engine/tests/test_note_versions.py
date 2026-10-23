@@ -161,3 +161,20 @@ def test_merge_allocates_a_child_even_when_ours_is_the_unchanged_latest(project)
     assert metadata == {"parent": 2, "parents": [2, 1]}
     assert (project / "project.json").read_bytes() == live
     assert all((project / f).read_bytes() == content for f, content in saved.items())
+
+
+def test_a_branch_receipt_says_what_changed_since_its_parent_not_the_latest(project):
+    engine(project, "render")
+    p = json.loads((project / "project.json").read_text())
+    p["cut"]["gapCap"] = 0.3
+    (project / "project.json").write_text(json.dumps(p))
+    assert engine(project, "render")["version"] == 2
+    note = project / "work/notes/branch"
+    note.mkdir(parents=True)
+    (note / "edit.json").write_bytes((project / "project.json").read_bytes())
+
+    # the same edit as Version 2, branched from Version 1: against 1 the gap changed, against 2 nothing did
+    result = engine(project, "render", "--project-file", "work/notes/branch/edit.json", "--parent", "1")
+
+    assert result["version"] == 3
+    assert [f["kind"] for f in result["receipt"]["facts"]] == ["cut.gapCap"]
