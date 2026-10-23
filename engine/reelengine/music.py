@@ -37,8 +37,8 @@ from typing import Optional
 
 import numpy as np
 
-from .compose_util import (EngineError, ffmpeg_bin, log, probe, report, resolve_asset, run, word_end,
-                           word_start)
+from .compose_util import (EngineError, ffmpeg_bin, fmt_of, log, probe, report, resolve_asset, run,
+                           word_end, word_start)
 
 SR = 48000
 TARGET_LUFS = -14.0
@@ -272,19 +272,27 @@ def music_gain_curve(ctx, music: np.ndarray, voice: np.ndarray, mcfg: dict, offs
             if i < nb:
                 u = (k + 1) / (ramp + 1)
                 g[i] = max(g[i], intro[i] * (1 - u) + g[i] * u)
-    # word-anchored automation
-    autos = []
+    # Word automation and derived smash dips share the same gain curve and smoothing.
+    autos, spans = [], []
     for a in mcfg.get("automation") or []:
         t0 = word_start(ctx, a.get("fromWord")) if a.get("fromWord") else 0.0
         t1 = word_end(ctx, a.get("toWord")) if a.get("toWord") else None
         if t0 is None:
             continue
         t1 = t1 if t1 is not None else nb * HOP
+        spans.append((t0, t1, float(a.get("gainDb", 0.0))))
+    for seg in ctx.out_timeline:
+        if seg.join_transition == "smash":
+            # A 200 ms, -6 dB dip leaves room for the impact without ducking a whole
+            # sentence. These are untested starting values, not measured preferences.
+            t0 = round(seg.out_start * fmt_of(ctx)[2]) / fmt_of(ctx)[2]
+            spans.append((t0, t0 + 0.2, -6.0))
+    for t0, t1, gain_db in spans:
         i0, i1 = int((t0 - offset) / HOP), int(math.ceil((t1 - offset) / HOP))
         i0, i1 = max(0, i0), min(nb, i1)
         if i1 > i0:
-            g[i0:i1] += float(a.get("gainDb", 0.0))
-            autos.append({"from": round(t0, 3), "to": round(t1, 3), "gainDb": float(a.get("gainDb", 0.0))})
+            g[i0:i1] += gain_db
+            autos.append({"from": round(t0, 3), "to": round(t1, 3), "gainDb": gain_db})
     g = _smooth_db(g, HOP)
     rep = {"level": level, "voiceSpeechLUFS": round(V, 2), "musicMedianLUFS": round(m_med, 2),
            "targetGapDb": preset["gap"], "baseGainDb": round(base, 2), "automation": autos,
@@ -342,7 +350,8 @@ def build_audio(ctx, voice_wav) -> Path:
             raise EngineError("MUSIC_MISSING", f"music not found: {track}",
                               "The song for this video is missing. Pick another song.")
     effects = None
-    if (ctx.project or {}).get("sfx"):
+    smash_times = [s.out_start for s in ctx.out_timeline if s.join_transition == "smash"]
+    if (ctx.project or {}).get("sfx") or smash_times:
         # built before the cache lookup so a failure keeps them out of the key, not just out of the mix
         try:
             from . import sfx as sfxmod
@@ -355,6 +364,8 @@ def build_audio(ctx, voice_wav) -> Path:
             log(f"# sound effects skipped: {exc!r}")
     key = [3, str(voice_wav), voice_wav.stat().st_size, voice_wav.stat().st_mtime_ns,
            mcfg, str(track) if track else None, track.stat().st_mtime_ns if track else None, offset]
+    if smash_times:
+        key.append(["smash", smash_times, fmt_of(ctx)[2]])
     if effects is not None:
         key.append(fx_key)
         ctx.sfx_mixed = rows

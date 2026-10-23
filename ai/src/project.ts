@@ -13,7 +13,9 @@ export interface Source {
   mirror?: boolean;
   [k: string]: unknown;
 }
+export interface Join { transition: 'hard' | 'j' | 'l' | 'smash'; frames: number }
 export interface WordAnchor { from: string; to: string }
+export interface CutRange extends WordAnchor { join?: Join }
 export interface Word { id: string; source: string; s: number; e: number; w: string; [k: string]: unknown }
 export interface Transcript { words: Word[]; language?: string; [k: string]: unknown }
 
@@ -63,7 +65,7 @@ export interface Project {
   format: Format;
   sources: Source[];
   transcript: { file: string; language?: string };
-  cut: { keep: WordAnchor[]; gapCap: number; minSaving?: number; [k: string]: unknown };
+  cut: { keep: CutRange[]; gapCap: number; minSaving?: number; [k: string]: unknown };
   captions: Captions;
   music: Music;
   broll: Broll[];
@@ -135,6 +137,10 @@ export function validateProject(p: unknown, transcript?: Transcript): string[] {
   if (!Array.isArray(q.sources)) out.push('sources must be an array');
   if (!q.cut || !Array.isArray(q.cut.keep)) out.push('cut.keep must be an array');
   else if (!isNum(q.cut.gapCap) || q.cut.gapCap < 0) out.push('cut.gapCap must be a number >= 0');
+  if (Array.isArray(q.cut?.keep)) q.cut.keep.forEach((a: any, i: number) => {
+    const problem = joinProblem(a?.join, i);
+    if (problem) out.push(`cut.keep[${i}].join: ${problem}`);
+  });
   if (!q.captions || typeof q.captions.enabled !== 'boolean') out.push('captions.enabled must be a boolean');
   if (!q.music || typeof q.music.enabled !== 'boolean') out.push('music.enabled must be a boolean');
   if (!Array.isArray(q.broll)) out.push('broll must be an array');
@@ -363,15 +369,27 @@ export function approxDuration(t: Transcript, keep: WordAnchor[], gapCap: number
 
 const round = (x: number) => Math.round(x * 1000) / 1000;
 
+function joinProblem(join: unknown, index: number): string | null {
+  if (join === undefined) return null;
+  if (index === 0) return 'not allowed on the first range';
+  if (!join || typeof join !== 'object') return 'needs transition and frames';
+  const j = join as Partial<Join>;
+  if (!['hard', 'j', 'l', 'smash'].includes(j.transition ?? '')) return 'transition must be hard, j, l or smash';
+  if (!Number.isSafeInteger(j.frames) || j.frames! < 0) return 'frames must be a non-negative integer';
+  return null;
+}
+
 /** Merge adjacent/overlapping ranges in transcript order is NOT done: keep is output order. Normalize = drop empties. */
-export function normalizeKeep(t: Transcript, keep: WordAnchor[]): { keep: WordAnchor[]; problems: string[] } {
+export function normalizeKeep(t: Transcript, keep: CutRange[]): { keep: CutRange[]; problems: string[] } {
   const idx = wordIndex(t);
   const problems: string[] = [];
-  const out: WordAnchor[] = [];
+  const out: CutRange[] = [];
   keep.forEach((a, i) => {
-    const pr = anchorProblem(idx, a);
+    // Tool schemas use null for optional fields; persisted projects omit them.
+    const join = a.join ?? undefined;
+    const pr = anchorProblem(idx, a) ?? joinProblem(join, i);
     if (pr) problems.push(`keep[${i}]: ${pr}`);
-    else out.push({ from: a.from, to: a.to });
+    else out.push({ from: a.from, to: a.to, ...(join ? { join: { ...join } } : {}) });
   });
   // overlap check (same word kept twice plays twice; that is almost always a mistake)
   const seen = new Map<string, number>();
