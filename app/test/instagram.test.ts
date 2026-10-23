@@ -16,6 +16,7 @@ const NOW = Date.UTC(2026, 9, 23)
 const GRAPH = 'https://graph.instagram.com/v26.0'
 const BROKER = 'https://broker.example'
 const TOKEN = 'fabricated-instagram-token'
+const INSTALL = 'fabricated-install-token'
 const SCOPES = ['instagram_business_basic', 'instagram_business_content_publish', 'instagram_business_manage_insights']
 const PROFILE = { user_id: '123', username: 'fixture_creator', account_type: 'MEDIA_CREATOR' }
 const INPUT = { slug: 'fixture', version: 1, caption: 'A caption & #reel', cover: { kind: 'frame', offsetMs: 800 } }
@@ -83,6 +84,8 @@ async function world(opts: { dev?: boolean; enabled?: boolean; backend?: string;
         expect(url).toBe(step.url)
         expect(init.method ?? 'GET').toBe(step.method ?? 'GET')
         expect(init.redirect).toBe('error')
+        expect(url).not.toContain(INSTALL)
+        if (new URL(url).origin !== BROKER) expect(new Headers(init.headers).has('x-reel-install-token')).toBe(false)
         await step.inspect?.(init, new URL(url))
       } catch (error) { fixtureErrors.push(error); throw error }
       if (!step) throw new Error('unexpected HTTP')
@@ -95,7 +98,7 @@ async function world(opts: { dev?: boolean; enabled?: boolean; backend?: string;
   })
   activeService = service
   cleanup.push({ dir, service })
-  const seed = (extra = {}) => store.save({ accessToken: TOKEN, expiresAt: now + 30 * DAY, issuedAt: now - 2 * DAY, accountId: '123', username: 'fixture_creator', appId: '456', brokerUrl: BROKER, ...extra })
+  const seed = (extra = {}) => store.save({ accessToken: TOKEN, expiresAt: now + 30 * DAY, issuedAt: now - 2 * DAY, accountId: '123', username: 'fixture_creator', appId: '456', brokerUrl: BROKER, installToken: INSTALL, ...extra })
   const finished = () => steps.push({ url: `${GRAPH}/900?fields=status_code`, body: { status_code: 'FINISHED' } })
   const profile = (body: unknown = PROFILE) => steps.push({ url: `${GRAPH}/me?fields=user_id,username,account_type`, body })
   const stage = (image = false) => {
@@ -103,7 +106,8 @@ async function world(opts: { dev?: boolean; enabled?: boolean; backend?: string;
       video: { upload_url: 'https://storage.example/video?signature=fake', public_url: 'https://storage.example/video.mp4' },
       ...(image ? { cover: { upload_url: 'https://storage.example/cover?signature=fake', public_url: 'https://storage.example/cover.jpg' } } : {})
     }, inspect: (init) => {
-      expect(new Headers(init.headers).get('authorization')).toBe(`Bearer ${TOKEN}`)
+      expect(new Headers(init.headers).get('x-reel-install-token')).toBe(INSTALL)
+      expect(new Headers(init.headers).has('authorization')).toBe(false)
       expect(JSON.parse(String(init.body))).toEqual({ video_size: 19, cover_size: image ? 24 : null })
     } })
     steps.push({ url: 'https://storage.example/video?signature=fake', method: 'PUT', inspect: async (init) => {
@@ -158,7 +162,7 @@ async function world(opts: { dev?: boolean; enabled?: boolean; backend?: string;
       callback.searchParams.set('state', state)
       expect((await fetch(callback)).status).toBe(200)
     }
-    steps.push({ url: `${BROKER}/api/instagram/oauth/complete`, method: 'POST', body: { access_token: TOKEN, token_type: 'bearer', expires_in: 60 * DAY / 1000, permissions }, inspect: (init) => {
+    steps.push({ url: `${BROKER}/api/instagram/oauth/complete`, method: 'POST', body: { access_token: TOKEN, install_token: INSTALL, token_type: 'bearer', expires_in: 60 * DAY / 1000, permissions }, inspect: (init) => {
       const body = JSON.parse(String(init.body))
       expect(body.state).toBe(state)
       expect(createHash('sha256').update(body.code_verifier).digest('base64url')).toBe(challenge)
@@ -205,8 +209,39 @@ describe('Instagram fixture HTTP', () => {
     expect(await w.service.connect()).toEqual({ connected: true, accountId: '123', username: 'fixture_creator', expiresAt: NOW + 60 * DAY })
     const files = await fs.readdir(join(w.dir, 'settings'))
     expect(files).toEqual(['instagram-credentials.bin'])
-    expect((await fs.readFile(join(w.dir, 'settings', files[0]))).includes(Buffer.from(TOKEN))).toBe(false)
-    expect(await w.service.session()).toMatchObject({ connected: true, accountId: '123' })
+    const bytes = await fs.readFile(join(w.dir, 'settings', files[0]))
+    expect(bytes.includes(Buffer.from(TOKEN))).toBe(false)
+    expect(bytes.includes(Buffer.from(INSTALL))).toBe(false)
+    expect(await w.store.load()).toMatchObject({ installToken: INSTALL })
+    expect(await w.service.session()).toEqual({ connected: true, accountId: '123', username: 'fixture_creator', expiresAt: NOW + 60 * DAY })
+    w.done()
+  })
+  it.each(['network', 'server'])('reports %s revoke failure and retains the encrypted install token', async (failure) => {
+    const w = await world(); await w.seed()
+    const before = await fs.readFile(join(w.dir, 'settings', 'instagram-credentials.bin'))
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', status: 503, body: {},
+      ...(failure === 'network' ? { respond: async () => { throw new Error('fabricated connection loss') } } : {}) })
+    await expect(w.service.disconnect()).rejects.toMatchObject({ code: failure === 'network' ? 'IG_NETWORK' : 'IG_API' })
+    expect(await fs.readFile(join(w.dir, 'settings', 'instagram-credentials.bin'))).toEqual(before)
+    expect(await w.store.load()).toMatchObject({ installToken: INSTALL })
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', inspect: async (init) => {
+      expect(new Headers(init.headers).get('x-reel-install-token')).toBe(INSTALL)
+      expect(new Headers(init.headers).has('authorization')).toBe(false)
+      expect(await w.store.load()).toMatchObject({ installToken: INSTALL })
+    } })
+    await w.service.disconnect()
+    expect(await w.store.load()).toBeNull(); w.done()
+  })
+  it('refuses to send a saved install token to a broker other than the configured origin', async () => {
+    const w = await world(); await w.seed({ brokerUrl: 'https://other.example' })
+    await expect(w.service.disconnect()).rejects.toMatchObject({ code: 'IG_TOKEN' })
+    expect(await w.store.load()).toMatchObject({ installToken: INSTALL })
+    expect(w.calls).toEqual([]); w.done()
+  })
+  it('treats a saved connection without an install token as disconnected', async () => {
+    const w = await world(); await w.seed({ installToken: undefined })
+    expect(await w.service.session()).toEqual({ connected: false })
+    await expect(w.service.publish(INPUT)).rejects.toMatchObject({ code: 'IG_TOKEN' })
     w.done()
   })
   it('refuses a connection missing insights permission', async () => {
@@ -251,14 +286,17 @@ describe('Instagram fixture HTTP', () => {
   it('refreshes a still-valid token after an OAuth expiry response and retries insights once', async () => {
     const w = await world(); await w.seed(); await w.published()
     w.steps.push({ url: insightsUrl, status: 400, body: { error: { code: 190, error_subcode: 463 } } })
-    w.steps.push({ url: `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${TOKEN}`, body: { access_token: 'fabricated-renewed-token', token_type: 'bearer', expires_in: 60 * DAY / 1000 } })
+    w.steps.push({ url: `${BROKER}/api/instagram/oauth/refresh`, method: 'POST', body: { access_token: 'fabricated-renewed-token', token_type: 'bearer', expires_in: 60 * DAY / 1000 }, inspect: (init) => {
+      expect(new Headers(init.headers).get('x-reel-install-token')).toBe(INSTALL)
+      expect(JSON.parse(String(init.body))).toEqual({ access_token: TOKEN })
+    } })
     w.steps.push({ url: insightsUrl, body: { data: [] }, inspect: (init) => { expect(new Headers(init.headers).get('authorization')).toBe('Bearer fabricated-renewed-token') } })
     expect((await w.service.insights('fixture', 1, '789')).metrics?.plays).toBeNull()
-    expect((await w.store.load())?.accessToken).toBe('fabricated-renewed-token'); w.done()
+    expect(await w.store.load()).toMatchObject({ accessToken: 'fabricated-renewed-token', installToken: INSTALL }); w.done()
   })
   it('refreshes proactively near expiry and asks to reconnect once a token has expired', async () => {
     const w = await world(); await w.seed({ expiresAt: NOW + DAY }); await w.published()
-    w.steps.push({ url: `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${TOKEN}`, body: { access_token: 'fabricated-fresh', token_type: 'bearer', expires_in: 60 * DAY / 1000 } })
+    w.steps.push({ url: `${BROKER}/api/instagram/oauth/refresh`, method: 'POST', body: { access_token: 'fabricated-fresh', token_type: 'bearer', expires_in: 60 * DAY / 1000 }, inspect: (init) => expect(new Headers(init.headers).get('x-reel-install-token')).toBe(INSTALL) })
     w.steps.push({ url: insightsUrl, body: { data: [] } })
     await w.service.insights('fixture', 1, '789'); w.done()
     w.tick(61 * DAY)
@@ -351,13 +389,15 @@ describe('Instagram fixture HTTP', () => {
     const w = await world(); await w.seed({ expiresAt: NOW + DAY }); await w.published()
     let started!: () => void
     const began = new Promise<void>((resolve) => { started = resolve })
-    w.steps.push({ url: `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${TOKEN}`, respond: (init) => new Promise((_resolve, reject) => {
+    w.steps.push({ url: `${BROKER}/api/instagram/oauth/refresh`, method: 'POST', respond: (init) => new Promise((_resolve, reject) => {
       started()
       init.signal?.addEventListener('abort', () => reject(new Error('aborted fixture')), { once: true })
     }) })
     const insight = w.service.insights('fixture', 1, '789')
     const failure = expect(insight).rejects.toMatchObject({ code: 'IG_CANCELLED' })
-    await began; await w.service.disconnect(); await failure
+    await began
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', body: {} })
+    await w.service.disconnect(); await failure
     expect(await w.store.load()).toBeNull(); w.done()
   })
   it('wires the IPC publish and insights calls and restricts configuration to dev mode', async () => {
@@ -368,6 +408,7 @@ describe('Instagram fixture HTTP', () => {
     expect(await handlers.get('instagram:publish')?.(INPUT)).toEqual(POST)
     w.steps.push({ url: insightsUrl, body: { data: [{ name: 'views', total_value: { value: 7 } }] } })
     expect(await handlers.get('instagram:insights')?.('fixture', 1, '789')).toMatchObject({ metrics: { plays: 7 } })
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', body: {} })
     await handlers.get('instagram:configure')?.({ instagramEnabled: false, instagramAppId: null, instagramBrokerUrl: null, instagramUploadOrigins: [] })
     expect(saved).toMatchObject({ instagramEnabled: false })
     registerInstagramIpc({ dev: false, service: w.service, handle: (channel, fn) => { handlers.set(channel, (...args) => fn(undefined, ...args)) }, saveSettings: async () => { throw new Error('must not save') } })
