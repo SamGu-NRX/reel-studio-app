@@ -150,6 +150,17 @@ describe('TikTok fixture HTTP', () => {
     expect(result).toEqual({ connected: true, accountId: 'fixture-open-id', displayName: 'Fixture creator', expiresAt: NOW + 86400000, scopes: SCOPES.slice(0, 3) })
     expect(await w.service.session()).toEqual(result); w.done()
   })
+  it('lets quitting end a revoke that never answers and keeps the install token', async () => {
+    const w = await world(); await w.seed()
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, raw: true, respond: (init) => new Promise((_, reject) => {
+      init.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+    }) })
+    const pending = w.service.disconnect()
+    await vi.waitFor(() => expect(w.steps).toEqual([]))
+    w.service.stop()
+    await expect(pending).rejects.toBeDefined()
+    expect(await w.store.load()).toMatchObject({ installToken: INSTALL }); w.done()
+  }, 2000)
   it.each(['network', 'server'])('reports %s revoke failure and retains the encrypted install token', async (failure) => {
     const w = await world(); await w.seed()
     const before = await fs.readFile(join(w.dir, 'settings', 'tiktok-credentials.bin'))

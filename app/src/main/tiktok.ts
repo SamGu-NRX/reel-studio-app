@@ -184,7 +184,7 @@ export class TikTokService {
     this.stop(); this.connection = new AbortController()
     const clear = async () => {
       const saved = await this.tokens.load()
-      if (saved?.installToken) await this.broker(saved, '/api/install/revoke', {}, new AbortController().signal)
+      if (saved?.installToken) await this.broker(saved, '/api/install/revoke', {}, AbortSignal.any([this.connection.signal, AbortSignal.timeout(30_000)]))
       await this.tokens.clear()
     }
     const result = this.queue.then(clear, clear)
