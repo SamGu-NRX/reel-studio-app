@@ -94,6 +94,10 @@ export interface MatchBrief {
   /** the score after the moment, such as "1-1" */
   score?: string;
   players: BriefPlayer[];
+  /** the officials, such as "Referee: Stuart Attwell" */
+  officials?: string[];
+  /** every name each side may be called by, spelled right: what a misheard name may be corrected to */
+  squads?: { team: string; names: string[] }[];
   /** what a video model saw in the footage */
   description?: string;
   /** the title and post caption the producer planned; the edit may tighten them */

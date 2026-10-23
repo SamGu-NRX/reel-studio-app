@@ -124,6 +124,8 @@ export function briefText(b: MatchBrief): string {
     + line('Match', b.match) + line('Posting for', b.team) + line('Opponent', b.opponent) + line('Moment', b.moment)
     + line('Minute', b.minute) + line('Score after the moment', b.score)
     + (players ? `Players in this moment (the only names and photos you may show):\n${players}\n` : '')
+    + (b.officials?.length ? `Officials: ${b.officials.join('; ')}\n` : '')
+    + (b.squads ?? []).map((sq) => `${sq.team} names, spelled right: ${sq.names.join(', ')}\n`).join('')
     + line('What a video model saw in the footage', b.description)
     + line('Planned title', b.title) + line('Planned caption', b.caption)
     + (b.hashtags?.length ? `Planned hashtags: ${b.hashtags.join(' ')}\n` : '')

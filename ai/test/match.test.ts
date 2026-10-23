@@ -80,6 +80,12 @@ describe('a match edit', () => {
     }
   });
 
+  it('lists the officials and each side\'s names', () => {
+    const text = briefText({ kind: 'match', match: 'A v B', team: 'B', moment: 'm', players: [],
+      officials: ['Referee: Stuart Attwell', 'VAR: Jarred Gillett'], squads: [{ team: 'A', names: ['Bryan Mbeumo', 'Shaw'] }] });
+    expect(text).toContain("Officials: Referee: Stuart Attwell; VAR: Jarred Gillett\nA names, spelled right: Bryan Mbeumo, Shaw\n");
+  });
+
   it('puts the brief in a data block with each player and photo', () => {
     const text = briefText({ kind: 'match', match: 'A v B', team: 'B', moment: 'Solanke scores', minute: "90+1'", score: 'A 1-1 B',
       players: [{ name: 'Solanke', team: 'B', role: 'scorer', image: 'Library/Images/Solanke.png' }, { name: 'Tonali', team: 'B' }] });
