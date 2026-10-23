@@ -34,8 +34,8 @@ export type HandEntry = QueuedNote & { hand: NonNullable<QueuedNote['hand']> }
 export type StartHand = (slug: string, entry: HandEntry, record: (s: AppState) => void) => Promise<string>
 
 const STARTED = { code: 'NOT_QUEUED', userMessage: 'That note already started, so it can no longer change.' }
-export const STOPPED = 'Stopped. Nothing changed. Your note is waiting below: edit it, or press Resume to try it again.'
-export const BACK_IN_QUEUE = 'That note is waiting below. Press Resume to try it again.'
+export const STOPPED = 'Stopped. Nothing changed. Your note is waiting below: edit it, or press Send now to try it again.'
+export const BACK_IN_QUEUE = 'That note is waiting below. Press Send now to try it again.'
 
 /** The saved notes' ids, or null when project.json can't be read or its notes are not a list. */
 async function committed(slug: string): Promise<{ version: number; ids: Set<string> } | null> {

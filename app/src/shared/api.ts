@@ -228,7 +228,7 @@ export interface ProjectDetail extends ProjectSummary {
   lastError: { code: string; userMessage: string } | null
   /** Notes waiting their turn, in the order they will run. */
   queue: QueuedNote[]
-  /** True: the queue waits for Resume (after Stop, a failed note, or a restart). */
+  /** True: the queue waits for Send now (after Stop, a failed note, or a restart). */
   queueHeld: boolean
   /** `waitingForRender`: its render waits for another reel's (one render at a time); the bar holds. */
   job: { id: string; kind: JobKind; message: string; pct: number; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean; waiting: boolean; waitingForRender: boolean; steps?: Step[] } | null
