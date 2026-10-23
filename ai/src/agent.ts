@@ -9,6 +9,7 @@ const STAGE: Record<string, { message: string; pct: number }> = {
   set_gap_cap: { message: 'Tightening the pauses', pct: 28 },
   set_caption_style: { message: 'Adding captions', pct: 33 },
   add_caption_correction: { message: 'Adding captions', pct: 35 },
+  search_footage: { message: 'Searching your footage', pct: 40 },
   list_library: { message: 'Looking through your library', pct: 40 },
   choose_music: { message: 'Adding music', pct: 45 },
   set_music_automation: { message: 'Adding music', pct: 48 },
@@ -116,7 +117,7 @@ const FORMAT_CORRECTION = 'Your last reply could not be read, so nothing ran. Re
 /** Tools that only read, search or download into a fresh file: a run of them in one reply is
  * independent, so they execute together. Everything that changes project.json, renders, or makes an
  * animation (one renderer) runs alone, in the order the model wrote it. */
-export const PARALLEL_SAFE = new Set(['get_project', 'get_transcript', 'list_library', 'search_images', 'fetch_image', 'cover_candidates']);
+export const PARALLEL_SAFE = new Set(['get_project', 'get_transcript', 'search_footage', 'list_library', 'search_images', 'fetch_image', 'cover_candidates']);
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T, i: number) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);

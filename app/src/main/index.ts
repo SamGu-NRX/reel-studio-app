@@ -35,6 +35,7 @@ import {
 } from './store'
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { createJobManager } from './jobs'
+import { createFootageIndexer } from './footage-index'
 import { createLiveVideos } from './live-video'
 import { rememberQuestion, styleConsent } from './style-consent'
 import type { AgentResult } from './ai-types'
@@ -138,6 +139,8 @@ const feedback = createJobFeedback({
   test: TEST
 })
 if (TEST) (globalThis as { __reelFeedback?: unknown }).__reelFeedback = feedbackLog
+const footageIndex = createFootageIndexer({ runEngine, root: reelStudioRoot, busy: () => jobs.runningCount() > 0 })
+const indexLibrary = (): void => { if (!TEST) void footageIndex.request() }
 // Honest progress (main/progress.ts): phase times measured on this computer, per minute of video.
 const speedHistoryFile = (): string => join(settingsDir(), 'speed-history.json')
 const jobs = createJobManager(
@@ -153,7 +156,8 @@ const jobs = createJobManager(
       ((await readProject(slug)).sources ?? []).reduce((a: number, s: { duration?: number }) => a + (Number(s?.duration) || 0), 0)
   },
   // render events carry a playable URL (a stable copy for drafts: main/live-video.ts)
-  ((live) => (slug: string, e) => live(projectDir(slug), e))(createLiveVideos())
+  ((live) => (slug: string, e) => live(projectDir(slug), e))(createLiveVideos()),
+  footageIndex
 )
 const models = createModelManager(runEngine, (s) => broadcast('model:progress', s))
 // "Update available" notice (main/update-check.ts): one anonymous GET a day, never in test runs.
@@ -205,6 +209,7 @@ async function appInfo(): Promise<AppInfo> {
       process.platform
     ),
     firstRunDone: s.firstRunDone,
+    footageIndex: footageIndex.status(),
     engine: { mode: engineMode(), dir: engineDir(), python: pythonExe() },
     ai: aiSource,
     test: TEST,
@@ -308,6 +313,7 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
   const video = uniqueDest(exportsDir, `${name}.mp4`)
   const stem = basename(video, '.mp4')
   await fs.copyFile(v.videoPath, video)
+  indexLibrary()
   let cover: string | null = null
   const coverSrc = join(dirname(v.videoPath), 'cover.png')
   if (existsSync(coverSrc)) {
@@ -353,9 +359,16 @@ function registerIpc(): void {
     if (jobs.runningCount()) throw { code: 'BUSY', userMessage: 'Wait until your video is finished, then change where videos are kept.' }
     const root = basename(p) === 'Reel Studio' ? p : join(p, 'Reel Studio')
     await fs.mkdir(root, { recursive: true })
-    await saveSettings({ root })
-    setRootOverride(root)
-    await ensureRoot()
+    await footageIndex.pause()
+    try {
+      if (jobs.runningCount()) throw { code: 'BUSY', userMessage: 'Wait until your video is finished, then change where videos are kept.' }
+      await saveSettings({ root })
+      setRootOverride(root)
+      await ensureRoot()
+      indexLibrary()
+    } finally {
+      footageIndex.resume()
+    }
     return appInfo()
   })
 
@@ -385,7 +398,11 @@ function registerIpc(): void {
   })
 
   handle('model:status', () => models.status())
-  handle('model:download', () => models.download())
+  handle('model:download', async () => {
+    const status = await models.download()
+    if (status.installed) indexLibrary()
+    return status
+  })
   handle('model:cancel', () => models.cancel())
 
   handle('ai:providers', () => ai.providers())
@@ -418,7 +435,7 @@ function registerIpc(): void {
   handle('projects:create', async (_e, files: string[]) => {
     const videos = files.filter(isVideo)
     const others = files.filter((f) => !isVideo(f))
-    const skipped: DropResult[] = others.length ? await addToLibrary(others, runEngine, log) : []
+    const skipped: DropResult[] = others.length ? await addToLibrary(others, runEngine, log, indexLibrary) : []
     if (!videos.length) {
       const sorted = skipped.filter((s) => s.bin)
       throw {
@@ -542,7 +559,7 @@ function registerIpc(): void {
   })
   handle('library:add', async (_e, paths: string[]) => {
     await ensureRoot()
-    return addToLibrary(paths, runEngine, log)
+    return addToLibrary(paths, runEngine, log, indexLibrary)
   })
   handle('library:choose', async (_e, kind: 'music' | 'images') => {
     const filters =
@@ -556,7 +573,7 @@ function registerIpc(): void {
     })
     if (r.canceled || !r.filePaths.length) return []
     await ensureRoot()
-    return addToLibrary(r.filePaths, runEngine, log)
+    return addToLibrary(r.filePaths, runEngine, log, indexLibrary)
   })
 
   handle('style:rules', () => ai.styleRules())
@@ -676,6 +693,7 @@ app.whenReady().then(async () => {
   handleMediaProtocol(() => [reelStudioRoot(), projectsDir()])
   registerIpc()
   createWindow()
+  indexLibrary()
   updates.start() // a few seconds after the window, so launch is never slower
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -685,15 +703,16 @@ app.whenReady().then(async () => {
 let quitting = false
 app.on('before-quit', (e) => {
   void stopPhoneShare() // the "Send to my phone" link never outlives the app
-  if (quitting || !jobs.runningCount()) {
+  if (quitting) return
+  if (!jobs.runningCount() && footageIndex.status().state !== 'indexing') {
+    void footageIndex.stop()
     void killAllEngines()
     return
   }
   // Stop running work cleanly so the next start finds a tidy project.
   e.preventDefault()
   quitting = true
-  void jobs
-    .cancelAll()
+  void Promise.all([jobs.cancelAll(), footageIndex.stop()])
     .then(() => killAllEngines())
     .finally(() => app.quit())
 })

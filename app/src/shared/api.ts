@@ -215,6 +215,11 @@ export interface ProviderInfo {
   error?: UserError
 }
 
+export type FootageIndexStatus =
+  | { state: 'idle' | 'paused' }
+  | { state: 'indexing'; stage: string; pct: number; message: string }
+  | { state: 'error'; message: string }
+
 export interface AppInfo {
   version: string
   platform: string
@@ -222,6 +227,7 @@ export interface AppInfo {
   /** The root in friendly words: "Documents › Reel Studio". */
   rootDisplay: string
   firstRunDone: boolean
+  footageIndex: FootageIndexStatus
   engine: { mode: 'real' | 'fake'; dir: string; python: string }
   ai: 'package' | 'mock'
   test: boolean

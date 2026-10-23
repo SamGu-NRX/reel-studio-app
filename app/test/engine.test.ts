@@ -167,8 +167,6 @@ describe('engine runner (against the stand-in engine)', () => {
     expect(Date.now() - t0).toBeLessThan(15000)
     expect(pid).toBeGreaterThan(0)
     expect(grandchild).toBeGreaterThan(0)
-    // taskkill /T /F (or the process group kill) takes a moment.
-    for (let i = 0; i < 40 && (isAlive(pid) || isAlive(grandchild)); i++) await new Promise((r) => setTimeout(r, 100))
     expect(isAlive(pid)).toBe(false)
     expect(isAlive(grandchild)).toBe(false)
   }, 30000)

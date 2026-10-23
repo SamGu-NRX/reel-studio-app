@@ -179,7 +179,7 @@ def test_search_returns_speech_times_snapped_to_shots(library):
     assert hit["said"] == "twenty bucks."
     assert hit["t0"] == 0 and hit["t1"] == pytest.approx(1, abs=.11)
     assert hit["t0"] <= .25 < .8 <= hit["t1"]
-    assert hit["file"] == {"name": "a.mp4", "place": "Library", "online": True, "duration": 2.0}
+    assert hit["file"] == {"name": "a.mp4", "path": "Library/a.mp4", "place": "Library", "online": True, "duration": 2.0}
     assert hit["hit"].endswith(f"@{hit['t0']:.2f}-{hit['t1']:.2f}")
     assert not result["more"]
     assert command(root, "search", "--query", "absent")["hits"] == []
@@ -415,3 +415,48 @@ def test_cache_lookup_keeps_a_snapshot_during_garbage_collection(library, monkey
     assert segments[0]["n"] == len(words)
     with connect(root) as db:
         assert db.execute("SELECT count(*) FROM files").fetchone()[0] == 0
+
+
+def test_search_caches_one_midpoint_thumbnail_for_parallel_queries(library, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    root, _ = library
+    command(root, "index")
+    decodes = []
+    real_decode = tools.text_run
+
+    def decode(*args, **kwargs):
+        decodes.append(args)
+        return real_decode(*args, **kwargs)
+
+    monkeypatch.setattr(tools, "text_run", decode)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: command(root, "search", "--query", "twenty bucks"), range(2)))
+    assert len(decodes) == 1
+    hit = results[0]["hits"][0]
+    thumb = Path(hit["thumbnail"])
+    assert hit["file"]["path"] == "Library/a.mp4"
+    assert thumb.is_relative_to(root / ".index" / "thumbs")
+    assert thumb.name == f"{round((hit['t0'] + hit['t1']) / 2 * 1000)}.jpg"
+    assert results[1]["hits"][0]["thumbnail"] == str(thumb)
+    assert thumb.read_bytes().startswith(b"\xff\xd8")
+    stat = thumb.stat()
+
+    def no_decode(*args, **kwargs):
+        pytest.fail("a cached thumbnail must not decode the clip again")
+
+    monkeypatch.setattr(tools, "text_run", no_decode)
+    again = command(root, "search", "--query", "twenty bucks")["hits"][0]
+    assert again["thumbnail"] == str(thumb)
+    assert thumb.stat().st_mtime_ns == stat.st_mtime_ns
+
+
+def test_search_refuses_a_thumbnail_cache_outside_the_index(library, tmp_path):
+    root, _ = library
+    command(root, "index")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / ".index" / "thumbs").symlink_to(outside, target_is_directory=True)
+    from reelengine.proto import EngineError
+    with pytest.raises(EngineError, match="thumbnail cache folder is a symlink"):
+        command(root, "search", "--query", "twenty bucks")
+    assert list(outside.iterdir()) == []

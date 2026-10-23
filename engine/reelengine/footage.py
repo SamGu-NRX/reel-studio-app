@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import shutil
 import sqlite3
@@ -319,12 +320,52 @@ def lookup(root: Path, path: Path, model: str, language: str | None = None):
         return words, json.loads(row["segments"]), row["language"]
 
 
+def _thumbnail(root: Path, digest: str, source: Path, midpoint: float) -> str:
+    out = root / ".index" / "thumbs" / digest[:2] / digest
+    for folder in (root / ".index", root / ".index" / "thumbs", out.parent, out):
+        if folder.is_symlink():
+            raise EngineError("UNSAFE_PATH", "thumbnail cache folder is a symlink",
+                              "The footage thumbnail folder points elsewhere. Remove the index and try again.")
+        folder.mkdir(exist_ok=True)
+    target = out / f"{round(midpoint * 1000)}.jpg"
+    if target.is_symlink() or (out / "thumbs.sqlite").is_symlink():
+        raise EngineError("UNSAFE_PATH", "thumbnail cache file is a symlink",
+                          "A footage thumbnail points elsewhere. Remove the index and try again.")
+    if target.is_file():
+        return str(target)
+    # SQLite releases this per-file lock after a crash or cancellation. A still becomes
+    # visible only after its decode finishes, so parallel searches never read a partial JPEG.
+    with closing(sqlite3.connect(out / "thumbs.sqlite", timeout=65)) as owner:
+        owner.execute("BEGIN EXCLUSIVE")
+        if target.is_file():
+            return str(target)
+        for stale in out.glob("pending-*.jpg"):
+            stale.unlink()
+        fd, temporary = tempfile.mkstemp(prefix="pending-", suffix=".jpg", dir=out)
+        os.close(fd)
+        try:
+            tools.text_run([tools.ffmpeg(), "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+                            "-ss", f"{midpoint:.3f}", "-i", str(source), "-frames:v", "1",
+                            "-vf", "scale=320:-2", temporary], 60, "footage thumbnail")
+            if Path(temporary).stat().st_size == 0:
+                raise EngineError("NO_FRAME", f"No frame at {midpoint}", "I could not read a still from this clip.")
+            os.replace(temporary, target)
+            return str(target)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+
+
 def search(root: Path, query: str, *, limit: int = 8) -> dict:
     if not query.strip() or not 1 <= limit <= 8:
         raise EngineError("BAD_ARGS", "search needs a query and limit between 1 and 8",
                           "Enter some words to find and choose up to eight results.")
-    root = Path(root)
-    with closing(_open(root)) as db:
+    root = Path(root).resolve()
+    database = root / ".index" / "index.sqlite"
+    if not database.is_file():
+        return {"hits": [], "more": False, "backend": "none"}
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as db:
+        db.row_factory = sqlite3.Row
+        db.execute("BEGIN")
         fts = _has_fts(db)
         if fts:
             rows = db.execute("SELECT * FROM text_fts WHERE text_fts MATCH ? ORDER BY rank, hash, s",
@@ -332,7 +373,7 @@ def search(root: Path, query: str, *, limit: int = 8) -> dict:
         else:
             rows = db.execute("SELECT * FROM text_fts WHERE instr(lower(text), lower(?)) > 0 ORDER BY hash, s",
                               (query,))
-        hits, seen = [], set()
+        hits, sources, seen = [], [], set()
         for row in rows:
             digest = row["hash"]
             key = (digest, row["s"], row["e"])
@@ -340,10 +381,12 @@ def search(root: Path, query: str, *, limit: int = 8) -> dict:
                 continue
             paths = db.execute("SELECT * FROM paths WHERE hash=? ORDER BY rel", (digest,)).fetchall()
             current = next((p for p in paths if (root / "Library" / p["rel"]).is_file()
+                            and not (root / "Library" / p["rel"]).is_symlink()
+                            and (root / "Library" / p["rel"]).resolve().is_relative_to((root / "Library").resolve())
                             and _signature(root / "Library" / p["rel"]) == (p["size"], p["mtime_ns"])), None)
             if not paths or current is None:
                 continue
-            info = db.execute("SELECT duration FROM files WHERE hash=?", (digest,)).fetchone()
+            info = db.execute("SELECT duration, width FROM files WHERE hash=?", (digest,)).fetchone()
             s, e = row["s"], row["e"]
             if _done(db, digest, "shots", SHOTS_VERSION):
                 shot = db.execute("SELECT min(s), max(e) FROM shots WHERE hash=? AND e>? AND s<?",
@@ -351,11 +394,17 @@ def search(root: Path, query: str, *, limit: int = 8) -> dict:
                 if shot[0] is not None:
                     s, e = shot
             hits.append({"hit": f"{digest[:12]}@{s:.2f}-{e:.2f}",
-                         "file": {"name": Path(current["rel"]).name, "place": "Library",
+                         "file": {"name": Path(current["rel"]).name, "path": f"Library/{current['rel']}", "place": "Library",
                                   "online": True, "duration": info[0]},
-                         "t0": s, "t1": e, "said": row["text"]})
+                         "t0": s, "t1": e, "said": row["text"],
+                         "thumbnail": None})
+            sources.append((digest, root / "Library" / current["rel"], info[1]))
             seen.add(key)
             if len(hits) > limit:
                 break
-        return {"hits": hits[:limit], "more": len(hits) > limit,
-                "backend": "fts5" if fts else "literal"}
+    # Release the read snapshot before ffmpeg runs so indexing can commit concurrently.
+    for hit, (digest, source, width) in zip(hits[:limit], sources):
+        if width > 0:
+            hit["thumbnail"] = _thumbnail(root, digest, source, (hit["t0"] + hit["t1"]) / 2)
+    return {"hits": hits[:limit], "more": len(hits) > limit,
+            "backend": "fts5" if fts else "literal"}

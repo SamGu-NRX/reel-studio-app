@@ -147,9 +147,10 @@ export function createEngineRunner(cfg: RunnerConfig) {
         fn()
       }
 
+      let abortDrain: Promise<void> | null = null
       const onAbort = (): void => {
-        if (child.pid) void killTree(child.pid)
-        finish(() => rejectPromise(cancelled()))
+        abortDrain ??= child.pid ? killTree(child.pid) : Promise.resolve()
+        // The next engine owner must wait for the process group, including ffmpeg, to stop.
       }
       signal?.addEventListener('abort', onAbort, { once: true })
 
@@ -185,6 +186,10 @@ export function createEngineRunner(cfg: RunnerConfig) {
         out.end()
         err.end()
         log(`[engine ${command}] closed exitCode=${code} signal=${exitSignal ?? 'none'}`)
+        if (abortDrain) {
+          void abortDrain.then(() => finish(() => rejectPromise(cancelled())))
+          return
+        }
         finish(() => {
           const r = result as typeof result
           // A terminal protocol result survives a signal during engine shutdown.

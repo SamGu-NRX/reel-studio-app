@@ -1,5 +1,6 @@
 // Long-running work (first edit, notes, re-renders). One job per project at a time. Every event
 // goes to the renderer; app.json records the running job so a crash can be recovered at startup.
+import type { IdleWork } from './footage-index'
 import { randomUUID } from 'node:crypto'
 import type { JobEvent, JobKind, JobUpdate, Phase } from '../shared/api'
 import { addChat, cleanPartialVersions, projectDir, updateAppState } from './store'
@@ -36,7 +37,7 @@ interface Running {
   done: Promise<void>
 }
 
-export function createJobManager(broadcast: (e: JobEvent) => void, log: (s: string) => void, progress?: ProgressDeps, toVideo?: ToVideo) {
+export function createJobManager(broadcast: (e: JobEvent) => void, log: (s: string) => void, progress?: ProgressDeps, toVideo?: ToVideo, idleWork?: IdleWork) {
   const jobs = new Map<string, Running>()
 
   function forSlug(slug: string): Running | undefined {
@@ -74,6 +75,8 @@ export function createJobManager(broadcast: (e: JobEvent) => void, log: (s: stri
 
     job.done = (async () => {
       try {
+        await idleWork?.pause()
+        if (abort.signal.aborted) throw { code: 'CANCELLED', userMessage: 'Stopped.' }
         // Inside the try: if even this fails, the user gets an error instead of a job that never ends.
         if (slug) {
           await updateAppState(slug, (s) => {
@@ -147,6 +150,7 @@ export function createJobManager(broadcast: (e: JobEvent) => void, log: (s: stri
       } finally {
         clearInterval(tick)
         jobs.delete(id)
+        if (!jobs.size) idleWork?.resume()
       }
     })()
     return id
