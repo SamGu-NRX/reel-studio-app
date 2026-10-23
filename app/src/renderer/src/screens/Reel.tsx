@@ -669,7 +669,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     <div className="reel-page">
       <TitleBarSlot title={title} actions={actions} />
       <div className="reel-b">
-        <section className={`stage${compare ? ' comparing' : ''}`} aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
+        <section className={`stage${compare ? ' comparing' : ''}${pointing ? ' pointing' : ''}`} aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
           {planned ? (
             <PlannedStage title={d.title} onFiles={(p) => void addVideo(p)} />
           ) : (
@@ -702,7 +702,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     if (landing !== null && shown && shown === d.versions.find((v) => v.n === landing)?.video)
                       window.setTimeout(() => setLanding((l) => (l === landing ? null : l)), FADE_DONE_MS)
                   }}
-                  keepTime={!!compare}
+                  keepTime={!!compare || !!drawer}
                   onFailed={() => {
                     notify('That version could not be found. It may have been moved or deleted.', 'error')
                     if (onScreen) setSelected(onScreen.n)

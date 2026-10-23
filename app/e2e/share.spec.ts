@@ -4,7 +4,7 @@
 import { test, expect } from '@playwright/test'
 import { chmodSync, mkdirSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun } from './helpers'
+import { BASE, launch, makeMedia, passFirstRun, startReel } from './helpers'
 
 test('fails if Help improve is asked before a share that worked or a second time, or the last destination used is not first', async () => {
   test.skip(process.platform !== 'darwin', 'Uses a macOS iCloud Drive folder to make a save fail.')
@@ -21,8 +21,7 @@ test('fails if Help improve is asked before a share that worked or a second time
     await passFirstRun(page)
     // The first run still asks today; Share takes the question over, so start from "never asked".
     await page.evaluate(() => window.reel.app.setSharing({ asked: false, on: false, usage: true, quality: true, posts: true }))
-    await page.getByTestId('new-video').click()
-    await page.getByTestId('file-input').setInputFiles([media.video])
+    await startReel(page, media.video)
     await expect(page.getByTestId('share')).toBeEnabled({ timeout: 10 * 60_000 })
 
     const pop = page.getByTestId('share-pop')

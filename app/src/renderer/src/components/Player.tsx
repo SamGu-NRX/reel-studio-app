@@ -421,6 +421,8 @@ export function PhonePlayer({
     if (!v) return
     v.playbackRate = rate
     if (keepTime && before) {
+      // the old layer kept playing while this one loaded at the moment it started from: catch up to where it is
+      if (Math.abs(v.currentTime - before.currentTime) > 0.05) v.currentTime = before.currentTime
       v.muted = before.muted
       if (wasPlaying) void v.play().catch(() => {})
       return
@@ -667,7 +669,10 @@ export function PhonePlayer({
                           setPlaying(true)
                           setStarted(true)
                         },
-                        onPause: () => setPlaying(false),
+                        onPause: (e: React.SyntheticEvent<HTMLVideoElement>) => {
+                          setPlaying(false)
+                          onTime(e)
+                        },
                         onEnded: () => setPlaying(false),
                         onTimeUpdate: onTime,
                         onSeeked: onTime,
@@ -682,7 +687,8 @@ export function PhonePlayer({
                         onLoadedData: (e: React.SyntheticEvent<HTMLVideoElement>) => {
                           const v = e.currentTarget
                           const show = () => void frameReady(v, l.poster).then(() => dispatch({ type: 'ready', id: l.id }))
-                          const at = ph.get()
+                          // the moment on screen now, from the element showing it (the playhead can trail it by a frame or two)
+                          const at = video.current?.currentTime ?? ph.get()
                           if (!keepTime || at <= 0) return show()
                           v.addEventListener('seeked', show, { once: true })
                           v.currentTime = Math.min(at, v.duration || at)

@@ -1,7 +1,7 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { APP_DIR, BASE, makeMedia, makeReel, passFirstRun } from './helpers'
+import { APP_DIR, BASE, SHOTS, makeMedia, makeReel, passFirstRun } from './helpers'
 
 const BOOT = '/Users/samgu/Programming Projects/reel-studio-app-wt/redesign-build/tools/hidden-bootstrap.cjs'
 const PROOF = '/Users/samgu/Programming Projects/reel-studio-app-wt/redesign-build/logs/hidden-proof.log'
@@ -80,7 +80,7 @@ async function invariants(page: Page): Promise<string[]> {
         if (!visible(control) || (modal && !modal.contains(control))) continue
         const rect = (control as HTMLElement).getBoundingClientRect()
         const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
-        if (!top || !(top === control || control.contains(top))) issues.push(`covered control ${control.getAttribute('aria-label') ?? control.textContent?.trim().slice(0, 40) ?? control.tagName}`)
+        if (!top || !(top === control || control.contains(top))) issues.push(`covered control ${control.getAttribute('aria-label') ?? control.textContent?.trim().slice(0, 40) ?? control.tagName} by ${top ? `${top.tagName.toLowerCase()}.${String((top as HTMLElement).className).replace(/ /g, '.')}` : `nothing at ${Math.round(rect.left + rect.width / 2)},${Math.round(rect.top + rect.height / 2)} in ${innerWidth}x${innerHeight}`}`)
       }
     }
 
@@ -122,7 +122,7 @@ async function pausedSnapshot(page: Page): Promise<{ time: number; readouts: str
     const videos = Array.from(document.querySelectorAll('video'))
     if (videos.some((video) => !video.paused && !video.ended)) return null
     return {
-      time: videos[0]?.currentTime ?? 0,
+      time: document.querySelector<HTMLVideoElement>('video[data-testid="player"]')?.currentTime ?? 0,
       readouts: Array.from(document.querySelectorAll('[data-testid="time"], [data-testid="moment-suggest"]')).map((node) => node.textContent ?? '')
     }
   })
@@ -130,12 +130,32 @@ async function pausedSnapshot(page: Page): Promise<{ time: number; readouts: str
 
 async function check(page: Page, seed: number, log: Action[]): Promise<void> {
   const issues = await invariants(page)
-  if (issues.length) throw new Error(`seed ${seed}, action log ${JSON.stringify(log)}: ${issues.join('; ')}`)
+  if (issues.length) {
+    await page.screenshot({ path: join(SHOTS, `invariant-seed-${seed}.png`) }).catch(() => {})
+    const scrolled = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('*'))
+        .filter((el) => el.scrollLeft > 0 || el.scrollTop > 0)
+        .map((el) => `${el.tagName.toLowerCase()}.${String((el as HTMLElement).className).split(' ')[0]} scroll=${el.scrollLeft},${el.scrollTop} size=${el.scrollWidth}x${el.scrollHeight}/${el.clientWidth}x${el.clientHeight}`)
+    )
+    const wide = await page.evaluate(() => {
+      const main = document.querySelector('main')
+      if (!main) return []
+      main.scrollLeft = 0
+      const edge = main.getBoundingClientRect().right
+      return Array.from(main.querySelectorAll('*'))
+        .filter((el) => el.getBoundingClientRect().right > edge + 1)
+        .slice(0, 6)
+        .map((el) => `${el.tagName.toLowerCase()}.${String((el as HTMLElement).className).split(' ').join('.')} right=${Math.round(el.getBoundingClientRect().right)}`)
+    })
+    issues.push(`scrolled: ${scrolled.join(', ') || 'none'}; past main: ${wide.join(', ') || 'none'}`)
+    throw new Error(`seed ${seed}, action log ${JSON.stringify(log)}: ${issues.join('; ')}`)
+  }
   const before = await pausedSnapshot(page)
   if (before) {
     await page.waitForTimeout(400)
     const after = await pausedSnapshot(page)
-    if (after && (Math.abs(after.time - before.time) > 0.02 || JSON.stringify(after.readouts) !== JSON.stringify(before.readouts))) {
+    // a source swap while paused (Edit it myself closing, compare) lands on the nearest frame, up to a frame away
+    if (after && (Math.abs(after.time - before.time) > 0.05 || JSON.stringify(after.readouts) !== JSON.stringify(before.readouts))) {
       throw new Error(`seed ${seed}, action log ${JSON.stringify(log)}: paused state changed from ${JSON.stringify(before)} to ${JSON.stringify(after)}`)
     }
   }

@@ -213,8 +213,10 @@ export function Timeline({
             </button>
           )
         })}
-      <span className="tl-head" ref={head} aria-hidden>
-        <i />
+      <span className="tl-heads" aria-hidden>
+        <span className="tl-head" ref={head}>
+          <i />
+        </span>
       </span>
     </div>
   )

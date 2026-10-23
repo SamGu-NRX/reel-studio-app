@@ -52,7 +52,7 @@
 
 /* what sits on the picture: the Original tag, the compare switch, spots, pointing */
 .reel-over { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
-.reel-over > * { pointer-events: auto; }
+.reel-over > :not(.edit-stage) { pointer-events: auto; }
 .reel-tag {
   position: absolute; top: calc(100cqw * 58 / 393); left: 50%; translate: -50% 0; background: rgba(0, 0, 0, .6); color: #fff; font-size: var(--fs-sm); line-height: var(--lh-sm);
   font-weight: 600; padding: 4px 10px; border-radius: 999px; pointer-events: none;
@@ -96,6 +96,9 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .tl-rail, .tl-fill { position: absolute; left: 0; right: 0; top: 14px; height: 4px; border-radius: 4px; pointer-events: none; }
 .tl-rail { background: var(--line-strong); }
 .tl-fill { background: var(--ink); transform-origin: left; transform: scaleX(0); }
+/* The head moves by translating a full-width box; clipping it to the track (with room for the dot) keeps the box
+   at the end from widening the page, which scrolled the whole Reel screen sideways. */
+.tl-heads { position: absolute; inset: 0; overflow-x: clip; overflow-clip-margin: 8px; pointer-events: none; }
 .tl-head { position: absolute; inset: 0; pointer-events: none; }
 .tl-head i { position: absolute; left: -6px; top: 10px; width: 12px; height: 12px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 3px var(--paper); pointer-events: auto; cursor: grab; }
 .tl-sel { position: absolute; top: 12px; height: 8px; border-radius: 3px; background: var(--marker); pointer-events: none; }
@@ -344,5 +347,5 @@ html.kb :is(.acc, .stripwrap, .steps, .tchip, .spot, .draghandle, .tl-mark, .tra
   .helper .hb i { animation: none; width: 100%; opacity: .5; }
 }
 @keyframes line-fade { from { opacity: 0; } }
-/* Comparing is its own mode: the switch takes the top of the video, so full screen waits until it is done. */
-.stage.comparing .fs-open { display: none; }
+/* Comparing and pointing at a spot are modes of their own: full screen waits until they are done. */
+.stage:is(.comparing, .pointing) .fs-open { display: none; }
