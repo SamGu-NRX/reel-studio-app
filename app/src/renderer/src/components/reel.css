@@ -11,6 +11,9 @@
 .reel-title-input { height: 30px; min-height: 30px; padding: 2px 8px; font-size: var(--fs-md); font-weight: 620; width: min(420px, 40vw); }
 .rt-ver { flex: none; font-size: var(--fs-base); color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rt-ver.older { color: var(--ink-2); font-weight: 600; }
+/* the on-screen version's name, after its number: a caption, cut short before it crowds the title */
+.rt-ver-name { flex: 0 1 auto; min-width: 0; max-width: 32ch; font-size: var(--fs-base); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt-ver-name::before { content: '·\00a0' / ''; color: var(--ink-4); }
 .rt-title .btn.ghost.small { flex: none; }
 .tb-actions .btn.ghost.on { color: var(--ink); text-decoration-color: currentColor; }
 .rt-more { position: relative; display: flex; }

@@ -4,7 +4,7 @@
 //
 // Run: npm run e2e (or `npx playwright test e2e/ux.spec.ts` after a build). Same env as smoke.spec.ts.
 import { test, expect, type ElectronApplication } from '@playwright/test'
-import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BASE, CLAUDE_CODE_LABEL, CLAUDE_CODE_MISNAMED, USE_CLAUDE_CODE, launch, makeMedia, makeReel, passFirstRun, shot, openSettings } from './helpers'
 
@@ -20,9 +20,9 @@ async function answerFilePicker(app: ElectronApplication, file: string): Promise
   }, file)
 }
 
-function projectJson(): any {
+function projectSlug(): string {
   const dir = join(ROOT, 'Projects')
-  const slug = readdirSync(dir).find((s) => {
+  return readdirSync(dir).find((s) => {
     try {
       readFileSync(join(dir, s, 'project.json'))
       return true
@@ -30,7 +30,10 @@ function projectJson(): any {
       return false
     }
   })!
-  return JSON.parse(readFileSync(join(dir, slug, 'project.json'), 'utf8'))
+}
+
+function projectJson(): any {
+  return JSON.parse(readFileSync(join(ROOT, 'Projects', projectSlug(), 'project.json'), 'utf8'))
 }
 
 test('no AI: honest first version, one connect prompt, caption controls, a song and a picture, export', async () => {
@@ -109,6 +112,18 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await expect(page.getByTestId('log-hand').last()).toContainText('You changed')
   await expect(page.locator('.nt-res[data-v="2"]')).toContainText(/bigger yellow subtitles, moved up/i)
   await expect(page.locator('.nt-res[data-v="2"] + .acc')).toContainText(/Subtitle/)
+  // The title bar names the version on screen from its receipts (#60), next to its number. The stand-in engine
+  // writes none, so give Version 2 the receipt the real engine writes for this change and reopen the reel.
+  await expect(page.getByTestId('version-title')).toHaveCount(0)
+  const v2 = join(ROOT, 'Projects', projectSlug(), 'versions', 'v2')
+  writeFileSync(
+    join(v2, 'receipts.json'),
+    JSON.stringify([{ renderId: 'e2e', facts: [{ kind: 'captions.style', field: 'size', before: 105, after: 126 }] }])
+  )
+  await page.getByTestId('nav-home').click()
+  await page.getByTestId('project-card').first().click()
+  await expect(page.getByTestId('version-on-screen')).toHaveText('Version 2')
+  await expect(page.getByTestId('version-title')).toHaveText('Bigger subtitles')
 
   // ---- 5. a song: Music under Edit it myself, the picker, a new version with the song ----
   await answerFilePicker(app, media.song)

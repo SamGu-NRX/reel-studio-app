@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatAction, NoteMoment, PlacedWord, ProjectDetail, ProviderInfo } from '../../../shared/api'
+import type { ChatAction, NoteMoment, PlacedWord, ProjectDetail, ProviderInfo, VersionInfo } from '../../../shared/api'
+import { versionTitle } from '../../../shared/describe'
 import { clock } from '../../../shared/progress'
 import { EMPTY_LIVE, liveFromDetail, reduceLive, type LiveState } from '../../../shared/live'
 import { NO_TIMELINE, noSpeech, noteMarks, noteMoment, sourceAt, wordsAt, wordsBetween, type RenderSegment } from '../../../shared/moments'
@@ -567,6 +568,11 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
         : 'Tell your editor what to change…'
   const showComposer = planned || hasVersions || first?.kind === 'making'
 
+  // A version's name: the AI's rewording when it passed the check against what changed, else the app's own (#60).
+  const nameOf = (v: VersionInfo): string => v.wording?.title ?? (v.facts ? versionTitle(v.facts, d.words) : '')
+  const tagged = onScreen ?? version
+  const taggedName = tagged ? nameOf(tagged) : ''
+
   const title = (
     <span className="rt-title">
       {renaming === null ? (
@@ -597,9 +603,14 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
           data-testid="title-input"
         />
       )}
-      {(onScreen ?? version) && (
+      {tagged && (
         <span className={`rt-ver${older ? ' older' : ''}`} data-testid="version-on-screen">
-          Version {(onScreen ?? version)!.n}
+          Version {tagged.n}
+        </span>
+      )}
+      {taggedName && (
+        <span className="rt-ver-name" title={taggedName} data-testid="version-title">
+          {taggedName}
         </span>
       )}
       {older && !compare && (
