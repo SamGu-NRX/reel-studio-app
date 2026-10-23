@@ -210,7 +210,8 @@ export const createMockAI: CreateAI = ({ host }) => {
     async firstEdit(projectDir, onEvent, signal, opts): Promise<AgentResult> {
       const args = ['--project', projectDir, ...(opts?.owner ? ['--owner', opts.owner] : [])]
       // phases like the real package's no-AI path, so the job flow's bar and time left work here too
-      const status = (message: string, pct: number, phase?: Phase): void => onEvent({ type: 'status', message, pct, ...(phase ? { phase } : {}) })
+      const hold = Number(process.env.REELSTUDIO_MOCK_FIRST_LOOK || 0)
+      const status = (message: string, pct: number, phase?: Phase): void => onEvent({ type: 'status', message, pct, ...(phase ? { phase } : {}), ...(hold > 0 ? {} : { noAI: true }) })
       const changed: string[] = []
 
       status('Listening to your video', 1, 'listen')
@@ -224,7 +225,6 @@ export const createMockAI: CreateAI = ({ host }) => {
 
       // Tests only (REELSTUDIO_MOCK_FIRST_LOOK=<ms>): act like the real package with an AI: a first look,
       // then a while "thinking", so the Working screen's first look + thinking state can be driven.
-      const hold = Number(process.env.REELSTUDIO_MOCK_FIRST_LOOK || 0)
       if (hold > 0) {
         const look = await host.runEngine('render', [...args, '--draft'], undefined, signal)
         onEvent({ type: 'render', version: 0, draft: true, firstLook: true, ...(look?.file ? { file: String(look.file) } : {}) })

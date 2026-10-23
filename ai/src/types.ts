@@ -7,7 +7,7 @@ import type { StyleProposal } from './style';
 export type Phase = 'listen' | 'analyze' | 'firstLook' | 'edit' | 'final';
 
 export type AgentEvent =
-  | { type: 'status'; message: string; pct?: number; phase?: Phase; /** waiting on the model's answer */ thinking?: boolean }
+  | { type: 'status'; message: string; pct?: number; phase?: Phase; /** waiting on the model's answer */ thinking?: boolean; /** from the simple edit, made without the AI */ noAI?: boolean }
   | { type: 'tool'; name: string; summary: string }
   | { type: 'render'; version: number; draft: boolean; /** the no-AI first look, shown while the AI edits */ firstLook?: boolean; file?: string }
   /** a note's reply, known before the render that makes it true (fast notes): the app shows it at once */

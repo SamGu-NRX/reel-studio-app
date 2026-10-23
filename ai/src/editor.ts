@@ -724,7 +724,8 @@ export async function pickTakes(transcript: PickTakesInput, provider: ModelProvi
 
 // ---------------------------------------------------------------- no-AI path
 
-export async function deterministicEdit(deps: EditorDeps, projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, why?: string): Promise<EditResult> {
+export async function deterministicEdit(deps: EditorDeps, projectDir: string, report: (e: AgentEvent) => void, signal?: AbortSignal, why?: string): Promise<EditResult> {
+  const onEvent = (e: AgentEvent) => report(e.type === 'status' ? { ...e, noAI: true } : e);
   const changed: string[] = [];
   onEvent({ type: 'status', message: 'Cutting out the pauses', pct: 20 });
   await deps.host.runEngine('autocut', engineArgs(projectDir), progress(onEvent), signal);
@@ -743,7 +744,7 @@ export async function deterministicEdit(deps: EditorDeps, projectDir: string, on
     }
   }
   await saveProject(projectDir, p);
-  onEvent({ type: 'status', message: 'Making your video', pct: 0, phase: 'final' });
+  onEvent({ type: 'status', message: 'Getting your video ready', pct: 0, phase: 'final' });
   const r = await deps.host.runEngine('render', engineArgs(projectDir), progress(onEvent, 'final'), signal);
   const version = Number(r?.version ?? (await loadProject(projectDir)).version ?? 1);
   onEvent({ type: 'render', version, draft: false, ...(r?.file ? { file: String(r.file) } : {}) });

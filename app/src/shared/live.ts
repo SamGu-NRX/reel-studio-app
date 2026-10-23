@@ -98,4 +98,4 @@ export function timeLeftWords(s: Pick<LiveState, 'secondsLeft' | 'overdue'>): st
   return timeLeftText(s.secondsLeft)
 }
 
-export const STILL_WORKING = 'Still working, almost there'
+export const STILL_WORKING = 'Taking longer than usual'

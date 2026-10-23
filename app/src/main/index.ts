@@ -716,7 +716,7 @@ function registerIpc(): void {
     const d = await detail(slug)
     const running = jobs.forSlug(slug)
     d.job = running
-      ? { id: running.id, kind: running.kind, message: jobs.message(running), pct: running.pct, overall: running.overall, secondsLeft: running.secondsLeft, overdue: running.overdue, thinking: running.thinking, waitingForRender: running.waitingForRender }
+      ? { id: running.id, kind: running.kind, message: jobs.message(running), pct: running.pct, overall: running.overall, secondsLeft: running.secondsLeft, overdue: running.overdue, thinking: running.thinking, waitingForRender: running.waitingForRender, steps: running.steps }
       : null
     if (!running && d.status === 'working') d.status = 'interrupted'
     return d

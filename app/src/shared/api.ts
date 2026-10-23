@@ -6,6 +6,7 @@ import type { CoverCandidate } from './cover'
 import type { RenderSegment } from './moments'
 import type { Platform, PlatformExportRequest } from './platforms'
 import type { VersionRow } from './version-diff'
+import type { Step } from './steps'
 export type { VersionRow } from './version-diff'
 export type { ChatAction } from './notes'
 export type { CoverCandidate } from './cover'
@@ -195,7 +196,7 @@ export interface ProjectDetail extends ProjectSummary {
   /** True: the queue waits for Resume (after Stop, a failed note, or a restart). */
   queueHeld: boolean
   /** `waitingForRender`: its render waits for another reel's (one render at a time); the bar holds. */
-  job: { id: string; kind: JobKind; message: string; pct: number; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean; waitingForRender: boolean } | null
+  job: { id: string; kind: JobKind; message: string; pct: number; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean; waitingForRender: boolean; steps?: Step[] } | null
   /** A small picture for each b-roll item with an image file (broll id -> reel-media URL). Animations and
    * text-only items have none (the Pictures list names them in words instead of a file name). */
   brollThumbs: Record<string, string>
@@ -264,7 +265,7 @@ export type Phase = 'listen' | 'analyze' | 'firstLook' | 'edit' | 'final'
  */
 export type JobUpdate =
   /** pct restarts per step unless aggregate marks whole-job progress. thinking = waiting on AI. */
-  | { type: 'status'; message: string; pct?: number; aggregate?: true; phase?: Phase; thinking?: boolean }
+  | { type: 'status'; message: string; pct?: number; aggregate?: true; phase?: Phase; thinking?: boolean; noAI?: boolean }
   | { type: 'tool'; name: string; summary: string }
   /** A render finished. firstLook = the quick no-AI preview made while the AI still edits (not a version).
    * file = the engine's output path (absolute); main turns it into `video` for the renderer. */
@@ -284,7 +285,8 @@ export type JobEvent = Ids &
      * history (main/progress.ts), null = too early to say. Status repeats about once a second while a job
      * runs (thinking kept), so a bar fed by `overall` never freezes. */
     /** overdue = the last phase outlasted its usable estimate: show "Still working, almost there", no number. */
-    | { type: 'status'; message: string; pct: number; phase?: Phase; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean; waitingForRender: boolean }
+    /** steps: a first edit's rows (shared/steps.ts) */
+    | { type: 'status'; message: string; pct: number; phase?: Phase; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean; waitingForRender: boolean; steps?: Step[] }
     | { type: 'tool'; name: string; summary: string }
     /** video = a playable reel-media URL of a stable copy (never the file the engine overwrites next). */
     | { type: 'render'; version: number; draft: boolean; firstLook: boolean; video: string | null }
