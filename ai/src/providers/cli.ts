@@ -275,7 +275,9 @@ const MAX_ANSWER_CHARS = 40_000;
 export function runawayAnswer(text: string): boolean {
   return text.length > MAX_ANSWER_CHARS || (text.match(/<invoke name="placeholder">\s*<\/invoke>/g)?.length ?? 0) >= 3;
 }
-const runawayError = () => new AIError('cli_runaway', 'Claude started repeating itself, so that answer was stopped.', { retryable: true });
+const runawayError = (text: string) =>
+  new AIError('cli_runaway', 'Claude started repeating itself, so that answer was stopped.', { retryable: true, detail: `${text.length} chars: ${JSON.stringify(text.slice(0, 160))} … ${JSON.stringify(text.slice(-80))}` });
+
 
 /** REELSTUDIO_CLI_TRACE=<file>: every stream-json line but the answer's text deltas, timed, for diagnosing a slow turn. */
 function trace(j: any): void {
@@ -290,7 +292,8 @@ export class TurnWatch {
   private thinkingMs: number | null = null;
   private answerMs: number | null = null;
   private retries = 0;
-  private text = '';
+  /** the answer's text so far, for the runaway check and its error */
+  text = '';
   /** set once the answer runs away (runawayAnswer); `stop` is then called to end the turn */
   runaway = false;
   stop: () => void = () => undefined;
@@ -419,7 +422,7 @@ export class ClaudeCliProvider implements ModelProvider {
       if (req.signal?.aborted) return abort();
       req.signal?.addEventListener('abort', abort, { once: true });
       s.waiter = { resolve: (r) => finish(() => resolve(r)), reject: (e) => finish(() => reject(e)), watch };
-      watch.stop = () => finish(() => { s.waiter = null; void this.dispose(); reject(runawayError()); });
+      watch.stop = () => finish(() => { s.waiter = null; void this.dispose(); reject(runawayError(watch.text)); });
       try { s.child.stdin.write(userLine(rendered.text, rendered.images)); } catch (e) {
         finish(() => { s.waiter = null; reject(new AIError('cli_error', 'The AI did not answer.', { retryable: true, detail: String(e) })); });
       }
@@ -456,7 +459,7 @@ export class ClaudeCliProvider implements ModelProvider {
       };
       r = await runProcess(this.o.bin ?? 'claude', args, line, { cwd: this.o.cwd ?? workDir(), signal: stop.signal, timeoutMs: this.o.timeoutMs ?? 600_000, onLine });
     } catch (e: any) {
-      if (watch.runaway) throw runawayError();
+      if (watch.runaway) throw runawayError(watch.text);
       if (e instanceof AIError) throw e;
       throw new AIError('cli_missing', 'The claude command line tool is not installed or not on PATH.', { detail: e?.message });
     } finally {
