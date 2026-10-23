@@ -150,7 +150,7 @@ export function captureWebsite(url: string, outPath: string, opts: { layout?: La
   const layout: Layout = opts.layout === 'desktop' ? 'desktop' : 'phone'
   const run = (): Promise<CaptureResult> => captureOnce(url, outPath, layout).catch(async (e) => {
     await rm(`${outPath}.part`, { force: true }).catch(() => {})
-    throw e?.userMessage ? e : captureError('CAPTURE_FAILED', String(e?.message ?? e), "I couldn't take that screenshot. Try again.")
+    throw e?.userMessage ? e : captureError('CAPTURE_FAILED', String(e?.message ?? e), "That screenshot couldn't be taken. Try again.")
   })
   const p = queue.then(run, run)
   queue = p.catch(() => {})

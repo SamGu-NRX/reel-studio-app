@@ -83,7 +83,7 @@ const NOUN: Record<string, [string, string]> = {
   broll: ['extra clip', 'extra clips'],
   music: ['song', 'songs'],
   images: ['picture', 'pictures'],
-  exports: ['finished video', 'finished videos']
+  exports: ['finished reel', 'finished reels']
 }
 
 function why(r: DropResult): string {

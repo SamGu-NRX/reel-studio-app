@@ -58,7 +58,7 @@ export function normaliseCaptureUrl(raw: string): URL {
     throw captureError('BAD_URL', `not a url: ${s.slice(0, 200)}`, "That isn't a web address. Try something like example.com.")
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
-    throw captureError('BAD_URL', `refused scheme ${u.protocol}`, 'I can only take screenshots of web pages (http or https).')
+    throw captureError('BAD_URL', `refused scheme ${u.protocol}`, 'Only web pages (http or https) can be captured.')
   }
   if (u.username || u.password) throw captureError('BAD_URL', 'credentials in url', "Links with a password in them can't be captured.")
   if (!u.hostname) throw captureError('BAD_URL', 'no host', "That isn't a web address.")
@@ -86,7 +86,7 @@ export async function assertCapturable(raw: string, lookup: LookupFn = defaultLo
   const u = normaliseCaptureUrl(raw)
   if (!(await hostIsPublic(u.hostname, lookup))) {
     throw captureError('BLOCKED_HOST', `refused ${u.hostname}`,
-      "That address isn't a public website (or I couldn't find it), so I didn't open it.")
+      "That address isn't a public website (or it couldn't be found), so it wasn't opened.")
   }
   return u
 }

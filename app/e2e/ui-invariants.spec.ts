@@ -97,7 +97,7 @@ async function invariants(page: Page): Promise<string[]> {
     const active = playing[0]
     if (active) {
       const current = active.currentTime
-      const range = document.querySelector('input[aria-label="Position in the video"], input[aria-label="Time in your reel"]') as HTMLInputElement | null
+      const range = document.querySelector('input[aria-label="Position in the reel"], input[aria-label="Time in your reel"]') as HTMLInputElement | null
       if (range && Math.abs(Number(range.value) - current) > 0.25) issues.push(`scrubber=${range.value} current=${current.toFixed(2)}`)
       const time = document.querySelector('[data-testid="time"]')?.textContent?.match(/\d+:\d+/)?.[0]
       if (time) {

@@ -190,8 +190,8 @@ export function Sidebar({
         <button
           className={`acct${inSettings ? ' on' : ''}`}
           aria-current={inSettings ? 'page' : undefined}
-          aria-label={`${who}, ${name ? `AI editor ${name}` : 'no AI editor'}. Settings`}
-          title={provider?.id === 'claude-cli' && name ? 'AI editor: Claude (your Claude Code app). Settings' : 'Settings'}
+          aria-label={`${who}, ${name ? `editor ${name}` : 'no editor'}. Settings`}
+          title={provider?.id === 'claude-cli' && name ? 'Editor: Claude (your Claude Code app). Settings' : 'Settings'}
           onClick={() => go({ name: 'settings' })}
           data-testid="account"
         >
@@ -201,7 +201,7 @@ export function Sidebar({
           </span>
           <span className="who lbl">
             <b>{who}</b>
-            <span data-testid="ai-status">{name ? `AI editor: ${name}` : 'No AI editor'}</span>
+            <span data-testid="ai-status">{name ? `Editor: ${name}` : 'No editor'}</span>
           </span>
         </button>
       </div>

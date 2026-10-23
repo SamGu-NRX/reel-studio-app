@@ -96,9 +96,9 @@ export function plainError(context: 'check' | 'download' | 'install', e: unknown
     /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|net::ERR_(INTERNET_DISCONNECTED|NAME_NOT_RESOLVED|NETWORK_CHANGED|CONNECTION_\w+|TIMED_OUT|ADDRESS_UNREACHABLE)|fetch failed/.test(text) ||
     text === 'timeout'
   if (context === 'check') {
-    if (offline) return 'I could not reach GitHub to check for updates. Check your internet connection, then try again.'
+    if (offline) return 'Reel Studio could not reach GitHub to check for updates. Check your internet connection, then try again.'
     if (isRateLimited(e)) return 'GitHub asked Reel Studio to wait before checking again. It will try again tomorrow.'
-    return 'I could not check for updates. Try again later.'
+    return 'Reel Studio could not check for updates. Try again later.'
   }
   if (context === 'download') {
     if (offline) return 'The download stopped because the internet connection dropped. Try again when you are back online.'

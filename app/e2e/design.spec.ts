@@ -172,7 +172,7 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await expect(page.getByTestId('root-display')).not.toContainText('~')
   await shot(page, 'd-10-settings-connected')
   await page.getByTestId('nav-home').click()
-  await expect(page.getByTestId('ai-status')).toContainText('AI editor: ChatGPT')
+  await expect(page.getByTestId('ai-status')).toContainText('Editor: ChatGPT')
   // With an AI editor on, the no-AI controls must never be drawn, not even for the first frame.
   await page.evaluate(() => {
     ;(window as any).__sawNoAi = false

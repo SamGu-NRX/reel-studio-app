@@ -156,8 +156,8 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
         <div>
           <b>Email it to yourself</b>
           <p className="muted-sm">
-            Reel Studio starts an email and opens {FOLDER_APP} with your video. Drag the video into the email, send it to yourself, then open it on your phone.
-            {share && (big ? ` Your video is ${mb(share.size)}, which is probably too big for email (most allow about 20 MB). Use iCloud Drive or Google Drive instead.` : ` Your video is ${mb(share.size)}.`)}
+            Reel Studio starts an email and opens {FOLDER_APP} with your reel. Drag the file into the email, send it to yourself, then open it on your phone.
+            {share && (big ? ` Your reel is ${mb(share.size)}, which is probably too big for email (most allow about 20 MB). Use iCloud Drive or Google Drive instead.` : ` Your reel is ${mb(share.size)}.`)}
           </p>
           {emailed && (
             <p className="muted-sm" data-testid="phone-emailed">
@@ -183,7 +183,7 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
         <div>
           <b>Use a cable</b>
           <p className="muted-sm">
-            <b>Android:</b> plug the phone in, unlock it, choose "File transfer", then drag the video into its Movies folder.
+            <b>Android:</b> plug the phone in, unlock it, choose "File transfer", then drag the file into its Movies folder.
             <br />
             <b>iPhone:</b> a cable is the hard way. iCloud Drive or email is quicker.
           </p>
@@ -212,7 +212,7 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
           </div>
           <div className="stack" style={{ gap: 10, minWidth: 0 }}>
             <p className="phone-lead" data-testid="phone-lead">
-              Point your phone's camera at this code. Your video opens on your phone; tap Share, then Save Video (or open Instagram).
+              Point your phone's camera at this code. Your reel opens on your phone; tap Share, then Save Video (or open Instagram).
             </p>
             <p className="muted-sm row" style={{ gap: 6 }}>
               <Glyph name="wifi" size={16} /> Your phone needs to be on the same Wi-Fi as this computer.
@@ -224,7 +224,7 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
             )}
             {stopped ? (
               <div className="row wrap">
-                <span className="muted">This code stopped working after 15 minutes, to keep your video private.</span>
+                <span className="muted">This code stopped working after 15 minutes, to keep your reel private.</span>
                 <button className="btn small" onClick={() => setAttempt((n) => n + 1)} data-testid="phone-renew">
                   Make a new code
                 </button>
@@ -252,7 +252,7 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
             <ol>
               <li>Open the Camera and point it at the code.</li>
               <li>Tap the link that appears at the top of the camera.</li>
-              <li>Your phone then shows you how to save the video to Photos.</li>
+              <li>Your phone then shows you how to save the reel to Photos.</li>
             </ol>
           </div>
           <details className="phone-more" data-testid="phone-android">
@@ -260,7 +260,7 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
             <ol>
               <li>Open the Camera (or Google Lens) and point it at the code.</li>
               <li>Tap the link that appears.</li>
-              <li>Tap Save video. It goes to your Gallery.</li>
+              <li>Tap Save reel. It goes to your Gallery.</li>
             </ol>
           </details>
         </div>

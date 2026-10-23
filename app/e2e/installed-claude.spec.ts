@@ -64,7 +64,7 @@ test('installed app: the Claude choice, in this computer\'s real state', async (
       await expect(page.getByTestId('ai-connected')).toHaveText('Connected', { timeout: 60_000 })
       console.log(`claude check took ${Date.now() - asked} ms`)
       await page.getByTestId('nav-home').click() // the sidebar re-reads the AI editor on every screen change
-    await expect(page.getByTestId('ai-status')).toHaveText('AI editor: Claude')
+    await expect(page.getByTestId('ai-status')).toHaveText('Editor: Claude')
       expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)
       await shot(page, 'installed/connect-using-claude')
     }

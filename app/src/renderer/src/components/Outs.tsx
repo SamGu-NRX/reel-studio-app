@@ -236,7 +236,7 @@ export function Outs({
     const key = `${version.n}|${id}`
     if (rows[key]?.kind === 'working') return
     localStorage.setItem(LAST, id)
-    set(key, { kind: 'working', label: version.draft ? 'Making the full-quality video' : `Getting Version ${version.n} ready`, pct: null, prep: true })
+    set(key, { kind: 'working', label: version.draft ? 'Making the full-quality version' : `Getting Version ${version.n} ready`, pct: null, prep: true })
     try {
       await saveCaption()
       const end = await go(await exported(version.n), (row) => set(key, row), key)
@@ -253,8 +253,8 @@ export function Outs({
     {
       id: 'instagram',
       icon: <Icon name="instagram" size={16} />,
-      label: 'Export for Instagram',
-      hint: 'Saves the video and copies the caption',
+      label: 'Save for Instagram',
+      hint: 'Saves the reel and copies the caption',
       testid: 'share-instagram',
       go: () =>
         void run('instagram', async (files) => {
@@ -298,7 +298,7 @@ export function Outs({
       id: 'finder',
       icon: <Icon name="folder" size={16} />,
       label: `Show in ${FOLDER_APP}`,
-      hint: 'The video, its cover and its caption',
+      hint: 'The reel, its cover and its caption',
       testid: 'share-finder',
       go: () =>
         void run('finder', async (files) => {
@@ -372,7 +372,7 @@ export function Outs({
           <div className="sp-main" hidden={!!view}>
             <h2 id="share-h" className="sp-h">{version.n ? `Share Version ${version.n}` : 'Share the preview'}</h2>
             {why && <p className="muted-sm sp-why">{why}</p>}
-            {version.draft && !why && <p className="muted-sm sp-why">This is a preview. Sharing makes the full-quality video first.</p>}
+            {version.draft && !why && <p className="muted-sm sp-why">This is a preview. Sharing makes the full-quality version first.</p>}
             <div className="sp-cap">
               <label htmlFor="share-caption">Caption</label>
               <span className={`tnum${over ? ' sp-over' : ''}`}>{caption.length.toLocaleString()}/{INSTAGRAM_LIMIT.toLocaleString()}</span>

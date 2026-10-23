@@ -141,7 +141,7 @@ export function SharePlatforms({ slug, version, versions, caption, disabled, onW
               ))}
             </div>
           ) : (
-            <small className="muted-sm">Same video, different caption. For a different video, leave a note to make another version.</small>
+            <small className="muted-sm">Same version, different caption. To test a different version, leave a note to make one.</small>
           )}
           <label className="sp-lbl" htmlFor="platform-caption-2">Try 2 caption</label>
           <textarea id="platform-caption-2" className="textarea sp-caption" rows={2} value={second.caption} onChange={(e) => setSecond({ ...second, caption: e.target.value })} aria-describedby="try-two-status" />

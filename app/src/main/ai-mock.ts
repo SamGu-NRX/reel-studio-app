@@ -74,8 +74,8 @@ export const createMockAI: CreateAI = ({ host }) => {
       const t = setTimeout(resolve, noteMs)
       signal?.addEventListener('abort', () => (clearTimeout(t), reject({ code: 'CANCELLED', userMessage: 'Stopped.' })), { once: true })
     })
-    onEvent({ type: 'status', message: 'Making the final video', pct: 0, phase: 'final' })
-    const r = await host.runEngine('render', ['--project', dir, '--project-file', copy, ...(opts?.owner ? ['--owner', opts.owner] : [])], (pr) => onEvent({ type: 'status', message: pr.message || 'Making the final video', pct: pr.pct, phase: 'final' }), signal)
+    onEvent({ type: 'status', message: 'Making the final version', pct: 0, phase: 'final' })
+    const r = await host.runEngine('render', ['--project', dir, '--project-file', copy, ...(opts?.owner ? ['--owner', opts.owner] : [])], (pr) => onEvent({ type: 'status', message: pr.message || 'Making the final version', pct: pr.pct, phase: 'final' }), signal)
     const version = Number(r?.version)
     if (signal?.aborted) throw { code: 'CANCELLED', userMessage: 'Stopped.' }
     const done = JSON.parse(await fs.readFile(copy, 'utf8'))
@@ -144,12 +144,12 @@ export const createMockAI: CreateAI = ({ host }) => {
       if (mode === 'signs_in' && claudeState === 'signed_out') setTimeout(() => (claudeState = 'ready'), 1500)
     },
     async signInChatGPT() {
-      throw { code: 'NOT_READY', userMessage: 'Signing in with ChatGPT is not ready in this build yet. Your videos still work without it.' }
+      throw { code: 'NOT_READY', userMessage: 'Signing in with ChatGPT is not ready in this build yet. Your reels still work without it.' }
     },
     async signOutChatGPT() {},
     async setClaudeKey(key) {
       if (!key) return { id: 'none', connected: true, label: 'No AI' }
-      throw { code: 'NOT_READY', userMessage: 'Claude keys are not ready in this build yet. Your videos still work without it.' }
+      throw { code: 'NOT_READY', userMessage: 'Claude keys are not ready in this build yet. Your reels still work without it.' }
     },
 
     async firstEdit(projectDir, onEvent, signal, opts): Promise<AgentResult> {
@@ -200,9 +200,9 @@ export const createMockAI: CreateAI = ({ host }) => {
       return {
         summary:
           (track
-            ? 'Your video is ready. I cut out the pauses, added subtitles, music and a cover. Connect an AI editor and I can also pick your best takes and add pictures.'
-            : 'Your video is ready. I cut out the pauses and added subtitles and a cover. Add a song for music, and connect an AI editor so I can pick your best takes and add pictures.') +
-          (lower ? ' I used lowercase captions from your My style.' : ''),
+            ? 'Basic version: pauses cut and subtitles added, with your song underneath. Connect an editor to pick your best takes and add pictures.'
+            : 'Basic version: pauses cut and subtitles added. Add a song for music, and connect an editor to pick your best takes and add pictures.') +
+          (lower ? ' Subtitles are lowercase, from My style.' : ''),
         version,
         styleRulesAdded: [],
         changed
@@ -229,8 +229,8 @@ export const createMockAI: CreateAI = ({ host }) => {
         const rules = await readRules()
         const styleProposal: StyleProposal | undefined = rules.some((x) => x.payload)
           ? undefined
-          : { id: randomUUID(), text: 'Use lowercase captions.', payload: { kind: 'caption-case', case: 'lower' }, source: { project: p.id, title: p.title, version } }
-        return { summary: 'I made the captions lowercase.', version, styleRulesAdded: added, changed: ['captions'], ...(styleProposal ? { styleProposal } : {}) }
+          : { id: randomUUID(), text: 'Use lowercase subtitles.', payload: { kind: 'caption-case', case: 'lower' }, source: { project: p.id, title: p.title, version } }
+        return { summary: 'I made the subtitles lowercase.', version, styleRulesAdded: added, changed: ['captions'], ...(styleProposal ? { styleProposal } : {}) }
       }
       const attachments = opts?.attachments?.length ? { attachments: opts.attachments } : {}
       p.notes = [...(p.notes ?? []), { version: p.version ?? 0, text: note, applied: [], at: new Date().toISOString(), ...attachments }]
@@ -238,8 +238,8 @@ export const createMockAI: CreateAI = ({ host }) => {
       onEvent({ type: 'status', message: 'Done', pct: 100 })
       return {
         summary: added.length
-          ? 'I saved that to My style. Connect an AI editor in Settings and I can change this video from your notes too.'
-          : 'I saved your note. Connect an AI editor in Settings and I can change the video from notes like this one. You can also tweak it yourself under "Show me how".',
+          ? 'I saved that to My style.'
+          : 'I saved your note.',
         version: p.version ?? 0,
         styleRulesAdded: added,
         changed: []
@@ -307,7 +307,7 @@ export const createMockAI: CreateAI = ({ host }) => {
         if (!rule) throw { code: 'NOT_FOUND', userMessage: 'That rule is not in My style any more.' }
         if (patch.text !== undefined) {
           rule.text = patch.text.trim()
-          if (rule.text !== 'Use lowercase captions.') delete rule.payload
+          if (rule.text !== 'Use lowercase subtitles.') delete rule.payload
         }
         if (patch.paused !== undefined) rule.paused = patch.paused || undefined
         await writeRules(rules)

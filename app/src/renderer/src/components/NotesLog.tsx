@@ -417,7 +417,7 @@ function Reply({
         {text}
         {scope !== undefined && (
           <span className="bubble-meta" data-testid="remember-scope">
-            For new videos. From version {scope} of this video.
+            For new reels. From Version {scope} of this reel.
           </span>
         )}
         {error && (

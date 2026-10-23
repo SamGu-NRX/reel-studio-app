@@ -107,7 +107,7 @@ export function secondTryProblem(platforms: Platform[], first: PlatformTry, seco
   if (!changes.length) return 'Try 2 is the same as Try 1. Pick another version, cover or caption.'
   if (secondTryPlatforms(platforms, !changes.includes('video')).length) return null
   return changes.includes('video')
-    ? 'None of these platforms can test a different video. Choose Instagram, or turn off Try two versions.'
+    ? 'None of these platforms can test a different version. Choose Instagram, or turn off Try two versions.'
     : 'None of these platforms can test two versions. Choose Instagram or Facebook, or turn off Try two versions.'
 }
 
@@ -135,24 +135,24 @@ export function checkPlatform(platform: Platform, caption: string, seconds: numb
   const rule = platformRule(platform)
   const issues: ExportIssue[] = []
   const count = captionLength(platform, caption)
-  if (platform === 'youtube' && /[<>]/u.test(caption)) issues.push({ kind: 'caption', blocking: true, message: 'YouTube descriptions cannot contain < or >. Remove those characters before exporting.' })
+  if (platform === 'youtube' && /[<>]/u.test(caption)) issues.push({ kind: 'caption', blocking: true, message: 'YouTube descriptions cannot contain < or >. Remove those characters before sharing.' })
   if (rule.captionLimit !== null && count > rule.captionLimit) {
     issues.push(platform === 'x'
       ? { kind: 'caption', blocking: false, message: `Probably ${count} of ${rule.captionLimit} once links are shortened. Shorten the caption, or check it in X before posting.` }
-      : { kind: 'caption', blocking: true, message: `Post caption is ${count} of ${rule.captionLimit}. Shorten it before exporting.` })
+      : { kind: 'caption', blocking: true, message: `Caption is ${count} of ${rule.captionLimit}. Shorten it before sharing.` })
   }
   // A link's #fragment, an e-mail address or "issue#5" is not a tag or a mention; "#one#two" is two tags.
   const words = caption.replace(LINK, ' ')
   const tags = (words.match(/(?<![\p{L}\p{N}_])#[\p{L}\p{N}_]+(?:#[\p{L}\p{N}_]+)*/gu) ?? []).reduce((n, run) => n + run.split('#').length - 1, 0)
   const mentions = (words.match(/(?<![\p{L}\p{N}_.])@[a-zA-Z0-9_.]+/gu) ?? []).length
-  if (platform === 'instagram' && mentions > 20) issues.push({ kind: 'mentions', blocking: true, message: 'Instagram allows at most 20 mentions. Remove extra @mentions before exporting.' })
+  if (platform === 'instagram' && mentions > 20) issues.push({ kind: 'mentions', blocking: true, message: 'Instagram allows at most 20 mentions. Remove extra @mentions before sharing.' })
   if (rule.hashtagLimit !== null && tags > rule.hashtagLimit) issues.push({ kind: 'hashtags', blocking: true, message: `${tags} hashtags; use at most ${rule.hashtagLimit}.` })
   if (seconds > rule.maxSeconds) {
     issues.push(platform === 'tiktok'
-      ? { kind: 'duration', blocking: false, message: `This video is ${seconds.toFixed(1)} s. Some TikTok accounts only take ${rule.maxSeconds} s; check yours before posting.` }
-      : { kind: 'duration', blocking: true, message: `This video is ${seconds.toFixed(1)} s. Trim it to ${rule.maxSeconds} s or less in the Cut tab.` })
+      ? { kind: 'duration', blocking: false, message: `This reel is ${seconds.toFixed(1)} s. Some TikTok accounts only take ${rule.maxSeconds} s; check yours before posting.` }
+      : { kind: 'duration', blocking: true, message: `This reel is ${seconds.toFixed(1)} s. Trim it to ${rule.maxSeconds} s or less in the Cut tab.` })
   }
-  if (rule.minSeconds !== undefined && seconds < rule.minSeconds) issues.push({ kind: 'duration', blocking: true, message: `This platform needs at least ${rule.minSeconds} s of video.` })
+  if (rule.minSeconds !== undefined && seconds < rule.minSeconds) issues.push({ kind: 'duration', blocking: true, message: `This platform needs a reel of at least ${rule.minSeconds} s.` })
   return issues
 }
 

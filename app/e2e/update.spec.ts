@@ -127,7 +127,7 @@ test('fails if a prerelease update cannot be downloaded, declined or snoozed', a
     await button.click()
     const confirm = page.getByTestId('confirm')
     await expect(confirm).toContainText('Install update 0.1.3 and restart Reel Studio?')
-    await expect(confirm).toContainText('Your videos and settings stay.')
+    await expect(confirm).toContainText('Your reels and settings stay.')
     await expect(page.getByTestId('confirm-no')).toBeFocused()
     await page.keyboard.press('Shift+Tab')
     await expect(page.getByTestId('confirm-yes')).toBeFocused()

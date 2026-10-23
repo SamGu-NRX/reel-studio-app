@@ -22,10 +22,10 @@ export class ErrorBoundary extends Component<{ children: ReactNode; onReset: () 
       <div className="page" style={{ maxWidth: 640 }}>
         <div className="panel stack" data-testid="screen-error">
           <h2>Sorry, this screen hit a problem</h2>
-          <p className="muted">Your videos are safe. Go back and try again. If it keeps happening, restart Reel Studio.</p>
+          <p className="muted">Your reels are safe. Go back and try again. If it keeps happening, restart Reel Studio.</p>
           <div className="row">
             <button className="btn primary" onClick={() => { this.setState({ error: null }); this.props.onReset() }}>
-              Back to My videos
+              Back to Reels
             </button>
           </div>
         </div>
