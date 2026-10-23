@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { createEngineRunner } from '../src/main/engine'
 import { createJobManager, WAITING_FOR_RENDER } from '../src/main/jobs'
 import { createMockAI } from '../src/main/ai-mock'
-import { BACK_IN_QUEUE, createNoteQueue, STOPPED } from '../src/main/note-queue'
+import { createNoteQueue } from '../src/main/note-queue'
 import { handEditJob } from '../src/main/hand-edit'
 import { diffProject } from '../src/shared/hand-edit'
 import { keptIds } from '../src/shared/cut'
@@ -170,9 +170,11 @@ describe('note queue', () => {
     expect(a.jobs.forSlug(slug)).toBeUndefined()
     expect((await readAppState(slug)).queueHeld).toBe(true)
     expect(await waitingTexts(slug)).toEqual(['first', 'second', 'third'])
-    // a waiting note shows only as a row, never also in the chat
-    expect(await yours(slug)).toEqual([])
-    expect(await replies(slug)).toEqual([STOPPED])
+    // the stopped note keeps its line, which the notes show as stopped with Try again (and leave out its row);
+    // the notes behind it never ran, so they are only waiting
+    expect(await yours(slug)).toEqual(['first'])
+    expect((await readAppState(slug)).chat.find((m) => m.from === 'you')?.outcome).toBe('stopped')
+    expect(await replies(slug)).toEqual([])
     expect((await readProject(slug)).version).toBe(1)
 
     // retried without retyping, as the creator edited it
@@ -213,7 +215,7 @@ describe('note queue', () => {
     expect((await readAppState(slug)).queueHeld).toBe(true)
   }, 60000)
 
-  it('a note that fails holds the queue instead of skipping to the next one, and shows only as waiting', async () => {
+  it('a note that fails holds the queue instead of skipping to the next one, and shows once, as failed', async () => {
     setupPaths()
     const slug = await reel('fails')
     const a = app({ failRender: true })
@@ -223,8 +225,11 @@ describe('note queue', () => {
     expect(a.jobs.forSlug(slug)).toBeUndefined()
     expect((await readAppState(slug)).queueHeld).toBe(true)
     expect(await waitingTexts(slug)).toEqual(['first', 'second'])
-    expect(await yours(slug)).toEqual([])
-    expect((await replies(slug)).at(-1)).toBe(BACK_IN_QUEUE)
+    // it keeps its line, shown as failed with Try again; the reply is the job's own error, with nothing after it
+    expect(await yours(slug)).toEqual(['first'])
+    expect((await readAppState(slug)).chat.find((m) => m.from === 'you')?.outcome).toBe('failed')
+    expect((await readAppState(slug)).chat.at(-1)?.from).toBe('editor')
+    expect((await replies(slug)).at(-1)).not.toMatch(/waiting below/)
     expect((await readProject(slug)).version).toBe(1)
   }, 60000)
 

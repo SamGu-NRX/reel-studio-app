@@ -34,8 +34,6 @@ export type HandEntry = QueuedNote & { hand: NonNullable<QueuedNote['hand']> }
 export type StartHand = (slug: string, entry: HandEntry, record: (s: AppState) => void) => Promise<string>
 
 const STARTED = { code: 'NOT_QUEUED', userMessage: 'That note already started, so it can no longer change.' }
-export const STOPPED = 'Stopped. Nothing changed. Your note is waiting below: edit it, or press Send now to try it again.'
-export const BACK_IN_QUEUE = 'That note is waiting below. Press Send now to try it again.'
 
 /** The saved notes' ids, or null when project.json can't be read or its notes are not a list. */
 async function committed(slug: string): Promise<{ version: number; ids: Set<string> } | null> {
@@ -45,24 +43,26 @@ async function committed(slug: string): Promise<{ version: number; ids: Set<stri
   return { version: Number(p.version) || 0, ids: new Set([...(p.notes ?? []).map((n) => (typeof n?.id === 'string' ? n.id : '')), ...hands]) }
 }
 
-/** What the editor says when a queued note's job ends without its own reply. `savedAs`: the version it
- * was saved as, null when project.json does not have it (or, `readable` false, could not be read). */
-function endLine(byStop: boolean, savedAs: number | null, readable: boolean, type: JobEvent['type']): ChatLine | null {
-  if (byStop) {
-    if (savedAs === null) return { from: 'editor', text: readable ? STOPPED : 'Stopped.' }
-    return type === 'done' ? null : { from: 'editor', text: `That change was saved before you pressed Stop. It is Version ${savedAs}.`, version: savedAs }
-  }
-  return savedAs === null && type === 'error' ? { from: 'editor', text: BACK_IN_QUEUE } : null
+/** What the editor says when a Stop came too late: the note was saved (`savedAs`, its version) before it.
+ * A note that stopped or failed unsaved says so on its own line in the notes (shared/notes-log.ts, from its
+ * outcome), with Try again; it waits at the head of the queue, so it needs no line of its own. */
+function endLine(byStop: boolean, savedAs: number | null, type: JobEvent['type']): ChatLine | null {
+  if (!byStop || savedAs === null || type === 'done') return null
+  return { from: 'editor', text: `That change was saved before you pressed Stop. It is Version ${savedAs}.`, version: savedAs }
 }
 
 /** Files the queue or the chat still shows. */
 const referenced = (s: AppState): NoteAttachment[] => [...(s.queue ?? []), ...s.chat].flatMap((x) => x.attachments ?? [])
 
-/** Entries that are not running wait again: they leave the chat and the queue holds. */
+/**
+ * Entries that are not running wait again and the queue holds. A note that stopped, failed or paused keeps its
+ * line in the chat: the notes show it once, by its outcome, with Try again (NotesLog leaves out its queue row).
+ * One that never got an outcome (the app died mid-run) leaves the chat and shows as its queue row.
+ */
 function backToWaiting(s: AppState): void {
   for (const q of s.queue ?? []) delete q.attempt
   const waiting = new Set((s.queue ?? []).map((q) => q.id))
-  s.chat = s.chat.filter((m) => !(m.from === 'you' && waiting.has(m.id)))
+  s.chat = s.chat.filter((m) => !(m.from === 'you' && waiting.has(m.id) && !m.outcome))
   if (s.queue?.length) s.queueHeld = true
 }
 
@@ -289,7 +289,7 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
         await change(slug, (s) => {
           if (ran) {
             if (savedAs !== null) s.queue = (s.queue ?? []).filter((q) => q.id !== ran.id)
-            const line = endLine(byStop, savedAs, head !== null, e.type)
+            const line = endLine(byStop, savedAs, e.type)
             if (line) s.chat.push(stamp(line))
           }
           if (!runOn) backToWaiting(s)

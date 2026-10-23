@@ -344,7 +344,8 @@ async function run(cmds: Cmd[]): Promise<void> {
       if (queue.some((q) => saved.includes(q.id) && !(q.attempt && running))) problems.push('a saved note is still queued')
       if (queue.some((q, i) => q.attempt && (i > 0 || !running))) problems.push(`TypeOK: ${REELS[x]} marks a note started that is not running first`)
       const waiting = new Set(queue.filter((q) => !q.attempt).map((q) => q.id))
-      if (s.chat.some((m) => m.from === 'you' && waiting.has(m.id))) problems.push('a waiting note also shows in the chat')
+      // a note that stopped or failed keeps its line, which the notes show (with Try again) instead of its queue row
+      if (s.chat.some((m) => m.from === 'you' && waiting.has(m.id) && !m.outcome)) problems.push('a waiting note that never ended also shows in the chat')
       if (queue.length && !running) {
         if (!s.queueHeld) problems.push(`NoDeadlock: ${REELS[x]} has waiting notes, is not held, and runs nothing`)
         if (!model.held[x]) problems.push(`${REELS[x]} should be running its next note`)

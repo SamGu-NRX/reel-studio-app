@@ -131,8 +131,9 @@ export function NotesLog({
   const [open, setOpen] = useState<Record<number, boolean>>({})
   const [folded, setFolded] = useState(0)
   const [unfolded, setUnfolded] = useState(false)
-  // a note that didn't finish keeps its place in the queue to try again, but shows once: as its line in the log
-  const waiting = queue.filter((q) => !q.attempt && !entries.some((e) => e.key === q.id && e.result?.kind === 'failed'))
+  // a note that didn't finish (failed or stopped) keeps its place in the queue to try again, but shows once: as its
+  // line in the log, with Try again
+  const waiting = queue.filter((q) => !q.attempt && !entries.some((e) => e.key === q.id && (e.result?.kind === 'failed' || e.result?.kind === 'stopped')))
 
   // The newest version shows what changed until the person folds it.
   const isOpen = (n: number) => open[n] ?? n === latest
