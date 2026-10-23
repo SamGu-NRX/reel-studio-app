@@ -117,9 +117,6 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const [playhead] = useState(createPlayhead)
   const [transport] = useState(createTransport)
   const { duration } = useTransport(transport)
-  // the waiting hand edit Edit it myself is changing (its Edit in the log), or null for a new one
-  const [handId, setHandId] = useState<string | null>(null)
-  const [stage, setStage] = useState<HTMLElement | null>(null)
   const player = useMemo(
     () => ({
       playhead,
