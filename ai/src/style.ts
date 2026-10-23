@@ -1,7 +1,7 @@
 // "My style": durable user preferences, persisted in <Reel Studio root>/My style.json.
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import * as path from 'node:path';
 import { styleFile, writeFileAtomic } from './project';
 
@@ -25,8 +25,48 @@ export interface StyleRule {
   consent?: { proposal: string; at: string };
 }
 /** `damaged`: the file name of a damaged My style.json kept next to this one when My style started over.
- * `forgotten`: questions whose rule was removed, so answering one again cannot bring it back. IDs only. */
-export interface StyleFile { version: 1; rules: StyleRule[]; damaged?: string; forgotten?: string[] }
+ * `forgotten`: questions whose rule was removed, so answering one again cannot bring it back, and the words of
+ * removed rules and dismissed memories, which learning never proposes again: ids and normalized words, no notes. */
+export interface StyleFile { version: 1; rules: StyleRule[]; damaged?: string; forgotten?: string[]; proposals?: MemoryProposal[] }
+
+// ---- memories learned from post results (learning-loop: learn() in learning.ts drafts them, propose() keeps them)
+export type MemoryKind = 'captions' | 'pacing' | 'music' | 'cuts' | 'look';
+export interface TrialLink {
+  project: string; parentVersion: number; version: number; parentPostId: string; postId: string;
+  /** Relative to Projects, with the trials.json array index as a JSON pointer. */
+  href: string;
+}
+export interface MemoryProposal {
+  id: string; kind: MemoryKind; line: string; text: string; proposedAt: string;
+  from: { kind: 'note'; project: string; title: string; version: number; note?: string }
+    | { kind: 'results'; reels: string[]; metric: string; change: number; n: number; evidence: string; trials: TrialLink[] };
+}
+export type ProposalDraft = Omit<MemoryProposal, 'id' | 'proposedAt'>;
+export type ProposalStatus = 'added' | 'duplicate' | 'forgotten' | 'full';
+
+function record(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+function isTrialLink(value: unknown): value is TrialLink {
+  return record(value) && typeof value.project === 'string' && Number.isSafeInteger(value.parentVersion)
+    && Number.isSafeInteger(value.version) && typeof value.parentPostId === 'string' && typeof value.postId === 'string' && typeof value.href === 'string';
+}
+function isProposal(value: unknown): value is MemoryProposal {
+  if (!record(value) || typeof value.id !== 'string' || typeof value.proposedAt !== 'string'
+    || typeof value.text !== 'string' || typeof value.line !== 'string' || value.line.length > 60
+    || typeof value.kind !== 'string' || !['captions', 'pacing', 'music', 'cuts', 'look'].includes(value.kind) || !record(value.from)) return false;
+  const source = value.from;
+  return source.kind === 'note'
+    ? typeof source.project === 'string' && typeof source.title === 'string' && typeof source.version === 'number'
+      && (source.note === undefined || typeof source.note === 'string')
+    : source.kind === 'results' && Array.isArray(source.reels) && source.reels.every((r) => typeof r === 'string')
+      && typeof source.metric === 'string' && typeof source.change === 'number' && Number.isFinite(source.change)
+      && typeof source.n === 'number' && Number.isSafeInteger(source.n) && source.n > 0
+      && typeof source.evidence === 'string' && Array.isArray(source.trials) && source.trials.every(isTrialLink);
+}
+function proposalId(text: string): string {
+  return 'proposal-' + createHash('sha256').update(text).digest('hex');
+}
 export type Approval = { status: 'saved' | 'exists'; rule: StyleRule } | { status: 'forgotten' };
 
 export const LOWERCASE_CAPTIONS = 'Use lowercase subtitles.';
@@ -112,7 +152,59 @@ export class StyleStore {
     // the typed rule's words were "Use lowercase captions." before the app said subtitles everywhere
     const rules = data.rules.filter((r: any) => r && typeof r.text === 'string')
       .map((r: any) => (r.text === OLD_LOWERCASE_TEXT && isCaptionCase(r.payload) ? { ...r, text: LOWERCASE_CAPTIONS } : r));
-    return { ...rest, version: 1, rules, ...(forgotten.length ? { forgotten } : {}) };
+    const proposals = Array.isArray(rest.proposals) ? rest.proposals.filter(isProposal) : undefined;
+    return { ...rest, version: 1, rules, ...(forgotten.length ? { forgotten } : {}), ...(proposals ? { proposals } : {}) };
+  }
+
+  /** The file as learning reads it: never the recovery read() does. Learning runs with nobody there to see the
+   * "started over" line, so a damaged file stops it and stays as it is (learning-loop). */
+  private async readForLearning(): Promise<StyleFile> {
+    let data: any = null;
+    try { data = JSON.parse((await fsp.readFile(this.file, 'utf8')).replace(/^\uFEFF/, '')); } catch (e: any) {
+      if (e?.code === 'ENOENT') return { version: 1, rules: [] };
+    }
+    if (!Array.isArray(data?.rules) || (data.proposals !== undefined && (!Array.isArray(data.proposals) || !data.proposals.every(isProposal)))) {
+      throw new Error('The memory file could not be read. Restore it before saving memories.');
+    }
+    return this.read();
+  }
+
+  private proposalStatusIn(data: StyleFile, proposal: ProposalDraft): ProposalStatus | 'new' {
+    const text = normalize(cleanRuleText(proposal.text));
+    const id = proposalId(text);
+    if (data.forgotten?.some((forgotten) => forgotten === id || normalize(forgotten) === text)) return 'forgotten';
+    if (data.rules.some((r) => normalize(r.text) === text) || data.proposals?.some((p) => normalize(p.text) === text)) return 'duplicate';
+    return (data.proposals?.length ?? 0) >= 3 ? 'full' : 'new';
+  }
+
+  /** Whether propose() would keep this draft: learn() skips the ones it would not. */
+  async proposalStatus(proposal: ProposalDraft): Promise<ProposalStatus | 'new'> {
+    return this.proposalStatusIn(await this.readForLearning(), proposal);
+  }
+
+  /** Keeps a memory learn() drafted from post results, at most three waiting; never a rule until the person adds it. */
+  async propose(proposal: ProposalDraft): Promise<ProposalStatus> {
+    return this.serial(async () => {
+      const data = await this.readForLearning();
+      const status = this.proposalStatusIn(data, proposal);
+      if (status !== 'new') return status;
+      const text = cleanRuleText(proposal.text);
+      const saved = { ...proposal, text, id: proposalId(normalize(text)), proposedAt: new Date().toISOString() };
+      if (!isProposal(saved)) throw new Error('Invalid memory proposal. Supply a kind, a short line and its evidence.');
+      await this.write({ ...data, proposals: [...(data.proposals ?? []), saved] });
+      return 'added';
+    });
+  }
+
+  /** The person said no to a waiting memory: it, and the same words, are never proposed again. */
+  async dismiss(id: string): Promise<void> {
+    return this.serial(async () => {
+      const data = await this.readForLearning();
+      const proposal = data.proposals?.find((p) => p.id === id);
+      if (!proposal) return;
+      await this.write({ ...data, proposals: data.proposals?.filter((p) => p.id !== id),
+        forgotten: [...new Set([...(data.forgotten ?? []), id, normalize(proposal.text)])] });
+    });
   }
 
   private async write(data: StyleFile): Promise<void> {
@@ -144,7 +236,7 @@ export class StyleStore {
       if (data.rules.some((r) => r.id === rule.id)) return;
       const rules = [...data.rules];
       rules.splice(Math.max(0, Math.min(index, rules.length)), 0, rule);
-      const forgotten = (data.forgotten ?? []).filter((id) => id !== rule.consent?.proposal);
+      const forgotten = (data.forgotten ?? []).filter((id) => id !== rule.consent?.proposal && id !== normalize(rule.text));
       await this.write({ ...data, version: 1, rules, forgotten: forgotten.length ? forgotten : undefined });
     });
   }
@@ -231,14 +323,17 @@ export class StyleStore {
   }
 
   /** Returns the removed rule and where it was, for Undo (restore); null when it was already gone. */
-  async remove(id: string): Promise<{ rule: StyleRule; index: number } | null> {
+  /** `forget` (default true): its words are never proposed again by learning. False when the app takes back a rule
+   * the AI saved on its own, which the person never refused. */
+  async remove(id: string, options: { forget?: boolean } = {}): Promise<{ rule: StyleRule; index: number } | null> {
     return this.serial(async () => {
       const data = await this.read();
       const index = data.rules.findIndex((r) => r.id === id);
       if (index < 0) return null;
       const rule = data.rules[index];
       const asked = rule.consent?.proposal;
-      await this.write({ ...data, rules: data.rules.filter((r) => r.id !== id), ...(asked ? { forgotten: [...(data.forgotten ?? []), asked] } : {}) });
+      const forget = [...(asked ? [asked] : []), ...(options.forget === false ? [] : [normalize(rule.text)])];
+      await this.write({ ...data, rules: data.rules.filter((r) => r.id !== id), ...(forget.length ? { forgotten: [...new Set([...(data.forgotten ?? []), ...forget])] } : {}) });
       return { rule, index };
     });
   }

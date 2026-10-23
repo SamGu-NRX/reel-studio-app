@@ -44,6 +44,8 @@ export { CodexHarness } from './mcp/codex';
 export { SessionHarness } from './mcp/session';
 export { Prompts } from './prompts';
 export { StyleStore } from './style';
+export type { MemoryKind, MemoryProposal, ProposalDraft, ProposalStatus, TrialLink } from './style';
+export { learn, MIN_LEARNING_REACH } from './learning';
 export { AnthropicProvider, DEFAULT_CLAUDE_MODEL } from './providers/anthropic';
 export { SiwcAuth, USAGE_URL } from './providers/siwc';
 export { OpenAIResponsesProvider, listChatGPTModels, mapResponsesError } from './providers/openai';
@@ -671,7 +673,7 @@ export function createAI(opts: CreateAIOptions) {
       return typeof j?.title === 'string' && typeof j?.summary === 'string' ? { title: j.title, summary: j.summary } : null;
     },
     async styleRules() { return style.list(); },
-    async removeStyleRule(id: string) { return style.remove(id); },
+    async removeStyleRule(id: string, options?: { forget?: boolean }) { return style.remove(id, options); },
     /** The user said Yes to a proposed rule (AgentResult.styleSuggestions), typed one in My style, or kept one
      * learned from an export. `from`: the note or the export it came from. Returns the saved rule. */
     async addStyleRule(text: string, from?: Pick<StyleRule, 'source' | 'imported'>) { return (await style.add(text, from)).rule; },

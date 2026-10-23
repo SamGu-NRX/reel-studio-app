@@ -126,7 +126,9 @@ export interface AI {
   writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult>
   styleRules(): Promise<StyleRule[]>
   /** The removed rule and where it was, for Undo; null when it was already gone. */
-  removeStyleRule(id: string): Promise<{ rule: StyleRule; index: number } | null>
+  /** The removed rule and where it was, for Undo; null when it was already gone. `forget` (default true): learning
+   * (learn()) never proposes its words again; false when the app takes back a rule the AI saved on its own. */
+  removeStyleRule(id: string, options?: { forget?: boolean }): Promise<{ rule: StyleRule; index: number } | null>
   /** Saves one My style rule (after the user said Yes, typed in My style, or learned from an export). Optional: older packages lack it. */
   addStyleRule?(text: string, from?: Pick<StyleRule, 'source' | 'imported'>): Promise<StyleRule>
   /** Undo of removeStyleRule. */

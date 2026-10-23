@@ -533,8 +533,9 @@ async function replyAskingAboutStyle(r: AgentResult, summary: string): Promise<{
   const c = styleConsent(summary, r.styleRulesAdded, r.styleSuggestions, r.styleProposal)
   if (c.undo.length) {
     const rules = await ai.styleRules().catch(() => [])
-    // a typed rule was saved with the person's Yes; only sentences the AI saved on its own are undone
-    for (const rule of rules) if (c.undo.includes(rule.text) && !rule.payload) await ai.removeStyleRule(rule.id).catch(() => undefined)
+    // a typed rule was saved with the person's Yes; only sentences the AI saved on its own are undone, and taking
+    // one back is not the person refusing it, so learning may still suggest it (learning-loop)
+    for (const rule of rules) if (c.undo.includes(rule.text) && !rule.payload) await ai.removeStyleRule(rule.id, { forget: false }).catch(() => undefined)
   }
   return { summary: c.summary, version: r.version, chat: replyChat(c, r.version, r.styleProposal) }
 }

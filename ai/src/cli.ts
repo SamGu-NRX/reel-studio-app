@@ -18,6 +18,8 @@ import { CodexHarness } from './mcp/codex';
 import { SessionHarness } from './mcp/session';
 import { writeFileAtomic } from './project';
 import { devSettingsDir as defaultSettingsDir } from './safety';
+import { learn } from './learning';
+import { StyleStore } from './style';
 
 function parseArgs(argv: string[]): { cmd: string; flags: Record<string, string | true> } {
   const [cmd, ...rest] = argv;
@@ -67,6 +69,17 @@ const log = (e: AgentEvent) => {
 
 async function main() {
   const { cmd, flags } = parseArgs(process.argv.slice(2));
+  if (cmd === 'learn') {
+    if (typeof flags['projects-root'] !== 'string' || !flags['projects-root'].trim()) throw new Error('--projects-root DIR is required');
+    const projectsRoot = path.resolve(flags['projects-root']);
+    const style = new StyleStore(() => path.dirname(projectsRoot));
+    const results = [];
+    for (const proposal of await learn(projectsRoot, style)) {
+      results.push({ proposal, status: await style.propose(proposal) });
+    }
+    process.stdout.write(JSON.stringify(results, null, 2) + '\n');
+    return;
+  }
   if (cmd === 'pick-takes') {
     if (typeof flags.in !== 'string' || typeof flags.out !== 'string') throw new Error('--in and --out are required');
     const input = JSON.parse(fs.readFileSync(flags.in, 'utf8').replace(/^﻿/, ''));
@@ -133,6 +146,7 @@ async function main() {
   apply-note   --project DIR --note TEXT --provider P [--harness claude-code|codex] [--check-edits] [...]
                --harness: runs the note in that CLI with tools over MCP; --check-edits checks it in the other CLI
   write-script --idea TEXT --provider P [...]
+  learn        --projects-root DIR    queue result-based suggestions without AI
   chatgpt-signin  [--settings DIR] --insecure-plaintext
                   sign in with ChatGPT in your browser, then list models. The CLI has no OS keychain,
                   so tokens are kept in a PLAIN file and only with --insecure-plaintext.
