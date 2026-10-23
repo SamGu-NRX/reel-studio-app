@@ -124,7 +124,7 @@ describe('job manager (main): the contract on the wire', () => {
       await new Promise((r) => setTimeout(r, 80))
       emit({ type: 'tool', name: 'set_cut', summary: 'Kept your best takes' })
       emit({ type: 'reply', text: 'Done soon.' })
-      return { summary: 'ok', version: 1, quiet: true }
+      return { summary: 'ok', version: 1, chat: [] }
     })
     await jobs.forSlug(slug)?.done
     const i = events.findIndex((e) => e.type === 'status' && e.thinking)
@@ -170,7 +170,7 @@ describe('job manager (main): the contract on the wire', () => {
       now = 120_000
       status()
       reopened = timeLeftWords(liveFromDetail(running))
-      return { summary: 'ok', quiet: true }
+      return { summary: 'ok', chat: [] }
     })
     try {
       await jobs.forSlug(slug)!.done
