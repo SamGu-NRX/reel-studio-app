@@ -43,6 +43,9 @@ export interface AppState {
   queue?: QueuedNote[]
   /** The queue waits for "Run next": after Stop, a failed note, or a restart. */
   queueHeld?: boolean
+  /** Each time a version was posted. Insights joins the sidebar once any reel has one (ux-foundation-b.md section 6);
+   * posting itself is not built yet (spec.md section 11), so nothing writes this today. */
+  posted?: { version: number; platform: 'instagram'; at: string }[]
 }
 
 const EMPTY_STATE: AppState = { chat: [], job: null, status: 'new', lastError: null }
@@ -532,7 +535,8 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
       version: 0,
       thumbnail: null,
       status: st.job ? 'working' : st.status === 'ready' ? 'failed' : st.status,
-      waiting: (st.queue ?? []).filter((q) => !q.attempt).length
+      waiting: (st.queue ?? []).filter((q) => !q.attempt).length,
+      posted: !!st.posted?.length
     }
   }
   const versions = await listVersions(dir)
@@ -554,7 +558,8 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
     version: last?.n ?? 0,
     thumbnail: last?.cover ?? null,
     status,
-    waiting: (st.queue ?? []).filter((q) => !q.attempt).length
+    waiting: (st.queue ?? []).filter((q) => !q.attempt).length,
+    posted: !!st.posted?.length
   }
 }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { ProviderInfo } from '../../../shared/api'
 import type { Go } from '../nav'
+import { reel } from '../api'
 import { Icon, type IconName } from './icons'
 import { UpdateButton } from './UpdateButton'
 import { byKeyboard, reducedMotion } from './motion'
@@ -128,14 +129,24 @@ function SideResizer() {
   )
 }
 
+/** Insights joins the sidebar once a reel has been posted (ux-foundation-b.md section 6). Read again on every screen change. */
+function usePosted(section: string): boolean {
+  const [posted, setPosted] = useState(false)
+  useEffect(() => {
+    reel.projects.list().then((reels) => setPosted(reels.some((r) => r.posted)), () => {})
+  }, [section])
+  return posted
+}
+
 export function Sidebar({ section, go, provider, userName }: { section: string; go: Go; provider: ProviderInfo | null; userName: string | null }) {
+  const posted = usePosted(section)
   const name = providerName(provider)
   const who = userName?.trim() || 'You'
   const inSettings = section === 'settings'
   return (
     <aside className="side" id="sidebar" aria-label="Sidebar">
       <nav className="nav" aria-label="Main">
-        {NAV.map((n) => (
+        {NAV.filter((n) => n.key !== 'insights' || posted).map((n) => (
           <button
             key={n.key}
             className={section === n.key ? 'on' : undefined}
