@@ -158,8 +158,10 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       try {
         const got = await reel.projects.get(slug)
         if (n !== loads.current) return null
-        // Until a reel is ready, a draft render is a first look, not a version: Version 1 is still to come.
-        const next = got.status === 'ready' ? got : { ...got, versions: got.versions.filter((v) => !v.draft) }
+        // Until a reel is ready, a draft render is a first look, not a version: Version 1 is still to come. Making a
+        // preview full quality for Share (an export job) leaves it the reel's version while it runs, or Share and its
+        // Stop would vanish from the title bar mid-export.
+        const next = got.status === 'ready' || got.job?.kind === 'export' ? got : { ...got, versions: got.versions.filter((v) => !v.draft) }
         selectLatest = wantLatest.current
         wantLatest.current = false
         setD(next)
