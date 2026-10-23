@@ -16,16 +16,18 @@ test('first run downloads the listening model with progress', async () => {
   const { app, page } = await launch({ REELSTUDIO_MODELS_DIR: models, REELENGINE_MODEL: model })
   try {
     const t0 = Date.now()
-    // The download starts by itself with the first run; it never holds a step up, so this watches the line.
+    // The download starts by itself with the first run; it never holds a step up, so this watches the footer's line,
+    // which goes away once the model is here.
     await page.getByTestId('get-started').click()
     await shot(page, 'firstrun/01-download')
     const line = page.getByTestId('model-line')
     const retry = page.getByTestId('model-retry')
+    const installed = () => page.evaluate(() => window.reel.model.status().then((s) => s.installed))
     const seen = new Set<number>()
     let retries = 0
     // A dropped connection stops the download and the line says so with Try again, like a person would see it.
     // Click it, as they would; the engine resumes the .part file with an HTTP Range request.
-    while (!(await line.getByText('Listening model ready').isVisible())) {
+    while (!(await installed())) {
       if (await retry.isVisible()) {
         const why = await page.getByTestId('model-error').innerText().catch(() => '')
         if (++retries > 5) throw new Error(`download stopped ${retries} times: ${why}`)
@@ -46,6 +48,7 @@ test('first run downloads the listening model with progress', async () => {
     expect(pcts.length, 'saw the progress move').toBeGreaterThan(2)
     expect(readdirSync(join(models, model))).toEqual(expect.arrayContaining(['model.bin', 'config.json']))
     expect(existsSync(join(models, model, 'model.bin.part'))).toBe(false)
+    await expect(line).toHaveCount(0)
     await shot(page, 'firstrun/03-ready')
   } finally {
     await app.close()

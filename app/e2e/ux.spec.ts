@@ -178,7 +178,7 @@ async function claudeScreen(state: string, env: Record<string, string> = {}) {
   await passFirstRun(page)
   const info = await page.evaluate(() => window.reel.app.info())
   // one build: no flavour field, just these
-  expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'fasterExports', 'firstRunDone', 'models', 'phoneView', 'platform', 'root', 'rootDisplay', 'sharing', 'test', 'userName', 'version'])
+  expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'fasterExports', 'firstRunDone', 'models', 'phoneView', 'platform', 'root', 'rootDisplay', 'sharing', 'soundEffects', 'test', 'userName', 'version'])
   await openSettings(page)
   await expect(page.getByTestId('signin-chatgpt')).toBeVisible()
   return { app, page, info, userData, panel: page.locator('#sec-editor') }

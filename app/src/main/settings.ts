@@ -30,6 +30,8 @@ export interface Settings {
   models: ModelChoice
   sharing: DataSharing
   phoneView: PhoneView
+  /** the first run's sample plays its two sounds */
+  soundEffects: boolean
 }
 
 const DEFAULTS: Settings = {
@@ -48,7 +50,8 @@ const DEFAULTS: Settings = {
   checkEdits: false,
   models: { editor: 'auto', checker: 'auto', writer: 'auto' },
   sharing: { asked: false, on: false, usage: true, quality: true, posts: true },
-  phoneView: 'instagram'
+  phoneView: 'instagram',
+  soundEffects: true
 }
 
 export async function loadSettings(): Promise<Settings> {

@@ -225,7 +225,7 @@ pauses and subtitles are simulated from a written script. The photos are cropped
 | `raw.mp4`, `simple.mp4`, `ai.mp4`, `raw-poster.jpg`, `cover.jpg`, `cand-*.jpg` | Mary Mammoliti in her kitchen studio.jpg | Anooch11 | CC0 1.0 |
 | `v_loaf.jpg` and the loaf in `ai.mp4` | Sourdough Bread Loaf.jpg | Agelaia | CC BY 4.0 |
 | `v_knead.jpg` and the hands in `ai.mp4` | Baker woman’s hands kneading bread dough.jpg | Shixart1985 | CC BY 2.0 |
-| `cut.mp3`, `ready.mp3`, `toggle.mp3` | Interface Sounds by Kenney (`drop_002`, `glass_004`, `toggle_004`), re-encoded to mono MP3 | Kenney | CC0 1.0 |
+| `cut.mp3`, `ready.mp3` | Interface Sounds by Kenney (`drop_002`, `glass_004`), re-encoded to mono MP3 | Kenney | CC0 1.0 |
 
 ### Fonts (bundled, SIL OFL 1.1 or Apache-2.0)
 

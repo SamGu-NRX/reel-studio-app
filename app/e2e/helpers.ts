@@ -75,24 +75,11 @@ export async function openSettings(page: Page): Promise<void> {
   await page.getByTestId('account').click()
 }
 
-/** Other systems skip the "Your Mac" stage. */
-/** Welcome, then the sample: skips the demo and moves to the next step. */
+/** Welcome, then the sample: skips the demo and goes on to Choose your editor. */
 export async function passSample(page: Page): Promise<void> {
   await page.getByTestId('get-started').click()
   await page.getByTestId('demo-skip').click()
   await page.getByTestId('demo-next').click()
-}
-
-/** The Mac's questions, one card at a time (macOS only): allows the folder, skips notifications. */
-export async function passMacStage(page: Page): Promise<void> {
-  const mac = page.getByTestId('stage-mac')
-  const ai = page.getByRole('heading', { name: 'Connect your AI editor' })
-  await expect(mac.or(ai)).toBeVisible()
-  if (!(await mac.isVisible())) return
-  await page.getByTestId('perm-folder-allow').click()
-  await expect(page.getByTestId('perm-folder')).toHaveAttribute('data-state', 'allowed')
-  await page.getByTestId('perm-notifications-skip').click()
-  await expect(ai).toBeVisible()
 }
 
 /** New reel from the sidebar, then its video from the stage's file picker: Version 1 is made on the Reel screen. */
@@ -111,9 +98,9 @@ export async function makeReel(page: Page, video: string, timeout = 240_000): Pr
   await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout })
 }
 
-/** The listening model's line in the setup panel, once it has settled. */
+/** The listening model is on this computer (the first run starts getting it on Get started). */
 export async function modelReady(page: Page): Promise<void> {
-  await expect(page.getByTestId('model-line')).toContainText('Listening model ready', { timeout: 30_000 })
+  await expect.poll(() => page.evaluate(() => window.reel.model.status().then((s) => s.installed)), { timeout: 30_000 }).toBe(true)
 }
 
 /** New reel, as File > New Video (Cmd+N) sends it: the app's own command, wherever its button sits on screen. */
@@ -123,17 +110,26 @@ export async function newReel(app: ElectronApplication): Promise<void> {
   })
 }
 
-/** Gets past the first-run screens if this is a fresh profile. */
+/**
+ * Gets past the first-run screens if this is a fresh profile, without an editor, and leaves it on Reels with no
+ * reels, as every spec that uses it expects. The first run ends on a new reel with no video; onboarding.spec checks
+ * that reel, so here it is removed.
+ */
 export async function passFirstRun(page: Page): Promise<void> {
   const welcome = page.getByTestId('get-started')
   const home = page.getByRole('heading', { name: 'Reels' })
   await expect(welcome.or(home)).toBeVisible()
   if (await welcome.isVisible()) {
     await passSample(page)
-    await passMacStage(page)
     await modelReady(page)
-    await page.getByTestId('skip').click()
-    await page.getByTestId('share-no').click()
+    await page.getByTestId('not-now').click()
+    await expect(page.getByTestId('planned-stage')).toBeVisible()
+    await page.getByTestId('nav-home').click()
+    await page.evaluate(async () => {
+      for (const p of await window.reel.projects.list()) await window.reel.projects.remove(p.slug)
+    })
+    // Reels read its list when it opened, with the reel still in it
+    await page.reload()
   }
   await expect(home).toBeVisible()
 }

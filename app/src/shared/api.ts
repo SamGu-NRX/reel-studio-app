@@ -426,6 +426,8 @@ export interface AppInfo {
   sharing: DataSharing
   /** How the phone preview shows a reel: under Instagram's Reels screen, or the video alone. */
   phoneView: PhoneView
+  /** Whether the first run's sample plays its sound effects. */
+  soundEffects: boolean
 }
 
 export type PhoneView = 'instagram' | 'clean'
@@ -583,6 +585,7 @@ export interface ReelApi {
     setModels(models: ModelChoice): Promise<AppInfo>
     setSharing(sharing: DataSharing): Promise<AppInfo>
     setPhoneView(view: PhoneView): Promise<AppInfo>
+    setSoundEffects(on: boolean): Promise<AppInfo>
     /** Menu items, keyboard shortcuts handled by the menu, and notification clicks. */
     onCommand(cb: (c: AppCommand) => void): () => void
     /** Drag a finished file out of the app (desktop, folder, browser upload box). Call from dragstart. */
