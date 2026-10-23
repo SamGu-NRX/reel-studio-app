@@ -77,10 +77,13 @@ export function ShowMeHow({
     setTabState(t)
     onTab?.(t)
   }
+  const leaveTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(leaveTimer.current), [])
   const close = useCallback(() => {
     if (byKeyboard() || reducedMotion()) return onClose()
+    if (leaveTimer.current !== undefined) return
     setLeaving(true)
-    window.setTimeout(onClose, LEAVE_MS)
+    leaveTimer.current = window.setTimeout(onClose, LEAVE_MS)
   }, [onClose])
 
   // where each word plays in the version on the player, for times and the live previews

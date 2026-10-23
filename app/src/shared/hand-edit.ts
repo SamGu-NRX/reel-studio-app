@@ -48,8 +48,9 @@ function walk(a: unknown, b: unknown, path: string[], out: HandEdit): void {
   }
   if (same(a, b)) return
   if (b === undefined) out.set.push({ path, unset: true })
-  else if (isObject(b) && a === undefined && path.length === 1) {
-    // a part the project did not have yet: each of its values is set on its own
+  else if (isObject(b) && (a === undefined || a === null)) {
+    // a part the project did not have yet: each of its values is set on its own, so a part a later note
+    // added there keeps the values this edit did not touch
     for (const k of Object.keys(b)) walk(undefined, b[k], [...path, k], out)
   } else out.set.push({ path, value: b })
 }

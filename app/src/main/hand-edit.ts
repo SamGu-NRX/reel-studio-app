@@ -1,7 +1,8 @@
 // A change made in "Edit it myself", run when its turn in the reel's queue comes (note-queue.ts). It lands on
 // the newest project.json, whatever notes ran before it, and like a note it is all-or-nothing: the edited
 // project is rendered from a private copy (work/hand/<id>/edit.json) and replaces project.json in one write
-// only after its final render. A failure, Stop or quit before that leaves the project as it was.
+// only after its final render, with the edit's id in `handEdits` (the queue's proof it ran, as a note's id in
+// `notes` is). A failure, Stop or quit before that leaves the project as it was.
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import type { QueuedNote } from '../shared/api'
@@ -12,6 +13,8 @@ import type { RunEngine } from './engine'
 import { projectDir, readProject, readWords, writeJson, writeProject } from './store'
 
 export const HAND_MESSAGE = 'Making your changes'
+/** Enough ids to outlast any queue; older ones only grow project.json. */
+const HANDS_KEPT = 20
 
 export function handEditJob(runEngine: RunEngine, slug: string, entry: QueuedNote & { hand: NonNullable<QueuedNote['hand']> }): JobFn {
   return async (emit, signal, { owner }) => {
@@ -41,6 +44,7 @@ export function handEditJob(runEngine: RunEngine, slug: string, entry: QueuedNot
       if (signal.aborted) throw { code: 'CANCELLED', userMessage: 'Stopped.' }
       const done = JSON.parse(await fs.readFile(file, 'utf8'))
       const version = Number(r?.version ?? done.version)
+      done.handEdits = [...(Array.isArray(done.handEdits) ? done.handEdits : []), entry.id].slice(-HANDS_KEPT)
       await writeProject(slug, done)
       emit({ type: 'render', version, draft: false, ...(r?.file ? { file: String(r.file) } : {}) })
       return { summary: versionMessage(version, entry.text), version, made: { by: 'hand', summary: entry.text } }

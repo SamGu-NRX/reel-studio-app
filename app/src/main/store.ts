@@ -25,6 +25,7 @@ import { libraryMediaUrl } from './library'
 import { replyChat, styleConsent, type ChatLine } from './style-consent'
 import { keptIds } from '../shared/cut'
 import { readCaptionLines } from '../shared/subtitle-lines'
+import { versionMessage } from '../shared/describe'
 export { keptIds, rangesFromKept, rangesKeepingOrder } from '../shared/cut'
 
 export interface AppState {
@@ -402,12 +403,18 @@ export async function settleInterrupted(slug: string): Promise<'settled' | 'unre
   if (!s.job) return 'nothing'
   const saved = s.job.kind === 'note' ? await savedNote(dir, s.job.noteId ?? s.job.id) : null
   if (saved === UNREADABLE) return 'unreadable'
+  // an Edit it myself change saved just before the app closed: its version is made (hand-edit.ts)
+  const hand = s.job.kind === 'rerender' && s.job.noteId ? s.queue?.find((q) => q.id === s.job!.noteId && q.hand) : undefined
+  const handSaved = hand ? await readJson<{ version?: number; handEdits?: unknown } | null>(join(dir, 'project.json'), null) : null
+  const handVersion = Array.isArray(handSaved?.handEdits) && handSaved.handEdits.includes(hand!.id) ? Number(handSaved.version) : null
   await cleanPartialVersions(dir)
   await updateAppState(slug, (st) => {
     st.status = st.job?.kind === 'first-edit' || !existsSync(join(dir, 'versions')) ? 'interrupted' : 'ready'
     if (saved) {
       const reply = saved.reply ?? `I made your change. It is Version ${saved.version}.`
       st.chat.push(...replyChat(styleConsent(reply, saved.styleRulesAdded, saved.styleSuggestions), saved.version).map(stamp))
+    } else if (handVersion !== null) {
+      st.chat.push(stamp({ from: 'editor', text: versionMessage(handVersion, hand!.text), version: handVersion }))
     } else if (st.queue?.some((q) => q.id === st.job?.noteId)) {
       st.chat.push(stamp({ from: 'editor', text: 'Reel Studio closed before I finished that change. It is waiting below. Press Run next when you want it.' }))
     } else if (st.status === 'ready' && st.job?.kind !== 'export') {

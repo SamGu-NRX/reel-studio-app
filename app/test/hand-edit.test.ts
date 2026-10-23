@@ -86,4 +86,11 @@ describe('hand edits', () => {
     const edited = { ...v1, cover: { atSourceTime: 4, source: 's1', text: null, exact: null, manual: true } }
     expect(countChanges(diffProject(v1, edited, kept(v1), after), words)).toBe(2)
   })
+
+  it('fails if a style the project did not have yet replaces, whole, the style a note gave it meanwhile', () => {
+    const v1 = project({ captions: { enabled: true } })
+    const edit = diffProject(v1, { ...v1, captions: { enabled: true, style: { size: 126 } } }, kept(v1), kept(v1))
+    const v2 = project({ version: 2, captions: { enabled: true, style: { position: 0.66, color: '#FFD60A' } } })
+    expect(applyHandEdit(v2, edit, words).captions?.style).toEqual({ position: 0.66, color: '#FFD60A', size: 126 })
+  })
 })

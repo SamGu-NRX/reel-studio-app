@@ -680,7 +680,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               initialTab={drawer}
               version={version ?? null}
               player={player}
-              queued={handId ? (d.queue.find((q) => q.id === handId && !q.attempt) ?? null) : null}
+              queued={handId ? (d.queue.find((q) => q.id === handId) ?? null) : null}
               onClose={() => {
                 setDrawer(null)
                 setHandId(null)

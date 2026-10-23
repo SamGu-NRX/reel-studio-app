@@ -10,11 +10,13 @@ export interface Draft {
   kept: Set<string>
 }
 
-interface Session {
+export interface Session {
   /** the project the changes are measured from: the newest one seen, so the preview shows what the next version will */
   base: Draft
   /** the waiting hand edit being changed, and its edit as it waits */
   queued: { id: string; edit: HandEdit } | null
+  /** that edit once it started, until project.json says it landed (`handEdits`): the base includes it meanwhile */
+  landing: { id: string; edit: HandEdit } | null
   /** every state, oldest first; Undo steps back one */
   history: Draft[]
   /** a run of typing in one box is one step of Undo */
@@ -28,27 +30,40 @@ const keyOf = (slug: string, queued: QueuedNote | null): string => `${slug}:${qu
 const draftOf = (d: ProjectDetail, p: ProjectJson): Draft => ({ p, kept: new Set(keptIds(d.words, p.cut?.keep)) })
 
 /** The same changes, measured again from a newer project (a note landed while they waited). */
-function rebase(s: Session, d: ProjectDetail): Session {
-  const base = draftOf(d, d.project)
-  const moved = (x: Draft): Draft => draftOf(d, applyHandEdit(d.project, diffProject(s.base.p, x.p, s.base.kept, x.kept), d.words))
-  return { ...s, base, history: s.history.map(moved) }
+function rebase(s: Session, d: ProjectDetail, to: ProjectJson): Session {
+  const moved = (x: Draft): Draft => draftOf(d, applyHandEdit(to, diffProject(s.base.p, x.p, s.base.kept, x.kept), d.words))
+  return { ...s, base: draftOf(d, to), history: s.history.map(moved) }
 }
 
-function open(d: ProjectDetail, queued: QueuedNote | null): Session {
+/** The waiting edit started: from now on the changes are measured from what it makes, so undoing one of its
+ * changes is kept as a change of its own. */
+function started(s: Session, d: ProjectDetail): Session {
+  return { ...s, queued: null, landing: s.queued, base: draftOf(d, applyHandEdit(s.base.p, s.queued!.edit, d.words)) }
+}
+
+/** The session after `d` arrived: measured from its project, and from what a waiting edit makes once it started. */
+export function follow(cur: Session, d: ProjectDetail): Session {
+  let s = cur.queued && !d.queue.some((q) => q.id === cur.queued!.id && !q.attempt) ? started(cur, d) : cur
+  const landed = (d.project.handEdits as string[] | undefined)?.includes(s.landing?.id ?? '')
+  if (landed) s = { ...s, landing: null }
+  const to = s.landing ? applyHandEdit(d.project, s.landing.edit, d.words) : d.project
+  return JSON.stringify(s.base.p) === JSON.stringify(to) ? s : rebase(s, d, to)
+}
+
+export function open(d: ProjectDetail, queued: QueuedNote | null): Session {
   const had = sessions.get(keyOf(d.slug, queued))
-  if (had) {
-    return JSON.stringify(had.base.p) === JSON.stringify(d.project) ? had : rebase(had, d)
-  }
+  if (had) return follow(had, d)
   const base = draftOf(d, d.project)
   if (queued?.hand) {
     const start = draftOf(d, applyHandEdit(d.project, queued.hand.edit, d.words))
-    return { base, queued: { id: queued.id, edit: queued.hand.edit }, history: [start], lastKey: null }
+    return { base, queued: { id: queued.id, edit: queued.hand.edit }, landing: null, history: [start], lastKey: null }
   }
-  return { base, queued: null, history: [base], lastKey: null }
+  return { base, queued: null, landing: null, history: [base], lastKey: null }
 }
 
 export function useEditSession(d: ProjectDetail, queued: QueuedNote | null) {
-  const key = keyOf(d.slug, queued)
+  // the panel keeps one session while it is open, even after the waiting edit it opened on starts
+  const [key] = useState(() => keyOf(d.slug, queued))
   const [s, setS] = useState(() => open(d, queued))
   const live = useRef(s)
   live.current = s
@@ -57,7 +72,7 @@ export function useEditSession(d: ProjectDetail, queued: QueuedNote | null) {
   }, [key, s])
   // a version landed while the panel is open: the changes stay, measured from it
   useEffect(() => {
-    setS((cur) => (JSON.stringify(cur.base.p) === JSON.stringify(d.project) ? cur : rebase(cur, d)))
+    setS((cur) => follow(cur, d))
   }, [d])
 
   const now = s.history[s.history.length - 1]
@@ -88,8 +103,7 @@ export function useEditSession(d: ProjectDetail, queued: QueuedNote | null) {
     finish: () => sessions.delete(key),
     /** The edit to send again on top of a waiting one that started before it could be changed. */
     onTopOfQueued: (): HandEdit => {
-      const q = live.current.queued!
-      const after = draftOf(d, applyHandEdit(live.current.base.p, q.edit, d.words))
+      const after = started(live.current, d).base
       return diffProject(after.p, now.p, after.kept, now.kept)
     }
   }

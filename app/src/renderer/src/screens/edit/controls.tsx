@@ -31,7 +31,9 @@ export function arrowPick(e: React.KeyboardEvent<HTMLElement>, keys: string[], v
   onPick(next)
   e.currentTarget.querySelector<HTMLElement>(`[data-key="${next}"]`)?.focus()
 }
-export const tabStop = (key: string, value: string | null, keys: readonly string[]): number => (key === (value ?? keys[0]) ? 0 : -1)
+/** The radio that holds the group's Tab stop: the chosen one, or the first when none of them is (a custom colour). */
+export const tabStop = (key: string, value: string | null, keys: readonly string[]): number =>
+  key === (value !== null && keys.includes(value) ? value : keys[0]) ? 0 : -1
 
 export function Seg({ value, options, onPick, testid, label }: { value: string; options: readonly { key: string; label: string }[]; onPick: (k: string) => void; testid: string; label: string }) {
   const keys = options.map((o) => o.key)

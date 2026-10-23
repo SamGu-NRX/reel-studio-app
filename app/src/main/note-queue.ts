@@ -2,8 +2,8 @@
 // the send returns. Entries run one at a time, oldest first, each as a note job on whatever version is
 // newest by then. An entry's id is the id the note is saved under in project.json.notes, so the commit
 // that publishes the note is also the proof it ran: an entry leaves the queue only once its id is there.
-// A change made in "Edit it myself" waits in the same queue (an entry with `hand`); it is done once its job
-// ends with its final render saved (hand-edit.ts). The queue runs on by itself only after a committed note. Stop, a failure and a restart hold it until
+// A change made in "Edit it myself" waits in the same queue (an entry with `hand`); its proof is its id in
+// project.json.handEdits (hand-edit.ts). The queue runs on by itself only after a committed note or edit. Stop, a failure and a restart hold it until
 // "Run next", so nothing the creator stopped to rethink applies behind their back.
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
@@ -26,8 +26,8 @@ export type StartHand = (slug: string, entry: HandEntry, record: (s: AppState) =
 const STARTED = { code: 'NOT_QUEUED', userMessage: 'That note already started, so it can no longer change.' }
 
 async function committed(slug: string): Promise<{ version: number; ids: Set<string> } | null> {
-  const p = await readJson<{ version?: number; notes?: { id?: string }[] } | null>(join(projectDir(slug), 'project.json'), null)
-  return p && { version: Number(p.version) || 0, ids: new Set((p.notes ?? []).map((n) => n.id ?? '')) }
+  const p = await readJson<{ version?: number; notes?: { id?: string }[]; handEdits?: string[] } | null>(join(projectDir(slug), 'project.json'), null)
+  return p && { version: Number(p.version) || 0, ids: new Set([...(p.notes ?? []).map((n) => n.id ?? ''), ...(p.handEdits ?? [])]) }
 }
 
 export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; startHand: StartHand; changed: (slug: string) => void; log: (s: string) => void }) {
@@ -185,8 +185,7 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
         await ended
         const st = await readAppState(slug)
         const ran = st.queue?.find((q) => q.attempt)
-        // a hand edit is saved by the job that ends with `done` (hand-edit.ts); a note by its id in project.json
-        const saved = !!ran && (ran.hand ? e.type === 'done' : !!(await committed(slug))?.ids.has(ran.id))
+        const saved = !!ran && !!(await committed(slug))?.ids.has(ran.id)
         // a stopped note stays in the log to send again; a stopped hand edit stays waiting, with its changes
         const drop = saved || (byStop && !!ran && !ran.hand)
         const runOn = e.type === 'done' && (saved || !ran)

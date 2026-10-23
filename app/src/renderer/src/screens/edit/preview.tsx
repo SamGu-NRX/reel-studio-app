@@ -44,7 +44,7 @@ export function SoundCues({ player, cues }: { player: PlayerHandle; cues: { at: 
     const off = playhead.subscribe(() => {
       const t = playhead.get()
       // a step forward the size of a frame or two is playback; a seek starts nothing
-      if (t > last && t - last < 0.25) cues.forEach((c, i) => c.at > last && c.at <= t && ((audio[i].currentTime = 0), void audio[i].play().catch(() => {})))
+      if (t > last && t - last < 0.25) cues.forEach((c, i) => c.at >= last && c.at < t && ((audio[i].currentTime = 0), void audio[i].play().catch(() => {})))
       last = t
     })
     return () => {

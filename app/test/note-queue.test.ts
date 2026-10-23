@@ -208,4 +208,25 @@ describe('note queue', () => {
     expect((await readAppState(slug)).queue).toEqual([])
     expect((await readAppState(slug)).versionsMade?.find((m) => m.version === 3)).toMatchObject({ by: 'hand', summary: 'subtitles moved up' })
   }, 60000)
+
+  it('fails if a hand edit saved just before a crash runs again, or is reported as still waiting', async () => {
+    setupPaths()
+    const slug = await reel('hand-crash-after')
+    const v1 = await readProject(slug)
+    const kept = new Set(keptIds(await readWords(projectDir(slug), v1), v1.cut?.keep))
+    const hand = { edit: diffProject(v1, { ...v1, captions: { ...v1.captions!, style: { ...v1.captions!.style, position: 0.66 } } }, kept, kept), changes: 1 }
+    const run = createEngineRunner({ python: () => PYTHON, env: () => ({ ...engineEnv(), PYTHONPATH: FAKE_ENGINE }) })
+    // the edit is saved as Version 2, then the app closes before the queue hears it ended
+    await handEditJob(run, slug, { ...entry('h1', 'subtitles moved up', true), hand })(() => undefined, new AbortController().signal, { id: 'job-1', owner: null })
+    await updateAppState(slug, (s) => {
+      s.job = { id: 'job-1', kind: 'rerender', startedAt: '', noteId: 'h1' }
+      s.queue = [{ ...entry('h1', 'subtitles moved up', true), hand }, entry('q2', 'second')]
+    })
+    await recoverInterrupted()
+    const a = app()
+    await a.queue.recover()
+    expect(await waitingTexts(slug)).toEqual(['second'])
+    expect(await replies(slug)).toEqual(['Version 2: subtitles moved up.'])
+    expect((await readProject(slug)).version).toBe(2)
+  }, 60000)
 })
