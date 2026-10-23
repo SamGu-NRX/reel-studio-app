@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatAction, ExportResult, NoteMoment, PlacedWord, ProjectDetail, ProviderInfo } from '../../../shared/api'
+import type { ChatAction, NoteMoment, PlacedWord, ProjectDetail, ProviderInfo } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
 import { EMPTY_LIVE, liveFromDetail, reduceLive, type LiveState } from '../../../shared/live'
 import { noteMarks, noteMoment, sourceAt, wordsAt, type RenderSegment } from '../../../shared/moments'
@@ -105,8 +105,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     setHeldN(0)
   }, [providerChecked, att.onDropFiles])
   const versionRows = useVersionRows(slug)
-  // one export per version: a cloud save after Export reuses the file
-  const exports = useRef(new Map<number, ExportResult>())
   const lastJob = useRef<string | null>(null)
 
   const load = useCallback(
@@ -197,15 +195,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
 
   const latestN = d?.versions[d.versions.length - 1]?.n
   const older = version && version.n !== latestN ? version : null
-
-  const exportFile = useCallback(async (): Promise<ExportResult> => {
-    if (!version) throw { userMessage: 'Wait for your first version.' }
-    const had = exports.current.get(version.n)
-    if (had) return had
-    const r = await reel.projects.exportVersion(slug, version.n)
-    exports.current.set(version.n, r)
-    return r
-  }, [slug, version])
 
   // N: ask about the moment on screen.
   useEffect(() => {
@@ -525,7 +514,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
           post={d.project.post}
           disabled={!version || !!job}
           why={job ? 'Wait for this version to finish.' : undefined}
-          exportFile={exportFile}
           onSaveCaption={savePost}
         />
         <button
