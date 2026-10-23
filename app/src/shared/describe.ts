@@ -2,6 +2,7 @@
 // change did, so the chat and the version buttons mean something. Keep free of Node and DOM imports.
 import type { ChatMessage, DropResult, EditFact, ProjectJson, VersionInfo, Word } from './api'
 import { keptIds } from './cut'
+import { CAPTION_PRESETS, presetOf } from './caption-presets'
 import { isMirrored } from './mirror'
 
 type Style = Record<string, unknown>
@@ -19,10 +20,14 @@ function subtitles(before: ProjectJson['captions'], after: ProjectJson['captions
   const a = (before?.style ?? {}) as Style
   const b = (after.style ?? {}) as Style
   const words: string[] = []
-  if (size(b) > size(a)) words.push('bigger')
-  if (size(b) < size(a)) words.push('smaller')
-  const lb = look(b)
-  if (lb !== look(a)) words.push(lb === 'box' ? 'boxed' : lb)
+  const preset = presetOf(b)
+  if (preset && preset !== presetOf(a)) words.push(CAPTION_PRESETS.find((x) => x.key === preset)!.label.toLowerCase())
+  else {
+    if (size(b) > size(a)) words.push('bigger')
+    if (size(b) < size(a)) words.push('smaller')
+    const lb = look(b)
+    if (lb !== look(a)) words.push(lb === 'box' ? 'boxed' : lb)
+  }
   const out: string[] = []
   if (words.length) out.push(`${words.join(' ')} subtitles`)
   if (pos(b) < pos(a) - 0.01) out.push(out.length ? 'moved up' : 'subtitles moved up')
