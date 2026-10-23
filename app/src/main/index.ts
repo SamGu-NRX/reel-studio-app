@@ -264,7 +264,7 @@ async function replyAskingAboutStyle(slug: string, r: AgentResult, summary: stri
   const c = styleConsent(summary, r.styleRulesAdded, r.styleSuggestions)
   if (c.undo.length) {
     const rules = await ai.styleRules().catch(() => [])
-    for (const rule of rules) if (c.undo.includes(rule.text)) await ai.removeStyleRule(rule.id).catch(() => undefined)
+    for (const rule of rules) if (c.undo.includes(rule.text)) await ai.removeStyleRule(rule.id, { forget: false }).catch(() => undefined)
   }
   await addChat(slug, 'editor', c.summary, r.version)
   for (const rule of c.suggestions) await addChat(slug, 'editor', rememberQuestion(rule), undefined, ['remember-yes', 'remember-no'], rule)

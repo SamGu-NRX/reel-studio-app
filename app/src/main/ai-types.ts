@@ -77,7 +77,7 @@ export interface AI {
   ): Promise<AgentResult>
   writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult>
   styleRules(): Promise<{ id: string; text: string; createdAt: string }[]>
-  removeStyleRule(id: string): Promise<void>
+  removeStyleRule(id: string, options?: { forget?: boolean }): Promise<void>
   /** Saves one My style rule (after the user said Yes). Optional: older packages lack it. */
   addStyleRule?(text: string): Promise<{ id: string; text: string; createdAt: string }>
   /** Optional extras from @reelstudio/ai. */

@@ -25,6 +25,8 @@ export type { ToolContext, ToolDef } from './tools';
 export { runAgent } from './agent';
 export { Prompts } from './prompts';
 export { StyleStore } from './style';
+export type { MemoryKind, MemoryProposal, ProposalDraft, ProposalStatus, TrialLink } from './style';
+export { learn, MIN_LEARNING_REACH } from './learning';
 export { AnthropicProvider, DEFAULT_CLAUDE_MODEL } from './providers/anthropic';
 export { SiwcAuth, USAGE_URL } from './providers/siwc';
 export { OpenAIResponsesProvider, listChatGPTModels, mapResponsesError } from './providers/openai';
@@ -290,7 +292,7 @@ export function createAI(opts: CreateAIOptions) {
       return editor.writeScript(deps(), await modelProvider(), idea, onEvent, signal);
     },
     async styleRules() { return style.list(); },
-    async removeStyleRule(id: string) { return style.remove(id); },
+    async removeStyleRule(id: string, options?: { forget?: boolean }) { return style.remove(id, options); },
     /** The user said Yes to a proposed rule (AgentResult.styleSuggestions). Returns the saved rule. */
     async addStyleRule(text: string) { return (await style.add(text)).rule; },
   };

@@ -126,7 +126,7 @@ function honestSummary(r: Pick<RunAgentResult, 'finished' | 'stoppedBy'>, state:
 }
 
 async function removeStyleRules(deps: EditorDeps, state: ToolState): Promise<void> {
-  for (const id of state.styleRuleIds) await deps.style.remove(id).catch(() => undefined);
+  for (const id of state.styleRuleIds) await deps.style.remove(id, { forget: false }).catch(() => undefined);
   state.styleRuleIds = []; state.styleRulesAdded = [];
 }
 
