@@ -82,6 +82,7 @@ export function NotesLog({
   onCompare,
   onAction,
   onRetry,
+  onEditHand,
   onResume,
   onBasic,
   onCopy,
@@ -113,6 +114,8 @@ export function NotesLog({
   onCompare: (n: number) => void
   onAction: (a: ChatAction, messageId: string) => void
   onRetry: (e: LogEntry) => void
+  /** Opens Edit it myself on a waiting hand edit. */
+  onEditHand: (id: string) => void
   onResume: () => void
   onBasic: () => void
   onCopy: (text: string) => void
@@ -360,7 +363,7 @@ export function NotesLog({
         </article>
       ))}
       {waiting.map((q, i) => (
-        <QueuedRow key={q.id} slug={slug} q={q} i={i} count={waiting.length} held={held} on={latest + (making ? 1 : 0) + i} onError={onError} />
+        <QueuedRow key={q.id} slug={slug} q={q} i={i} count={waiting.length} held={held} on={latest + (making ? 1 : 0) + i} onEditHand={onEditHand} onError={onError} />
       ))}
     </div>
   )
@@ -437,7 +440,7 @@ function Reply({
 }
 
 /** A note waiting its turn: its words can change, it can go, and with others waiting it can move (grip, or arrow keys on it). */
-function QueuedRow({ slug, q, i, count, held, on, onError }: { slug: string; q: QueuedNote; i: number; count: number; held: boolean; on: number; onError: (m: string) => void }) {
+function QueuedRow({ slug, q, i, count, held, on, onEditHand, onError }: { slug: string; q: QueuedNote; i: number; count: number; held: boolean; on: number; onEditHand: (id: string) => void; onError: (m: string) => void }) {
   const [draft, setDraft] = useState<string | null>(null)
   const [over, setOver] = useState(false)
   const act = (p: Promise<unknown>) => void p.catch((e) => onError(userMessage(e)))
@@ -498,7 +501,11 @@ function QueuedRow({ slug, q, i, count, held, on, onError }: { slug: string; q: 
             <Icon name="grip" size={14} />
           </button>
         )}
-        {draft === null ? (
+        {q.hand ? (
+          <p className="bubble waiting" data-testid="queue-hand">
+            Your edit ({q.hand.changes} {q.hand.changes === 1 ? 'change' : 'changes'})
+          </p>
+        ) : draft === null ? (
           <p className="bubble waiting">
             {q.moment && <span className="tm">{momentLabel(q.moment)}</span>}
             {q.text}
@@ -526,7 +533,7 @@ function QueuedRow({ slug, q, i, count, held, on, onError }: { slug: string; q: 
         <span className="t">{held ? 'Held because you stopped' : `${i === 0 ? 'Next' : 'Then'}, on Version ${on}`}</span>
         {draft === null && (
           <>
-            <button className="lk" onClick={() => setDraft(q.text)} data-testid="queue-edit">
+            <button className="lk" onClick={() => (q.hand ? onEditHand(q.id) : setDraft(q.text))} data-testid="queue-edit">
               Edit
             </button>
             <button className="lk" onClick={() => act(reel.queue.cancel(slug, q.id))} data-testid="queue-cancel">

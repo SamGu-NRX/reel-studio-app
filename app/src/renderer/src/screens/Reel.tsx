@@ -37,18 +37,7 @@ const ACTION_TAB: Partial<Record<ChatAction, Tab>> = {
   'open-music': 'music',
   'open-broll': 'broll',
   'open-cover': 'cover',
-  'open-post': 'post',
   'open-editor': 'cut'
-}
-
-// What a manual change is called while it is being made (grandma 2: a colour change said "Adding pictures").
-const CHANGE_LABEL: Record<Tab, string> = {
-  cut: 'Updating your cut',
-  captions: 'Updating your subtitles',
-  music: 'Updating your music',
-  broll: 'Updating your pictures',
-  cover: 'Updating your cover',
-  post: 'Updating your video'
 }
 
 const INSTAGRAM_URL = 'https://www.instagram.com/'
@@ -96,6 +85,9 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   // what a note's job has said it was doing, in order, for Steps
   const [steps, setSteps] = useState<string[]>([])
   const [drawer, setDrawer] = useState<Tab | null>(null)
+  // the waiting hand edit Edit it myself is changing (its Edit in the log), or null for a new one
+  const [handId, setHandId] = useState<string | null>(null)
+  const [stage, setStage] = useState<HTMLElement | null>(null)
   const [exporting, setExporting] = useState<'busy' | ExportResult | null>(null)
   const [platformPicker, setPlatformPicker] = useState(false)
   const [phoneFirst, setPhoneFirst] = useState(false)
@@ -125,6 +117,21 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const [playhead] = useState(createPlayhead)
   const [transport] = useState(createTransport)
   const { duration } = useTransport(transport)
+  // the waiting hand edit Edit it myself is changing (its Edit in the log), or null for a new one
+  const [handId, setHandId] = useState<string | null>(null)
+  const [stage, setStage] = useState<HTMLElement | null>(null)
+  const player = useMemo(
+    () => ({
+      playhead,
+      seek: (t: number, play?: boolean) => {
+        transport.seek(t)
+        if (play && !transport.get().playing) transport.toggle()
+      },
+      playing: () => transport.get().playing,
+      stage
+    }),
+    [playhead, transport, stage]
+  )
   const [shownSrc, setShownSrc] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [chip, setChip] = useState<Chip>(null)
@@ -487,18 +494,6 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     }
   }
 
-  const rerender = async (change = '', message = 'Making a new version with your changes') => {
-    try {
-      const r = await reel.projects.rerender(slug, change, message)
-      setJob((cur) => (cur?.jobId === r.jobId ? cur : { ...EMPTY_LIVE, jobId: r.jobId, message }))
-      setDrawer(null)
-      setPreview(null)
-      await load()
-    } catch (e) {
-      notify(userMessage(e), 'error')
-    }
-  }
-
   const resume = async (basic = false) => {
     try {
       const r = await reel.projects.resume(slug, basic)
@@ -554,13 +549,15 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
         })
         .catch((e) => setAnswerError({ id: messageId, text: userMessage(e) }))
     } else if (a === 'connect') connect()
+    else if (a === 'open-post') void doExport()
     else openDrawer(ACTION_TAB[a] ?? 'cut')
   }
   // "Edit it myself" changes the newest version: with an older one on screen, show the newest first.
-  const openDrawer = (t: Tab) => {
+  const openDrawer = (t: Tab, hand: string | null = null) => {
     if (older && latestN !== undefined) setSelected(latestN)
     setCompare(null)
     setPointing(false)
+    setHandId(hand)
     setDrawer(t)
   }
   const watch = (n: number) => {
@@ -628,7 +625,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const actions = (
     <>
       {hasVersions && (
-        <button className={`btn ghost${drawer ? ' on' : ''}`} aria-pressed={!!drawer} onClick={() => (drawer ? setDrawer(null) : openDrawer('cut'))} data-testid="edit-myself">
+        <button className={`btn ghost${drawer ? ' on' : ''}`} aria-pressed={!!drawer} onClick={() => (drawer ? (setDrawer(null), setHandId(null), setPreview(null)) : openDrawer('cut'))} data-testid="edit-myself">
           <Icon name="sliders" size={16} /> Edit it myself
         </button>
       )}
@@ -669,6 +666,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
 
   const over = (
     <div className="reel-over">
+      {drawer && <div className="edit-stage" ref={setStage} />}
       {tag && (
         <span className="reel-tag" data-testid={changePreview ? 'change-preview' : 'first-tag'}>
           {tag}
@@ -726,8 +724,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   autoPlayMuted={!!changePreview || !hasVersions}
                   playRequest={!changePreview && playRequest?.n === version?.n ? playRequest?.ask : undefined}
                   onPlayRequestHandled={() => setPlayRequest(null)}
-                  subtitle={drawer === 'captions' && preview ? preview : null}
-                  still={drawer === 'captions' && preview && d.sourceVideo ? `${d.sourceVideo}#t=${preview.at.toFixed(2)}` : null}
+                  subtitle={drawer && preview ? preview : null}
+                  still={drawer && preview && d.sourceVideo ? `${d.sourceVideo}#t=${preview.at.toFixed(2)}` : null}
                   stillMirrored={d.project.sources?.[0]?.mirror === true}
                   view={phoneView}
                   caption={d.project.post?.caption}
@@ -786,15 +784,17 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
         <div className="ncol">
           {drawer ? (
             <ShowMeHow
+              key={handId ?? 'new'}
               d={d}
               initialTab={drawer}
               version={version ?? null}
+              player={player}
+              queued={handId ? (d.queue.find((q) => q.id === handId) ?? null) : null}
               onClose={() => {
                 setDrawer(null)
+                setHandId(null)
                 setPreview(null)
               }}
-              onChanged={() => load()}
-              onRerender={(change, label) => void rerender(change, label ?? CHANGE_LABEL[drawer])}
               onPreview={setPreview}
               onTab={(t) => setDrawer(t)}
             />
@@ -829,6 +829,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                 onCompare={startCompare}
                 onAction={runAction}
                 onRetry={retry}
+                onEditHand={(id) => openDrawer('cut', id)}
                 onResume={() => void resume()}
                 onBasic={() => void resume(true)}
                 onCopy={(t) => void reel.app.copyText(t).then(() => notify('Copied.'))}

@@ -97,14 +97,14 @@ export function engineDir(): string {
   return fakeEngineDir()
 }
 
-/** The sound effects that come with the engine. From the real engine's folder even when the stand-in engine runs. */
+/** The engine's built-in sound effects (pack.json and its .opus files). The stand-in engine has none, so in
+ * development this is always the repo's real engine. */
 export function sfxPackDir(): string {
-  return need().isPackaged ? resource('engine', 'reelengine', 'sfx') : join(repoRoot(), 'engine', 'reelengine', 'sfx')
+  return join(need().isPackaged ? resource('engine') : join(repoRoot(), 'engine'), 'reelengine', 'sfx')
 }
 
 /** Contact sheets and waveforms made for the Library screen (library-preview.ts); safe to delete. */
 export const libraryPreviewDir = (): string => join(need().userDataDir, 'library-previews')
-
 /** A tiny stand-in engine for UI work before the real one lands. Dev and tests only. */
 export function fakeEngineDir(): string {
   return join(need().appDir, 'dev', 'fake-engine')
