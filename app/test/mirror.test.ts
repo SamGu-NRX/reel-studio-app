@@ -45,9 +45,9 @@ describe('flip picture', () => {
 
   it('is wired: the drawer toggle, the update handler, and the flipped stills', () => {
     const src = (f: string) => readFileSync(join(__dirname, '..', 'src', f), 'utf8')
-    const drawer = src('renderer/src/screens/ShowMeHow.tsx')
-    expect(drawer).toMatch(/Flip picture \(it's mirrored\)/)
-    expect(drawer).toMatch(/set\('sources', withMirror\(p\.sources, e\.target\.checked\)\)/)
+    const drawer = src('renderer/src/screens/edit/CutTab.tsx')
+    expect(drawer).toMatch(/Flip the picture/)
+    expect(drawer).toMatch(/sources: withMirror\(p\.sources, e\.target\.checked\)/)
     expect(src('main/index.ts')).toMatch(/p\.sources = mergeSourcesPatch\(p\.sources, patch\.sources\)/)
     expect(src('renderer/src/screens/Reel.tsx')).toMatch(/stillMirrored=\{d\.project\.sources\?\.\[0\]\?\.mirror === true\}/)
     expect(src('renderer/src/screens/Working.tsx')).toMatch(/still\$\{mirrored \? ' mirrored' : ''\}/)

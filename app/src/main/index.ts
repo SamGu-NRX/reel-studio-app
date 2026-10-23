@@ -3,6 +3,7 @@ import { accountName } from './account'
 import { versionRows, type VersionRow } from '../shared/version-diff'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent, Notification } from 'electron'
 import { existsSync, promises as fs, appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -21,7 +22,8 @@ import {
   reelStudioRoot,
   setAsrThreads,
   setRootOverride,
-  settingsDir
+  settingsDir,
+  sfxPackDir
 } from './paths'
 import { offerMoveToApplications, writeErrorCode } from './move-to-applications'
 import { runSelfTest, selfTestArgs, type SelfTestResult } from './self-test'
@@ -52,7 +54,11 @@ import {
 } from './store'
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { createJobManager } from './jobs'
-import { createNoteQueue, type NoteToRun } from './note-queue'
+import { createNoteQueue, type NoteToRun, type StartHand } from './note-queue'
+import { handEditJob, HAND_MESSAGE } from './hand-edit'
+import { parseHandEdit } from '../shared/hand-edit'
+import type { SoundEffect } from '../shared/sfx'
+import { mediaUrl } from './media-url'
 import { withRenderSlot } from './render-slot'
 import { clearStaleLocks } from './owner'
 import { createLiveVideos } from './live-video'
@@ -75,7 +81,6 @@ import { noAiReply } from '../shared/notes'
 import { aiNoteText, checkMoment, forPerson, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment } from '../shared/moments'
 import { parsePlatformExportRequest, secondTryPlatforms, type Platform, type PlatformTry } from '../shared/platforms'
 import { checkPlatformExport, exportPlatforms, sweepExportStaging, type ExportTry } from './platform-export'
-import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { displayPath } from '../shared/display-path'
 import { RELEASES_REPO } from '../shared/config'
@@ -246,7 +251,10 @@ async function startNote(slug: string, { id: noteId, text, attachments, moment }
     { note: text || attachments.map((f) => f.name).join(', '), record }
   )
 }
-const noteQueue = createNoteQueue({ jobs, startNote, changed: (slug) => broadcast('queue:change', slug), log })
+/** A change from "Edit it myself", when its turn comes: render only, never the editor (hand-edit.ts). */
+const startHand: StartHand = async (slug, entry, record) =>
+  jobs.start(slug, 'rerender', handEditJob(runEngine, slug, entry), { note: HAND_MESSAGE, record })
+const noteQueue = createNoteQueue({ jobs, startNote, startHand, changed: (slug) => broadcast('queue:change', slug), log })
 
 const models = createModelManager({
   runEngine,
@@ -804,38 +812,10 @@ function registerIpc(): void {
       return detail(slug)
     })
   )
-  // `change` = what the user changed, in plain words ("bigger yellow subtitles"), for the chat and the version button.
-  // A manual change is render-only (no AI), called what it is ("Updating your subtitles", never the engine's
-  // own step names like "Adding pictures"), and fast to SEE: a half-size preview first (the Reel screen plays
-  // it), then the full-quality version (grandma 2: a colour change took 3 minutes and said "Adding pictures").
-  handle('projects:rerender', async (_e, slug: string, change?: string, label?: string) => {
-    const dir = projectDir(slug)
-    const words = typeof label === 'string' && label.trim() ? label.trim().slice(0, 60) : 'Updating your video'
-    const jobId = jobs.start(slug, 'rerender', async (emit, signal, { owner }) => {
-      emit({ type: 'status', message: words, pct: 1, phase: 'final', aggregate: true })
-      const look: any = await runEngine(
-        'render',
-        owned(['--project', dir, '--draft', '--no-cover'], owner),
-        (p) => {
-          if (p.stage === 'render') emit({ type: 'status', message: words, pct: Math.round(p.pct * 0.3), phase: 'final', aggregate: true })
-        },
-        signal
-      )
-      emit({ type: 'render', version: Number(look?.version ?? 0), draft: true, ...(look?.file ? { file: String(look.file) } : {}) })
-      const r: any = await runEngine(
-        'render',
-        owned(['--project', dir], owner),
-        (p) => {
-          if (p.stage === 'render') emit({ type: 'status', message: words, pct: 30 + Math.round(p.pct * 0.7), phase: 'final', aggregate: true })
-        },
-        signal
-      )
-      const version = Number(r?.version ?? (await readProject(slug)).version)
-      emit({ type: 'render', version, draft: false, ...(r?.file ? { file: String(r.file) } : {}) })
-      const what = typeof change === 'string' ? change.slice(0, 200) : ''
-      return { summary: versionMessage(version, what), version, made: { by: 'hand', summary: what } }
-    })
-    return { jobId }
+  handle('projects:handEdit', async (_e, slug: string, edit: unknown, summary: string, changes: number, replace?: string) => {
+    const hand = { edit: parseHandEdit(edit), changes: Math.max(1, Math.round(changes)) }
+    const seen = (await readProject(slug)).version ?? 0
+    return noteQueue.sendHand(slug, hand, String(summary).slice(0, 200), seen, replace)
   })
   handle('projects:export', async (_e, slug: string, n: number) => {
     updates.assertCanStartWork()
@@ -963,6 +943,22 @@ function registerIpc(): void {
       !!yes
     )
   )
+
+  handle('style:rememberLowercase', async (_e, slug: string) => {
+    if (!ai.approveStyleProposal) throw { code: 'NOT_READY', userMessage: 'That could not be saved to My style. Try again later.' }
+    const p = await readProject(slug)
+    await ai.approveStyleProposal({
+      id: randomUUID(),
+      text: 'Use lowercase captions.',
+      payload: { kind: 'caption-case', case: 'lower' },
+      source: { project: p.id, title: p.title, version: p.version ?? 0 }
+    })
+  })
+  handle('sfx:pack', async (): Promise<SoundEffect[]> => {
+    const dir = sfxPackDir()
+    const pack = await readJson<{ sounds?: { id: string; job: string; file: string; seconds: number; onsetMs: number }[] }>(join(dir, 'pack.json'), {})
+    return (pack.sounds ?? []).map((x) => ({ id: x.id, kind: x.job, seconds: x.seconds, onsetMs: x.onsetMs, url: mediaUrl(join(dir, x.file)) }))
+  })
 
   handle('script:write', (_e, idea: string) => {
     if (!String(idea ?? '').trim()) throw { code: 'EMPTY', userMessage: 'Tell me your idea in a sentence or two first.' }
@@ -1219,7 +1215,7 @@ app.whenReady().then(async () => {
   aiSource = loaded.source
   await carryOverClaudeCode(settings).catch((e) => log(`[ai] carry-over: ${String(e)}`))
   log(`[start] root=${reelStudioRoot()} engine=${engineMode()}:${engineDir()} python=${pythonExe()} ai=${aiSource}`)
-  handleMediaProtocol(() => [reelStudioRoot(), projectsDir()])
+  handleMediaProtocol(() => [reelStudioRoot(), projectsDir(), sfxPackDir()])
   setAsrThreads(await models.savedThreads()) // before any engine call can start
   registerIpc()
   createWindow()

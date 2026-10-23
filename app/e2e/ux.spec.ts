@@ -60,15 +60,12 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await expect(page.getByTestId('version-switch')).toContainText('Version 1')
   await shot(page, 'ux-01-reel-no-ai')
 
-  // ---- 2. the post caption: typed by you under Edit it myself, never "written" for you; no new version ----
+  // ---- 2. the post caption is not part of the video: it lives in Share, not in Edit it myself ----
   await page.getByTestId('edit-myself').click()
-  await page.getByTestId('tab-post').click()
-  await page.getByTestId('post-input').fill('Why mornings make me a better editor')
-  await shot(page, 'ux-02-post-editor')
-  await page.getByTestId('make-version').click()
-  await expect.poll(() => projectJson().post?.caption).toBe('Why mornings make me a better editor')
-  await expect(page.getByTestId('version-switch')).toContainText('Version 1')
-  if (await page.getByTestId('drawer').isVisible()) await page.getByTestId('drawer-close').click()
+  await expect(page.getByTestId('tab-cut')).toBeVisible()
+  await expect(page.getByTestId('tab-post')).toHaveCount(0)
+  await page.getByTestId('drawer-close').click()
+  await expect(page.getByTestId('drawer')).toHaveCount(0)
 
   // ---- 3. no AI: nothing offers an AI change; one line in the note box is the way to connect ----
   await expect(page.getByTestId('note-input')).toHaveCount(0)
@@ -107,7 +104,7 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await expect(page.getByTestId('note-progress')).toBeVisible()
   await expect(page.getByTestId('note-progress')).toBeInViewport() // never scrolled out of sight
   // a manual change says what it is (grandma 2: "Adding pictures" for a colour change) and shows a quick preview first
-  await expect(page.getByTestId('note-progress')).toContainText(/Updating your subtitles|Making Version 2/)
+  await expect(page.getByTestId('note-progress')).toContainText(/Making your changes|Making Version 2/)
   await expect(page.getByTestId('change-preview')).toBeVisible({ timeout: 60_000 })
   await expect(page.getByTestId('export')).toBeDisabled() // and Export waits for it
   await shot(page, 'ux-09-new-version-working')
@@ -141,7 +138,7 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await expect(page.getByTestId('pick-word')).toBeVisible()
   await shot(page, 'ux-10-pick-word')
   await page.locator('.pick-words .word').nth(1).click()
-  await expect(page.getByTestId('drawer')).toContainText('Picture above your head')
+  await expect(page.getByTestId('drawer')).toContainText('Above your head')
   await expect(page.getByTestId('broll-thumb')).toBeVisible() // a small picture, not a file name (grandma 2)
   await shot(page, 'ux-10b-pictures-list')
   await page.getByTestId('make-version').click()

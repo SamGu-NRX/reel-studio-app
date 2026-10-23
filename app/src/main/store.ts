@@ -602,6 +602,7 @@ export async function detail(slug: string): Promise<ProjectDetail> {
     const p = a.startsWith('Library/') || isAbsolute(a) ? resolveRootPath(a) : join(dir, ...a.split('/'))
     if (existsSync(p)) brollThumbs[b.id] = await libraryMediaUrl(p)
   }
+  const brollCredits = await creditsFor(dir, project.broll ?? [])
   // The raw footage, for "hold for Original" and the Working screen's first frame.
   const sourceVideos: Record<string, string> = {}
   for (const src of project.sources ?? []) {
@@ -619,6 +620,7 @@ export async function detail(slug: string): Promise<ProjectDetail> {
     keptIds: kept,
     captionLines,
     brollThumbs,
+    brollCredits,
     checklist: checklist(project, words, kept, versions, !!st.aiEdited),
     versionsMade: st.versionsMade ?? [],
     // a note's attached files get a URL for their still here (never stored: the root folder can move)
@@ -629,6 +631,50 @@ export async function detail(slug: string): Promise<ProjectDetail> {
     job: st.job ? { id: st.job.id, kind: st.job.kind, message: 'Working on it', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false } : null,
     aiEdited: !!st.aiEdited
   }
+}
+
+/**
+ * Who each picture is credited to: the person's own (Library, a note's attachment), or the line the engine
+ * recorded when it fetched or captured it (credits.json beside the file, or the asset ledger,
+ * work/assets/manifest.jsonl). Pictures Reel Studio drew itself (animations, text) have none.
+ */
+async function creditsFor(dir: string, broll: NonNullable<ProjectJson['broll']>): Promise<Record<string, string>> {
+  const out: Record<string, string> = {}
+  const books = new Map<string, Record<string, { attribution?: unknown }>>()
+  let ledger: { committedPath?: unknown; attribution?: unknown; title?: unknown; creator?: unknown }[] | null = null
+  for (const b of broll) {
+    const a = typeof b.asset === 'string' ? b.asset : ''
+    if (!a || /\.(mov|webm)$/i.test(a)) continue
+    if (a.startsWith('Library/')) {
+      out[b.id] = 'Yours, from your Library'
+      continue
+    }
+    if (/^work\/assets\/attach-/.test(a)) {
+      out[b.id] = 'Yours, attached to a note'
+      continue
+    }
+    const folder = dirname(a)
+    if (!books.has(folder)) books.set(folder, await readJson(join(dir, ...folder.split('/'), 'credits.json'), {}))
+    const entry = books.get(folder)?.[basename(a)]
+    if (typeof entry?.attribution === 'string' && entry.attribution) {
+      out[b.id] = entry.attribution
+      continue
+    }
+    ledger ??= (await fs.readFile(join(dir, 'work', 'assets', 'manifest.jsonl'), 'utf8').catch(() => ''))
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => {
+        try {
+          return JSON.parse(l)
+        } catch {
+          return {}
+        }
+      })
+    const known = ledger!.find((x) => x.committedPath === a)
+    const line = typeof known?.attribution === 'string' && known.attribution ? known.attribution : [known?.title, known?.creator].filter((x) => typeof x === 'string' && x).join(', by ')
+    if (line) out[b.id] = line
+  }
+  return out
 }
 
 function chatThumb(dir: string, a: NoteAttachment): NoteAttachment {

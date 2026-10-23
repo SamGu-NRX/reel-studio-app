@@ -68,6 +68,7 @@ export function NotesLog({
   onPlay,
   onAction,
   onRetry,
+  onEditHand,
   onError,
   answerError
 }: {
@@ -88,6 +89,8 @@ export function NotesLog({
   onPlay: (n: number) => void
   onAction: (a: ChatAction, messageId: string) => void
   onRetry: (text: string, moment: NoteMoment | null) => void
+  /** Opens Edit it myself on a waiting hand edit. */
+  onEditHand: (id: string) => void
   onError: (message: string) => void
   /** saving a "Remember this for next time?" answer failed: the question keeps its buttons */
   answerError: { id: string; text: string } | null
@@ -254,7 +257,7 @@ export function NotesLog({
         </article>
       ))}
       {waiting.map((q, i) => (
-        <QueuedRow key={q.id} slug={slug} q={q} i={i} count={waiting.length} held={held} on={latest + (making ? 1 : 0) + i} onError={onError} />
+        <QueuedRow key={q.id} slug={slug} q={q} i={i} count={waiting.length} held={held} on={latest + (making ? 1 : 0) + i} onEditHand={onEditHand} onError={onError} />
       ))}
     </div>
   )
@@ -319,6 +322,7 @@ function QueuedRow({
   count,
   held,
   on,
+  onEditHand,
   onError
 }: {
   slug: string
@@ -327,6 +331,7 @@ function QueuedRow({
   count: number
   held: boolean
   on: number
+  onEditHand: (id: string) => void
   onError: (m: string) => void
 }) {
   const [draft, setDraft] = useState<string | null>(null)
@@ -389,9 +394,13 @@ function QueuedRow({
             <Icon name="grip" size={14} />
           </button>
         ) : (
-          <span className="nk dot" />
+          <span className={`nk ${q.hand ? 'you' : 'dot'}`}>{q.hand && <Icon name="sliders" size={12} stroke={2.2} />}</span>
         )}
-        {draft === null ? (
+        {q.hand ? (
+          <span className="q" data-testid="queue-hand">
+            {held ? 'Held because you stopped' : `${i === 0 ? 'Next' : 'Then'}, on Version ${on}`}: your edit ({q.hand.changes} {q.hand.changes === 1 ? 'change' : 'changes'})
+          </span>
+        ) : draft === null ? (
           <span className="q">
             <Moment m={q.moment ?? null} />
             {q.text}
@@ -414,10 +423,10 @@ function QueuedRow({
       </div>
       <div className="nt-res quiet">
         <span className="nk" />
-        <span className="t">{held ? 'Held because you stopped' : `${i === 0 ? 'Next' : 'Then'}, on Version ${on}`}</span>
+        <span className="t">{q.hand ? q.text.charAt(0).toUpperCase() + q.text.slice(1) : held ? 'Held because you stopped' : `${i === 0 ? 'Next' : 'Then'}, on Version ${on}`}</span>
         {draft === null && (
           <>
-            <button className="btn ghost small" onClick={() => setDraft(q.text)} data-testid="queue-edit">
+            <button className="btn ghost small" onClick={() => (q.hand ? onEditHand(q.id) : setDraft(q.text))} data-testid="queue-edit">
               Edit
             </button>
             <button className="btn ghost small" onClick={() => act(reel.queue.cancel(slug, q.id))} data-testid="queue-cancel">

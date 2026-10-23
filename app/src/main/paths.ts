@@ -97,6 +97,12 @@ export function engineDir(): string {
   return fakeEngineDir()
 }
 
+/** The engine's built-in sound effects (pack.json and its .opus files). The stand-in engine has none, so in
+ * development this is always the repo's real engine. */
+export function sfxPackDir(): string {
+  return join(need().isPackaged ? resource('engine') : join(repoRoot(), 'engine'), 'reelengine', 'sfx')
+}
+
 /** A tiny stand-in engine for UI work before the real one lands. Dev and tests only. */
 export function fakeEngineDir(): string {
   return join(need().appDir, 'dev', 'fake-engine')

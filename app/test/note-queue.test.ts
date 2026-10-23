@@ -1,21 +1,26 @@
 // Notes sent while a note runs (main/note-queue.ts), driven like the app drives them: the job lane, the
 // mock AI's slow practice note (REELSTUDIO_MOCK_NOTE), and the stand-in engine's real renders.
 import { describe, expect, it } from 'vitest'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createEngineRunner } from '../src/main/engine'
+import { createEngineRunner, type RunEngine } from '../src/main/engine'
 import { createJobManager, WAITING_FOR_RENDER } from '../src/main/jobs'
 import { createMockAI } from '../src/main/ai-mock'
 import { createNoteQueue } from '../src/main/note-queue'
+import { handEditJob } from '../src/main/hand-edit'
+import { diffProject } from '../src/shared/hand-edit'
+import { keptIds } from '../src/shared/cut'
 import { withRenderSlot } from '../src/main/render-slot'
 import { engineEnv, reelStudioRoot } from '../src/main/paths'
-import { projectDir, readAppState, readProject, recoverInterrupted, updateAppState } from '../src/main/store'
+import { projectDir, readAppState, readProject, readWords, recoverInterrupted, updateAppState, writeJson, writeProject } from '../src/main/store'
 import type { JobEvent, QueuedNote } from '../src/shared/api'
 import { FAKE_ENGINE, makeClip, PYTHON, setupPaths } from './helpers'
 
 process.env.REELSTUDIO_MOCK_NOTE = '400'
 
-function app(opts: { failRender?: () => boolean; onRender?: (phase: 'start' | 'end') => void } = {}) {
+type NoteRun = (slug: string, note: { id: string; text: string }, signal: AbortSignal, owner: string | null) => Promise<{ summary: string; version: number }>
+
+function app(opts: { failRender?: () => boolean; onRender?: (phase: 'start' | 'end') => void; note?: (run: RunEngine) => NoteRun } = {}) {
   const engine = createEngineRunner({
     python: () => PYTHON,
     env: () => ({ ...engineEnv(), PYTHONPATH: FAKE_ENGINE, ...(opts.failRender?.() ? { FAKE_ENGINE_FAIL: 'render' } : {}) })
@@ -30,6 +35,7 @@ function app(opts: { failRender?: () => boolean; onRender?: (phase: 'start' | 'e
   }
   const events: JobEvent[] = []
   const runEngine = withRenderSlot(counted, (owner, waiting) => jobs.waitingForRender(owner, waiting))
+  const customNote = opts.note?.(runEngine)
   const jobs = createJobManager((e) => (events.push(e), queue.onJobEvent(e)), () => undefined)
   const ai = createMockAI({ host: { runEngine, renderAnimation: async () => '', reelStudioRoot }, settingsDir: join(reelStudioRoot(), 'ai') })
   // as index.ts startNote
@@ -37,9 +43,12 @@ function app(opts: { failRender?: () => boolean; onRender?: (phase: 'start' | 'e
     jobs,
     startNote: async (slug, note, record) =>
       jobs.start(slug, 'note', async (emit, signal, { owner }) => {
+        if (customNote) return customNote(slug, note, signal, owner)
         const r = await ai.applyNote(projectDir(slug), note.text, emit, signal, { id: note.id, ...(owner ? { owner } : {}) })
         return { summary: r.summary, version: r.version }
       }, { record }),
+    // as index.ts startHand
+    startHand: async (slug, entry, record) => jobs.start(slug, 'rerender', handEditJob(runEngine, slug, entry), { record }),
     changed: () => undefined,
     log: () => undefined
   })
@@ -161,5 +170,42 @@ describe('note queue', () => {
     expect((await readProject(one)).version).toBe(2)
     expect((await readProject(two)).version).toBe(2)
     expect(a.events.some((e) => e.type === 'status' && e.message === WAITING_FOR_RENDER)).toBe(true)
+  }, 60000)
+
+  it('fails if a hand edit made while a note runs is lost, or lands on the version before the note', async () => {
+    setupPaths()
+    const slug = await reel('hand-behind-note')
+    // like the AI's applyNote: it edits a copy of project.json taken when it starts, renders it, and saves it whole
+    const note = (run: RunEngine): NoteRun => async (s, n, signal, owner) => {
+      const dir = projectDir(s)
+      const p = JSON.parse(readFileSync(join(dir, 'project.json'), 'utf8'))
+      await new Promise((r) => setTimeout(r, 600))
+      p.captions = { ...p.captions, style: { ...p.captions.style, size: 126 } }
+      p.notes = [...(p.notes ?? []), { id: n.id, version: p.version, text: n.text, applied: ['captions'], at: '' }]
+      mkdirSync(join(dir, 'work', 'notes', n.id), { recursive: true })
+      await writeJson(join(dir, 'work', 'notes', n.id, 'edit.json'), p)
+      const r = (await run('render', ['--project', dir, '--project-file', `work/notes/${n.id}/edit.json`, ...(owner ? ['--owner', owner] : [])], undefined, signal)) as { version: number }
+      await writeProject(s, { ...JSON.parse(readFileSync(join(dir, 'work', 'notes', n.id, 'edit.json'), 'utf8')), version: r.version })
+      return { summary: 'Bigger subtitles.', version: r.version }
+    }
+    const a = app({ note })
+    expect((await a.send(slug, 'bigger subtitles')).jobId).toBeTruthy()
+
+    // Edit it myself, opened on Version 1 while the note runs: subtitles higher
+    const v1 = await readProject(slug)
+    const words = await readWords(projectDir(slug), v1)
+    const kept = new Set(keptIds(words, v1.cut?.keep))
+    const edited = { ...v1, captions: { ...v1.captions!, style: { ...v1.captions!.style, position: 0.66 } } }
+    const sent = await a.queue.sendHand(slug, { edit: diffProject(v1, edited, kept, kept), changes: 1 }, 'subtitles moved up', 1)
+    expect(sent).toEqual({ jobId: null, queued: true })
+
+    await until(async () => (await readProject(slug)).version === 3 && !a.jobs.forSlug(slug))
+    const style = (n: number) => JSON.parse(readFileSync(join(projectDir(slug), 'versions', `v${n}`, 'project.json'), 'utf8')).captions.style
+    expect(style(2)).toMatchObject({ size: 126 })
+    expect(style(2).position).not.toBe(0.66)
+    expect(style(3)).toMatchObject({ size: 126, position: 0.66 })
+    expect((await readProject(slug)).captions?.style).toMatchObject({ size: 126, position: 0.66 })
+    expect((await readAppState(slug)).queue).toEqual([])
+    expect((await readAppState(slug)).versionsMade?.find((m) => m.version === 3)).toMatchObject({ by: 'hand', summary: 'subtitles moved up' })
   }, 60000)
 })

@@ -1,4 +1,4 @@
-// "Flip picture (it's mirrored)" in "Edit it myself": the no-AI way to flip a mirrored take. Makes a
+// "Flip the picture" in "Edit it myself": the no-AI way to flip a mirrored take. Makes a
 // reel, turns the toggle on, makes a new version, and checks what reached project.json and the
 // chat; then turns it off again.
 //
@@ -37,13 +37,13 @@ test('flip a mirrored take from Edit it myself', async () => {
   const toggle = page.getByTestId('mirror-on')
   await expect(toggle).toBeVisible()
   await expect(toggle).not.toBeChecked()
-  await expect(page.getByText("Flip picture (it's mirrored)")).toBeVisible()
+  await expect(page.getByText('Flip the picture')).toBeVisible()
   await snap('mirror-01-drawer-off')
   await toggle.check()
   await expect(page.getByTestId('make-version')).toBeEnabled()
   await snap('mirror-02-drawer-on')
   await page.getByTestId('make-version').click()
-  await expect(page.getByTestId('versions').getByText('Version 2')).toBeVisible({ timeout: 10 * 60_000 })
+  await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 })
   await expect(page.getByText(/flipped the picture/).first()).toBeVisible()
   const p = project()
   expect(p.sources[0].mirror).toBe(true)
@@ -59,7 +59,7 @@ test('flip a mirrored take from Edit it myself', async () => {
   await expect(page.getByTestId('mirror-on')).toBeChecked()
   await page.getByTestId('mirror-on').uncheck()
   await page.getByTestId('make-version').click()
-  await expect(page.getByTestId('versions').getByText('Version 3')).toBeVisible({ timeout: 10 * 60_000 })
+  await expect(page.getByTestId('log-play-3')).toBeVisible({ timeout: 10 * 60_000 })
   await expect(page.getByText(/picture back the way you filmed it/).first()).toBeVisible()
   expect('mirror' in project().sources[0]).toBe(false)
   await app.close()

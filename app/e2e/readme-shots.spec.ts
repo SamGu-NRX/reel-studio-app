@@ -125,7 +125,7 @@ test('shoot: Reel, drawer, export, home', async () => {
   await page.getByTestId('edit-myself').click()
   await expect(page.getByTestId('drawer')).toBeVisible()
   await snap(page, 'drawer-cut')
-  for (const tab of ['captions', 'music', 'broll', 'cover', 'post']) {
+  for (const tab of ['captions', 'music', 'broll', 'cover']) {
     await page.getByTestId(`tab-${tab}`).click()
     await snap(page, `drawer-${tab}`)
   }

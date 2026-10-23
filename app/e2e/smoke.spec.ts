@@ -102,7 +102,7 @@ test('make a reel end to end', async () => {
   const struck = page.locator('.word.cut').first()
   if (await struck.count()) await struck.click()
   else await page.locator('.word').first().click()
-  for (const t of ['captions', 'music', 'broll', 'cover', 'post']) {
+  for (const t of ['captions', 'music', 'broll', 'cover']) {
     await page.getByTestId(`tab-${t}`).click()
     if (t === 'captions') await expect(page.getByTestId('sub-preview')).toBeVisible() // live preview on the phone
     await shot(page, `10-drawer-${t}`)

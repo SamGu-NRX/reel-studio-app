@@ -2,7 +2,8 @@
 // the send returns. Entries run one at a time, oldest first, each as a note job on whatever version is
 // newest by then. An entry's id is the id the note is saved under in project.json.notes, so the commit
 // that publishes the note is also the proof it ran: an entry leaves the queue only once its id is there.
-// The queue runs on by itself only after a committed note. Stop, a failure and a restart hold it until
+// A change made in "Edit it myself" waits in the same queue (an entry with `hand`); it is done once its job
+// ends with its final render saved (hand-edit.ts). The queue runs on by itself only after a committed note. Stop, a failure and a restart hold it until
 // "Run next", so nothing the creator stopped to rethink applies behind their back.
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
@@ -18,6 +19,9 @@ export type NoteToRun = Pick<QueuedNote, 'text' | 'attachments' | 'moment'> & {
 
 /** Starts a note job (index.ts). `record` goes into the app.json write that marks the job running. */
 export type StartNote = (slug: string, note: NoteToRun, record: (s: AppState) => void) => Promise<string>
+export type HandEntry = QueuedNote & { hand: NonNullable<QueuedNote['hand']> }
+/** Starts a hand edit's job (index.ts, hand-edit.ts). */
+export type StartHand = (slug: string, entry: HandEntry, record: (s: AppState) => void) => Promise<string>
 
 const STARTED = { code: 'NOT_QUEUED', userMessage: 'That note already started, so it can no longer change.' }
 
@@ -26,8 +30,8 @@ async function committed(slug: string): Promise<{ version: number; ids: Set<stri
   return p && { version: Number(p.version) || 0, ids: new Set((p.notes ?? []).map((n) => n.id ?? '')) }
 }
 
-export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; changed: (slug: string) => void; log: (s: string) => void }) {
-  const { jobs, startNote } = deps
+export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; startHand: StartHand; changed: (slug: string) => void; log: (s: string) => void }) {
+  const { jobs, startNote, startHand } = deps
   const lane = <T>(slug: string, fn: () => Promise<T>): Promise<T> => serialized(`queue:${slug}`, fn)
   /** Jobs the creator pressed Stop on. A quit cancels jobs too, but its note must come back. */
   const stopped = new Set<string>()
@@ -50,16 +54,19 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
         return null
       }
       await change(slug, (s) => void (s.queue![0].attempt = { base: head.version }))
-      return startNote(slug, next, (s) => {
-        s.job!.noteId = next.id
-        // its chat line carries the job id, which marks how the note ended (store.ts settleNote)
-        const line = s.chat.find((m) => m.id === next.id)
-        if (line) line.jobId = s.job!.id
-        else {
-          const extra = { ...(next.attachments.length ? { attachments: next.attachments } : {}), ...(next.moment ? { moment: next.moment } : {}) }
-          s.chat.push({ ...stamp({ from: 'you', text: next.text, ...extra }), id: next.id, jobId: s.job!.id })
-        }
-      }).catch(async (e) => {
+      const started = next.hand
+        ? startHand(slug, { ...next, hand: next.hand }, (s) => void (s.job!.noteId = next.id))
+        : startNote(slug, next, (s) => {
+            s.job!.noteId = next.id
+            // its chat line carries the job id, which marks how the note ended (store.ts settleNote)
+            const line = s.chat.find((m) => m.id === next.id)
+            if (line) line.jobId = s.job!.id
+            else {
+              const extra = { ...(next.attachments.length ? { attachments: next.attachments } : {}), ...(next.moment ? { moment: next.moment } : {}) }
+              s.chat.push({ ...stamp({ from: 'you', text: next.text, ...extra }), id: next.id, jobId: s.job!.id })
+            }
+          })
+      return started.catch(async (e) => {
         deps.log(`[queue] ${slug}: could not start the next note: ${toUserError(e).code}`)
         await change(slug, (s) => {
           delete s.queue![0].attempt
@@ -94,10 +101,35 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
       return started && first ? { jobId: started } : { jobId: null, queued: true }
     },
 
+    /** A change from "Edit it myself"; `replace` changes a waiting one in place instead. */
+    async sendHand(slug: string, hand: HandEntry['hand'], text: string, seenVersion: number, replace?: string): Promise<{ jobId: string | null; queued?: boolean }> {
+      if (replace) {
+        await lane(slug, () => change(slug, (s) => void Object.assign(stillWaiting(s, replace), { hand, text, seenVersion })))
+        return { jobId: null, queued: true }
+      }
+      const entry: QueuedNote = { id: randomUUID(), text, attachments: [], seenVersion, hand }
+      let first = false
+      await lane(slug, () =>
+        change(slug, (s) => {
+          first = !s.queue?.length
+          if (first) s.queueHeld = false
+          s.queue = [...(s.queue ?? []), entry]
+        })
+      )
+      const started = await pump(slug)
+      return started && first ? { jobId: started } : { jobId: null, queued: true }
+    },
+
     edit(slug: string, id: string, text: string): Promise<void> {
       const t = text.trim()
       if (!t) throw { code: 'EMPTY', userMessage: 'Type what you would like changed first, or cancel this note.' }
-      return lane(slug, () => change(slug, (s) => void (stillWaiting(s, id).text = t)))
+      return lane(slug, () =>
+        change(slug, (s) => {
+          const q = stillWaiting(s, id)
+          if (q.hand) throw { code: 'NOT_A_NOTE', userMessage: 'Open Edit it myself to change this edit.' }
+          q.text = t
+        })
+      )
     },
 
     cancel(slug: string, id: string): Promise<void> {
@@ -153,8 +185,10 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
         await ended
         const st = await readAppState(slug)
         const ran = st.queue?.find((q) => q.attempt)
-        const saved = !!ran && !!(await committed(slug))?.ids.has(ran.id)
-        const drop = saved || (byStop && !!ran)
+        // a hand edit is saved by the job that ends with `done` (hand-edit.ts); a note by its id in project.json
+        const saved = !!ran && (ran.hand ? e.type === 'done' : !!(await committed(slug))?.ids.has(ran.id))
+        // a stopped note stays in the log to send again; a stopped hand edit stays waiting, with its changes
+        const drop = saved || (byStop && !!ran && !ran.hand)
         const runOn = e.type === 'done' && (saved || !ran)
         if (!ran && runOn) return true
         await change(slug, (s) => {

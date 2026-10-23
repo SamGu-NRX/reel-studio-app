@@ -1,0 +1,100 @@
+/* Edit it myself (ShowMeHow.tsx), in the notes column's place. The column's dense type (13/18) and one left
+   inset; hairlines, not boxes; green only on Make Version; marker yellow on what the person changed. */
+
+.edit { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: edit-in 150ms cubic-bezier(.2, .8, .2, 1); }
+.edit.leaving { opacity: 0; transition: opacity 150ms cubic-bezier(.2, .8, .2, 1); pointer-events: none; }
+html.kb .edit { animation: none; }
+@keyframes edit-in { from { opacity: 0; } }
+
+.edit-h { height: 32px; display: flex; align-items: center; justify-content: space-between; flex: none; }
+.edit-h h2 { font-size: var(--fs-section); line-height: var(--lh-section); font-weight: 620; }
+.edit-h .icon-btn { margin-right: -6px; }
+.edit-sub { color: var(--ink-3); font-size: var(--fs-sm); line-height: var(--lh-sm); margin-bottom: 6px; flex: none; }
+
+.tabs.edit-tabs { padding: 0; gap: 0; flex: none; flex-wrap: nowrap; margin-left: -8px; border-bottom: 0; box-shadow: inset 0 -1px 0 var(--line); }
+.edit-tabs .tab { padding: 0 8px; height: 34px; font-size: var(--fs-base); white-space: nowrap; }
+
+.edit-b { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 16px 4px 20px; margin: 0 -4px; overscroll-behavior: contain; }
+.edit-stack { display: flex; flex-direction: column; gap: 14px; }
+.edit-field { display: flex; flex-direction: column; gap: 8px; }
+.edit-label { font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 620; color: var(--ink-2); }
+h3.edit-label { margin: 0; }
+.edit-hint { color: var(--ink-3); font-size: var(--fs-sm); line-height: var(--lh-sm); }
+.edit-rule { height: 1px; background: var(--line); }
+.edit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.edit-inline { display: flex; align-items: center; gap: 10px; }
+.edit-inline .input { flex: 1; min-width: 0; }
+.toggle.quiet { font-weight: 500; color: var(--ink-2); }
+
+/* Cut: the takes, word by word. Struck is cut (red pencil); a marker wash is a word the person changed here. */
+.edit .words { gap: 12px; }
+.edit .take p { font-size: var(--fs-md); line-height: 26px; }
+.edit .take.gone .take-label { color: var(--ink-4); }
+.edit .word { padding: 1px 2px; transition: background-color 120ms ease; }
+.edit .word.changed { background: var(--marker-soft); }
+.edit .word.cut { color: var(--ink-3); }
+
+/* the one-word-per-place fixes ("As heard" -> "Should read") */
+.edit-fix { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+.edit-fix .input { height: 32px; padding: 0 10px; }
+
+/* Rows: sounds, songs, pictures. Hairlines between, nothing boxed. */
+.edit-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.edit-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; min-height: 40px; }
+.edit-list > .edit-row + .edit-row { box-shadow: inset 0 1px 0 var(--line); }
+.edit-row.radio { align-items: center; cursor: pointer; }
+.edit-row.radio input { width: 16px; height: 16px; margin: 0; flex: none; }
+.edit-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+label.edit-row-main { flex-direction: row; align-items: center; gap: 10px; cursor: pointer; }
+.edit-row-title { font-weight: 560; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edit-row-title .muted { color: var(--ink-3); font-weight: 450; }
+.edit-row-sub { color: var(--ink-3); font-size: var(--fs-sm); line-height: var(--lh-sm); }
+.edit-row-sub.warn { color: var(--amber); }
+.edit-row-sub.credit { font-style: normal; overflow-wrap: anywhere; }
+.edit-new { color: var(--ink-2); font-weight: 450; }
+.edit-row > .icon-btn { margin-top: -2px; }
+.icon-btn.small { width: 26px; height: 26px; }
+
+.sfx-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.sfx-controls select.input { height: 28px; width: auto; max-width: 100%; font-size: var(--fs-sm); padding: 0 30px 0 10px; background-position: right 8px center; }
+.sfx-controls .seg button { height: 24px; padding: 0 9px; }
+
+.picture-thumb { width: 36px; height: 48px; flex: none; border: 0; padding: 0; border-radius: var(--r-sm); overflow: hidden; background: var(--sunk); color: var(--ink-3); display: grid; place-items: center; cursor: pointer; }
+.picture-thumb:disabled { cursor: default; }
+.picture-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.library-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.library-pick { aspect-ratio: 1; border: 0; padding: 0; border-radius: var(--r-sm); overflow: hidden; background: var(--sunk); cursor: pointer; transition: transform 120ms ease-out; }
+.library-pick:active { transform: scale(.96); }
+.library-pick img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* the looks, five across the column */
+.edit .swatches { display: grid; grid-template-columns: repeat(5, 56px); gap: 8px; }
+.edit .swatch { gap: 5px; font-size: var(--fs-xs); }
+.edit .swatch-frame { width: 56px; }
+
+.edit .cover-picks { max-width: none; }
+
+/* What happens to the edit while the editor is busy, then the footer: "2 changes · Undo · Make Version 5". */
+.edit-wait { flex: none; color: var(--ink-3); font-size: var(--fs-sm); line-height: var(--lh-sm); padding: 8px 0 0; }
+.edit-f { flex: none; display: flex; align-items: center; gap: 4px; padding: 10px 0 0; margin-top: 8px; box-shadow: inset 0 1px 0 var(--line); }
+.edit-count { color: var(--ink-2); font-weight: 560; }
+.edit-f { gap: 10px; }
+
+/* Previews drawn on the phone (preview.tsx OnPhone): over the reel, under nothing that takes a click. */
+.edit-stage { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.edit-cover { position: absolute; inset: 0; background: #000; }
+.edit-cover > img, .edit-cover > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+/* the engine's cover words (cover.py _draw_text): white capitals, a heavy black outline, a slight tilt, above the face */
+.edit-cover-words {
+  position: absolute; left: 7%; right: 7%; top: 16%; text-align: center; color: #fff; text-transform: uppercase;
+  font: 600 9cqw/1.05 'Reel Subtitles', sans-serif; -webkit-text-stroke: 1.6cqw #000; paint-order: stroke fill;
+  transform: rotate(-3deg); overflow-wrap: anywhere;
+}
+.edit-cover .phone-tag { z-index: 1; }
+.edit-during { position: absolute; inset: 0; opacity: 0; transition: opacity 120ms ease-out; }
+.edit-during.on { opacity: 1; }
+.edit-picture { position: absolute; top: 12%; left: 22%; width: 56%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 3cqw; box-shadow: 0 2cqw 6cqw rgba(0, 0, 0, .35); }
+
+@media (prefers-reduced-motion: reduce) {
+  .edit-during, .edit .word, .library-pick { transition: none; }
+}

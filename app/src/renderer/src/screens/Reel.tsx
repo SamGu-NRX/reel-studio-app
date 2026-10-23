@@ -35,18 +35,7 @@ const ACTION_TAB: Partial<Record<ChatAction, Tab>> = {
   'open-music': 'music',
   'open-broll': 'broll',
   'open-cover': 'cover',
-  'open-post': 'post',
   'open-editor': 'cut'
-}
-
-// What a manual change is called while it is being made (grandma 2: a colour change said "Adding pictures").
-const CHANGE_LABEL: Record<Tab, string> = {
-  cut: 'Updating your cut',
-  captions: 'Updating your subtitles',
-  music: 'Updating your music',
-  broll: 'Updating your pictures',
-  cover: 'Updating your cover',
-  post: 'Updating your video'
 }
 
 const INSTAGRAM_URL = 'https://www.instagram.com/'
@@ -71,6 +60,9 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   // what the running job has said it was doing, in order, for Steps
   const [steps, setSteps] = useState<string[]>([])
   const [drawer, setDrawer] = useState<Tab | null>(null)
+  // the waiting hand edit Edit it myself is changing (its Edit in the log), or null for a new one
+  const [handId, setHandId] = useState<string | null>(null)
+  const [stage, setStage] = useState<HTMLElement | null>(null)
   const [exporting, setExporting] = useState<'busy' | ExportResult | null>(null)
   const [platformPicker, setPlatformPicker] = useState(false)
   const [phoneFirst, setPhoneFirst] = useState(false)
@@ -95,6 +87,18 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     }
   })
   const [playhead] = useState(createPlayhead)
+  const playerVideo = () => document.querySelector<HTMLVideoElement>('[data-testid="player"]')
+  const seek = useCallback(
+    (t: number, play?: boolean) => {
+      const v = playerVideo()
+      if (!v) return
+      v.currentTime = t
+      playhead.set(t)
+      if (play) void v.play().catch(() => {})
+    },
+    [playhead]
+  )
+  const player = useMemo(() => ({ playhead, seek, playing: () => !!playerVideo() && !playerVideo()!.paused, stage }), [playhead, seek, stage])
   const [shownSrc, setShownSrc] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [chip, setChip] = useState<Chip>(null)
@@ -329,18 +333,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     }
   }
 
-  const rerender = async (change = '', message = 'Making a new version with your changes') => {
-    try {
-      const r = await reel.projects.rerender(slug, change, message)
-      setJob((cur) => (cur?.jobId === r.jobId ? cur : { ...EMPTY_LIVE, jobId: r.jobId, message }))
-      setDrawer(null)
-      setPreview(null)
-      await load()
-    } catch (e) {
-      notify(userMessage(e), 'error')
-    }
-  }
-
   const savePost = async (text: string): Promise<boolean> => {
     const caption = text.trim()
     if (caption === (d.project.post?.caption ?? '').trim()) return true
@@ -377,12 +369,14 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
         })
         .catch((e) => setAnswerError({ id: messageId, text: userMessage(e) }))
     } else if (a === 'connect') connect()
+    else if (a === 'open-post') void doExport()
     else openDrawer(ACTION_TAB[a] ?? 'cut')
   }
   // "Edit it myself" changes the newest version: with an older one on screen, show the newest first.
-  const openDrawer = (t: Tab) => {
+  const openDrawer = (t: Tab, hand: string | null = null) => {
     if (older && latestN !== undefined) setSelected(latestN)
     setCompare(null)
+    setHandId(hand)
     setDrawer(t)
   }
   const watch = (n: number) => {
@@ -438,6 +432,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
         onPlay={watch}
         onAction={runAction}
         onRetry={(text, moment) => void note(text, undefined, moment ?? undefined).catch((e) => setAlert(userMessage(e)))}
+        onEditHand={(id) => openDrawer('cut', id)}
         onError={(m) => notify(m, 'error')}
         answerError={answerError}
       />
@@ -539,7 +534,13 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
           </button>
         )}
         <span className="spacer" />
-        <button className="btn ghost" onClick={() => openDrawer('cut')} disabled={!version} data-testid="edit-myself">
+        <button
+          className={`btn ghost${drawer ? ' on' : ''}`}
+          aria-pressed={!!drawer}
+          onClick={() => (drawer ? (setDrawer(null), setHandId(null), setPreview(null)) : openDrawer('cut'))}
+          disabled={!version}
+          data-testid="edit-myself"
+        >
           <Icon name="sliders" size={16} /> Edit it myself
         </button>
         <button
@@ -582,8 +583,8 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
             autoPlayMuted={!!changePreview || (freshPlay && version?.n === latestN)}
             playRequest={!changePreview && playRequest?.n === version?.n ? playRequest?.ask : undefined}
             onPlayRequestHandled={() => setPlayRequest(null)}
-            subtitle={drawer === 'captions' && preview ? preview : null}
-            still={drawer === 'captions' && preview && d.sourceVideo ? `${d.sourceVideo}#t=${preview.at.toFixed(2)}` : null}
+            subtitle={drawer && preview ? preview : null}
+            still={drawer && preview && d.sourceVideo ? `${d.sourceVideo}#t=${preview.at.toFixed(2)}` : null}
             stillMirrored={d.project.sources?.[0]?.mirror === true}
             view={phoneView}
             caption={d.project.post?.caption}
@@ -603,7 +604,9 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               if (onScreen) setSelected(onScreen.n)
             }}
             over={
-              compare && (
+              drawer ? (
+                <div className="edit-stage" ref={setStage} />
+              ) : compare && (
                 <div className="abswitch" role="group" aria-label="Compare versions" data-testid="compare">
                   {[compare.a, compare.b].map((n) => (
                     <button
@@ -669,7 +672,27 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
 
         <div className="rdiv" />
 
-        <div className="ncol">{notesColumn('main')} </div>
+        <div className="ncol">
+          {drawer ? (
+            <ShowMeHow
+              key={handId ?? 'new'}
+              d={d}
+              initialTab={drawer}
+              version={version ?? null}
+              player={player}
+              queued={handId ? (d.queue.find((q) => q.id === handId && !q.attempt) ?? null) : null}
+              onClose={() => {
+                setDrawer(null)
+                setHandId(null)
+                setPreview(null)
+              }}
+              onPreview={setPreview}
+              onTab={(t) => setDrawer(t)}
+            />
+          ) : (
+            notesColumn('main')
+          )}
+        </div>
       </div>
 
       {zoom && version && (
@@ -708,22 +731,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
           onPhone={() => void doExport(true)}
           onDoneCompare={() => setCompare(null)}
           onPin={pinNote}
-        />
-      )}
-
-      {drawer && (
-        <ShowMeHow
-          d={d}
-          initialTab={drawer}
-          version={version ?? null}
-          onClose={() => {
-            setDrawer(null)
-            setPreview(null)
-          }}
-          onChanged={() => load()}
-          onRerender={(change, label) => void rerender(change, label ?? (drawer ? CHANGE_LABEL[drawer] : undefined))}
-          onPreview={setPreview}
-          onTab={(t) => setDrawer(t)}
         />
       )}
 
