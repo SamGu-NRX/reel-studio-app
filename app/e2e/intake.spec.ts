@@ -60,6 +60,11 @@ for (const source of ['paste', 'open-file before ready', 'second-instance argv']
       } else if (source === 'second-instance argv') {
         await app.evaluate(({ app }, file) => { app.emit('second-instance', {}, [process.execPath, '.', file], process.cwd()) }, media.video)
       }
+      // a file opened with Reel Studio waits on New video for one click; a paste starts at once
+      if (source !== 'paste') {
+        await expect(page.getByTestId('opened-file')).toContainText('my first take.mp4')
+        await page.getByTestId('make-from').click()
+      }
       await expect(page.getByTestId('player')).toBeVisible({ timeout: 8000 })
       const projects = await page.evaluate(() => window.reel.projects.list())
       expect(projects).toHaveLength(1)
