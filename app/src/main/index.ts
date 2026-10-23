@@ -71,7 +71,7 @@ import { displayPath } from '../shared/display-path'
 import { RELEASES_REPO } from '../shared/config'
 import { registerPhoneIpc, stopPhoneShare } from './phone-ipc'
 import { checkNoteAttachments, forChat, pickClipboardType, registerAttachmentIpc } from './attachments'
-import { RELEASES_API, releasePageBackend, type FetchLike } from './update-check'
+import { RELEASES_API, releasePageBackend, type FetchLike, createUpdateService } from './update-check'
 import { createPermissions, notificationsWanted, parseFakes, type NotifyResult, type Permissions } from './permissions'
 import { helperInstruction, MAC_PANES } from './mac-permission'
 import { MacPermissionHelper } from './mac-permission-helper'
@@ -79,7 +79,7 @@ import { createUpdater, menuCheckForUpdates } from './updater'
 import { autoUpdater } from 'electron-updater'
 import { electronUpdaterBackend, macBundleCheck, windowsInstaller } from './updater-electron'
 import { disabledReason, updateMode } from './update-machine'
-import { createJobFeedback, createMainWindow, feedbackLog, installMenu, startDragOut, windowStateFile, type AppCommand } from './window'
+import { createJobFeedback, createMainWindow, feedbackLog, installMenu, startDragOut, windowStateFile, type AppCommand, titleBarOverlay } from './window'
 
 const TEST = process.env.REELSTUDIO_TEST === '1'
 const DEV_PROVIDERS = process.env.REELSTUDIO_DEV === '1'
@@ -481,6 +481,9 @@ function registerIpc(): void {
   handle('app:showLegal', (_e, doc: unknown) => {
     const file = legalFile(doc)
     if (!TEST) shell.showItemInFolder(file)
+  })
+  handle('app:dimTitleBar', (_e, on: boolean) => {
+    if (process.platform !== 'darwin' && win && !win.isDestroyed()) win.setTitleBarOverlay(titleBarOverlay(on === true))
   })
   ipcMain.on('app:startDrag', (e, file: string) => {
     try {
