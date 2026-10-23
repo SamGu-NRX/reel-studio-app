@@ -1,6 +1,6 @@
 import type { MessageBoxOptions } from 'electron'
 import { allowedReleaseUrl, pageFor, type ReleaseCheck } from './update-check'
-import { notesSince } from './release-notes'
+import { notesSince, releaseEntries } from './release-notes'
 import {
   FIRST_CHECK_DELAY_MS,
   isRateLimited,
@@ -11,6 +11,7 @@ import {
   SNOOZE_MS,
   stillNewer,
   validDismissal,
+  validHistory,
   type CheckOutcome,
   type Dismissal,
   type UpdateMemory
@@ -78,6 +79,7 @@ export function createUpdater(d: UpdaterDeps) {
   }
 
   function applyFound({ update: found, releases: all, pageOnly }: ReleaseCheck): void {
+    const releases = releaseEntries(all)
     if (found) {
       const url = allowedReleaseUrl(found.releaseUrl) ?? pageFor(`v${found.version}`)
       const { notes, older } = notesSince(all, d.version)
@@ -85,16 +87,16 @@ export function createUpdater(d: UpdaterDeps) {
       const page = pageOnly || found.version === rejected
       set({
         ...state, status: downloaded ? 'downloaded' : 'available', mode: downloaded ? state.mode : page ? 'page' : d.mode, availableVersion: found.version,
-        downloadedVersion: downloaded ? found.version : null, releaseNotes: notes, olderNotes: older,
+        downloadedVersion: downloaded ? found.version : null, releaseNotes: notes, olderNotes: older, releases,
         releaseUrl: url, downloadPercent: downloaded ? 100 : null, message: null, errorContext: null
       })
-      remember({ updateLatest: { version: found.version, url, notes, older } })
+      remember({ updateLatest: { version: found.version, url, notes, older }, updateHistory: releases })
       d.log(`[update] ${found.version} is available`)
     } else {
       set(state.downloadedVersion
-        ? { ...state, status: 'downloaded', availableVersion: state.downloadedVersion, downloadPercent: 100, message: null, errorContext: null }
-        : { ...initialUpdateState(d.version, d.mode, state.autoCheck, null), status: 'up-to-date' })
-      if (state.status === 'up-to-date') remember({ updateLatest: null })
+        ? { ...state, status: 'downloaded', availableVersion: state.downloadedVersion, downloadPercent: 100, message: null, errorContext: null, releases }
+        : { ...initialUpdateState(d.version, d.mode, state.autoCheck, null), status: 'up-to-date', releases })
+      remember(state.status === 'up-to-date' ? { updateLatest: null, updateHistory: releases } : { updateHistory: releases })
       d.log('[update] up to date')
     }
     fresh = found !== null && !pageOnly && found.version !== rejected
@@ -186,14 +188,14 @@ export function createUpdater(d: UpdaterDeps) {
     async init(): Promise<void> {
       const mem = await d.load().catch((e) => {
         d.log(`[update] could not read settings: ${why(e)}`)
-        return { checkUpdates: true, updateCheckedAt: null, updateLatest: null, updateDismissed: null }
+        return { checkUpdates: true, updateCheckedAt: null, updateLatest: null, updateDismissed: null, updateHistory: null }
       })
       const at = mem.updateCheckedAt
       lastAnswered = typeof at === 'number' && Number.isFinite(at) ? at : null
       dismissed = validDismissal(mem.updateDismissed)
       const kept = stillNewer(mem.updateLatest, d.version)
       if (mem.updateLatest && !kept) remember({ updateLatest: null })
-      const first: UpdateState = { ...state, autoCheck: mem.checkUpdates }
+      const first: UpdateState = { ...state, autoCheck: mem.checkUpdates, releases: validHistory(mem.updateHistory) }
       set(mem.checkUpdates ? offerRemembered(first, mem.updateLatest) : first)
       armSnoozeEnd()
     },
@@ -280,7 +282,8 @@ export function createUpdater(d: UpdaterDeps) {
     async openRelease(version?: unknown): Promise<void> {
       if (version !== undefined) {
         if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)) return
-        await d.openExternal(pageFor(`v${version}`))
+        const listed = state.releases.find((r) => r.version === version)
+        await d.openExternal((listed && allowedReleaseUrl(listed.url)) ?? pageFor(`v${version}`))
         return
       }
       const v = state.downloadedVersion ?? state.availableVersion

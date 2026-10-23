@@ -55,7 +55,7 @@ describe('a release whose update feed this copy cannot use', () => {
     })
     const u = createUpdater({
       version: '0.1.2', mode: 'install', disabledReason: null, backend,
-      load: async () => ({ checkUpdates: true, updateCheckedAt: null, updateLatest: null, updateDismissed: null }),
+      load: async () => ({ checkUpdates: true, updateCheckedAt: null, updateLatest: null, updateDismissed: null, updateHistory: null }),
       save: async () => undefined, busy: () => ({ exporting: false, working: 0 }), prepareToQuit: async () => undefined,
       openExternal: async () => undefined, send: () => {}, log: () => {}, now: () => 1000
     })
@@ -119,7 +119,7 @@ it('fails if a later check that cannot read the feed breaks Restart for an updat
   })
   const u = createUpdater({
     version: '0.1.2', mode: 'install', disabledReason: null, backend,
-    load: async () => ({ checkUpdates: true, updateCheckedAt: null, updateLatest: null, updateDismissed: null }),
+    load: async () => ({ checkUpdates: true, updateCheckedAt: null, updateLatest: null, updateDismissed: null, updateHistory: null }),
     save: async () => undefined, busy: () => ({ exporting: false, working: 0 }), prepareToQuit: async () => undefined,
     openExternal: async () => undefined, send: () => {}, log: () => {}, now: () => 1000
   })

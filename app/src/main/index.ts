@@ -13,6 +13,7 @@ import {
   ffmpegPath,
   ffprobePath,
   initPaths,
+  legalFile,
   projectsDir,
   pythonExe,
   reelStudioRoot,
@@ -446,6 +447,11 @@ function registerIpc(): void {
     else shell.showItemInFolder(p)
   })
   handle('app:copyText', (_e, t: string) => clipboard.writeText(String(t)))
+  handle('app:legal', (_e, doc: unknown) => fs.readFile(legalFile(doc), 'utf8'))
+  handle('app:showLegal', (_e, doc: unknown) => {
+    const file = legalFile(doc)
+    if (!TEST) shell.showItemInFolder(file)
+  })
   ipcMain.on('app:startDrag', (e, file: string) => {
     try {
       assertIpcSender(e, win?.webContents, rendererUrl)

@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 import { settingsFile } from './paths'
 import { writeJson } from './store'
 import type { SpeechCheckResult } from './models'
+import type { ReleaseEntry } from '../shared/update'
 import type { Dismissal, RememberedRelease } from './update-machine'
 
 export interface Settings {
@@ -11,6 +12,7 @@ export interface Settings {
   updateCheckedAt: number | null
   updateLatest: RememberedRelease | null
   updateDismissed: Dismissal | null
+  updateHistory: ReleaseEntry[] | null
   firstRunDone: boolean
   root: string | null
   /** Written by the 0.1.0/0.1.1 local-Claude-Code builds (a one-time automatic AI pick); read once by ai-carryover.ts. */
@@ -32,7 +34,8 @@ const DEFAULTS: Settings = {
   checkUpdates: true,
   updateCheckedAt: null,
   updateLatest: null,
-  updateDismissed: null
+  updateDismissed: null,
+  updateHistory: null
 }
 
 export async function loadSettings(): Promise<Settings> {
