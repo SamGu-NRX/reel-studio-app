@@ -1,13 +1,38 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LibraryFile, ProjectJson } from '../../../../shared/api'
 import { clock } from '../../../../shared/progress'
-import { kindName, levelOf, SFX_LEVELS, sfxName, sfxReason, sfxWord, type Sfx, type SoundEffect } from '../../../../shared/sfx'
+import {
+  FADE_MAX,
+  firstChoice,
+  gainOf,
+  gainText,
+  JOBS,
+  leadIn,
+  momentAt,
+  momentKey,
+  momentWhy,
+  musicFades,
+  secondsText,
+  SFX_GAIN,
+  SFX_GAP,
+  sfxName,
+  sfxVolume,
+  sfxWord,
+  soundTime,
+  soundTitle,
+  type Join,
+  type Sfx,
+  type SfxMoment,
+  type SoundEffect,
+  type VersionClock
+} from '../../../../shared/sfx'
 import { reel, userMessage } from '../../api'
 import { useNotify } from '../../App'
 import { Icon } from '../../components/icons'
+import { byKeyboard, reducedMotion } from '../../components/motion'
 import { IS_MAC } from '../../components/ui'
 import { usePlayhead } from '../../components/playhead'
-import { fileTitle, Seg, setP, type TabProps } from './controls'
+import { arrowPick, fileTitle, setP, tabStop, type TabProps } from './controls'
 import { useAudition } from './preview'
 
 const MUSIC_LEVELS = [
@@ -16,25 +41,61 @@ const MUSIC_LEVELS = [
   { key: 'loud-intro', label: 'Loud at the start, then under my voice' }
 ]
 
-/** The engine's one sound per two seconds (docs/schema-changes.md, sound effects). */
-const SFX_GAP = 2
-
 let packOnce: Promise<SoundEffect[]> | null = null
 export const soundPack = (): Promise<SoundEffect[]> => (packOnce ??= reel.sfx.pack())
 
-/** How loud a preview plays a sound, from its level: about half volume at Normal. */
-export const sfxVolume = (s: Sfx): number => Math.min(1, 0.5 * 10 ** (Number(s.gainDb ?? 0) / 20))
+export interface SoundTabProps extends TabProps {
+  /** Where the version on screen plays each word, and its joins. */
+  vclock: VersionClock
+  joins: Join[]
+  /** The sound picked here or on the timeline (its moment key). */
+  selected: string | null
+  onSelect: (key: string | null) => void
+}
 
-const keyOf = (s: Sfx): string => JSON.stringify(s.at)
+/** One placed sound, in the words and the time the person sees. */
+export interface SoundRow {
+  s: Sfx
+  key: string
+  t: number | null
+  title: string
+  why: string
+  /** why the engine will leave it out, or null */
+  warn: string | null
+}
 
-export function SoundTab({ d, now, change, player, placed }: TabProps) {
+/** The reel's sounds in the order they play, each with what it is, when, why there, and whether it will play. */
+export function soundRows(sfx: Sfx[], c: VersionClock, joins: Join[], broll: ProjectJson['broll'], keptNow: Set<string>, said: (id: string) => string | undefined): SoundRow[] {
+  const rows = sfx
+    .map((s) => {
+      const t = soundTime(s, c, joins, broll)
+      const word = sfxWord(s, broll)
+      const cut = !!word && !keptNow.has(word)
+      return { s, key: momentKey(s.at), t, title: soundTitle(s, t), why: momentWhy(s.at, said), warn: cut ? "Its word is cut, so it won't play." : t === null ? "Its moment isn't in this version, so it won't play." : null }
+    })
+    .sort((a, b) => (a.t ?? Infinity) - (b.t ?? Infinity))
+  // the engine plays one at a time, two seconds apart: a later one too close to the one before is left out
+  let last: number | null = null
+  for (const r of rows) {
+    if (r.warn || r.t === null) continue
+    if (last !== null && r.t - last < SFX_GAP) r.warn = "Less than 2 seconds after the sound before it, so it won't play. Remove one of them."
+    else last = r.t
+  }
+  return rows
+}
+
+export function SoundTab({ d, now, change, settle, player, vclock, joins, selected, onSelect }: SoundTabProps) {
   const notify = useNotify()
   const [songs, setSongs] = useState<LibraryFile[]>([])
   const [pack, setPack] = useState<SoundEffect[]>([])
+  const [picking, setPicking] = useState<{ at: SfxMoment; t: number } | null>(null)
   const hear = useAudition()
   const music = now.p.music
   const sfx = now.p.sfx ?? []
-  const second = usePlayhead(player.playhead, Math.floor)
+  const second = usePlayhead(player.playhead, Math.round)
+  const list = useRef<HTMLUListElement>(null)
+  const addBtn = useRef<HTMLButtonElement>(null)
+  const focusAfter = useRef<string | null>(null)
 
   const loadSongs = () =>
     reel.library
@@ -48,31 +109,56 @@ export function SoundTab({ d, now, change, player, placed }: TabProps) {
   }, [])
 
   const byId = useMemo(() => new Map(pack.map((s) => [s.id, s])), [pack])
-  const kinds = useMemo(() => [...new Set(pack.map((s) => s.kind))], [pack])
   const said = (id: string) => d.words.find((w) => w.id === id)?.w
-  const timeOf = (s: Sfx): number | null => {
-    const w = sfxWord(s, now.p.broll)
-    return w ? (placed.get(w)?.s ?? null) : null
+  const rows = soundRows(sfx, vclock, joins, now.p.broll, now.kept, said)
+  const taken = new Set(rows.map((r) => r.key))
+  const here = momentAt(player.playhead.get(), vclock, joins, taken)
+
+  // a sound picked on the timeline scrolls into view
+  useEffect(() => {
+    if (!selected) return
+    list.current?.querySelector(`[data-key="${CSS.escape(selected)}"]`)?.scrollIntoView({ block: 'nearest', behavior: reducedMotion() || byKeyboard() ? 'auto' : 'smooth' })
+  }, [selected])
+  // after an add or a removal, focus lands on a row rather than on the page
+  useEffect(() => {
+    const k = focusAfter.current
+    if (k === null) return
+    focusAfter.current = null
+    const el = k ? list.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(k)}"] .sfx-name`) : null
+    ;(el ?? addBtn.current)?.focus()
+  })
+
+  const setMusic = (m: Partial<NonNullable<ProjectJson['music']>>, key?: string) =>
+    change(
+      setP((p) => ({ music: { enabled: true, track: null, ...(p.music ?? {}), ...m } })),
+      key
+    )
+  const setSfx = (fn: (list: Sfx[]) => Sfx[], key?: string) =>
+    change(
+      setP((p) => {
+        const next = fn(p.sfx ?? [])
+        return { sfx: next.length ? next : undefined }
+      }),
+      key
+    )
+  const put = (k: string, next: Sfx, key?: string) => setSfx((all) => all.map((x) => (momentKey(x.at) === k ? next : x)), key)
+  const preview = (s: Sfx) => {
+    const p = byId.get(s.sound)
+    if (p) hear.play(p.url, sfxVolume(s))
   }
-  const rows = sfx.map((s) => ({ s, t: timeOf(s) })).sort((a, b) => (a.t ?? Infinity) - (b.t ?? Infinity))
-
-  const setMusic = (m: Partial<NonNullable<ProjectJson['music']>>) => change(setP((p) => ({ music: { enabled: true, track: null, ...(p.music ?? {}), ...m } })))
-  const setSfx = (fn: (list: Sfx[]) => Sfx[]) =>
-    change(setP((p) => {
-      const list = fn(p.sfx ?? [])
-      return { sfx: list.length ? list : undefined }
-    }))
-  const put = (s: Sfx, next: Sfx) => setSfx((list) => list.map((x) => (keyOf(x) === keyOf(s) ? next : x)))
-
-  // a new sound goes on the word playing now, or the next one that has no sound yet
-  const used = new Set(sfx.map(keyOf))
-  const free = [...placed.values()].sort((a, b) => a.s - b.s).find((w) => w.e > second && !used.has(JSON.stringify({ word: w.id })))
-  const add = () => {
-    if (!free) return
-    const first = pack[0]?.id ?? 'whoosh-quick'
-    setSfx((list) => [...list, { at: { word: free.id }, sound: first }])
-    const p = byId.get(first)
-    if (p) hear.play(p.url, 0.5)
+  const remove = (r: SoundRow) => {
+    const i = rows.indexOf(r)
+    focusAfter.current = rows[i + 1]?.key ?? rows[i - 1]?.key ?? ''
+    if (selected === r.key) onSelect(null)
+    setSfx((all) => all.filter((x) => momentKey(x.at) !== r.key))
+  }
+  const add = (sound: string) => {
+    if (!picking) return
+    const k = momentKey(picking.at)
+    setSfx((all) => [...all.filter((x) => momentKey(x.at) !== k), { at: picking.at, sound }])
+    setPicking(null)
+    onSelect(k)
+    focusAfter.current = k
   }
 
   const chooseSong = async () => {
@@ -87,6 +173,8 @@ export function SoundTab({ d, now, change, player, placed }: TabProps) {
   }
 
   const noMusic = !music?.track || music.enabled === false
+  const fades = musicFades(music)
+  const joinCount = joins.length
   return (
     <div className="edit-stack">
       <section className="edit-field" aria-labelledby="music-h">
@@ -133,6 +221,47 @@ export function SoundTab({ d, now, change, player, placed }: TabProps) {
         )}
       </section>
 
+      {(!noMusic || joinCount > 0) && (
+        <section className="edit-field" aria-labelledby="fades-h" data-testid="fades">
+          <h3 className="edit-label" id="fades-h">
+            Fades
+          </h3>
+          {!noMusic && (
+            <div className="edit-sliders">
+              <Slider
+                label="Music fade-in"
+                value={Math.min(FADE_MAX, fades.fadeIn)}
+                shown={secondsText(fades.fadeIn)}
+                spoken={`${secondsText(fades.fadeIn).replace(' s', '')} seconds`}
+                min={0}
+                max={FADE_MAX}
+                step={0.1}
+                onChange={(v) => setMusic({ fadeIn: v }, 'fade-in')}
+                onDone={settle}
+                testid="fade-in"
+              />
+              <Slider
+                label="Music fade-out"
+                value={Math.min(FADE_MAX, fades.fadeOut)}
+                shown={secondsText(fades.fadeOut)}
+                spoken={`${secondsText(fades.fadeOut).replace(' s', '')} seconds`}
+                min={0}
+                max={FADE_MAX}
+                step={0.1}
+                onChange={(v) => setMusic({ fadeOut: v }, 'fade-out')}
+                onDone={settle}
+                testid="fade-out"
+              />
+            </div>
+          )}
+          {joinCount > 0 && (
+            <p className="edit-hint">
+              {noMusic ? 'Your' : 'And your'} voice blends over a few milliseconds at each of the {joinCount === 1 ? 'join' : `${joinCount} joins`} in this version, so {joinCount === 1 ? "it doesn't" : "they don't"} click.
+            </p>
+          )}
+        </section>
+      )}
+
       <section className="edit-field" aria-labelledby="sfx-h" data-testid="sfx">
         <h3 className="edit-label" id="sfx-h">
           Sound effects
@@ -140,79 +269,266 @@ export function SoundTab({ d, now, change, player, placed }: TabProps) {
         {rows.length === 0 ? (
           <p className="edit-hint">No sound effects in this reel yet.</p>
         ) : (
-          <ul className="edit-list" aria-labelledby="sfx-h">
-            {rows.map(({ s, t }, i) => {
+          <ul className="edit-list" aria-labelledby="sfx-h" ref={list}>
+            {rows.map((r) => {
+              const { s } = r
               const name = sfxName(s.sound)
               const sound = byId.get(s.sound)
-              const close = i > 0 && t !== null && rows[i - 1].t !== null && t - rows[i - 1].t! < SFX_GAP
-              const title = `${name.kind} at ${t === null ? '—' : clock(t)}`
+              const playing = !!sound && hear.playing === sound.url
+              const g = gainOf(s)
               return (
-                <li key={keyOf(s)} className="edit-row sfx-row" data-testid="sfx-row">
-                  <button
-                    className="icon-btn small"
-                    aria-label={`Hear ${title}`}
-                    onClick={() => (t === null ? sound && hear.play(sound.url, sfxVolume(s)) : player.seek(Math.max(0, t - 1.5), true))}
-                  >
-                    <Icon name="play" size={14} stroke={2} />
-                  </button>
+                <li key={r.key} data-key={r.key} className={`edit-row sfx-row${selected === r.key ? ' on' : ''}`} aria-current={selected === r.key || undefined} data-testid="sfx-row">
                   <div className="edit-row-main">
-                    <span className="edit-row-title tnum">{title}</span>
-                    <span className="edit-row-sub">
-                      {sfxReason(s, said)}
-                      {t === null && ', a word this version leaves out'}
-                    </span>
+                    <div className="sfx-head">
+                      <button
+                        className="sfx-name"
+                        title={r.t === null ? undefined : 'Go to just before it'}
+                        onClick={() => {
+                          onSelect(r.key)
+                          if (r.t !== null) player.seek(leadIn(r.t))
+                        }}
+                      >
+                        <span className="edit-row-title tnum">{r.title}</span>
+                        <span className="sfx-why"> · {r.why}</span>
+                      </button>
+                      <button className="icon-btn small" aria-label={`Remove ${r.title}`} onClick={() => remove(r)} data-testid="sfx-remove">
+                        <Icon name="x" size={14} stroke={2} />
+                      </button>
+                    </div>
+                    {r.warn && <span className="edit-row-sub warn">{r.warn}</span>}
                     <div className="sfx-controls">
                       <select
                         className="input select small"
-                        aria-label={`Which ${name.kind.toLowerCase()}`}
+                        aria-label={`Which ${name.kind.toLowerCase()} at ${r.t === null ? 'this moment' : clock(r.t)}`}
                         value={s.sound}
                         onChange={(e) => {
-                          put(s, { ...s, sound: e.target.value })
-                          const p = byId.get(e.target.value)
-                          if (p) hear.play(p.url, sfxVolume(s))
+                          const next = { ...s, sound: e.target.value }
+                          put(r.key, next)
+                          preview(next)
                         }}
                       >
-                        {kinds.map((k) => (
-                          <optgroup key={k} label={kindName(k)}>
+                        {JOBS.map((j) => (
+                          <optgroup key={j.kind} label={`${j.name}, ${j.purpose}`}>
                             {pack
-                              .filter((p) => p.kind === k)
+                              .filter((p) => p.kind === j.kind)
                               .map((p) => (
                                 <option key={p.id} value={p.id}>
-                                  {kindName(k)}, {sfxName(p.id).variant}
+                                  {j.name}, {sfxName(p.id).variant}
                                 </option>
                               ))}
                           </optgroup>
                         ))}
                         {!byId.has(s.sound) && <option value={s.sound}>{`${name.kind}, ${name.variant}`}</option>}
                       </select>
-                      <Seg
-                        testid="sfx-level"
-                        label={`How loud the ${name.kind.toLowerCase()} is`}
-                        value={levelOf(s)}
-                        options={SFX_LEVELS}
-                        onPick={(k) => {
-                          const g = SFX_LEVELS.find((x) => x.key === k)!.gainDb
-                          const { gainDb: _old, ...rest } = s
-                          put(s, g ? { ...rest, gainDb: g } : rest)
-                        }}
-                      />
+                      <button className="btn small" aria-label={`${playing ? 'Stop' : 'Preview'} ${r.title}`} disabled={!sound} onClick={() => preview(s)} data-testid="sfx-preview">
+                        <Icon name={playing ? 'pause' : 'play'} size={12} stroke={2} /> {playing ? 'Stop' : 'Preview'}
+                      </button>
                     </div>
-                    {close && <span className="edit-row-sub warn">Within 2 seconds of the sound before it, so it won't play. Remove one of them.</span>}
+                    <Slider
+                      label="Level"
+                      aria={`Level of ${r.title}`}
+                      value={g}
+                      shown={gainText(g)}
+                      spoken={gainText(g).replace('−', 'minus ').replace('+', 'plus ').replace('dB', 'decibels')}
+                      min={SFX_GAIN.min}
+                      max={SFX_GAIN.max}
+                      step={1}
+                      onChange={(v) => {
+                        const { gainDb: _old, ...rest } = s
+                        put(r.key, v ? { ...rest, gainDb: v } : rest, `level:${r.key}`)
+                      }}
+                      onDone={(how) => {
+                        settle()
+                        if (how === 'pointer') preview(s)
+                      }}
+                      testid="sfx-level"
+                    />
                   </div>
-                  <button className="icon-btn small" aria-label={`Remove ${title}`} onClick={() => setSfx((list) => list.filter((x) => keyOf(x) !== keyOf(s)))}>
-                    <Icon name="x" size={14} stroke={2} />
-                  </button>
                 </li>
               )
             })}
           </ul>
         )}
         <div className="edit-actions">
-          <button className="btn small" onClick={add} disabled={!free || !pack.length} data-testid="sfx-add">
-            <Icon name="plus" size={14} /> Add a sound at <span className="tnum">{clock(free?.s ?? second)}</span>
+          <button
+            ref={addBtn}
+            className="btn small"
+            aria-expanded={!!picking}
+            aria-controls="sfx-picker"
+            disabled={!here || !pack.length}
+            title={here ? undefined : 'Every word from here on has a sound already.'}
+            onClick={() => setPicking((p) => (p ? null : here))}
+            data-testid="sfx-add"
+          >
+            <Icon name="plus" size={14} /> Add a sound at <span className="tnum">{clock(picking?.t ?? here?.t ?? second)}</span>
           </button>
         </div>
+        {picking && (
+          <SoundPicker
+            pack={pack}
+            moment={picking}
+            why={momentWhy(picking.at, said)}
+            near={rows.find((r) => r.t !== null && !r.warn && Math.abs(r.t - picking.t) < SFX_GAP) ?? null}
+            onPreview={(id) => {
+              const p = byId.get(id)
+              if (p) hear.play(p.url, 0.5)
+            }}
+            onAdd={add}
+            onCancel={() => {
+              hear.stop()
+              setPicking(null)
+              addBtn.current?.focus()
+            }}
+          />
+        )}
       </section>
     </div>
   )
 }
+
+/** A labelled slider with its value beside it. `onDone` runs when a drag or a key press ends. */
+function Slider({
+  label,
+  aria,
+  value,
+  shown,
+  spoken,
+  min,
+  max,
+  step,
+  onChange,
+  onDone,
+  testid
+}: {
+  label: string
+  aria?: string
+  value: number
+  shown: string
+  spoken: string
+  min: number
+  max: number
+  step: number
+  onChange: (v: number) => void
+  onDone: (how: 'pointer' | 'key') => void
+  testid: string
+}) {
+  return (
+    <label className="edit-slider">
+      <span className="edit-slider-label">{label}</span>
+      <input
+        type="range"
+        className="slider"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        aria-label={aria ?? label}
+        aria-valuetext={spoken}
+        onChange={(e) => onChange(Number(e.target.value))}
+        onPointerUp={() => onDone('pointer')}
+        onKeyUp={() => onDone('key')}
+        data-testid={testid}
+      />
+      <output className="edit-slider-value tnum" aria-hidden>
+        {shown}
+      </output>
+    </label>
+  )
+}
+
+/** The sounds grouped by what they are for. A click plays one and picks it; Add puts it on the moment. */
+function SoundPicker({
+  pack,
+  moment,
+  why,
+  near,
+  onPreview,
+  onAdd,
+  onCancel
+}: {
+  pack: SoundEffect[]
+  moment: { at: SfxMoment; t: number }
+  why: string
+  near: SoundRow | null
+  onPreview: (id: string) => void
+  onAdd: (id: string) => void
+  onCancel: () => void
+}) {
+  const box = useRef<HTMLDivElement>(null)
+  const [pick, setPick] = useState(() => (pack.some((p) => p.id === firstChoice(moment.at)) ? firstChoice(moment.at) : pack[0].id))
+  const ids = JOBS.flatMap((j) => pack.filter((p) => p.kind === j.kind).map((p) => p.id))
+  const choose = (id: string) => {
+    setPick(id)
+    onPreview(id)
+  }
+  useEffect(() => {
+    box.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus({ preventScroll: true })
+    box.current?.scrollIntoView({ block: 'nearest', behavior: reducedMotion() || byKeyboard() ? 'auto' : 'smooth' })
+  }, [])
+  const name = sfxName(pick)
+  return (
+    <div
+      ref={box}
+      id="sfx-picker"
+      className="sfx-picker"
+      role="group"
+      aria-label={`Add a sound at ${clock(moment.t)}`}
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape') return
+        // the picker takes this Escape: Edit it myself stays open
+        e.preventDefault()
+        e.stopPropagation()
+        onCancel()
+      }}
+      data-testid="sfx-picker"
+    >
+      <p className="sfx-picker-h">
+        At <span className="tnum">{clock(moment.t)}</span>, {why}
+      </p>
+      <div className="sfx-jobs" role="radiogroup" aria-label="Which sound" onKeyDown={(e) => arrowPick(e, ids, pick, choose)}>
+        {JOBS.map((j) => {
+          const sounds = pack.filter((p) => p.kind === j.kind)
+          if (!sounds.length) return null
+          return (
+            <div key={j.kind} className="sfx-job" role="group" aria-label={`${j.name}, ${j.purpose}`}>
+              <span className="sfx-job-h" aria-hidden>
+                <b>{j.name}</b> {j.purpose}
+              </span>
+              <span className="sfx-chips">
+                {sounds.map((p) => (
+                  <button
+                    key={p.id}
+                    role="radio"
+                    aria-checked={pick === p.id}
+                    aria-label={`${j.name}, ${sfxName(p.id).variant}`}
+                    tabIndex={tabStop(p.id, pick, ids)}
+                    data-key={p.id}
+                    className={`sfx-chip${pick === p.id ? ' on' : ''}`}
+                    onClick={() => choose(p.id)}
+                    data-testid={`sfx-choice-${p.id}`}
+                  >
+                    {sfxName(p.id).variant}
+                  </button>
+                ))}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      {near && (
+        <p className="edit-row-sub warn">
+          {near.title} is less than 2 seconds away. Only one sound plays in 2 seconds, so one of them will be left out.
+        </p>
+      )}
+      <div className="sfx-picker-f">
+        <button className="btn ghost small" onClick={onCancel}>
+          Cancel
+        </button>
+        <button className="btn small" onClick={() => onAdd(pick)} data-testid="sfx-picker-add">
+          Add {name.kind.toLowerCase()}, {name.variant}
+        </button>
+      </div>
+    </div>
+  )
+}
+

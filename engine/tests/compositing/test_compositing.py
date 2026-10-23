@@ -285,6 +285,37 @@ def test_build_audio_automation_lowers_music(tmp_path, media):
     assert low["music"]["measuredGapDb"] > base["music"]["measuredGapDb"] + 4
 
 
+def _bed(tmp_path, media, monkeypatch, **mcfg):
+    """The music as mixed under the voice, before the loudness pass (mix minus voice)."""
+    monkeypatch.setattr(music, "normalize", lambda ctx, x, work, tag="mix": (x, {}))
+    ctx = _ctx(tmp_path, media["video"])
+    fx.set_project(ctx, music={"enabled": True, "track": str(media["song"]), "startAt": 1.0, "level": "under-voice",
+                               "automation": [], **mcfg})
+    voice = fx.cut_voice(ctx, tmp_path / "voice.wav")
+    out = music.build_audio(ctx, voice)
+    return music.decode(out) - music.decode(voice)
+
+
+def _rms(x, t0, t1):
+    return float(np.sqrt(np.mean(x[int(t0 * music.SR):int(t1 * music.SR)] ** 2)))
+
+
+def test_build_audio_fade_in_follows_project(tmp_path, media, monkeypatch):
+    default = _bed(tmp_path / "a", media, monkeypatch)
+    slow = _bed(tmp_path / "b", media, monkeypatch, fadeIn=2.0)
+    none = _bed(tmp_path / "c", media, monkeypatch, fadeIn=0)
+    assert _rms(slow, 0, 0.3) < 0.5 * _rms(default, 0, 0.3)
+    assert _rms(none, 0, 0.3) > 1.2 * _rms(default, 0, 0.3)
+    assert _rms(slow, 3.0, 3.5) == pytest.approx(_rms(default, 3.0, 3.5), rel=0.1)
+
+
+def test_fade_lengths():
+    assert music.fade_lengths({}) == (0.6, 1.5)
+    assert music.fade_lengths({"level": "loud-intro"}) == (0.05, 1.5)
+    assert music.fade_lengths({"fadeIn": 1.2, "fadeOut": 0}) == (1.2, 0.0)
+    assert music.fade_lengths({"fadeIn": 0, "level": "loud-intro"}) == (music.DECLICK_S, 1.5)
+
+
 @pytest.mark.parametrize("extra", [2, -3])
 def test_build_audio_music_off_by_samples(tmp_path, media, monkeypatch, extra):
     """The decoder can hand back a bed a few samples longer (or shorter) than the voice: the mix

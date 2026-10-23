@@ -3,6 +3,7 @@
 import type { ProjectJson } from './api'
 import { look, name, pos, size } from './describe'
 import { clock } from './progress'
+import { gainOf, gainText, momentKey, musicFades, secondsText, sfxName } from './sfx'
 
 export interface VersionRow {
   label: string
@@ -46,6 +47,17 @@ export function versionRows(before: ProjectJson | null, after: ProjectJson, leng
   add('Music', song(before), song(after))
   if (before && song(before) === song(after) && after.music?.enabled && before.music?.level !== after.music?.level) {
     add('Music volume', before.music?.level === 'quiet' ? 'Quiet' : 'Normal', after.music?.level === 'quiet' ? 'Quiet' : 'Normal')
+  }
+  if (before && song(before) === song(after) && after.music?.enabled) {
+    const [a, b] = [musicFades(before.music), musicFades(after.music)]
+    add('Music fade-in', secondsText(a.fadeIn), secondsText(b.fadeIn))
+    add('Music fade-out', secondsText(a.fadeOut), secondsText(b.fadeOut))
+  }
+  add('Sound effects', count(before?.sfx?.length ?? 0, 'sound effect', 'sound effects'), count(after.sfx?.length ?? 0, 'sound effect', 'sound effects'))
+  const was = new Map((before?.sfx ?? []).map((x) => [momentKey(x.at), x]))
+  for (const x of after.sfx ?? []) {
+    const a = was.get(momentKey(x.at))
+    if (a && a.sound === x.sound) add(`${sfxName(x.sound).kind} level`, gainText(gainOf(a)), gainText(gainOf(x)))
   }
   add('Pictures', count(before?.broll?.length ?? 0, 'picture', 'pictures'), count(after.broll?.length ?? 0, 'picture', 'pictures'))
   add('Zooms', count(before?.zooms?.length ?? 0, 'zoom', 'zooms'), count(after.zooms?.length ?? 0, 'zoom', 'zooms'))

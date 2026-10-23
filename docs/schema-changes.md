@@ -96,3 +96,9 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
   most 20. A change made while the editor is busy waits in the reel's note queue; the app writes its id here in the
   same project.json write that saves it, after its final render, and that id is the queue's proof it ran (as a note's
   id in `notes` is). Written only by the app (app/src/main/hand-edit.ts); the engine ignores it.
+
+## 2026-10-23 (music fade-in)
+
+- `music.fadeIn` (number, 0 to 30 seconds, absent = 0.6, or 0.05 with `level: "loud-intro"`): how long the song takes
+  to come in. Below 0.01 s it is 0.01 s, so the first sample never clicks. Until now the fade-in was fixed; `fadeOut`
+  was already a field. Set by "Edit it myself" (0 to 2 seconds there).

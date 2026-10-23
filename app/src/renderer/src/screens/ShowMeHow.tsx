@@ -14,9 +14,11 @@ import { CutTab, type CutMode } from './edit/CutTab'
 import { PicturesTab, pictureUrl } from './edit/PicturesTab'
 import { During, OnPhone, SkipRanges, SoundCues, type PlayerHandle } from './edit/preview'
 import { useEditSession } from './edit/session'
-import { soundPack, sfxVolume, SoundTab } from './edit/SoundTab'
+import { soundPack, soundRows, SoundTab } from './edit/SoundTab'
 import { SubtitlesTab } from './edit/SubtitlesTab'
-import { sfxWord, type SoundEffect } from '../../../shared/sfx'
+import type { RenderSegment } from '../../../shared/moments'
+import { joinsOf, musicFades, sfxVolume, soundTime, type SoundEffect, type VersionClock } from '../../../shared/sfx'
+import type { TimelineAudio } from '../components/Timeline'
 import './edit/edit.css'
 
 export type { PlayerHandle } from './edit/preview'
@@ -46,7 +48,10 @@ export function ShowMeHow({
   queued = null,
   onClose,
   onPreview,
-  onTab
+  onTab,
+  sound = null,
+  onSound,
+  onAudio
 }: {
   d: ProjectDetail
   /** The version the player shows: the newest. */
@@ -59,6 +64,11 @@ export function ShowMeHow({
   /** The subtitle look to preview on the phone, on a still of the original at `at`, or null. */
   onPreview: (p: { look: SubtitleLook; text: string; at: number } | null) => void
   onTab?: (t: Tab) => void
+  /** The sound picked here or on the timeline (its moment), and a pick from either. */
+  sound?: string | null
+  onSound?: (key: string | null) => void
+  /** What the timeline draws while this is open: the sounds, the music's fades and the joins. */
+  onAudio?: (a: TimelineAudio | null) => void
 }) {
   const notify = useNotify()
   const s = useEditSession(d, queued)
@@ -69,6 +79,7 @@ export function ShowMeHow({
   const [leaving, setLeaving] = useState(false)
   const [making, setMaking] = useState(false)
   const [placed, setPlaced] = useState(() => new Map<string, PlacedWord>())
+  const [segments, setSegments] = useState<RenderSegment[]>([])
   const [images, setImages] = useState<LibraryFile[]>([])
   const [pack, setPack] = useState<SoundEffect[]>([])
   const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({})
@@ -76,6 +87,8 @@ export function ShowMeHow({
   const setTab = (t: Tab) => {
     setTabState(t)
     onTab?.(t)
+    // leaving Sound drops the pick, so picking the same sound on the timeline again comes back to it
+    if (t !== 'music' && sound) onSound?.(null)
   }
   const leaveTimer = useRef<number | undefined>(undefined)
   useEffect(() => () => window.clearTimeout(leaveTimer.current), [])
@@ -92,7 +105,11 @@ export function ShowMeHow({
     let live = true
     reel.projects
       .timeline(d.slug, version.n)
-      .then((t) => live && setPlaced(new Map((t?.words ?? []).map((w) => [w.id, w]))))
+      .then((t) => {
+        if (!live) return
+        setPlaced(new Map((t?.words ?? []).map((w) => [w.id, w])))
+        setSegments(t?.segments ?? [])
+      })
       .catch((e) => notify(userMessage(e), 'error'))
     return () => {
       live = false
@@ -171,17 +188,37 @@ export function ShowMeHow({
     }
     return ranges.sort((a, b) => a[0] - b[0])
   }, [base.kept, now.kept, placed])
+  const vclock = useMemo((): VersionClock => ({ placed, segments, words: d.words, kept: base.kept }), [placed, segments, d.words, base.kept])
+  const joins = useMemo(() => joinsOf(vclock), [vclock])
   const cues = useMemo(() => {
     const had = new Set((base.p.sfx ?? []).map((x) => JSON.stringify(x)))
     const byId = new Map(pack.map((p) => [p.id, p]))
     return (now.p.sfx ?? []).flatMap((x) => {
       const sound = byId.get(x.sound)
-      const w = sfxWord(x, now.p.broll)
-      const at = w && placed.get(w)
-      if (had.has(JSON.stringify(x)) || !sound || !at) return []
-      return [{ at: Math.max(0, at.s - sound.onsetMs / 1000), url: sound.url, volume: sfxVolume(x) }]
+      const at = soundTime(x, vclock, joins, now.p.broll)
+      if (had.has(JSON.stringify(x)) || !sound || at === null) return []
+      return [{ at: Math.max(0, at - sound.onsetMs / 1000), url: sound.url, volume: sfxVolume(x) }]
     })
-  }, [base.p.sfx, now.p.sfx, now.p.broll, pack, placed])
+  }, [base.p.sfx, now.p.sfx, now.p.broll, pack, vclock, joins])
+
+  // The timeline under the phone shows what this tab changes: each sound at its moment, the music's ramps, the joins.
+  const said = useCallback((id: string) => d.words.find((w) => w.id === id)?.w, [d.words])
+  const music = now.p.music
+  const audio = useMemo((): TimelineAudio => {
+    const rows = soundRows(now.p.sfx ?? [], vclock, joins, now.p.broll, now.kept, said)
+    return {
+      sounds: rows.flatMap((r) => (r.t === null ? [] : [{ key: r.key, at: r.t, label: `${r.title} · ${r.why}` }])),
+      music: music?.enabled !== false && music?.track ? musicFades(music) : null,
+      joins: joins.map((j) => j.t)
+    }
+  }, [now.p.sfx, now.p.broll, now.kept, music, vclock, joins, said])
+  useEffect(() => onAudio?.(audio), [audio, onAudio])
+  useEffect(() => () => onAudio?.(null), [onAudio])
+  // a sound picked on the timeline opens this tab on it
+  useEffect(() => {
+    if (sound && tab !== 'music') setTab('music')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sound])
   const newPictures = useMemo(() => {
     const had = new Set((base.p.broll ?? []).map((b) => b.id))
     return (now.p.broll ?? []).flatMap((b) => {
@@ -285,7 +322,7 @@ export function ShowMeHow({
       <div className="edit-b" role="tabpanel" id="edit-panel" aria-labelledby={`tab-${tab}`}>
         {tab === 'cut' && <CutTab {...tabProps} mode={cutMode} onMode={setCutMode} onLine={setLine} />}
         {tab === 'captions' && <SubtitlesTab {...tabProps} sample={sample.text} />}
-        {tab === 'music' && <SoundTab {...tabProps} />}
+        {tab === 'music' && <SoundTab {...tabProps} vclock={vclock} joins={joins} selected={sound} onSelect={(k) => onSound?.(k)} />}
         {tab === 'broll' && <PicturesTab {...tabProps} images={images} reloadImages={reloadImages} />}
         {tab === 'cover' && <CoverTab {...tabProps} loadPicks={loadPicks} />}
       </div>

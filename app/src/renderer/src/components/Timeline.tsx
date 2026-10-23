@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PlacedWord } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
 import { momentLabel } from '../../../shared/moments'
+import { leadIn } from '../../../shared/sfx'
 import { Icon } from './icons'
 import { useFollowPlayhead, type Playhead } from './playhead'
 import type { Transport } from './transport'
@@ -13,6 +14,16 @@ export interface TimelineMark {
   /** the version it made; absent while it waits or runs */
   v?: number
   text: string
+}
+
+/** What Edit it myself adds to the timeline while it is open (ShowMeHow.tsx). Times are on the version's clock. */
+export interface TimelineAudio {
+  /** each sound effect at its hit, by its moment key, with its name and why it plays there */
+  sounds: { key: string; at: number; label: string }[]
+  /** the song's fade-in and fade-out in seconds, or null with no song */
+  music: { fadeIn: number; fadeOut: number } | null
+  /** where one kept span meets the next: the voice blends there */
+  joins: number[]
 }
 
 const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v))
@@ -38,7 +49,10 @@ export function Timeline({
   words,
   marks,
   onRange,
-  onPlay
+  onPlay,
+  audio = null,
+  selectedSound = null,
+  onSound
 }: {
   playhead: Playhead
   transport: Transport
@@ -47,6 +61,9 @@ export function Timeline({
   marks: TimelineMark[]
   onRange: (r: { at: number; to: number }) => void
   onPlay: (v: number) => void
+  audio?: TimelineAudio | null
+  selectedSound?: string | null
+  onSound?: (key: string) => void
 }) {
   const track = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
@@ -93,7 +110,7 @@ export function Timeline({
   }
 
   const down = (ev: React.PointerEvent<HTMLDivElement>) => {
-    if (!duration || ev.button !== 0 || (ev.target as HTMLElement).closest('.tl-mark')) return
+    if (!duration || ev.button !== 0 || (ev.target as HTMLElement).closest('.tl-mark, .tl-sound')) return
     const el = ev.currentTarget
     el.setPointerCapture(ev.pointerId)
     const t0 = tAt(ev.clientX)
@@ -162,6 +179,15 @@ export function Timeline({
 
   const pct = (t: number): string => `${(clamp(t, 0, duration) / (duration || 1)) * 100}%`
   const groups = markGroups(marks, duration, width)
+  const sounds = audio ? markGroups(audio.sounds, duration, width) : []
+  const tipSide = (at: number): string => (at / duration < 0.2 ? ' start' : at / duration > 0.8 ? ' end' : '')
+  // the song's level under the rail: up over its fade-in, down over its fade-out (the two never overlap)
+  const ramp = (() => {
+    if (!audio?.music || !duration) return ''
+    const fi = Math.min(audio.music.fadeIn / duration, 0.5) * 1000
+    const fo = Math.min(audio.music.fadeOut / duration, 0.5) * 1000
+    return `M0 6L${fi.toFixed(1)} 0H${(1000 - fo).toFixed(1)}L1000 6Z`
+  })()
   return (
     <div className="tl" onPointerDown={down}>
       <div
@@ -180,6 +206,12 @@ export function Timeline({
         </svg>
         <span className="tl-rail" aria-hidden />
         <span className="tl-fill" ref={fill} aria-hidden />
+        {ramp && (
+          <svg className="tl-music" viewBox="0 0 1000 6" preserveAspectRatio="none" aria-hidden data-testid="timeline-music">
+            <path d={ramp} />
+          </svg>
+        )}
+        {duration > 0 && audio?.joins.map((t) => <span key={t} className="tl-join" style={{ left: pct(t) }} aria-hidden data-testid="timeline-join" />)}
         {sel && (
           <>
             <span className="tl-sel" style={{ left: pct(sel.a), width: `calc(${pct(sel.b)} - ${pct(sel.a)})` }} aria-hidden />
@@ -215,7 +247,7 @@ export function Timeline({
                 {v ? <Icon name="check" size={9} stroke={3} /> : null}
                 {items.length > 1 && <span className="n">{items.length}</span>}
                 {lit === id && (
-                  <span className={`tl-tip${at / duration < 0.2 ? ' start' : at / duration > 0.8 ? ' end' : ''}`}>
+                  <span className={`tl-tip${tipSide(at)}`}>
                     {items.map((m) => (
                       <span key={m.id}>
                         <b>{m.v ? `Version ${m.v}` : 'Waiting'}</b> {m.text}
@@ -228,13 +260,52 @@ export function Timeline({
           })}
         </div>
       )}
+      {duration > 0 && sounds.length > 0 && (
+        <div className="tl-marks" role="group" aria-label="Sound effects on the timeline">
+          {sounds.map(({ at, items }) => {
+            const key = items[0].key
+            const on = items.some((m) => m.key === selectedSound)
+            return (
+              <button
+                key={key}
+                className={`tl-sound${on ? ' on' : ''}`}
+                style={{ left: pct(at) }}
+                aria-label={items.map((m) => m.label).join('; ')}
+                aria-pressed={on}
+                onPointerEnter={() => setLit(key)}
+                onPointerLeave={() => setLit(null)}
+                onFocus={() => setLit(key)}
+                onBlur={() => setLit(null)}
+                onClick={() => {
+                  onSound?.(on ? selectedSound! : key)
+                  transport.seek(leadIn(at))
+                }}
+                data-testid="timeline-sound"
+              >
+                {lit === key && (
+                  <span className={`tl-tip${tipSide(at)}`}>
+                    {items.map((m) => {
+                      const [what, why] = m.label.split(' · ')
+                      return (
+                        <span key={m.key}>
+                          <b>{what}</b> {why}
+                        </span>
+                      )
+                    })}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
 
 /** Marks closer than one target's width share it; the target plays the newest version among them. */
-export function markGroups(marks: TimelineMark[], duration: number, width: number): { at: number; items: TimelineMark[] }[] {
-  const groups: { at: number; items: TimelineMark[] }[] = []
+export function markGroups<T extends { at: number }>(marks: T[], duration: number, width: number): { at: number; items: T[] }[] {
+  const groups: { at: number; items: T[] }[] = []
   for (const m of [...marks].sort((a, b) => a.at - b.at)) {
     const last = groups[groups.length - 1]
     if (last && duration && width && ((m.at - last.at) / duration) * width < MARK_PX) last.items.push(m)

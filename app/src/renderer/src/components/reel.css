@@ -118,6 +118,23 @@ html.kb .tl-mark:focus-visible { outline: 2px solid var(--ink); outline-offset: 
   .tl-mark::before { transition: transform 150ms var(--ease-out); }
   .tl-mark:hover::before { transform: scale(1.15); }
 }
+/* While Edit it myself is open (Timeline.tsx TimelineAudio): the song's level under the rail with its fade ramps, a
+   notch in the rail at each join where the voice blends, and a tick for each sound effect, darker when picked. */
+.tl-music { position: absolute; left: 0; top: 22px; width: 100%; height: 6px; overflow: visible; pointer-events: none; }
+.tl-music path { fill: var(--ink-4); opacity: .6; }
+.tl-join { position: absolute; top: 13px; width: 10px; height: 5px; margin-left: -5px; background: var(--paper); clip-path: polygon(0 0, 100% 0, 50% 100%); pointer-events: none; }
+.tl-sound {
+  position: absolute; top: 4px; width: 24px; height: 24px; margin-left: -12px; padding: 0; border: 0; border-radius: 6px; background: none;
+  cursor: pointer; z-index: 1; pointer-events: auto;
+}
+.tl-sound::before {
+  content: ''; position: absolute; left: 10px; top: 3px; width: 4px; height: 18px; border-radius: 2px; background: var(--ink-3); box-shadow: 0 0 0 2px var(--paper);
+  transition: transform 150ms cubic-bezier(.2, .8, .2, 1), background-color 150ms ease;
+}
+.tl-sound.on::before { background: var(--ink); transform: scaleY(1.2); }
+@media (hover: hover) and (pointer: fine) { .tl-sound:not(.on):hover::before { background: var(--ink-2); } }
+html.kb .tl-sound::before { transition: none; }
+html.kb .tl-sound:focus-visible { outline: 2px solid var(--ink); outline-offset: 0; }
 .tl-mark .n { position: absolute; top: 0; right: -1px; min-width: 12px; height: 12px; border-radius: 6px; background: var(--ink); color: #fff; font-size: 9px; font-weight: 700; line-height: 12px; padding: 0 3px; }
 .tl-tip {
   position: absolute; bottom: calc(100% + 8px); left: 50%; translate: -50% 0; z-index: 5; width: max-content; display: grid; gap: 1px; text-align: left; white-space: nowrap; max-width: 260px;
@@ -359,6 +376,8 @@ html.kb :is(.acc > div, .stripwrap > div, .steps > div, .tchip, .spot, .draghand
   .acc > div, .stripwrap > div, .steps > div { transform: none; transition-property: opacity; }
   .phone.landing .phone-screen > video.layer.loading { filter: none; }
   .spot { transition-property: opacity; }
+  .tl-sound::before { transition-property: background-color; }
+  .tl-sound.on::before { transform: none; }
   .helper .hb i { animation: none; width: 100%; opacity: .5; }
   @keyframes line-in { from { opacity: 0; } }
   @keyframes helper-run { from, to { transform: none; } }

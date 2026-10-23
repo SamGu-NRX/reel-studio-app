@@ -166,7 +166,7 @@ export function countChanges(e: HandEdit, words: Word[]): number {
     const [root, k, sub] = s.path
     if (root === 'captions' && k === 'style') keys.add(STYLE_ON_ITS_OWN.includes(sub) ? `style.${sub}` : 'style.look')
     else if (root === 'cover') keys.add(k === 'text' ? 'cover.text' : 'cover.frame')
-    else if (root === 'music') keys.add(k === 'level' ? 'music.level' : 'music.track')
+    else if (root === 'music') keys.add(k === 'level' || k === 'fadeIn' || k === 'fadeOut' ? `music.${k}` : 'music.track')
     else keys.add(s.path.join('.'))
   }
   for (const it of e.items) keys.add(`${it.list}:${it.key}`)
