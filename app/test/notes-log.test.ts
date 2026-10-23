@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, VersionInfo } from '../src/shared/api'
-import { notesLog } from '../src/shared/notes-log'
+import { notesLog, waitingRows } from '../src/shared/notes-log'
 
 const now = new Date('2026-10-22T15:00:00')
 const at = (h: number, day = 22) => new Date(2026, 9, day, h).toISOString()
@@ -70,5 +70,17 @@ describe('notesLog', () => {
       ['note', 'script'],
       ['video', 'version']
     ])
+  })
+})
+
+describe('waitingRows', () => {
+  // a note that did not finish keeps its queue entry to try again, but must not also show as a waiting row
+  it('fails if a stopped or failed note shows both as its line and as a waiting row', () => {
+    const queue = [{ id: 'stopped' }, { id: 'failed' }, { id: 'running', attempt: { base: 1 } }, { id: 'next' }]
+    const entries = [
+      { key: 'stopped', result: { kind: 'stopped' as const, kept: 1 } },
+      { key: 'failed', result: { kind: 'failed' as const, text: 'It did not work.' } }
+    ]
+    expect(waitingRows(queue, entries).map((q) => q.id)).toEqual(['next'])
   })
 })

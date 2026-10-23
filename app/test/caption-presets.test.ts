@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Measure } from '../src/shared/caption-fit'
-import { CAPTION_PRESETS, applyPreset, fitLook, lookFromStyle, presetOf, sampleLine, sampleLook } from '../src/shared/caption-presets'
+import { CAPTION_PRESETS, applyPreset, fitLook, lookFromStyle, presetOf, rowPosition, sampleLine, sampleLook } from '../src/shared/caption-presets'
 
 describe('caption presets', () => {
   it('picking a look writes exactly its documented style fields', () => {
@@ -71,5 +71,13 @@ describe('caption presets', () => {
         expect([text, p.key, fitLook(lookFromStyle(applyPreset(p.key)), text, measure)]).toEqual([text, p.key, byLook[p.key]])
       }
     }
+  })
+
+  // #59: Bold pop sits at 0.73 to stay clear of Instagram's buttons; Lower must keep that, not drop to 0.75
+  it('fails if Lower puts the subtitles anywhere but the look\'s own position', () => {
+    expect(rowPosition('lower', applyPreset('bold-pop'))).toBe(0.73)
+    expect(rowPosition('lower', applyPreset('clean'))).toBe(0.75)
+    expect(rowPosition('lower', { color: '#FF3B30', size: 90 })).toBe(0.75) // a style that matches no look
+    expect(rowPosition('higher', applyPreset('bold-pop'))).toBe(0.66)
   })
 })

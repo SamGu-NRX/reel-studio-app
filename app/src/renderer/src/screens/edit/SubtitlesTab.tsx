@@ -1,5 +1,5 @@
 import type { ProjectJson } from '../../../../shared/api'
-import { CAPTION_PRESETS, applyPreset, lookFromStyle, lookPosition, presetOf } from '../../../../shared/caption-presets'
+import { CAPTION_PRESETS, applyPreset, lookFromStyle, presetOf, rowPosition } from '../../../../shared/caption-presets'
 import { SubtitleSample } from '../../components/Player'
 import { arrowPick, Seg, setP, tabStop, type TabProps } from './controls'
 
@@ -11,9 +11,10 @@ const SIZES = [
   { key: 'medium', label: 'Medium', size: 105 },
   { key: 'big', label: 'Big', size: 126 }
 ] as const
+// the position each writes: shared/caption-presets.ts rowPosition
 const POSITIONS = [
-  { key: 'higher', label: 'Higher', position: 0.66 },
-  { key: 'lower', label: 'Lower', position: 0.75 } // picking it writes the look's own position (lookPosition)
+  { key: 'higher', label: 'Higher' },
+  { key: 'lower', label: 'Lower' }
 ] as const
 const COLORS = [
   { key: 'white', label: 'White', color: '#FFFFFF' },
@@ -87,7 +88,7 @@ export function SubtitlesTab({ now, change, next, sample }: TabProps & { sample:
           </div>
           <div className="edit-field">
             <span className="edit-label">Position</span>
-            <Seg testid="cap-pos" label="Position" value={positionKey(style)} options={POSITIONS} onPick={(k) => setStyle({ position: k === 'lower' ? lookPosition(style) : POSITIONS.find((x) => x.key === k)!.position })} />
+            <Seg testid="cap-pos" label="Position" value={positionKey(style)} options={POSITIONS} onPick={(k) => setStyle({ position: rowPosition(k as 'higher' | 'lower', style) })} />
           </div>
           {/* a look that lights up the word being said still has a colour for the rest (#53) */}
           <div className="edit-field">

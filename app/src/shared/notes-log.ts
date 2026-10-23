@@ -33,6 +33,12 @@ export interface LogEntry {
 
 const DONE_FAIL = "That didn't work, and nothing changed."
 
+/** The queued notes the log shows as waiting rows. One that did not finish (failed or stopped) keeps its place in the
+ * queue to try again but shows once: as its own line, with Try again. One running shows as its progress line. */
+export function waitingRows<Q extends { id: string; attempt?: unknown }>(queue: Q[], entries: Pick<LogEntry, 'key' | 'result'>[]): Q[] {
+  return queue.filter((q) => !q.attempt && !entries.some((e) => e.key === q.id && (e.result?.kind === 'failed' || e.result?.kind === 'stopped')))
+}
+
 export function dayLabel(iso: string, now: Date): string {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''

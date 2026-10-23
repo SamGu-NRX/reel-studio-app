@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import type { ChatAction, QueuedNote, ScriptResult, VersionRow } from '../../../shared/api'
 import { ACTION_LABELS } from '../../../shared/notes'
 import { momentLabel } from '../../../shared/moments'
-import type { LogEntry, LogResult } from '../../../shared/notes-log'
+import { waitingRows, type LogEntry, type LogResult } from '../../../shared/notes-log'
 import { reel, userMessage } from '../api'
 import { Icon } from './icons'
 import { AttachmentThumb } from './NoteAttachments'
@@ -131,9 +131,7 @@ export function NotesLog({
   const [open, setOpen] = useState<Record<number, boolean>>({})
   const [folded, setFolded] = useState(0)
   const [unfolded, setUnfolded] = useState(false)
-  // a note that didn't finish (failed or stopped) keeps its place in the queue to try again, but shows once: as its
-  // line in the log, with Try again
-  const waiting = queue.filter((q) => !q.attempt && !entries.some((e) => e.key === q.id && (e.result?.kind === 'failed' || e.result?.kind === 'stopped')))
+  const waiting = waitingRows(queue, entries)
 
   // The newest version shows what changed until the person folds it.
   const isOpen = (n: number) => open[n] ?? n === latest

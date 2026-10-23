@@ -52,6 +52,12 @@ export function presetOf(st: CaptionStyle): string | null {
   return like?.key ?? null
 }
 
+/** Where the Position row puts the subtitles: Higher is a fixed line, Lower is the look's own position (#59), so a
+ * look that sits higher to stay clear of Instagram's buttons keeps that. */
+export function rowPosition(row: 'higher' | 'lower', st: CaptionStyle): number {
+  return row === 'higher' ? 0.66 : lookPosition(st)
+}
+
 /** The default position of the look `st` is drawn as (presetOf), or 0.75 when it matches none. */
 export function lookPosition(st: CaptionStyle): number {
   return Number(CAPTION_PRESETS.find((p) => p.key === presetOf(st))?.style.position ?? 0.75)
