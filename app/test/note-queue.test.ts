@@ -231,6 +231,9 @@ describe('note queue', () => {
     expect((await readAppState(slug)).chat.at(-1)?.from).toBe('editor')
     expect((await replies(slug)).at(-1)).not.toMatch(/waiting below/)
     expect((await readProject(slug)).version).toBe(1)
+    // "edit it, or try again": the line Try again reuses says the edited words, and so does the note that runs
+    await a.queue.edit(slug, (await readAppState(slug)).queue![0].id, 'first, but softer')
+    expect(await yours(slug)).toEqual(['first, but softer'])
   }, 60000)
 
   it('a crash before a note is saved: it and the notes behind it come back once, waiting for Resume', async () => {

@@ -251,7 +251,8 @@ export function createJobManager(
             // a script is written for a reel with no video yet: it stays planned
             if (kind !== 'script') s.status = 'ready'
             settleNote(s, id, res.outcome ?? 'done')
-            s.chat.push(...(res.chat ?? [{ from: 'editor', text: res.summary, version: res.version }]).map(stamp))
+            // the job's id on its replies: the notes pair them with the attempt that wrote them (shared/notes-log.ts)
+            s.chat.push(...(res.chat ?? [{ from: 'editor', text: res.summary, version: res.version }]).map((line) => stamp({ ...line, jobId: id })))
           }).catch((e) => log(`[job ${kind}] saved, but app.json was not updated: ${String(e)}`))
           const n = res.version
           if (res.made && n !== undefined && finals.has(n) && !existed.has(n)) {
@@ -284,7 +285,7 @@ export function createJobManager(
           }).catch(() => {})
         }
         if (slug && !cancelled && !paused && kind !== 'first-edit' && kind !== 'export')
-          await updateAppState(slug, (s) => void s.chat.push(stamp({ from: 'editor', text: err.userMessage, ...(kind === 'script' ? { plan: true as const } : {}) }))).catch(() => {})
+          await updateAppState(slug, (s) => void s.chat.push(stamp({ from: 'editor', text: err.userMessage, jobId: id, ...(kind === 'script' ? { plan: true as const } : {}) }))).catch(() => {})
         ended = cancelled ? { jobId: id, slug, type: 'cancelled' } : paused ? { jobId: id, slug, type: 'paused', paused } : { jobId: id, slug, type: 'error', code: err.code, userMessage: err.userMessage }
       } finally {
         clearInterval(tick)

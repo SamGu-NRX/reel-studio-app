@@ -84,3 +84,42 @@ describe('waitingRows', () => {
     expect(waitingRows(queue, entries).map((q) => q.id)).toEqual(['next'])
   })
 })
+
+// Try again (Reel.tsx retry) runs a failed note again under a new job and moves its "you" line to that job. Each
+// job's reply carries its id (main/jobs.ts), so the first attempt's failure must not become the retry's result.
+describe('a note tried again', () => {
+  const log = (chat: ChatMessage[], versions: VersionInfo[]) =>
+    notesLog({ chat, made: [], versions, running: null, source: null, now })
+  const rows = (entries: ReturnType<typeof log>) => entries.map((e) => [e.ask.kind, e.ask.text, e.result])
+
+  it('fails if a retry that made a version shows the first attempt\'s failure, even with another note in between', () => {
+    const chat = [
+      msg('editor', 'Your video is ready.', { version: 1 }),
+      msg('you', 'make it brighter', { jobId: 'j3', outcome: 'done' }),
+      msg('editor', 'Your AI editor stopped answering.', { jobId: 'j1' }),
+      msg('you', 'add music', { jobId: 'j2', outcome: 'done' }),
+      msg('editor', 'Version 2: music under your voice.', { version: 2, jobId: 'j2' }),
+      msg('editor', 'Version 3: brighter.', { version: 3, jobId: 'j3' })
+    ]
+    expect(rows(log(chat, [v(1), v(2), v(3)]))).toEqual([
+      ['video', 'Your video', { kind: 'version', v: 1, text: 'Your video is ready.' }],
+      ['note', 'make it brighter', { kind: 'version', v: 3, text: 'Version 3: brighter.' }],
+      ['note', 'add music', { kind: 'version', v: 2, text: 'Version 2: music under your voice.' }]
+    ])
+  })
+
+  it('fails if a retry that was stopped shows as failed, or shows twice with its waiting row', () => {
+    const chat = [
+      msg('editor', 'Your video is ready.', { version: 1 }),
+      msg('you', 'make it brighter', { jobId: 'j2', outcome: 'stopped' }),
+      msg('editor', 'Your AI editor stopped answering.', { jobId: 'j1' })
+    ]
+    const entries = log(chat, [v(1)])
+    expect(rows(entries)).toEqual([
+      ['video', 'Your video', { kind: 'version', v: 1, text: 'Your video is ready.' }],
+      ['note', 'make it brighter', { kind: 'stopped', kept: 1 }]
+    ])
+    // the stopped note waits in the queue to try again, and shows only as its line
+    expect(waitingRows([{ id: chat[1].id }], entries)).toEqual([])
+  })
+})

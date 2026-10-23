@@ -90,6 +90,21 @@ export function notesLog(input: {
       entries.push(open)
       continue
     }
+    // A job's reply carries its id (main/jobs.ts). Try again runs a note again under a new job and moves the note's
+    // line to that job, so: a reply goes to the note whose current attempt wrote it, wherever it landed in the chat,
+    // and an earlier attempt's reply (no version, under a note now tried again) is not shown. Replies from before
+    // jobs tagged them pair by order, as below.
+    if (m.from === 'editor' && m.jobId !== undefined) {
+      const owner = entries.find((e) => e.ask.kind === 'note' && e.jobId === m.jobId)
+      if (owner) {
+        if (owner.result) owner.extra.push(m)
+        else if (m.version === undefined) owner.result = owner.outcome === 'failed' ? { kind: 'failed', text: m.text } : { kind: 'reply', text: m.text, actions: m.actions ?? [], messageId: m.id }
+        else if (owner.outcome !== 'stopped' && owner.outcome !== 'failed' && owner.outcome !== 'paused') owner.result = { kind: 'version', v: m.version, text: m.text }
+        else owner.extra.push(m)
+        continue
+      }
+      if (m.version === undefined && open?.ask.kind === 'note' && !open.result && open.jobId !== undefined) continue
+    }
     if (m.version !== undefined) {
       // a stopped or failed note made no version: one that follows it was made some other way
       if (open && !open.result && open.outcome !== 'stopped' && open.outcome !== 'failed' && open.outcome !== 'paused') open.result = { kind: 'version', v: m.version, text: m.text }

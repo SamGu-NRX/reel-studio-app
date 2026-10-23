@@ -3,9 +3,10 @@
 // newest by then. An entry's id is the id the note is saved under in project.json.notes, so the commit
 // that publishes the note is also the proof it ran: an entry leaves the queue only once its id is there
 // (a note that changed nothing is saved too). The queue runs on by itself only after a saved note. Stop,
-// a failure and a restart hold it until Resume, so nothing the creator stopped to rethink applies behind
-// their back. A stopped note that was not saved waits again at the top, to edit or try again.
-// A note shows in one place: a waiting row, or from the moment it starts, a "you" message in the chat.
+// a failure and a restart hold it until Send now (or the note's Try again), so nothing the creator stopped to
+// rethink applies behind their back. A stopped or failed note that was not saved waits again at the top, to
+// edit or try again. A note shows in one place: a waiting row until it first runs, then its "you" line in the
+// chat, which it keeps through every Try again and every edit (the notes log hides its queue row).
 // A change made in "Edit it myself" waits in the same queue (an entry with `hand`); its proof is its id in
 // project.json.handEdits (hand-edit.ts), and a stopped one waits again with its changes, like a note.
 import { randomUUID } from 'node:crypto'
@@ -110,7 +111,7 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
             s.job!.noteId = next.id
             // its chat line carries the job id, which marks how the note ended (store.ts settleNote)
             const line = s.chat.find((m) => m.id === next.id)
-            if (line) line.jobId = s.job!.id
+            if (line) Object.assign(line, { jobId: s.job!.id, text: next.text })
             else {
               const extra = { ...(next.attachments.length ? { attachments: next.attachments } : {}), ...(next.moment ? { moment: next.moment } : {}) }
               s.chat.push({ ...stamp({ from: 'you', text: next.text, ...extra }), id: next.id, jobId: s.job!.id })
@@ -188,6 +189,9 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
           const q = stillWaiting(s, id)
           if (q.hand) throw { code: 'NOT_A_NOTE', userMessage: 'Open Edit it myself to change this edit.' }
           q.text = t
+          // a note that already ran shows as its chat line, which Try again reuses: it says the new words too
+          const line = s.chat.find((m) => m.from === 'you' && m.id === id)
+          if (line) line.text = t
         })
       ).then(() => undefined)
     },
@@ -269,7 +273,7 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
     },
 
     /** Every job event (index.ts). Once a job on a reel has fully ended, its entry leaves the queue if
-     * the note was saved; a stopped or failed one stays first, for Resume to try again. The next note runs
+     * the note was saved; a stopped or failed one stays first, for Send now or Try again. The next note runs
      * only after a job nobody stopped finished and saved its note; any other end holds the queue. When
      * project.json cannot be read, the note stays (unless stopped) and the next promotion reconciles it.
      * Decided in the reel's queue lane, so a note sent meanwhile waits for the decision. Resolves once
@@ -303,7 +307,7 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
     },
 
     /** At startup, after recoverInterrupted: an entry whose note project.json already has is done (the
-     * app stopped between saving it and taking it off the queue); every other entry waits for Resume.
+     * app stopped between saving it and taking it off the queue); every other entry waits for Send now.
      * Staged files no entry or message needs are deleted. A video that can't be settled now is skipped;
      * a note it still marks started holds its queue when it would run (pump). */
     async recover(): Promise<void> {
