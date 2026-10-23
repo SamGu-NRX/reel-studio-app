@@ -29,7 +29,7 @@ h3.edit-label { margin: 0; }
 /* Cut: the takes, word by word. Struck is cut (red pencil); a marker wash is a word the person changed here. */
 .edit .words { gap: 12px; }
 .edit .take p { font-size: var(--fs-md); line-height: 26px; }
-.edit .take.gone .take-label { color: var(--ink-4); }
+.edit .take.gone .take-label { color: var(--ink-3); }
 .edit .word { padding: 1px 2px; }
 .edit .word.changed { background: var(--marker-soft); }
 .edit .word.cut { color: var(--ink-3); }

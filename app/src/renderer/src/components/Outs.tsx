@@ -37,6 +37,7 @@ export function Outs({
   versions,
   post,
   disabled,
+  quiet,
   why,
   onSaveCaption
 }: {
@@ -48,6 +49,8 @@ export function Outs({
   post: ProjectJson['post']
   /** A version is being made: nothing new can start. */
   disabled: boolean
+  /** Another action is this screen's one green button (Done comparing, Make Version N, connecting an editor). */
+  quiet?: boolean
   why?: string
   /** Saves the caption as typed (hashtags included) and reloads the reel. */
   onSaveCaption: (caption: string) => Promise<boolean>
@@ -328,7 +331,7 @@ export function Outs({
       <button
         ref={button}
         type="button"
-        className={`btn primary share-btn${ring || unseen ? ' busy' : ''}`}
+        className={`btn${quiet ? '' : ' primary'} share-btn${ring || unseen ? ' busy' : ''}`}
         onClick={() => (open ? close() : show())}
         disabled={!version || (disabled && !open && !mine)}
         title={disabled && !mine ? why : undefined}

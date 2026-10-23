@@ -284,7 +284,7 @@ export function PhonePlayer({
 }: {
   src: string | null
   poster?: string | null
-  /** First arrival after Working: start playing, muted, with a "Tap for sound" chip. */
+  /** A version arriving on screen starts playing, muted, with a "Turn on sound" chip. */
   autoPlayMuted?: boolean
   /** Each new number starts playing, with sound (the person just picked this version). */
   playRequest?: number
@@ -734,7 +734,7 @@ export function PhonePlayer({
                 }}
                 data-testid="tap-for-sound"
               >
-                <Icon name="mute" size={16} /> Tap for sound
+                <Icon name="mute" size={16} /> Turn on sound
               </button>
             )}
             {!bare && <div className={`scrub${started || marks?.length ? ' shown' : ''}${asking || marks?.some((m) => m.state === 'making') ? ' pinned' : ''}`}>

@@ -5,7 +5,6 @@ import { reel, userMessage } from '../api'
 import { FOLDER_APP, PickFiles, Spinner } from '../components/ui'
 import { Icon } from '../components/icons'
 import { TitleBarSlot } from '../components/titlebar'
-import { byKeyboard } from '../components/motion'
 import '../components/library.css'
 
 type Tab = 'images' | 'videos' | 'music' | 'sfx'
@@ -113,11 +112,6 @@ function useAudition() {
       onPointerLeave: () => {
         window.clearTimeout(dwell.current)
         if (!pinned.current && playing === f.path) stop()
-      },
-      onFocus: () => {
-        if (!byKeyboard() || pinned.current) return
-        window.clearTimeout(dwell.current)
-        dwell.current = window.setTimeout(() => play(f, false), 320)
       },
       onBlur: () => {
         window.clearTimeout(dwell.current)

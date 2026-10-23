@@ -139,8 +139,10 @@ export function NotesLog({
   }, [latestOpen, latest, want])
 
   // Older entries fold behind one line while the list is taller than its column; new ones are added at the bottom.
+  // It stays at the bottom only while the person is there: scrolling up to read stays put while a job reports.
   const size = `${entries.length}:${waiting.length}:${first?.kind ?? ''}`
   const lastSize = useRef(size)
+  const atBottom = useRef(true)
   useLayoutEffect(() => {
     if (lastSize.current !== size) {
       lastSize.current = size
@@ -150,8 +152,12 @@ export function NotesLog({
     const el = box.current
     if (!el) return
     if (!unfolded && el.scrollHeight > el.clientHeight + 1 && folded < entries.length - 2) setFolded((f) => f + 1)
-    else el.scrollTop = el.scrollHeight
+    else if (atBottom.current) el.scrollTop = el.scrollHeight
   })
+  const onScroll = () => {
+    const el = box.current
+    if (el) atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+  }
 
   const toggle = (n: number) => {
     const next = !isOpen(n)
@@ -321,7 +327,7 @@ export function NotesLog({
   const foldedVersions = entries.slice(0, folded).filter((e) => e.result?.kind === 'version').length
   const shownEntries = unfolded ? entries : entries.slice(folded)
   return (
-    <div className="log" ref={box} role="log" aria-label="Notes for your editor" data-testid="chat">
+    <div className="log" ref={box} onScroll={onScroll} role="log" aria-label="Notes for your editor" data-testid="chat">
       {!unfolded && folded > 0 && (
         <button className="fold" aria-expanded={false} onClick={() => setUnfolded(true)} data-testid="log-unfold">
           <Icon name="chevron-down" size={14} />

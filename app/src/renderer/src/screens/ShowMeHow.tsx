@@ -128,7 +128,8 @@ export function ShowMeHow({
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (document.querySelector('.modal-backdrop')) return
-      if (e.key === 'Escape') {
+      // Share's popover or the ⋯ menu took this Escape for itself
+      if (e.key === 'Escape' && !e.defaultPrevented) {
         e.preventDefault()
         keys.current.close()
         return

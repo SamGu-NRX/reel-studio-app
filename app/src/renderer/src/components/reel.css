@@ -10,7 +10,7 @@
 @media (hover: hover) and (pointer: fine) { .reel-title:hover { background: var(--wash); } }
 .reel-title-input { height: 30px; min-height: 30px; padding: 2px 8px; font-size: var(--fs-md); font-weight: 620; width: min(420px, 40vw); }
 .rt-ver { flex: none; font-size: var(--fs-base); color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.rt-ver.older { color: var(--amber); }
+.rt-ver.older { color: var(--ink-2); font-weight: 600; }
 .rt-title .btn.ghost.small { flex: none; }
 .tb-actions .btn.ghost.on { color: var(--ink); text-decoration-color: currentColor; }
 .rt-more { position: relative; display: flex; }
@@ -76,7 +76,7 @@
 .spot.away { opacity: 0; transform: scale(.9); }
 .spot-lab {
   position: absolute; left: 30px; top: -2px; background: rgba(22, 25, 23, .9); color: #fff; font-size: var(--fs-sm); line-height: 16px; padding: 5px 9px; border-radius: 9px;
-  max-width: 200px; width: max-content; white-space: normal; text-align: left; font-weight: 500;
+  max-width: min(200px, calc(var(--room, 1) * 100cqw - 38px)); width: max-content; white-space: normal; text-align: left; font-weight: 500;
 }
 .spot.flip .spot-lab { left: auto; right: 30px; }
 .pointer { position: absolute; inset: 0; cursor: crosshair; outline: none; }
@@ -196,7 +196,7 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .nt-res .v { border: 0; background: none; padding: 0; font: inherit; color: var(--ink); font-weight: 650; white-space: nowrap; cursor: pointer; flex: none; }
 @media (hover: hover) and (pointer: fine) { .nt-res .v:hover { text-decoration: underline; text-underline-offset: 3px; } }
 .nt-res.cur .v { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
-.nt-res .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.nt-res .t { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-width: 0; flex: 0 1 auto; }
 .nt-res .sep { color: var(--ink-4); flex: none; margin: 0 -2px; }
 .nt-res .t.wrap { white-space: normal; overflow-wrap: anywhere; }
 .nt-res .lk, .reply-acts .lk, .dacts .lk, .script .lk {
@@ -205,7 +205,7 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 }
 @media (hover: hover) and (pointer: fine) { :is(.nt-res, .reply-acts, .dacts, .script) .lk:not(:disabled):hover { color: var(--ink); text-decoration-color: currentColor; } }
 .nt-res .lk:disabled { opacity: .5; cursor: default; }
-.nt-res .onscreen { margin-left: auto; font-size: var(--fs-sm); font-weight: 600; color: var(--amber); white-space: nowrap; }
+.nt-res .onscreen { margin-left: auto; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); white-space: nowrap; }
 .nt-res.quiet { color: var(--ink-3); }
 .nt-res.paused .t { color: var(--amber); font-weight: 600; }
 .nt-res .spin { width: 12px; height: 12px; border-width: 1.75px; }
@@ -226,9 +226,10 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .sc-screen span { color: var(--ink-3); font-weight: 600; margin-right: 4px; }
 
 /* What changed: before → after rows that open under a result (open on the newest), then Compare */
-.acc { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms var(--ease-out); }
-.acc > div { overflow: hidden; min-height: 0; }
+.acc { display: grid; grid-template-rows: 0fr; }
+.acc > div { overflow: hidden; min-height: 0; opacity: 0; transform: translateY(-4px); transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
 .acc.open { grid-template-rows: 1fr; }
+.acc.open > div { opacity: 1; transform: none; }
 .detail { padding: 2px 0 4px 26px; display: grid; gap: 4px; }
 .drow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-2); align-items: baseline; }
 .drow .ba { white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -244,9 +245,10 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .cbox.focus { box-shadow: inset 0 0 0 1.5px var(--ink), 0 0 0 3px rgba(22, 30, 26, .08); }
 .cbox.bare { background: transparent; box-shadow: none; }
 .cbox .att-chips { padding: 10px 10px 0; margin: 0; }
-.stripwrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms var(--ease-out); }
-.stripwrap > div { overflow: hidden; min-height: 0; }
+.stripwrap { display: grid; grid-template-rows: 0fr; }
+.stripwrap > div { overflow: hidden; min-height: 0; opacity: 0; transform: translateY(6px); transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
 .stripwrap.on { grid-template-rows: 1fr; }
+.stripwrap.on > div { opacity: 1; transform: none; }
 .strip { position: relative; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 6px 0 12px; background: var(--ink); color: #fff; border-radius: var(--r-lg) var(--r-lg) 0 0; font-size: var(--fs-base); }
 .cbox.bare .strip { border-radius: var(--r-lg); }
 .cbox.bare .steps.on + .strip { border-radius: 0 0 var(--r-lg) var(--r-lg); }
@@ -267,9 +269,10 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .strip .thinking i { background: #fff; opacity: .5; }
 .spin.light { border-color: rgba(255, 255, 255, .28); border-top-color: #fff; width: 13px; height: 13px; flex: none; }
 /* Steps opens the list upward from the strip */
-.steps { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms var(--ease-out); background: var(--ink); color: rgba(255, 255, 255, .8); border-radius: var(--r-lg) var(--r-lg) 0 0; }
-.steps > div { overflow: hidden; min-height: 0; }
+.steps { display: grid; grid-template-rows: 0fr; background: var(--ink); color: rgba(255, 255, 255, .8); border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.steps > div { overflow: hidden; min-height: 0; opacity: 0; transform: translateY(6px); transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
 .steps.on { grid-template-rows: 1fr; }
+.steps.on > div { opacity: 1; transform: none; }
 .steps ul { list-style: none; margin: 0; padding: 10px 12px 6px; font-size: var(--fs-base); }
 .steps.on + .strip { border-radius: 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12); }
 .steps li { display: flex; align-items: center; gap: 8px; min-height: 24px; white-space: nowrap; min-width: 0; }
@@ -309,7 +312,7 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .tchip .spot-n { width: 16px; height: 16px; margin-left: -4px; border-radius: 50%; background: var(--marker); display: grid; place-items: center; font-size: 10px; }
 .tchip-split .pop .kbd { font-size: 11px; }
 .send { width: 34px; height: 34px; border-radius: 999px; border: 0; display: grid; place-items: center; background: var(--sunk); color: var(--ink-3); flex: none; transition: transform 120ms var(--ease-out), background-color 120ms ease; }
-.send.ready { background: var(--primary); color: #fff; cursor: pointer; }
+.send.ready { background: var(--ink); color: #fff; cursor: pointer; }
 .send.ready:active { transform: scale(.94); }
 .cin-alert { margin: 8px 10px 0; padding: 8px 10px; border-radius: var(--r-md); background: var(--pencil-tint); color: var(--pencil); font-size: var(--fs-base); }
 /* no editor: the picker, under one line saying what it is for */
@@ -338,9 +341,9 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .scrub-speed.on { background: #fff; color: var(--ink); }
 
 /* What the keyboard opens or folds just appears. */
-html.kb :is(.acc, .stripwrap, .steps, .tchip, .spot, .draghandle, .tl-mark, .transport .pp, .cmp-done, .send) { transition: none !important; }
+html.kb :is(.acc > div, .stripwrap > div, .steps > div, .tchip, .spot, .draghandle, .tl-mark, .transport .pp, .cmp-done, .send) { transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
-  .acc, .stripwrap, .steps { transition: none !important; }
+  .acc > div, .stripwrap > div, .steps > div { transform: none; transition-property: opacity; }
   .phone.landing .phone-screen > video.layer.loading { filter: none; }
   .nt-res.enter { animation: line-fade 180ms ease both; }
   .spot { transition-property: opacity; }

@@ -527,3 +527,6 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
 }
 @keyframes fade-out { to { opacity: 0; } }
 @keyframes breathe-soft { 0%, 100% { opacity: .2; } 50% { opacity: .85; } }
+
+/* Over Instagram's chrome the chip sits under the Reels header, clear of the camera button. */
+.phone-screen:has(> .igc:not(.off)) > .sound-chip { top: calc(100cqw * 64 / 393); }

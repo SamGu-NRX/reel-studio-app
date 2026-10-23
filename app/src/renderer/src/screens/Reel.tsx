@@ -373,7 +373,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       : d.job?.kind === 'first-edit' || d.status === 'new'
         ? { kind: 'making', heard: firstSteps?.some((s) => s.id === 'listen' && s.state === 'done') ? heard : [], editor: !aiOff }
         : d.status === 'failed'
-          ? { kind: 'failed', why: d.lastError?.userMessage ?? 'This version could not be made.', extra: d.lastError?.code === 'MODEL_MISSING' ? <ModelDownload /> : undefined }
+          ? { kind: 'failed', why: d.lastError?.userMessage ?? 'This version could not be made.', extra: d.lastError?.code === 'MODEL_MISSING' ? <ModelDownload secondary /> : undefined }
           : { kind: 'paused' }
   const firstLook = first?.kind === 'making' ? (job?.preview?.video ?? null) : null
 
@@ -562,7 +562,15 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const title = (
     <span className="rt-title">
       {renaming === null ? (
-        <h1 className="tb-h reel-title" title="Click to rename" onClick={() => setRenaming(d.title)} data-testid="title">
+        <h1
+          className="tb-h reel-title"
+          title="Click to rename"
+          role="button"
+          tabIndex={0}
+          onClick={() => setRenaming(d.title)}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setRenaming(d.title))}
+          data-testid="title"
+        >
           {d.title}
         </h1>
       ) : (
@@ -608,6 +616,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
           versions={d.versions}
           post={d.project.post}
           disabled={!version || (!!job && !shareWork)}
+          quiet={!!compare || !!drawer || aiOff}
           why={job ? 'Wait for this version to finish.' : undefined}
           onSaveCaption={savePost}
         />
@@ -947,7 +956,7 @@ function Spots({ pins, playhead }: { pins: Pin[]; playhead: Playhead }) {
       {pins.map((p) => {
         const near = Math.abs(t - p.at) <= 1.5
         return (
-          <span key={p.n} className={`spot${near ? '' : ' away'}${p.x > 0.55 ? ' flip' : ''}`} style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }} aria-hidden>
+          <span key={p.n} className={`spot${near ? '' : ' away'}${p.x > 0.55 ? ' flip' : ''}`} style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, '--room': p.x > 0.55 ? p.x : 1 - p.x } as React.CSSProperties} aria-hidden>
             {p.n}
             {near && <span className="spot-lab">{p.text}</span>}
           </span>

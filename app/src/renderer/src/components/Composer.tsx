@@ -135,8 +135,8 @@ export function Composer({
                 {job.thinking ? <Thinking /> : <span className="spin light" aria-hidden />}
                 <b>{making ? `Making Version ${making}` : job.message}</b>
                 <span className="m" data-testid="note-time-left">
-                  {making && current ? ` · ${current}` : ''}
                   {left ? ` · ${left}` : ''}
+                  {making && current ? ` · ${current}` : ''}
                 </span>
                 <span className="sp" />
                 <button className="sbtn" aria-expanded={stepsOpen} onClick={() => setStepsToggled((t) => (t === job.jobId ? null : job.jobId))} data-testid="steps">
