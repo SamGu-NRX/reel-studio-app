@@ -5,10 +5,11 @@ import hashlib
 import json
 import math
 import re
+import shutil
 import sqlite3
 import tempfile
 import time
-from contextlib import closing
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 from . import audio_env, probe, project, tools, transcribe
@@ -17,6 +18,10 @@ from .proto import EngineError, log, progress
 PROBE_VERSION = 1
 TRANSCRIPT_VERSION = 1
 SHOTS_VERSION = 1
+# Avoid rewriting the database for small deletions. These maintenance thresholds have no
+# workload benchmark; require both 8 MiB and a quarter of the database to be free pages.
+VACUUM_MIN_BYTES = 8 * 1024 * 1024
+VACUUM_MIN_FRACTION = .25
 
 
 def file_hash(path: Path) -> str:
@@ -29,8 +34,8 @@ def _signature(path: Path) -> tuple:
     return st.st_size, st.st_mtime_ns
 
 
-def _unchanged(path: Path, signature: tuple) -> None:
-    if _signature(path) != signature:
+def _unchanged(path: Path, signature: tuple, digest: str | None = None) -> None:
+    if _signature(path) != signature or (digest is not None and file_hash(path) != digest):
         raise EngineError("FOOTAGE_CHANGED", f"{path.name} changed during indexing",
                           "A Library file changed while I was reading it. Run the index again.")
 
@@ -45,6 +50,7 @@ def _open(root: Path) -> sqlite3.Connection:
             CREATE TABLE IF NOT EXISTS places(id TEXT PRIMARY KEY, label TEXT, root TEXT, network INT);
             CREATE TABLE IF NOT EXISTS paths(place TEXT, rel TEXT, size INT, mtime_ns INT, hash TEXT,
                 PRIMARY KEY(place, rel));
+            CREATE INDEX IF NOT EXISTS paths_hash ON paths(hash);
             CREATE TABLE IF NOT EXISTS files(hash TEXT PRIMARY KEY, hash_kind TEXT,
                 duration REAL, fps REAL, width INT, height INT, rotation INT, has_audio INT);
             CREATE TABLE IF NOT EXISTS stages(hash TEXT, stage TEXT, version INT, done_at TEXT,
@@ -90,6 +96,66 @@ def _mark_done(db, digest, stage, version):
                (digest, stage, version, project.now_iso()))
 
 
+def _collect_unreferenced(db):
+    for table in ("text_fts", "words", "transcripts", "shots", "stages", "files"):
+        removed = db.execute(f"DELETE FROM {table} WHERE NOT EXISTS "
+                             f"(SELECT 1 FROM paths WHERE paths.hash={table}.hash)").rowcount
+        if table == "text_fts" and removed and _has_fts(db):
+            db.execute("INSERT INTO text_fts(text_fts) VALUES ('optimize')")
+
+
+def _compact(db):
+    free = db.execute("PRAGMA freelist_count").fetchone()[0]
+    pages = db.execute("PRAGMA page_count").fetchone()[0]
+    page_size = db.execute("PRAGMA page_size").fetchone()[0]
+    if free * page_size >= VACUUM_MIN_BYTES and free >= pages * VACUUM_MIN_FRACTION:
+        db.execute("VACUUM")
+
+
+@contextmanager
+def _run_staging(db, root):
+    staging = root / ".index" / "staging"
+    if staging.is_symlink():
+        raise EngineError("UNSAFE_PATH", "index staging folder is a symlink",
+                          "The index staging folder points elsewhere. Remove the index and try again.")
+    staging.mkdir(parents=True, exist_ok=True)
+    run, owner = None, None
+    try:
+        # Serialize publication and sweeping with other index startups. A separate SQLite
+        # exclusive lock stays held for the run, and the OS releases it after a kill.
+        with db:
+            db.execute("BEGIN IMMEDIATE")
+            for old in staging.iterdir():
+                marker = old / "owner.sqlite"
+                if (not re.fullmatch(r"run-[a-z0-9_]+", old.name) or old.is_symlink()
+                        or not old.is_dir() or marker.is_symlink()):
+                    continue
+                if not marker.is_file():
+                    # A kill between mkdir and opening the owner leaves an empty directory.
+                    if not any(old.iterdir()):
+                        old.rmdir()
+                    continue
+                with closing(sqlite3.connect(marker.resolve().as_uri() + "?mode=rw", uri=True, timeout=0)) as lease:
+                    try:
+                        lease.execute("BEGIN EXCLUSIVE")
+                    except sqlite3.OperationalError as exc:
+                        if exc.sqlite_errorcode in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+                            continue
+                        raise
+                shutil.rmtree(old)
+            run = Path(tempfile.mkdtemp(prefix="run-", dir=staging))
+            owner = sqlite3.connect(run / "owner.sqlite", timeout=0)
+            owner.execute("BEGIN EXCLUSIVE")
+        yield run
+    finally:
+        if run is not None:
+            with db:
+                db.execute("BEGIN IMMEDIATE")
+                if owner is not None:
+                    owner.close()
+                shutil.rmtree(run)
+
+
 def _windows(words):
     window = []
     for word in words:
@@ -101,27 +167,26 @@ def _windows(words):
         yield window
 
 
-def _speech(path, duration, model):
-    with tempfile.TemporaryDirectory(prefix="reel-footage-") as temp:
-        wav = transcribe.extract_audio(path, Path(temp) / "audio.wav")
-        words, segments, language = transcribe._transcribe_one(model, wav, None, None,
-                                                              duration, 0, 100)
-        samples = audio_env.read_wav(wav)
-        env = audio_env.envelope(samples)
-        words.sort(key=lambda word: (word["s"], word["e"]))
-        words = audio_env.refine_words(words, env, audio_env.noise_threshold(env),
-                                      len(samples) / audio_env.SR)
-        counts = {}
+def _speech(path, duration, model, staging):
+    wav = transcribe.extract_audio(path, staging / "audio.wav")
+    words, segments, language = transcribe._transcribe_one(model, wav, None, None,
+                                                          duration, 0, 100)
+    samples = audio_env.read_wav(wav)
+    env = audio_env.envelope(samples)
+    words.sort(key=lambda word: (word["s"], word["e"]))
+    words = audio_env.refine_words(words, env, audio_env.noise_threshold(env),
+                                  len(samples) / audio_env.SR)
+    counts = {}
+    for word in words:
+        n = word.get("_seg")
+        counts[n] = counts.get(n, 0) + 1
+    if None not in counts:
+        active = [n for n in range(len(segments)) if counts.get(n)]
+        segments = [{**segments[n], "n": counts[n]} for n in active]
+        remap = {old: new for new, old in enumerate(active)}
         for word in words:
-            n = word.get("_seg")
-            counts[n] = counts.get(n, 0) + 1
-        if None not in counts:
-            active = [n for n in range(len(segments)) if counts.get(n)]
-            segments = [{**segments[n], "n": counts[n]} for n in active]
-            remap = {old: new for new, old in enumerate(active)}
-            for word in words:
-                word["_seg"] = remap[word["_seg"]]
-        return words, segments, language
+            word["_seg"] = remap[word["_seg"]]
+    return words, segments, language
 
 
 def _shots(path, duration, has_video):
@@ -149,7 +214,7 @@ def index(root: Path, *, model_name: str | None = None, budget_seconds: float | 
     stages = [("probe", PROBE_VERSION), (f"transcript:{name}", TRANSCRIPT_VERSION), ("shots", SHOTS_VERSION)]
     deadline = time.monotonic() + budget_seconds if budget_seconds is not None else math.inf
     model = None
-    with closing(_open(root)) as db:
+    with closing(_open(root)) as db, _run_staging(db, root) as staging:
         found = []
         with db:
             db.execute("INSERT OR REPLACE INTO places VALUES ('Library', 'Library', 'Library', 0)")
@@ -162,7 +227,10 @@ def index(root: Path, *, model_name: str | None = None, budget_seconds: float | 
                 signature = _signature(path)
                 old = db.execute("SELECT size, mtime_ns, hash FROM paths WHERE place='Library' AND rel=?",
                                  (rel,)).fetchone()
-                digest = old[2] if old and tuple(old[:2]) == signature else file_hash(path)
+                # Metadata only skips completed files. Pending analysis must establish identity
+                # from bytes again, including after a replacement that kept size and mtime.
+                complete = old and all(_done(db, old[2], stage, version) for stage, version in stages)
+                digest = old[2] if complete and tuple(old[:2]) == signature else file_hash(path)
                 _unchanged(path, signature)
                 db.execute("INSERT OR REPLACE INTO paths VALUES ('Library', ?, ?, ?, ?)",
                            (rel, *signature, digest))
@@ -171,6 +239,8 @@ def index(root: Path, *, model_name: str | None = None, budget_seconds: float | 
             for row in db.execute("SELECT rel FROM paths WHERE place='Library'").fetchall():
                 if row[0] not in rels:
                     db.execute("DELETE FROM paths WHERE place='Library' AND rel=?", (row[0],))
+            _collect_unreferenced(db)
+        _compact(db)
 
         ran = 0
         for path, digest, signature in found:
@@ -179,10 +249,10 @@ def index(root: Path, *, model_name: str | None = None, budget_seconds: float | 
                     continue
                 if time.monotonic() >= deadline:
                     break
-                _unchanged(path, signature)
+                _unchanged(path, signature, digest)
                 if stage == "probe":
                     info = probe.probe(path, quick=True)
-                    _unchanged(path, signature)
+                    _unchanged(path, signature, digest)
                     with db:
                         db.execute("INSERT OR REPLACE INTO files VALUES (?, 'sha256', ?, ?, ?, ?, ?, ?)",
                                    (digest, info["duration"], info["fps"], info["width"], info["height"],
@@ -195,8 +265,8 @@ def index(root: Path, *, model_name: str | None = None, budget_seconds: float | 
                         if info["has_audio"]:
                             if model is None:
                                 model, _, _ = transcribe.load_model(name)
-                            words, segments, language = _speech(path, info["duration"], model)
-                        _unchanged(path, signature)
+                            words, segments, language = _speech(path, info["duration"], model, staging)
+                        _unchanged(path, signature, digest)
                         with db:
                             db.execute("DELETE FROM words WHERE hash=? AND model=?", (digest, name))
                             db.executemany("INSERT INTO words VALUES (?, ?, ?, ?, ?, ?)",
@@ -213,7 +283,7 @@ def index(root: Path, *, model_name: str | None = None, budget_seconds: float | 
                             _mark_done(db, digest, stage, version)
                     else:
                         shots = _shots(path, info["duration"], info["width"] > 0)
-                        _unchanged(path, signature)
+                        _unchanged(path, signature, digest)
                         with db:
                             db.execute("DELETE FROM shots WHERE hash=?", (digest,))
                             db.executemany("INSERT INTO shots(hash, n, s, e) VALUES (?, ?, ?, ?)",
@@ -234,6 +304,8 @@ def lookup(root: Path, path: Path, model: str, language: str | None = None):
     with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as db:
         db.row_factory = sqlite3.Row
         digest = file_hash(path)
+        # GC can commit between these reads; keep completion, words and metadata in one snapshot.
+        db.execute("BEGIN")
         if not _done(db, digest, f"transcript:{model}", TRANSCRIPT_VERSION):
             return None
         row = db.execute("SELECT t.* FROM transcripts t JOIN files f USING(hash) "

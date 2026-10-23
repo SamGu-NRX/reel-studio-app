@@ -5,6 +5,8 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import wave
+from pathlib import Path
 
 import pytest
 
@@ -245,3 +247,171 @@ def test_transcribe_imports_indexed_words_with_stable_ids(library, monkeypatch):
         assert data["segments"][0]["from"] == "w0"
         assert data["segments"][0]["to"] == "w1"
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("stop_stage", ["footage-probe", "footage-transcript"])
+def test_resume_rehashes_replacement_with_identical_metadata(library, monkeypatch, stop_stage):
+    root, _ = library
+    from reelengine import footage
+    (root / "Library/a.mp4").unlink()
+    source = root / "Library/take.wav"
+    for path, amplitude in ((source, 1000), (root / "replacement.wav", 2000)):
+        with wave.open(str(path), "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(16000)
+            wav.writeframes(amplitude.to_bytes(2, "little", signed=True) * 16000)
+    original = root / "original.wav"
+    shutil.copyfile(source, original)
+
+    def speech(model, wav, *args, **kwargs):
+        word = "original" if audio_env.read_wav(wav)[0] < .045 else "replacement"
+        return ([{"s": .1, "e": .5, "w": word, "p": .9, "_seg": 0}],
+                [{"s": .1, "e": .5, "text": word, "n": 1}], "en")
+
+    real_progress = footage.progress
+
+    def stop(stage, *args, **kwargs):
+        if stage == stop_stage:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(transcribe, "_transcribe_one", speech)
+    monkeypatch.setattr(footage, "progress", stop)
+    with pytest.raises(KeyboardInterrupt):
+        command(root, "index")
+    st = source.stat()
+    source.write_bytes((root / "replacement.wav").read_bytes())
+    os.utime(source, ns=(st.st_atime_ns, st.st_mtime_ns))
+    assert source.stat().st_size == st.st_size
+    monkeypatch.setattr(footage, "progress", real_progress)
+    command(root, "index")
+    old_words = footage.lookup(root, original, "small.en")
+    assert old_words is None or old_words[0][0]["w"] == "original"
+    replacement = footage.lookup(root, source, "small.en")
+    assert replacement is not None and replacement[0][0]["w"] == "replacement"
+    with connect(root) as db:
+        assert db.execute("SELECT hash FROM paths WHERE rel='take.wav'").fetchone()[0] == footage.file_hash(source)
+    shutil.copyfile(original, root / "Library/restored.wav")
+    command(root, "index")
+    assert footage.lookup(root, original, "small.en")[0][0]["w"] == "original"
+
+
+def test_same_metadata_change_during_transcription_does_not_commit(library, monkeypatch):
+    root, _ = library
+    from reelengine.proto import EngineError
+    source = root / "Library/a.mp4"
+    speech = transcribe._transcribe_one
+
+    def replace_during_speech(*args, **kwargs):
+        result = speech(*args, **kwargs)
+        st = source.stat()
+        data = source.read_bytes()
+        source.write_bytes(data[:-1] + bytes([data[-1] ^ 1]))
+        os.utime(source, ns=(st.st_atime_ns, st.st_mtime_ns))
+        return result
+
+    monkeypatch.setattr(transcribe, "_transcribe_one", replace_during_speech)
+    with pytest.raises(EngineError, match="changed during indexing"):
+        command(root, "index")
+    with connect(root) as db:
+        assert db.execute("SELECT count(*) FROM words").fetchone()[0] == 0
+        assert db.execute("SELECT stage FROM stages").fetchall() == [("probe",)]
+
+
+@pytest.mark.parametrize("literal", [False, True])
+def test_removed_hashes_are_collected_and_large_deletions_compacted(library, clips, literal):
+    root, _ = library
+    if literal:
+        (root / ".index").mkdir()
+        with connect(root) as db:
+            db.execute("CREATE TABLE text_fts(text TEXT, hash TEXT, s REAL, e REAL, kind TEXT, model TEXT)")
+    shutil.copyfile(clips[1], root / "Library/b.mp4")
+    shutil.copyfile(root / "Library/a.mp4", root / "Library/copy.mp4")
+    command(root, "index")
+    with connect(root) as db:
+        removed = db.execute("SELECT hash FROM paths WHERE rel='b.mp4'").fetchone()[0]
+        kept = db.execute("SELECT hash FROM paths WHERE rel='copy.mp4'").fetchone()[0]
+        db.execute("INSERT INTO words VALUES (?, 0, 1, ?, 1, 'small.en')", (removed, "x" * (12 * 1024 * 1024)))
+    database = root / ".index/index.sqlite"
+    before_size = database.stat().st_size
+    (root / "Library/a.mp4").unlink()
+    (root / "Library/b.mp4").unlink()
+    assert command(root, "index")["stagesRun"] == 0
+    with connect(root) as db:
+        assert db.execute("SELECT rel FROM paths").fetchall() == [("copy.mp4",)]
+        for table in ("files", "stages", "words", "transcripts", "shots", "text_fts"):
+            assert db.execute(f"SELECT count(*) FROM {table} WHERE hash=?", (removed,)).fetchone()[0] == 0, table
+            assert db.execute(f"SELECT count(*) FROM {table} WHERE hash=?", (kept,)).fetchone()[0] > 0, table
+        assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    assert database.stat().st_size < before_size / 2
+    assert command(root, "search", "--query", "twenty bucks")["hits"][0]["file"]["name"] == "copy.mp4"
+
+
+def test_killed_audio_staging_is_swept_without_deleting_live_run(library, monkeypatch):
+    root, _ = library
+    scratch = root / "os-temp"
+    scratch.mkdir()
+    child = subprocess.run([sys.executable, "-c", """
+import os, sys
+from pathlib import Path
+from reelengine import footage, transcribe
+root = Path(sys.argv[1])
+transcribe.load_model = lambda name: (object(), 'cpu', 'int8')
+def die(model, wav, *args, **kwargs):
+    (root / 'extracted-audio').write_text(str(wav))
+    os._exit(73)
+transcribe._transcribe_one = die
+footage.index(root)
+""", str(root)], capture_output=True, text=True, timeout=60,
+        env={**os.environ, "TMPDIR": str(scratch), "TMP": str(scratch), "TEMP": str(scratch)})
+    assert child.returncode == 73, child.stderr
+    stale_audio = Path((root / "extracted-audio").read_text())
+    assert stale_audio.is_file()
+    assert stale_audio.resolve().is_relative_to((root / ".index").resolve())
+    unpublished = root / ".index/staging/run-unpublished"
+    unpublished.mkdir()
+    command(root, "index", "--budget-seconds", "0")
+    assert not stale_audio.exists()
+    assert not unpublished.exists()
+    real_speech = transcribe._transcribe_one
+
+    def check_live(model, wav, *args, **kwargs):
+        assert wav.is_file()
+        command(root, "index", "--budget-seconds", "0")
+        assert wav.is_file()
+        return real_speech(model, wav, *args, **kwargs)
+
+    monkeypatch.setattr(transcribe, "_transcribe_one", check_live)
+    assert command(root, "index")["pending"] == 0
+    assert not list((root / ".index/staging").iterdir())
+
+
+def test_cache_lookup_keeps_a_snapshot_during_garbage_collection(library, monkeypatch):
+    root, _ = library
+    from reelengine import footage
+    command(root, "index")
+    copied_source = root / "project-copy.mp4"
+    shutil.copyfile(root / "Library/a.mp4", copied_source)
+    with connect(root) as db:
+        db.execute("PRAGMA journal_mode=WAL")
+    real_connect = sqlite3.connect
+    collected = []
+
+    def collect_between_reads(sql):
+        if sql.startswith("SELECT s, e, w, p FROM words"):
+            (root / "Library/a.mp4").unlink()
+            collected.append(command(root, "index"))
+
+    def traced_connect(*args, **kwargs):
+        connection = real_connect(*args, **kwargs)
+        if kwargs.get("uri") and str(args[0]).endswith("?mode=ro"):
+            connection.set_trace_callback(collect_between_reads)
+        return connection
+
+    monkeypatch.setattr(footage.sqlite3, "connect", traced_connect)
+    words, segments, _ = footage.lookup(root, copied_source, "small.en")
+    assert len(collected) == 1
+    assert [word["w"] for word in words] == ["twenty", "bucks."]
+    assert segments[0]["n"] == len(words)
+    with connect(root) as db:
+        assert db.execute("SELECT count(*) FROM files").fetchone()[0] == 0
