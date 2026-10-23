@@ -168,26 +168,31 @@ def test_silent_sources_render_silence(tmp_path, media, mixed):
         assert np.max(np.abs(sound[100800:139200])) < 0.0001
 
 
-@pytest.mark.parametrize("start,audio_at,video_duration", [
-    (0, 0, 3),        # audio ends two seconds before the picture
-    (0.5, 1, 3),      # trim starts before a late audio stream
-    (2, 0, 3),        # trim is entirely beyond the audio stream
-    (7.5, 8, 10),     # late audio after a nonzero input seek
+@pytest.mark.parametrize("sample_rate", [48000, 44100])
+@pytest.mark.parametrize("container", ["mov", "mkv"])
+@pytest.mark.parametrize("start,end,audio_at,video_duration", [
+    (0, 3, 0, 3),        # audio ends two seconds before the picture
+    (0.5, 3, 1, 3),      # trim starts before a late audio stream
+    (2, 3, 0, 3),        # trim is entirely beyond the audio stream
+    (1, 2, 0, 3),        # trim starts exactly at audio EOF
+    (0.5, 1.5, 0, 3),    # first concat segment overlaps audio EOF
+    (7.5, 10, 8, 10),    # late audio after a nonzero input seek
 ])
-def test_short_or_delayed_audio_preserves_clip_clock(tmp_path, media, start, audio_at, video_duration):
-    source = tmp_path / "short-audio.mov"
+def test_short_or_delayed_audio_preserves_clip_clock(tmp_path, media, start, end, audio_at, video_duration, sample_rate, container):
+    # Matroska commonly omits stream duration; MOV provides it. Both must handle an empty trim.
+    source = tmp_path / f"short-audio.{container}"
     subprocess.run([tools.ffmpeg(), "-y", "-v", "error", "-f", "lavfi", "-i",
                     f"color=c=gray:s=96x64:r=30:d={video_duration}",
-                    "-itsoffset", str(audio_at), "-f", "lavfi", "-i", "sine=f=440:r=48000:d=1",
+                    "-itsoffset", str(audio_at), "-f", "lavfi", "-i", f"sine=f=440:r={sample_rate}:d=1",
                     "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "pcm_s16le", str(source)],
                    check=True, capture_output=True, timeout=60)
-    keep = [clip("c1", "s1", start, video_duration), clip("c2", "s2", 0, 1)]
+    keep = [clip("c1", "s1", start, end), clip("c2", "s2", 0, 1)]
     pdir, p = make_project(tmp_path, {"s1": source, "s2": media["s2"]}, keep)
     p["sources"][0]["duration"] = video_duration
     project.save(pdir, p)
     result = render.run(pdir, root=tmp_path, cover=False)
     frames, sound = decode(result["file"])
-    first_duration = video_duration - start
+    first_duration = end - start
     assert len(frames) == round((first_duration + 1) * 30)
     assert len(sound) / 48000 == pytest.approx(first_duration + 1, abs=1 / 30)
 

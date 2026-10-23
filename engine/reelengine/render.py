@@ -278,8 +278,8 @@ def voice_signature(segments: list, src_paths: dict) -> str:
             return [str(p), s.st_size, s.st_mtime_ns]
         except OSError:
             return [str(p), None, None]
-    # Version 2 pads short audio and retains late stream offsets. Older cached cuts can be early.
-    data = [2, [[s.source, round(s.src_start, 6), round(s.src_end, 6)] for s in segments],
+    # Version 3 handles audio EOF before trimming and fixes concat's sample format and layout.
+    data = [3, [[s.source, round(s.src_start, 6), round(s.src_end, 6)] for s in segments],
             {k: st(v) for k, v in sorted(src_paths.items())}]
     return hashlib.sha1(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()
 
@@ -300,35 +300,54 @@ def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path, sou
     cmd = [ctx.ffmpeg, "-y", "-nostdin", "-hide_banner", "-loglevel", "error"]
     seg_input = {}
     chains, labels = [], []
+    input_index = 0
     for li, lane in enumerate(lanes):
         source = lane["source"]
-        has_audio = source_audio[source]
-        if has_audio and lane["seek"] > 0:
+        bounds = source_audio[source]
+        # Do not send an empty atrim into aresample/apad. Some ffmpeg builds cannot establish
+        # its format at EOF, and fail when concat requests the first audio frame.
+        audible = [si for si in lane["segs"] if bounds is not None
+                   and segments[si].src_start < bounds[1] and segments[si].src_end > bounds[0]]
+        if not audible:
+            continue
+        if lane["seek"] > 0:
             cmd += ["-ss", _f(lane["seek"])]
-        if has_audio:
-            cmd += ["-vn", "-i", str(src_paths[source])]
-        else:
-            # A clip with no audio is valid. Keep a matching silent lane so the audio concat has
-            # the same segment clock as the picture.
-            cmd += ["-f", "lavfi", "-t", _f(lane["last"] - lane["seek"]),
-                    "-i", "anullsrc=r=48000:cl=stereo"]
-        n = len(lane["segs"])
+        cmd += ["-vn", "-i", str(src_paths[source])]
+        n = len(audible)
+        head = f"[{input_index}:a]"
+        unknown_end = math.isinf(bounds[1])
+        if unknown_end:
+            # Some containers omit stream duration. Pad before atrim in that case, so a trim
+            # beyond the unreported EOF still receives frames with a known audio format.
+            head += ("aresample=48000:async=1:first_pts=0,"
+                     "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                     f"apad=whole_dur={_f(lane['last'] - lane['seek'])},")
         if n > 1:
-            chains.append(f"[{li}:a]asplit={n}" + "".join(f"[A{li}s{si}]" for si in lane["segs"]))
-        for si in lane["segs"]:
-            seg_input[si] = (f"A{li}s{si}" if n > 1 else f"{li}:a", lane["seek"])
+            chains.append(head + f"asplit={n}" + "".join(f"[A{li}s{si}]" for si in audible))
+        elif unknown_end:
+            chains.append(head + f"anull[A{li}s{audible[0]}]")
+        for si in audible:
+            seg_input[si] = (f"A{li}s{si}" if n > 1 or unknown_end else f"{input_index}:a", lane["seek"])
+        input_index += 1
     fade = 0.006
     for i, seg in enumerate(segments):
-        pad, seek = seg_input[i]
         d = seg.src_end - seg.src_start
         f = min(fade, d / 4)
         samples = round(d * 48000)
-        # Subtract the clip start, not the first decoded audio timestamp. A late stream needs
-        # leading silence; an early EOF needs a tail so the next clip keeps its output position.
-        chains.append(f"[{pad}]atrim=start={_f(seg.src_start - seek)}:end={_f(seg.src_end - seek)},"
-                      f"asetpts=PTS-{_f(seg.src_start - seek)}/TB,aresample=48000:async=1:first_pts=0,"
-                      f"apad=whole_len={samples},atrim=end_sample={samples},"
-                      f"afade=t=in:d={_f(f)},afade=t=out:st={_f(max(0.0, d - f))}:d={_f(f)}[a{i}]")
+        if i not in seg_input:
+            chain = f"anullsrc=r=48000:cl=stereo:d={_f(d)},"
+        else:
+            pad, seek = seg_input[i]
+            end = min(seg.src_end, source_audio[seg.source][1])
+            # Preserve the source clock for late audio, then pad the real audio tail to the
+            # planned clip length. Set the format before padding as well as before concat.
+            chain = (f"[{pad}]atrim=start={_f(seg.src_start - seek)}:end={_f(end - seek)},"
+                     f"asetpts=PTS-{_f(seg.src_start - seek)}/TB,aresample=48000:async=1:first_pts=0,"
+                     f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                     f"apad=whole_dur={_f(d)},")
+        chains.append(chain + f"atrim=end_sample={samples},asetpts=N/SR/TB,"
+                      f"afade=t=in:d={_f(f)},afade=t=out:st={_f(max(0.0, d - f))}:d={_f(f)},"
+                      f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[a{i}]")
         labels.append(f"[a{i}]")
     if len(segments) == 1:
         chains.append(f"{labels[0]}anull[aout]")
@@ -404,9 +423,18 @@ def build_audio(ctx: RenderCtx, segments: list, src_paths: dict, rwork: Path, wa
     source_audio = {}
     for sid in sorted({seg.source for seg in segments}):
         probe = tools.text_run([ctx.ffprobe, "-v", "error", "-select_streams", "a:0",
-                                "-show_entries", "stream=index", "-of", "csv=p=0", str(src_paths[sid])],
+                                "-show_entries", "stream=start_time,duration:format=start_time", "-of", "json", str(src_paths[sid])],
                                30, "audio probe")
-        source_audio[sid] = bool((probe.stdout or "").strip())
+        info = json.loads(probe.stdout)
+        stream = next(iter(info.get("streams") or []), None)
+        if stream is None:
+            source_audio[sid] = None
+        else:
+            origin = float((info.get("format") or {}).get("start_time") or 0.0)
+            start = float(stream.get("start_time") or origin) - origin
+            # Unknown stream duration must not be replaced with the VIDEO duration.
+            end = start + float(stream["duration"]) if stream.get("duration") else float("inf")
+            source_audio[sid] = (start, end)
     mcfg = ctx.project.get("music") or {}
     # Silence is intentional only when every kept source lacks audio and no music is requested.
     # An unexpectedly silent recording or failed music mix must still fail loudness verification.
