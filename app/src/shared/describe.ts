@@ -83,7 +83,7 @@ const NOUN: Record<string, [string, string]> = {
 function why(r: DropResult): string {
   const reason = r.reason ?? ''
   if (/folder/i.test(reason)) return 'a folder'
-  if (/find|open|read/i.test(reason) && !/video, song or picture/i.test(reason)) return "I couldn't open it"
+  if (/find|open|read/i.test(reason) && !/video, song or picture/i.test(reason)) return "couldn't be opened"
   return 'not a video, song or picture'
 }
 

@@ -1,10 +1,10 @@
-// The shared Library: <Reel Studio>/Library/{Raw takes,B-roll,Music,Images,Exports}.
+// The shared Library: <Reel Studio>/Library/{Raw takes,B-roll,Music,Images,Exports}, plus the bundled sound effects.
 import { existsSync, promises as fs } from 'node:fs'
 import { basename, dirname, extname, join, resolve } from 'node:path'
-import { BIN_FOLDERS, binDir, libraryDir, reelStudioRoot, type BinKey } from './paths'
+import { BIN_FOLDERS, binDir, libraryDir, reelStudioRoot, sfxPackDir, type BinKey } from './paths'
 import { allowLinkedMedia } from './media-allow'
 import { mediaUrl } from './media-url'
-import type { DropResult, LibraryBin } from '../shared/api'
+import type { DropResult, LibraryBin, LibraryFile } from '../shared/api'
 import type { RunEngine } from './engine'
 import { logDuration } from './diagnostics'
 
@@ -12,41 +12,103 @@ export const VIDEO_EXT = new Set(['.mp4', '.mov', '.m4v', '.mkv', '.webm', '.avi
 export const AUDIO_EXT = new Set(['.mp3', '.m4a', '.wav', '.aac', '.flac', '.ogg'])
 export const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic'])
 
-const LABELS: Record<BinKey, string> = {
-  raw: 'Raw takes',
-  broll: 'B-roll',
+const LABELS: Record<Exclude<BinKey, 'exports'>, string> = {
+  raw: 'Videos of you',
+  broll: 'Extra clips',
   music: 'Music',
-  images: 'Images',
-  exports: 'Finished videos'
+  images: 'Pictures'
 }
 
 export const isVideo = (p: string): boolean => VIDEO_EXT.has(extname(p).toLowerCase())
 
+/** The licence line of one entry in a folder's credits.json (engine assets.py writes it for pictures it fetched). */
+function creditLine(entry: unknown): string | undefined {
+  if (!entry || typeof entry !== 'object') return undefined
+  const { license, creator } = entry as { license?: unknown; creator?: unknown }
+  if (typeof license !== 'string' || !license.trim()) return undefined
+  return typeof creator === 'string' && creator.trim() ? `${license.trim()} · ${creator.trim()}` : license.trim()
+}
+
+/** A folder's credits.json; null when it is there but can't be read, so no picture is called yours by mistake. */
+async function readCredits(dir: string): Promise<Record<string, unknown> | null> {
+  let text: string
+  try {
+    text = await fs.readFile(join(dir, 'credits.json'), 'utf8')
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return {}
+    return null
+  }
+  try {
+    const book = JSON.parse(text)
+    return book && typeof book === 'object' && !Array.isArray(book) ? book : null
+  } catch {
+    return null
+  }
+}
+
+/** Library/<bin> as the Library screen shows it. Finished reels are not listed: they live on Reels (ux-foundation-b.md section 6). */
 export async function listLibrary(): Promise<LibraryBin[]> {
   const out: LibraryBin[] = []
-  // Finished videos first: "where did my video go?" is the question people bring here (grandma test).
-  const keys = Object.keys(BIN_FOLDERS) as BinKey[]
-  const order = ['exports' as BinKey, ...keys.filter((k) => k !== 'exports')]
-  for (const key of order) {
+  for (const key of ['images', 'broll', 'raw', 'music'] as const) {
     const dir = binDir(key)
-    const files = []
+    const files: LibraryFile[] = []
     let names: string[] = []
     try {
       names = await fs.readdir(dir)
     } catch {
       /* not created yet */
     }
+    const credits = await readCredits(dir)
     for (const name of names) {
-      if (name.startsWith('.') || /\.(tmp|part)$/i.test(name)) continue
+      if (name.startsWith('.') || name === 'credits.json' || /\.(tmp|part)$/i.test(name)) continue
       const p = join(dir, name)
       const st = await fs.stat(p).catch(() => null)
       if (!st?.isFile()) continue
-      files.push({ name, path: p, url: await libraryMediaUrl(p, st.mtimeMs), size: st.size, modifiedAt: st.mtime.toISOString() })
+      const licence = credits ? creditLine(credits[name]) : 'Licence unknown'
+      files.push({ name, path: p, url: await libraryMediaUrl(p, st.mtimeMs), size: st.size, modifiedAt: st.mtime.toISOString(), ...(licence ? { licence } : {}) })
     }
     files.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
     out.push({ key, label: LABELS[key], dir, files })
   }
+  out.push(await soundEffects())
   return out
+}
+
+interface PackSound {
+  job: string
+  file: string
+  seconds: number
+  source: string
+}
+
+/** "qubodup on Freesound", "Kenney": who made a pack sound, from its source page. */
+function packAuthor(source: string): string {
+  const u = new URL(source)
+  if (u.hostname.endsWith('freesound.org')) return `${u.pathname.split('/')[2]} on Freesound`
+  if (u.hostname.endsWith('kenney.nl')) return 'Kenney'
+  return u.hostname
+}
+
+/** The sound effects that come with Reel Studio (engine/reelengine/sfx, all CC0). They are not a folder of yours. */
+async function soundEffects(): Promise<LibraryBin> {
+  const dir = sfxPackDir()
+  const pack = JSON.parse(await fs.readFile(join(dir, 'pack.json'), 'utf8')) as { sounds: PackSound[] }
+  const files: LibraryFile[] = []
+  for (const s of pack.sounds) {
+    const p = join(dir, s.file)
+    const st = await fs.stat(p)
+    files.push({
+      name: s.file,
+      path: p,
+      url: mediaUrl(p),
+      size: st.size,
+      modifiedAt: st.mtime.toISOString(),
+      licence: `CC0 · ${packAuthor(s.source)}`,
+      durationSec: s.seconds,
+      group: s.job
+    })
+  }
+  return { key: 'sfx', label: 'Sound effects', dir, files }
 }
 
 /** A Library file's URL. A symlink the person put in a Library folder may point anywhere; its target is
@@ -85,12 +147,12 @@ export async function classifyByExtension(files: string[]): Promise<DropResult[]
     const name = basename(file)
     const bin: BinKey | null = VIDEO_EXT.has(ext) ? 'broll' : AUDIO_EXT.has(ext) ? 'music' : IMAGE_EXT.has(ext) ? 'images' : null
     if (!bin) {
-      out.push({ file, name, bin: null, dest: null, reason: 'This is not a video, song or picture, so I left it where it was.' })
+      out.push({ file, name, bin: null, dest: null, reason: 'This is not a video, song or picture, so it was left where it was.' })
       continue
     }
     const st = await fs.stat(file).catch(() => null)
     if (!st?.isFile()) {
-      out.push({ file, name, bin: null, dest: null, reason: 'I could not open this file.' })
+      out.push({ file, name, bin: null, dest: null, reason: 'This file could not be opened.' })
       continue
     }
     await fs.mkdir(binDir(bin), { recursive: true })
@@ -110,7 +172,7 @@ export async function addToLibrary(files: string[], runEngine: RunEngine, log: (
   const out: DropResult[] = []
   for (const f of files) {
     const st = await fs.stat(f).catch(() => null)
-    if (!st) out.push({ file: f, name: basename(f), bin: null, dest: null, reason: 'I could not find this file.' })
+    if (!st) out.push({ file: f, name: basename(f), bin: null, dest: null, reason: 'This file could not be found.' })
     else if (st.isDirectory()) out.push({ file: f, name: basename(f), bin: null, dest: null, reason: 'This is a folder. Open it and drop the files inside.' })
     else if (resolve(f).startsWith(lib)) out.push({ file: f, name: basename(f), bin: binForFolder(f), dest: f })
     else todo.push(f)
@@ -129,7 +191,7 @@ export async function addToLibrary(files: string[], runEngine: RunEngine, log: (
         name: basename(String(r.file ?? '')),
         bin: dest ? binForFolder(dest) : null,
         dest,
-        reason: dest ? undefined : String(r.reason ?? r.userMessage ?? 'I could not sort this file.')
+        reason: dest ? undefined : String(r.reason ?? r.userMessage ?? 'This file could not be sorted.')
       })
     }
     return out
