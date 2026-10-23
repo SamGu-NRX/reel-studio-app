@@ -82,9 +82,9 @@ export function parseEngineLine(line: string): EngineEvent | null {
 }
 
 export const GENERIC_ERROR =
-  'Something went wrong while working on your video. Please try again. If it keeps happening, restart Reel Studio.'
+  'Something went wrong while working on your reel. Please try again. If it keeps happening, restart Reel Studio.'
 export const MISSING_ENGINE =
-  'Reel Studio is missing a part it needs to edit videos. Please reinstall the app.'
+  'Reel Studio is missing a part it needs to make reels. Please reinstall the app.'
 
 export interface RunnerConfig {
   python: () => string
@@ -260,7 +260,7 @@ function cancelled(): EngineError {
 function stuck(pid: number | undefined): EngineError {
   return {
     code: 'ENGINE_STUCK',
-    userMessage: "Part of Reel Studio's video engine would not stop. Restart Reel Studio before you change this video again.",
+    userMessage: "Part of Reel Studio's video engine would not stop. Restart Reel Studio before you change this reel again.",
     message: `process group ${pid} is still alive after SIGKILL`
   }
 }

@@ -63,7 +63,7 @@ test('send to my phone: QR link, phone fetch, Sent!, fallbacks', async () => {
   await page.screenshot({ path: join(SHOTS, 'phone-01-share.png') })
   await page.getByTestId('share-phone').click()
   await expect(page.getByTestId('phone-lead')).toHaveText(
-    "Point your phone's camera at this code. Your video opens on your phone; tap Share, then Save Video (or open Instagram)."
+    "Point your phone's camera at this code. Your reel opens on your phone; tap Share, then Save Video (or open Instagram)."
   )
   const url = await qrUrl(page)
   await expect(page.getByTestId('phone-waiting')).toContainText('Waiting for your phone')
@@ -97,7 +97,7 @@ test('send to my phone: QR link, phone fetch, Sent!, fallbacks', async () => {
   const phone = await app.waitForEvent('window', (p) => p.url().startsWith(origin))
   await phone.waitForLoadState('load')
   await phone.setViewportSize({ width: 390, height: 1100 })
-  await expect(phone.locator('h1')).toHaveText('Your video is here')
+  await expect(phone.locator('h1')).toHaveText('Your reel is here')
   await expect(phone.locator('#android')).toBeHidden() // an iPhone sees only the iPhone steps
   await expect(phone.locator('#ios')).toBeVisible()
   await phone.waitForTimeout(800)

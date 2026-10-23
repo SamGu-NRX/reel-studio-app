@@ -40,7 +40,7 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await passFirstRun(page)
 
   // Sidebar says plainly that no AI is on, and is a way in.
-  await expect(page.getByTestId('ai-status')).toHaveText('No AI editor')
+  await expect(page.getByTestId('ai-status')).toHaveText('No editor')
 
   await makeReel(page, media.video, 10 * 60_000)
   const aiSource = await page.evaluate(() => window.reel.app.info().then((i) => i.ai))
@@ -52,7 +52,7 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await expect(page.locator('.nt-res[data-v="1"]')).toContainText('Basic version: pauses and retakes removed')
   // it offers what an AI would add, and never claims to have done it
   await expect(page.getByTestId('chat')).not.toContainText(/Kept your best takes|picked your best takes/i)
-  await expect(page.getByTestId('chat')).not.toContainText('Wrote your post caption')
+  await expect(page.getByTestId('chat')).not.toContainText('Wrote your caption')
   await expect(page.getByTestId('edit-myself')).toContainText('Edit it myself')
   await expect(page.getByTestId('version-on-screen')).toContainText('Version 1')
   await shot(page, 'ux-01-reel-no-ai')
@@ -197,7 +197,7 @@ test('Claude Code app ready: "Use Claude (your Claude Code app)" comes first, bu
   await page.getByTestId('use-claude-code').click()
   await expect(page.getByTestId('ai-connected')).toHaveText('Connected')
   await page.getByTestId('nav-home').click() // the sidebar re-reads the AI editor on every screen change
-  await expect(page.getByTestId('ai-status')).toHaveText('AI editor: Claude')
+  await expect(page.getByTestId('ai-status')).toHaveText('Editor: Claude')
   expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)
   expect(await page.locator('body').innerText()).not.toContain('—')
   await shot(page, 'ux-16-connect-claude-using')

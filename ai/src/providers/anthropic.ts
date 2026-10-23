@@ -102,7 +102,7 @@ export function mapAnthropicError(err: any): AIError {
     return new AIError('claude_unavailable', 'Claude is having trouble right now. Try again in a few minutes.', { status, retryable: true, detail: err?.message });
   }
   if (err?.name === 'APIConnectionError' || err?.code === 'ECONNREFUSED' || err?.code === 'ENOTFOUND') {
-    return new AIError('offline', 'I could not reach Claude. Check your internet connection and try again.', { retryable: true, detail: err?.message });
+    return new AIError('offline', 'Reel Studio could not reach Claude. Check your internet connection and try again.', { retryable: true, detail: err?.message });
   }
   return new AIError('claude_error', 'Something went wrong talking to Claude. Try again.', { status, detail: err?.message });
 }

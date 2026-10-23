@@ -138,10 +138,10 @@ describe('chips', () => {
 describe('no AI connected', () => {
   it('a note with a file says plainly it was kept and how to get it placed', () => {
     const r = noAiReply('', 1)
-    expect(r.text).toMatch(/can't put your file in the video yet/)
-    expect(r.text).toMatch(/kept it/)
+    expect(r.text).toMatch(/can't go in the reel until an editor is connected/)
+    expect(r.text).toMatch(/Your file is kept/)
     expect(r.actions).toEqual(['open-broll', 'connect'])
-    expect(noAiReply('over my face', 2).text).toMatch(/your files/)
+    expect(noAiReply('over my face', 2).text).toMatch(/Your files are kept/)
     expect(r.text).not.toMatch(/\u2014/)
     // without files: unchanged
     expect(noAiReply('music too loud').actions).toEqual(['open-music', 'connect'])

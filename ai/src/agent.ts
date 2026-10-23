@@ -178,7 +178,7 @@ async function agentLoop(o: RunAgentOptions): Promise<RunAgentResult> {
   const maxMisses = o.maxMisses ?? MAX_CONSECUTIVE_MISSES;
   while (steps < maxSteps && o.ctx.state.finished === null) {
     if (tokens > budget) {
-      throw new AIError('token_budget', 'This edit was taking far more AI work than it should, so I stopped to protect your AI usage. Try a shorter, more specific note.', { detail: `${tokens} effective tokens > budget ${budget}` });
+      throw new AIError('token_budget', 'This edit was taking far more AI work than it should, so Reel Studio stopped it to protect your AI usage. Try a shorter, more specific note.', { detail: `${tokens} effective tokens > budget ${budget}` });
     }
     if (o.signal?.aborted) throw new AIError('cancelled', 'Stopped.');
     steps++;

@@ -100,7 +100,7 @@ test('note attachments: paste, drop, paperclip, chips, send', async () => {
   // ---- a typed time past the end is caught in the note box, not sent, and nothing is lost ----
   await page.getByTestId('note-input').fill('At 9:00: zoom in here')
   await page.getByTestId('send').click()
-  await expect(page.getByTestId('change-alert')).toContainText("There's no 9:00 in this video")
+  await expect(page.getByTestId('change-alert')).toContainText("There's no 9:00 in this reel")
   await expect(page.getByTestId('note-attachment')).toHaveCount(3)
   await expect(page.getByTestId('moment-chip')).toContainText('0:00')
   await page.getByTestId('note-input').fill('')

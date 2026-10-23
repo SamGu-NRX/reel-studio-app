@@ -150,7 +150,7 @@ export async function removeAttachment(dir: string, asset: unknown, project: Pic
   const a = await readSidecar(dir, asset)
   if (!a) return // already gone, or never one of ours: nothing to delete
   if (usedAssets(project).has(a.asset)) {
-    throw { code: 'IN_USE', userMessage: 'That file is already in your video, so I kept it. Ask me to take it out instead.' }
+    throw { code: 'IN_USE', userMessage: 'That file is already in this reel, so it was kept. Leave a note to take it out instead.' }
   }
   const file = join(dir, ...a.asset.split('/'))
   await fs.rm(file + '.attach.json', { force: true })
@@ -239,13 +239,13 @@ export interface AttachIpcDeps extends AttachDeps {
   choose: (filters: { name: string; extensions: string[] }[]) => Promise<string[] | null>
 }
 
-const BUSY = { code: 'BUSY', userMessage: 'I am still working on this video. Give me a moment, or press Stop.' }
+const BUSY = { code: 'BUSY', userMessage: 'This reel is still being worked on. Wait a moment, or press Stop.' }
 
 /** The video and its folder; refused while it is kept closed. */
 function projectOf(deps: AttachIpcDeps, slug: unknown): { slug: string; dir: string } {
-  if (typeof slug !== 'string' || !slug) throw { code: 'NOT_FOUND', userMessage: 'I could not find that video.' }
+  if (typeof slug !== 'string' || !slug) throw { code: 'NOT_FOUND', userMessage: 'That reel could not be found.' }
   const dir = deps.projectDir(slug)
-  if (!existsSync(join(dir, 'project.json'))) throw { code: 'NOT_FOUND', userMessage: 'I could not find that video. It may have been moved or deleted.' }
+  if (!existsSync(join(dir, 'project.json'))) throw { code: 'NOT_FOUND', userMessage: 'That reel could not be found. It may have been moved or deleted.' }
   deps.refuse(slug)
   return { slug, dir }
 }

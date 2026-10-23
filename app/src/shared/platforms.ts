@@ -130,7 +130,7 @@ export function secondTryProblem(platforms: Platform[], first: PlatformTry, seco
   if (!changes.length) return 'Try 2 is the same as Try 1. Pick another version, cover or caption.'
   if (secondTryPlatforms(platforms, !changes.includes('video')).length) return null
   return changes.includes('video')
-    ? 'None of these platforms can test a different video. Choose Instagram, or turn off Try two versions.'
+    ? 'None of these platforms can test a different version. Choose Instagram, or turn off Try two versions.'
     : 'None of these platforms can test two versions. Choose Instagram or Facebook, or turn off Try two versions.'
 }
 

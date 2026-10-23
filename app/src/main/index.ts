@@ -477,7 +477,7 @@ const EDITABLE: (keyof ProjectJson)[] = ['title', 'cut', 'captions', 'music', 'b
 
 function safeFileName(s: string): string {
   const t = s.replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '')
-  return t.slice(0, 80) || 'My video'
+  return t.slice(0, 80) || 'My reel'
 }
 
 async function finishedExportVersion(slug: string, n: number): Promise<VersionInfo> {
@@ -492,11 +492,11 @@ async function finishedExportVersion(slug: string, n: number): Promise<VersionIn
     let stopped: AbortSignal | undefined
     jobs.start(slug, 'export', async (emit, signal, { id, owner }) => {
       stopped = signal
-      emit({ type: 'status', message: 'Making the full-quality video', pct: 1, phase: 'final' })
+      emit({ type: 'status', message: 'Making the full-quality version', pct: 1, phase: 'final' })
       const r: any = await runEngine(
         'render',
         owned(['--project', dir, '--job-id', id], owner),
-        (pr) => emit({ type: 'status', message: pr.message || 'Making the full-quality video', pct: pr.pct, phase: 'final' }),
+        (pr) => emit({ type: 'status', message: pr.message || 'Making the full-quality version', pct: pr.pct, phase: 'final' }),
         signal
       )
       const version = Number(r?.version ?? 0)
@@ -507,7 +507,7 @@ async function finishedExportVersion(slug: string, n: number): Promise<VersionIn
     if (stopped?.aborted) throw { code: 'CANCELLED', userMessage: 'Stopped.' }
     versions = await listVersions(dir)
     v = versions[versions.length - 1]
-    if (!v || v.draft) throw { code: 'EXPORT_FAILED', userMessage: 'The full-quality video didn’t finish. Try again.' }
+    if (!v || v.draft) throw { code: 'EXPORT_FAILED', userMessage: 'The full-quality version didn’t finish. Try again.' }
   }
   return v
 }
@@ -589,7 +589,7 @@ function registerIpc(): void {
     return appInfo()
   })
   handle('app:setFasterExports', async (_e, on: boolean) => {
-    if (typeof on !== 'boolean') throw { code: 'BAD_INPUT', userMessage: 'Choose whether to use faster exports.' }
+    if (typeof on !== 'boolean') throw { code: 'BAD_INPUT', userMessage: 'Choose whether to make reels at 30 fps.' }
     await saveSettings({ fasterExports: on })
     return appInfo()
   })
@@ -634,7 +634,7 @@ function registerIpc(): void {
     return r.canceled ? null : r.filePaths[0]
   })
   handle('app:setRoot', async (_e, p: string) => {
-    if (jobs.runningCount()) throw { code: 'BUSY', userMessage: 'Wait until your video is finished, then change where videos are kept.' }
+    if (jobs.runningCount()) throw { code: 'BUSY', userMessage: 'Wait until no reel is being made, then change where reels are kept.' }
     const root = basename(p) === 'Reel Studio' ? p : join(p, 'Reel Studio')
     await fs.mkdir(root, { recursive: true })
     await saveSettings({ root })
@@ -703,7 +703,7 @@ function registerIpc(): void {
   changesAI('ai:setClaudeKey', (_e, key: string | null) => ai.setClaudeKey(key))
   // The key goes from the page to the AI package once and never comes back.
   const text = (v: unknown): string => (typeof v === 'string' ? v : '')
-  const connectionsNotReady = { code: 'NOT_READY', userMessage: 'Connecting your own AI server is not ready in this build yet. Your videos still work without it.' }
+  const connectionsNotReady = { code: 'NOT_READY', userMessage: 'Connecting your own AI server is not ready in this build yet. Your reels still work without it.' }
   handle('ai:connections', async () => (await ai.connections?.()) ?? [])
   changesAI('ai:saveConnection', async (_e, input: Record<string, unknown>) => {
     if (!ai.saveConnection) throw connectionsNotReady
@@ -759,13 +759,13 @@ function registerIpc(): void {
       throw {
         code: 'NO_VIDEO',
         userMessage: sorted.length
-          ? 'That was not a video, so I put it in your Library. Drop a video file (like .mp4 or .mov) to make a reel.'
+          ? 'That was not a video, so it went to your Library. Drop a video file (like .mp4 or .mov) to make a reel.'
           : 'Drop a video file (like .mp4 or .mov) to make a reel.'
       }
     }
     for (const v of videos) {
       if (!(await fs.stat(v).catch(() => null))?.isFile()) {
-        throw { code: 'NOT_FOUND', userMessage: `I could not open "${basename(v)}". Check that the file is still there and try again.` }
+        throw { code: 'NOT_FOUND', userMessage: `Reel Studio could not open "${basename(v)}". Check that the file is still there and try again.` }
       }
     }
     await ensureRoot()
@@ -816,7 +816,7 @@ function registerIpc(): void {
   handle('projects:resume', async (_e, slug: string, basic?: boolean) => {
     const dir = projectDir(slug)
     if (!existsSync(join(dir, 'project.json'))) {
-      throw { code: 'CANNOT_RESUME', userMessage: 'This video never finished copying. Delete it and drop the video in again.' }
+      throw { code: 'CANNOT_RESUME', userMessage: 'This reel’s video never finished copying. Delete the reel and drop the video in again.' }
     }
     return { jobId: startFirstEdit(slug, null, basic === true) }
   })
@@ -836,7 +836,7 @@ function registerIpc(): void {
       try {
         asked = parseMoment(at)
       } catch (e) {
-        throw { code: 'BAD_MOMENT', message: String(e), userMessage: 'I lost track of that moment. Open "Change something" again and resend.' }
+        throw { code: 'BAD_MOMENT', message: String(e), userMessage: 'That moment was lost. Set the moment again, then send your note.' }
       }
       if (typed) asked = { ...asked, at: typed.at }
       // checked against the render it names, the one the pop-up read its words from; its words and
@@ -864,11 +864,11 @@ function registerIpc(): void {
     return noteQueue.send(slug, { text: note, attachments: files.map(forChat), ...(moment ? { moment } : {}) }, seen)
   })
   handle('projects:versionRows', async (_e, slug: string, n: number) => {
-    if (!Number.isInteger(n) || n < 1) throw { code: 'BAD_VERSION', userMessage: 'Pick a version of your video first.' }
+    if (!Number.isInteger(n) || n < 1) throw { code: 'BAD_VERSION', userMessage: 'Pick a version of this reel first.' }
     return readVersionRows(slug, n)
   })
   handle('projects:timeline', async (_e, slug: string, n: number) => {
-    if (!Number.isInteger(n) || n < 0) throw { code: 'BAD_VERSION', userMessage: 'Pick a version of your video first.' }
+    if (!Number.isInteger(n) || n < 0) throw { code: 'BAD_VERSION', userMessage: 'Pick a version of this reel first.' }
     return readTimeline(slug, n)
   })
   handle('projects:update', async (_e, slug: string, patch: Partial<ProjectJson>) => {
@@ -916,7 +916,7 @@ function registerIpc(): void {
   handle('projects:exportPlatforms', async (_e, slug: string, n: number, value: unknown) => {
     const request = parsePlatformExportRequest(value)
     const versions = await listVersions(projectDir(slug))
-    if (![n, request.second?.version ?? n].every((m) => versions.some((v) => v.n === m))) throw { code: 'NO_VERSION', userMessage: 'Choose an available version before exporting for platforms.' }
+    if (![n, request.second?.version ?? n].every((m) => versions.some((v) => v.n === m))) throw { code: 'NO_VERSION', userMessage: 'Choose an available version before sharing.' }
     const version = await finishedExportVersion(slug, n)
     const project = await readProject(slug)
     const exportTry = (v: VersionInfo, platforms: Platform[], { caption, coverSeconds }: Pick<PlatformTry, 'caption' | 'coverSeconds'>): ExportTry => {
@@ -943,7 +943,7 @@ function registerIpc(): void {
     })
     await jobs.forSlug(slug)?.done
     if (failure) throw failure
-    if (!result) throw { code: 'EXPORT_FAILED', userMessage: 'The export stopped. Try Export again.' }
+    if (!result) throw { code: 'EXPORT_FAILED', userMessage: 'Saving for those platforms stopped. Try again.' }
     return result
   })
   handle('projects:coverCandidates', async (_e, slug: string, moments: number[], source: string): Promise<CoverCandidate[]> => {
@@ -1030,7 +1030,7 @@ function registerIpc(): void {
   })
   handle('style:damaged', async () => (await ai.styleWasDamaged?.()) ?? false)
   handle('style:update', (_e, id: string, patch: { text?: unknown; paused?: unknown }) => {
-    if (!ai.updateStyleRule) throw { code: 'NOT_READY', userMessage: 'I could not change that in My style. Try again later.' }
+    if (!ai.updateStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be changed in My style. Try again later.' }
     const text = typeof patch?.text === 'string' ? patch.text : undefined
     if (text !== undefined && !text.trim()) throw { code: 'EMPTY', userMessage: 'Type the rule first, or press Remove.' }
     return ai.updateStyleRule(id, { text, paused: typeof patch?.paused === 'boolean' ? patch.paused : undefined })
@@ -1064,7 +1064,7 @@ function registerIpc(): void {
     const p = await readProject(slug)
     await ai.approveStyleProposal({
       id: randomUUID(),
-      text: 'Use lowercase captions.',
+      text: 'Use lowercase subtitles.',
       payload: { kind: 'caption-case', case: 'lower' },
       source: { project: p.id, title: p.title, version: p.version ?? 0 }
     })
@@ -1138,7 +1138,7 @@ async function openPane(pane: SettingsPane, help: { isGranted?: () => Promise<bo
 function showTestNotification(): Promise<NotifyResult> {
   if (TEST) return Promise.resolve('shown')
   return new Promise((resolve) => {
-    const n = new Notification({ title: 'Notifications are on', body: "I'll tell you here when a video is ready.", silent: true })
+    const n = new Notification({ title: 'Notifications are on', body: 'Reel Studio tells you here when a version is ready.', silent: true })
     // The macOS question is still on screen: the checklist offers "Ask again".
     const t = setTimeout(() => resolve('pending'), 20_000)
     n.once('show', () => {

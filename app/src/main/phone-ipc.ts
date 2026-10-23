@@ -36,7 +36,7 @@ function cloudFailure(error: unknown, drive: string): string {
 
 /** Only an .mp4 that really sits inside the Reel Studio folder (symlinks resolved), never anything else. */
 function checkedVideo(p: unknown, roots: string[]): string {
-  const bad = { code: 'NOT_FOUND', userMessage: "That video isn't in the Reel Studio folder any more. Share it again." }
+  const bad = { code: 'NOT_FOUND', userMessage: "That file isn't in the Reel Studio folder any more. Share it again." }
   if (typeof p !== 'string' || extname(p).toLowerCase() !== '.mp4') throw bad
   let real: string
   try {
@@ -163,15 +163,15 @@ export function registerPhoneIpc(d: PhoneIpcDeps): void {
     const name = basename(file)
     const big = statSync(file).size > EMAIL_LIMIT
     const body = [
-      'To get my video onto my phone:',
+      'To get my reel onto my phone:',
       '',
-      `1. Attach the video "${name}" to this email (it is in the folder Reel Studio just opened: drag it in here).`,
+      `1. Attach the file "${name}" to this email (it is in the folder Reel Studio just opened: drag it in here).`,
       '2. Send this email to yourself.',
-      '3. Open the email on your phone, tap the video, then Share > Save Video.',
+      '3. Open the email on your phone, tap the file, then Share > Save Video.',
       '',
-      big ? 'Note: the video may be too big for email (most allow about 20 MB). If it will not send, use iCloud Drive or Google Drive.' : ''
+      big ? 'Note: the file may be too big for email (most allow about 20 MB). If it will not send, use iCloud Drive or Google Drive.' : ''
     ].join('\n')
-    const url = `mailto:?subject=${encodeURIComponent(`My video: ${basename(file, '.mp4')}`)}&body=${encodeURIComponent(body)}`
+    const url = `mailto:?subject=${encodeURIComponent(`My reel: ${basename(file, '.mp4')}`)}&body=${encodeURIComponent(body)}`
     if (d.test) return
     await shell.openExternal(url)
     shell.showItemInFolder(file)

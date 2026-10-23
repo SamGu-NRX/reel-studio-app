@@ -2,7 +2,7 @@
 // from System Settings). No React or DOM, so it is tested on its own.
 
 const PERMISSION_POLL_MS = 1500
-const CHECK_FAILED = "Could not check this. I'll try again by myself."
+const CHECK_FAILED = 'Could not check this. Reel Studio tries again by itself.'
 
 export interface PollEnv {
   hidden(): boolean

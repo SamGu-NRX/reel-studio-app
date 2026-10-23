@@ -73,7 +73,7 @@ describe('notes asked at a moment', () => {
       refuse: NO_TIMELINE
     })
     expect(checkMoment({ ...sent, at: Number.MAX_VALUE }, render)).toHaveProperty('refuse')
-    expect(checkMoment({ ...sent, at: 51 }, render)).toEqual({ refuse: "There's no 0:51 in this video. It's 0:50 long." })
+    expect(checkMoment({ ...sent, at: 51 }, render)).toEqual({ refuse: "There's no 0:51 in this reel. It's 0:50 long." })
   })
 
   // fails if a range dragged on the timeline reaches the AI as only the words around its start

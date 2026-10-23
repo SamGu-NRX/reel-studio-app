@@ -60,7 +60,7 @@ async function readFinishedVideo(source: string, runEngine: RunEngine, label: st
   const video = await runEngine('export-probe', [source], undefined, signal) as Partial<FinishedVideo & { hasVideo: boolean }> | null
   if (video?.hasVideo !== true || typeof video.duration !== 'number' || !Number.isFinite(video.duration) || video.duration <= 0 || typeof video.fps !== 'number' ||
       typeof video.vduration !== 'number' || typeof video.sizeBytes !== 'number' || (video.audioBitrate !== null && typeof video.audioBitrate !== 'number') || typeof video.editList !== 'boolean') {
-    throw { code: 'EXPORT_FAILED', userMessage: `${label}The finished video couldn’t be read. Make this version again, then share it.` }
+    throw { code: 'EXPORT_FAILED', userMessage: `${label}The finished version couldn’t be read. Make this version again, then share it.` }
   }
   return video as FinishedVideo
 }
@@ -105,13 +105,13 @@ export async function exportPlatforms({ tries: requested, folder, runEngine, sig
       const outputFor = new Map<Platform, string>()
       for (const [index, group] of (sharedVideo ? [] : outputGroups(item.platforms, item.video)).entries()) {
         const output = join(stage, `video-${t + 1}-${index}.mp4`)
-        const message = `Making the ${group.platforms.map((p) => platformRule(p).label).join(' and ')} video${two ? ` for Try ${t + 1}` : ''}`
+        const message = `Making the ${group.platforms.map((p) => platformRule(p).label).join(' and ')} version${two ? ` for Try ${t + 1}` : ''}`
         onProgress?.(message, 0)
         await runEngine('export-media', [item.source, '--dest', output, ...(group.bitrate === null ? [] : ['--bitrate', String(group.bitrate)])], (p) => onProgress?.(message, p.pct), signal)
         const size = (await fs.stat(output)).size
         for (const platform of group.platforms) {
           const rule = platformRule(platform)
-          if (size > rule.maxBytes) throw { code: 'EXPORT_SIZE', userMessage: `${two ? `Try ${t + 1} on ` : ''}${rule.label}: the video is too large. Shorten it and try again.` }
+          if (size > rule.maxBytes) throw { code: 'EXPORT_SIZE', userMessage: `${two ? `Try ${t + 1} on ` : ''}${rule.label}: the reel is too large. Shorten it and try again.` }
           outputFor.set(platform, output)
         }
       }

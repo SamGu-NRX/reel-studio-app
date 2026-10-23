@@ -93,12 +93,12 @@ export class PythonEngineHost implements EngineHost {
         signal?.removeEventListener('abort', abort);
         if (buf) onLine(buf);
         if (!(await drained(child.pid))) {
-          return reject({ code: 'ENGINE_STUCK', userMessage: 'Part of the video engine would not stop. Check for a leftover ffmpeg before you edit this video again.', message: `process group ${child.pid} is still alive after SIGKILL` });
+          return reject({ code: 'ENGINE_STUCK', userMessage: 'Part of the video engine would not stop. Check for a leftover ffmpeg before you edit this reel again.', message: `process group ${child.pid} is still alive after SIGKILL` });
         }
         if (signal?.aborted) return reject({ code: 'cancelled', userMessage: 'Stopped.' });
         if (error) return reject(error);
         if (code === 0 && done !== undefined) return resolve(done);
-        reject({ code: 'ENGINE_CRASHED', userMessage: 'Something went wrong making your video. Try again.', message: `exit ${code}: ${errTail.slice(-800)}` });
+        reject({ code: 'ENGINE_CRASHED', userMessage: 'Something went wrong making your reel. Try again.', message: `exit ${code}: ${errTail.slice(-800)}` });
       });
     });
   }

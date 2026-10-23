@@ -77,7 +77,7 @@ const MOVE_QUESTION_TEMPORARY_COPY: Question = {
 const REPLACE_QUESTION: Question = {
   type: 'question',
   message: 'Replace the Reel Studio in Applications?',
-  detail: 'Your projects and videos stay where they are. Only the app is replaced.',
+  detail: 'Your reels and videos stay where they are. Only the app is replaced.',
   buttons: ['Replace', 'Not now'],
   defaultId: 0,
   cancelId: 1

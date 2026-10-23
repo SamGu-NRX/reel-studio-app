@@ -32,16 +32,16 @@ describe('What I did is honest about who did what', () => {
   it('without AI: no "best takes", no "wrote your post caption"', () => {
     const items = checklist(project(''), words, ['w1', 'w2'], versions, false)
     expect(label(items, 'cut').label).toBe('Cut the pauses and repeated starts')
-    expect(label(items, 'post')).toMatchObject({ label: 'Post caption: add your own', done: false })
+    expect(label(items, 'post')).toMatchObject({ label: 'Caption: add your own', done: false })
     expect(items.map((i) => i.label).join(' ')).not.toMatch(/best takes|Wrote your/)
   })
   it('without AI, a caption the user typed is "Your post caption"', () => {
-    expect(label(checklist(project('Hello'), words, ['w1', 'w2'], versions, false), 'post')).toMatchObject({ label: 'Your post caption', done: true })
+    expect(label(checklist(project('Hello'), words, ['w1', 'w2'], versions, false), 'post')).toMatchObject({ label: 'Your caption', done: true })
   })
   it('with AI: the AI claims stay', () => {
     const items = checklist(project('Hook line'), words, ['w1', 'w2'], versions, true)
     expect(label(items, 'cut').label).toBe('Picked your best takes and cut the pauses')
-    expect(label(items, 'post').label).toBe('Wrote your post caption')
+    expect(label(items, 'post').label).toBe('Wrote your caption')
   })
   it('an AI that left the caption empty does not claim it', () => {
     expect(label(checklist(project('  '), words, ['w1', 'w2'], versions, true), 'post').done).toBe(false)
@@ -65,13 +65,18 @@ describe('notes with no AI connected', () => {
     it(`"${note}" -> ${action} + Connect ChatGPT`, () => {
       const r = noAiReply(note)
       expect(r.actions).toEqual([action, 'connect'])
-      expect(r.text).toMatch(/no AI editor is connected/)
+      expect(r.text).toMatch(/no editor is connected/)
     })
   }
   it('anything else -> Edit it myself + Connect ChatGPT, and never claims it was saved or done', () => {
     const r = noAiReply('make it more fun')
     expect(r.actions).toEqual(['open-editor', 'connect'])
     expect(r.text).not.toMatch(/saved|I changed|I made/i)
+  })
+  it('fails if a reply with no editor connected speaks as "I"', () => {
+    for (const r of [noAiReply('make it more fun'), noAiReply('bigger subtitles'), noAiReply('', 1), noAiReply('over my face', 2)]) {
+      expect(r.text).not.toMatch(/\bI\b|\bme\b/)
+    }
   })
 })
 

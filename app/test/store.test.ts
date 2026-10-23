@@ -61,8 +61,8 @@ describe('titles and slugs', () => {
   it('makes a readable title from a file name', () => {
     expect(titleFromFile('/x/2026-10-14_my-first_take.mp4')).toBe('My first take')
     expect(titleFromFile('/x/2026-07-18_talkinghead_morning-routine-tips_take01.mp4')).toBe('Morning routine tips')
-    expect(titleFromFile('/x/IMG_4412.MOV')).toBe('My video')
-    expect(titleFromFile('/x/20261017_093015.mp4')).toBe('My video')
+    expect(titleFromFile('/x/IMG_4412.MOV')).toBe('My reel')
+    expect(titleFromFile('/x/20261017_093015.mp4')).toBe('My reel')
     expect(titleFromFile(join(tmpdir(), 'a', 'why so many apps.MOV'))).toBe('Why so many apps')
     expect(titleFromFile('/x/.mp4')).toBe('.mp4')
   })
@@ -239,7 +239,7 @@ describe('project store', () => {
     const g = await readAppState('gamma')
     expect(g.job).toBeNull()
     expect(g.status).toBe('ready')
-    expect(g.chat.at(-1)?.text).toMatch(/closed before I finished/)
+    expect(g.chat.at(-1)?.text).toMatch(/closed before that change was finished/)
     expect(existsSync(join(dir, 'versions', 'v2'))).toBe(false)
     const d = await readAppState('delta')
     expect(d.status).toBe('interrupted')
@@ -272,7 +272,7 @@ describe('project store', () => {
       s.job = { id: 'j5', kind: 'note', startedAt: new Date().toISOString() }
     })
     await recoverInterrupted()
-    expect((await readAppState('zeta')).chat.at(-1)?.text).toMatch(/closed before I finished/)
+    expect((await readAppState('zeta')).chat.at(-1)?.text).toMatch(/closed before that change was finished/)
     expect((await listVersions(dir)).map((v) => v.n)).toEqual([1])
     expect(existsSync(join(dir, 'work', 'notes', 'j5'))).toBe(false)
   })
@@ -283,7 +283,7 @@ describe('project store', () => {
     const dir = fakeProject('eta', { versions: [1, 2] })
     const p = JSON.parse(await fs.readFile(join(dir, 'project.json'), 'utf8'))
     p.notes = [{ id: 'j6', version: 2, text: 'from now on more room', applied: ['cut'], at: p.updatedAt,
-      reply: 'I gave the pauses more room. I also saved this to My style for your future videos: "Leave more room." You can remove it in Settings.',
+      reply: 'I gave the pauses more room. I also saved this to My style for your future reels: "Leave more room." You can remove it in Settings.',
       styleRulesAdded: ['Leave more room.'] }]
     await updateAppState('eta', (s) => {
       s.job = { id: 'j6', kind: 'note', startedAt: new Date().toISOString() }

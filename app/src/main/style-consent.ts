@@ -18,7 +18,7 @@ export interface StyleConsent {
   undo: string[]
 }
 
-const ECHO = /\s*I also saved (?:this|these) to My style for your future videos:[\s\S]*?You can remove (?:it|them) in Settings\./
+const ECHO = /\s*I also saved (?:this|these) to My style for your future reels:[\s\S]*?You can remove (?:it|them) in Settings\./
 const REMEMBER = /\s*I(?:'| wi)ll remember (?:that|this) (?:for next time|for your next videos?|next time)\./gi
 
 /** The comparison StyleStore.approve uses (ai/src/style.ts) to tell that two rules say the same thing. */
@@ -65,12 +65,12 @@ export interface AnswerDeps {
   serialized<T>(key: string, fn: () => Promise<T>): Promise<T>
 }
 
-const NOT_READY = { code: 'NOT_READY', userMessage: 'I could not save that to My style. Try again later.' }
-const NOT_SAVED = { code: 'NOT_SAVED', userMessage: 'I could not save that to My style. Try again.' }
+const NOT_READY = { code: 'NOT_READY', userMessage: 'That could not be saved to My style. Try again later.' }
+const NOT_SAVED = { code: 'NOT_SAVED', userMessage: 'That could not be saved to My style. Try again.' }
 const TYPED_REPLY = {
-  saved: 'Saved. Your next videos will start with lowercase captions. You can change or remove it in My style.',
+  saved: 'Saved. Your next reels will start with lowercase subtitles. You can change or remove it in My style.',
   exists: 'That is already in My style.',
-  forgotten: 'You removed that from My style, so it stays with this video only.'
+  forgotten: 'You removed that from My style, so it stays with this reel only.'
 }
 
 /** The note a question answers (the last one you sent before it) and the version it made, for My style's "Learned from". */
@@ -89,7 +89,7 @@ export function answerStyleQuestion(d: AnswerDeps, slug: string, messageId: stri
   return d.serialized(`style-answer:${slug}`, async () => {
     const m = (await d.chat(slug)).find((x) => x.id === messageId)
     if (!(m?.suggestion || m?.proposal) || !m.actions?.includes('remember-yes')) return
-    let reply = yes ? "Saved. I'll do that in your next videos too. You can remove it in My style." : 'OK, only for this video.'
+    let reply = yes ? 'Saved. Your next reels get this too. You can remove it in My style.' : 'OK, only for this reel.'
     if (yes && m.proposal) {
       if (!d.approveStyleProposal) throw NOT_READY
       const r = await d.approveStyleProposal(m.proposal).catch(() => {

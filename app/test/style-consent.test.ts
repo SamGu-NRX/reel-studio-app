@@ -6,7 +6,7 @@ import { answerStyleQuestion, rememberQuestion, styleConsent, type AnswerDeps } 
 describe('My style consent (grandma 2: saved without asking)', () => {
   it('an AI that already saved a rule: undo it, drop the announcement, ask instead', () => {
     const summary =
-      'I turned the music down at the start so your voice comes through clearly. I\'ll remember that for next time. I also saved this to My style for your future videos: "Keep music quieter under talking." You can remove it in Settings.'
+      'I turned the music down at the start so your voice comes through clearly. I\'ll remember that for next time. I also saved this to My style for your future reels: "Keep music quieter under talking." You can remove it in Settings.'
     const c = styleConsent(summary, ['Keep music quieter under talking.'])
     expect(c.summary).toBe('I turned the music down at the start so your voice comes through clearly.')
     expect(c.undo).toEqual(['Keep music quieter under talking.'])
@@ -33,7 +33,7 @@ describe('My style consent (grandma 2: saved without asking)', () => {
 describe('answering a typed My style question (lowercase captions)', () => {
   const proposal: StyleProposal = {
     id: 'q-1',
-    text: 'Use lowercase captions.',
+    text: 'Use lowercase subtitles.',
     payload: { kind: 'caption-case', case: 'lower' },
     source: { project: 'p1', title: 'Baking bread', version: 3 }
   }
@@ -74,12 +74,12 @@ describe('answering a typed My style question (lowercase captions)', () => {
       if (fail) throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' })
       return { status: 'saved' }
     })
-    await expect(answer()).rejects.toMatchObject({ userMessage: 'I could not save that to My style. Try again.' })
+    await expect(answer()).rejects.toMatchObject({ userMessage: 'That could not be saved to My style. Try again.' })
     expect(chat).toHaveLength(1)
     expect(chat[0].actions).toEqual(['remember-yes', 'remember-no'])
     fail = false
     await answer()
-    expect(chat.at(-1)?.text).toBe('Saved. Your next videos will start with lowercase captions. You can change or remove it in My style.')
+    expect(chat.at(-1)?.text).toBe('Saved. Your next reels will start with lowercase subtitles. You can change or remove it in My style.')
   })
 
   it('No on a question whose Yes was saved just before a crash takes the rule back out', async () => {
@@ -109,7 +109,7 @@ describe('answering a typed My style question (lowercase captions)', () => {
     crash = false
     await answerStyleQuestion(deps, 'bread', 'm1', false)
     expect(saved).toEqual([])
-    expect(chat.at(-1)?.text).toBe('OK, only for this video.')
+    expect(chat.at(-1)?.text).toBe('OK, only for this reel.')
   })
 })
 

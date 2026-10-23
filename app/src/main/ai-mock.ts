@@ -61,7 +61,7 @@ const sameRule = (s: string): string =>
 /** My style.json: the rules, plus whatever else the real package stores there (kept on every write). */
 type StyleData = { rules: StyleRule[]; damaged?: string; forgotten?: string[]; [field: string]: unknown }
 
-const LOWERCASE_CAPTIONS = 'Use lowercase captions.'
+const LOWERCASE_CAPTIONS = 'Use lowercase subtitles.'
 
 export const createMockAI: CreateAI = ({ host }) => {
   const styleFile = (): string => join(host.reelStudioRoot(), 'My style.json')
@@ -135,8 +135,8 @@ export const createMockAI: CreateAI = ({ host }) => {
       const t = setTimeout(resolve, noteMs)
       signal?.addEventListener('abort', () => (clearTimeout(t), reject({ code: 'CANCELLED', userMessage: 'Stopped.' })), { once: true })
     })
-    onEvent({ type: 'status', message: 'Making the final video', pct: 0, phase: 'final' })
-    const r = await host.runEngine('render', ['--project', dir, '--project-file', copy, ...(opts?.owner ? ['--owner', opts.owner] : [])], (pr) => onEvent({ type: 'status', message: pr.message || 'Making the final video', pct: pr.pct, phase: 'final' }), signal)
+    onEvent({ type: 'status', message: 'Making the final version', pct: 0, phase: 'final' })
+    const r = await host.runEngine('render', ['--project', dir, '--project-file', copy, ...(opts?.owner ? ['--owner', opts.owner] : [])], (pr) => onEvent({ type: 'status', message: pr.message || 'Making the final version', pct: pr.pct, phase: 'final' }), signal)
     const version = Number(r?.version)
     if (signal?.aborted) throw { code: 'CANCELLED', userMessage: 'Stopped.' }
     const done = JSON.parse(await fs.readFile(copy, 'utf8'))
@@ -205,12 +205,12 @@ export const createMockAI: CreateAI = ({ host }) => {
       if (mode === 'signs_in' && claudeState === 'signed_out') setTimeout(() => (claudeState = 'ready'), 1500)
     },
     async signInChatGPT() {
-      throw { code: 'NOT_READY', userMessage: 'Signing in with ChatGPT is not ready in this build yet. Your videos still work without it.' }
+      throw { code: 'NOT_READY', userMessage: 'Signing in with ChatGPT is not ready in this build yet. Your reels still work without it.' }
     },
     async signOutChatGPT() {},
     async setClaudeKey(key) {
       if (!key) return { id: 'none', connected: true, label: 'No AI' }
-      throw { code: 'NOT_READY', userMessage: 'Claude keys are not ready in this build yet. Your videos still work without it.' }
+      throw { code: 'NOT_READY', userMessage: 'Claude keys are not ready in this build yet. Your reels still work without it.' }
     },
 
     async firstEdit(projectDir, onEvent, signal, opts): Promise<AgentResult> {
@@ -262,9 +262,9 @@ export const createMockAI: CreateAI = ({ host }) => {
       return {
         summary:
           (track
-            ? 'Your video is ready. I cut out the pauses, added subtitles, music and a cover. Connect an AI editor and I can also pick your best takes and add pictures.'
-            : 'Your video is ready. I cut out the pauses and added subtitles and a cover. Add a song for music, and connect an AI editor so I can pick your best takes and add pictures.') +
-          (lower ? ' I used lowercase captions from your My style.' : ''),
+            ? 'Basic version: pauses cut and subtitles added, with your song underneath. Connect an editor to pick your best takes and add pictures.'
+            : 'Basic version: pauses cut and subtitles added. Add a song for music, and connect an editor to pick your best takes and add pictures.') +
+          (lower ? ' Subtitles are lowercase, from My style.' : ''),
         version,
         styleRulesAdded: [],
         changed
@@ -294,7 +294,7 @@ export const createMockAI: CreateAI = ({ host }) => {
         const styleProposal: StyleProposal | undefined = rules.some((x) => x.payload)
           ? undefined
           : { id: randomUUID(), text: LOWERCASE_CAPTIONS, payload: { kind: 'caption-case', case: 'lower' }, source: { project: p.id, title: p.title, version } }
-        return { summary: 'I made the captions lowercase.', version, styleRulesAdded: [], changed: ['captions'], ...(styleProposal ? { styleProposal } : {}) }
+        return { summary: 'I made the subtitles lowercase.', version, styleRulesAdded: [], changed: ['captions'], ...(styleProposal ? { styleProposal } : {}) }
       }
       // a rule to remember is only proposed: the app asks before anything goes into My style
       const proposed = /\b(always|never|every video|from now on|in general)\b/i.test(note) ? [note.trim()] : []
