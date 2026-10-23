@@ -479,6 +479,9 @@ export interface ReelApi {
     claudeCodeStatus(): Promise<ClaudeCodeInfo>
     /** Opens a terminal window where the person signs in to their Claude Code app themselves. */
     openClaudeSignIn(): Promise<void>
+    /** Settings > "Double-check each edit" (off by default). */
+    checkEdits(): Promise<boolean>
+    setCheckEdits(on: boolean): Promise<boolean>
     connections(): Promise<ConnectionInfo[]>
     saveConnection(input: ConnectionInput): Promise<SaveConnectionResult>
     removeConnection(id: string): Promise<void>

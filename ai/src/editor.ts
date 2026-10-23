@@ -1,7 +1,7 @@
 // High-level editor tasks: firstEdit, applyNote, writeScript, pickTakes, and the no-AI path.
 import * as path from 'node:path';
-import { AgentEvent, AgentResult, AIError, EngineHost, ModelProvider, Phase, ScriptResult, UserFacingError } from './types';
-import { runAgent, RunAgentResult } from './agent';
+import { AgentEvent, AgentResult, AIError, EngineHost, ImagePart, ModelProvider, Phase, ScriptResult, UserFacingError } from './types';
+import { effectiveTokens, runAgent, RunAgentResult } from './agent';
 import type { LookupFn } from './safety';
 import { Prompts } from './prompts';
 import { StyleStore } from './style';
@@ -13,6 +13,7 @@ import {
   snapshotVersion, LIBRARY_FOLDERS, anchorText, writeFileAtomic, keptWords, projectBytes, versionDir,
 } from './project';
 import { extractJson } from './providers/cli';
+import { CheckRecord, CheckRound, MAX_REPAIRS, askChecker, checkerEvidence, repairTask, saveCheck, unresolvedLine } from './checker';
 import * as fsp from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { refuseIfOpen } from './owner';
@@ -44,6 +45,7 @@ export interface EditResult extends AgentResult {
   notice?: UserFacingError;
   /** set when the note took the no-model fast path (fastnote.ts): which one */
   fast?: string;
+  check?: CheckRecord;
 }
 
 const engineArgs = (dir: string, extra: string[] = []) => ['--project', dir, ...extra];
@@ -208,7 +210,7 @@ async function finalize(deps: EditorDeps, ctx: ToolContext, onEvent: (e: AgentEv
   if (deps.finalRender !== false) {
     try { return (await doRender(ctx, false)).version; } catch (e) {
       if (ctx.signal?.aborted) throw e;
-      if (ctx.state.renders.length) return ctx.state.renders.at(-1)!.version;
+      if (ctx.state.renders.length && !ctx.state.previewReplaced) return ctx.state.renders.at(-1)!.version;
       throw e;
     }
   }
@@ -299,6 +301,111 @@ export interface ApplyNoteOptions {
   saveStyleRules?: boolean;
   /** the app's job id, recorded in the receipt of the version this note makes */
   jobId?: string;
+  /** Settings > "Double-check each edit": a second request checks the edit before it becomes a version
+   * (checkAndRepair). Off unless the app passes true: its added tokens and time are not measured yet. */
+  checkEdit?: boolean;
+}
+
+const REPAIR_STEPS = 12;
+
+async function candidateRender(ctx: ToolContext): Promise<RenderInfo> {
+  const last = ctx.state.renders.at(-1);
+  if (last?.draft && !ctx.state.dirty?.size) return last;
+  const made = await doRender(ctx, true);
+  made.checker = true;
+  return made;
+}
+
+/** `start` is the project before the note: a repair that ends there took the whole note back. */
+async function checkAndRepair(deps: EditorDeps, provider: ModelProvider, ctx: ToolContext, note: string, start: Project,
+  attachments: { files: string; images: ImagePart[]; assets: string[] }, onEvent: (e: AgentEvent) => void, signal?: AbortSignal):
+  Promise<{ record: CheckRecord; summary: string | null }> {
+  const started = Date.now();
+  const system = deps.prompts.render('checker');
+  const rounds: CheckRound[] = [];
+  let tokens = 0; let repairs = 0; let summary: string | null = null;
+  const counted: ModelProvider = {
+    id: provider.id, model: provider.model, supportsImages: provider.supportsImages,
+    dispose: () => provider.dispose?.(),
+    complete: async (req) => {
+      const res = await provider.complete(req);
+      tokens += effectiveTokens(res.usage, req.system.length + JSON.stringify(req.messages).length);
+      return res;
+    },
+  };
+  const done = (verdict: CheckRecord['verdict'], error?: string) => ({
+    record: { verdict, repairs, rounds, ...(error ? { error } : {}), cost: { tokens, seconds: Math.round((Date.now() - started) / 100) / 10 } },
+    summary,
+  });
+  // Undo any repair whose check cannot complete: an unchecked repair would replace the editor's
+  // summary with claims nobody verified. Restore its project, files, rules and summary together.
+  let undoRepair: (() => Promise<void>) | null = null;
+  for (;;) {
+    onEvent({ type: 'status', message: 'Double-checking your change', pct: 85, phase: 'edit' });
+    let candidate: RenderInfo;
+    try {
+      candidate = await candidateRender(ctx);
+    } catch (e: any) {
+      // A preview that will not render ends the check, never the note: the edit before any repair stands.
+      if (signal?.aborted) throw e;
+      await undoRepair?.();
+      return done('error', `preview failed: ${String(e?.userMessage ?? e?.message ?? e)}`);
+    }
+    let asked: Awaited<ReturnType<typeof askChecker>>;
+    try {
+      asked = await askChecker(counted, system, await checkerEvidence(ctx, note, candidate, attachments.assets), candidate.result?.renderId ?? null, signal);
+    } catch (e: any) {
+      if (signal?.aborted) throw e;
+      await undoRepair?.();
+      return done('error', String(e?.message ?? e));
+    }
+    if (!asked.round) {
+      await undoRepair?.();
+      return done('error', `unusable reply: ${asked.problems.join('; ')}`);
+    }
+    rounds.push(asked.round);
+    if (asked.round.verdict === 'pass') return done('pass');
+    if (repairs === MAX_REPAIRS) return done('unresolved');
+    repairs++;
+    onEvent({ type: 'status', message: 'Fixing what the check found', pct: 87, phase: 'edit' });
+    // a note's repair edits the note's private copy (applyNote); outside a note, project.json
+    const editFile = ctx.note?.file ?? path.join(ctx.projectDir, 'project.json');
+    const before = await fsp.readFile(editFile);
+    const p0 = await loadProject(ctx.projectDir, ctx.note?.file);
+    const changed = new Set(ctx.state.changed);
+    const [rules, saved, proposed] = [ctx.state.styleRuleIds.length, ctx.state.styleRulesAdded.length, ctx.state.styleSuggestions.length];
+    const said = summary;
+    const renders = ctx.state.renders.length;
+    undoRepair = async () => {
+      // a download the repair made stays in work/assets and, like any unsaved note's, is not offered again
+      await writeFileAtomic(editFile, before);
+      await removeStyleRules(deps, { ...ctx.state, styleRuleIds: ctx.state.styleRuleIds.slice(rules) });
+      ctx.state.styleRuleIds.splice(rules); ctx.state.styleRulesAdded.splice(saved); ctx.state.styleSuggestions.splice(proposed);
+      ctx.state.changed = changed;
+      // a failed final render falls back to the last preview: never one of the undone repair, and never
+      // an earlier one once the repair's preview has replaced it on disk
+      if (ctx.state.renders.length > renders) ctx.state.previewReplaced = true;
+      ctx.state.renders.splice(renders);
+      ctx.project = await loadProject(ctx.projectDir, ctx.note?.file);
+      summary = said;
+    };
+    ctx.state.finished = null;
+    try {
+      const r = await runAgent({ provider: counted, system: await systemPrompt(deps), task: repairTask(note, asked.round.fixes, attachments.files), taskImages: attachments.images, ctx, onEvent, signal,
+        maxSteps: REPAIR_STEPS, tokenBudget: deps.tokenBudget, preload: ['get_project', 'get_transcript'] });
+      const after = await loadProject(ctx.projectDir, ctx.note?.file);
+      if (sameEdit(p0, after) || sameEdit(start, after)) {
+        // the edit is as it was (a download or a saved rule may not be), or the repair took the note back
+        await undoRepair();
+        return done('unresolved');
+      }
+      if (r.finished) summary = r.finished;
+    } catch (e: any) {
+      if (signal?.aborted) throw e;
+      await undoRepair();
+      return done('unresolved', String(e?.message ?? e));
+    }
+  }
 }
 
 /** The reply to a note whose edit ended where it started (applyNote). */
@@ -390,15 +497,27 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     if (undone) ctx.state.changed.clear();
     // only a reply that is nothing but a question passes: "I cut the intro. Want more?" still claims the cut
     const question = undone && /^[^.!]*\?$/.test(r.finished?.trim() ?? '') ? r.finished : null;
+    // Settings > "Double-check each edit": a checker reviews a note that changed the edit before its final render
+    const review = !opts.checkEdit || !ctx.state.changed.size ? null : await checkAndRepair(deps, provider, ctx, label, p0,
+      { files, images, assets: [...attached, ...earlier].map((a) => a.asset) }, onEvent, signal);
+    const said = review?.summary ?? honestSummary(r, ctx.state) ?? 'I saved your preference.';
     // a note that changed nothing is saved too: its id in project.json is how the app's note queue knows it ran
     const summary = nothing
       ? r.finished || 'I looked, but I was not sure what to change. Could you say it another way?'
       : undone ? withStyleEcho(question ?? UNDONE_REPLY, ctx.state)
-      : withStyleEcho(r.finished || 'I saved your preference.', ctx.state);
+      : withStyleEcho(review?.record.verdict === 'unresolved' ? `${said} ${unresolvedLine(review.record.rounds.at(-1)!.fixes)}` : said, ctx.state);
     // this note's files, plus files attached to an earlier note that THIS note put in the video ("when I say X")
     const placedNow = placedAssets(await loadProject(projectDir, ctx.note!.file));
     const recorded = [...refs, ...earlier.map((a) => a.asset).filter((r) => placedNow.has(r) && !refs.includes(r))];
-    return await saveNote(deps, ctx, base, baseVersion, { text: note.trim(), label, summary, attachments: recorded }, opts.saveStyleRules !== false);
+    const saved = await saveNote(deps, ctx, base, baseVersion, { text: note.trim(), label, summary, attachments: recorded }, opts.saveStyleRules !== false);
+    if (review && saved.version !== undefined) {
+      try {
+        await saveCheck(projectDir, saved.version, review.record);
+      } catch (e) {
+        console.warn(`Could not save check.json for v${saved.version}; keeping the committed note.`, e);
+      }
+    }
+    return { ...saved, ...(review ? { check: review.record } : {}) };
   } catch (e) {
     if (!engineStuck(e)) await restoreCredits(projectDir, creditsBefore);
     throw e;

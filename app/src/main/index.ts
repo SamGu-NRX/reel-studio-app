@@ -226,7 +226,8 @@ async function startNote(slug: string, { id: noteId, text, attachments, moment }
       const before = (await readProject(slug)).version ?? 0
       // saved under its queue entry's id (note-queue.ts), with the job's id in its version's receipt; the app asks
       // before anything goes into My style
-      const opts = { attachments: attachments.map((f) => f.asset), id: noteId, jobId, saveStyleRules: false, ...(owner ? { owner } : {}) }
+      const checkEdit = (await loadSettings()).checkEdits // Settings > "Double-check each edit"
+      const opts = { attachments: attachments.map((f) => f.asset), id: noteId, jobId, checkEdit, saveStyleRules: false, ...(owner ? { owner } : {}) }
       // the AI reads the moment in the note text: "At 0:08 (around "...", words w18, w19): cut this part"
       const r: AgentResult = await ai.applyNote(dir, aiNoteText(text, moment), (e) => emit(e), signal, opts)
       if (r.changed.length && r.version !== undefined && ai.rewordVersion) {
@@ -639,6 +640,11 @@ function registerIpc(): void {
   // The person's own Claude Code app: the page gets the state only; the sign-in happens in Anthropic's CLI.
   const claudeCode = async () => (await ai.claudeCodeStatus?.()) ?? { state: 'missing' as const }
   handle('ai:claudeCodeStatus', async () => publicInfo(await claudeCode()))
+  handle('ai:checkEdits', async () => (await loadSettings()).checkEdits)
+  handle('ai:setCheckEdits', async (_e, on: unknown) => {
+    if (typeof on !== 'boolean') throw { code: 'BAD_INPUT', userMessage: 'That setting needs on or off.' }
+    return (await saveSettings({ checkEdits: on })).checkEdits
+  })
   handle('ai:openClaudeSignIn', async () => {
     const st = await claudeCode()
     if (st.state === 'ready') return

@@ -8,8 +8,8 @@ never a pile of preview-only folders an AI run left behind.
 ```
 <project>/versions/
   v1/            a VERSION: export.mp4 + cover.png + verify.json + render.json + project.json (+ notes.md,
-                 receipts.json, title.json), and the reports that describe this video: captions.json, layers.json,
-                 mix.json
+                 receipts.json, title.json, check.json), and the reports that describe this video: captions.json,
+                 layers.json, mix.json
   v2/
   preview/       the ONE scratch folder for previews, overwritten every time:
                  draft.mp4, window_<a>-<b>.mp4 (only the latest window), cover.png, verify.json,
@@ -103,14 +103,49 @@ words for that change claim, so "Cut 2 words" for words brought back, or "Cut a 
 
 - `render_draft` = engine `render --draft` (preview). The agent caps previews per task (3 per first
   edit, 2 per note).
-- After the agent calls `finish`, the loop runs one final `render`: that is the only step that adds a
-  version.
+- With Settings > "Double-check each edit" on, after the agent calls `finish` on a note that changed
+  the edit, a checker reviews it before the final render (see Checker below).
+- Then the loop runs one final `render`: that is the only step that adds a version.
 - A note is all-or-nothing (`ai/src/editor.ts` `applyNote`). It edits `work/notes/<id>/edit.json`, a
   copy of `project.json`, renders its drafts into that folder and its final into `v(N+1)`, then writes
   the snapshot and `notes.md` into `v(N+1)` and replaces `project.json` in one rename, after checking
   that `project.json` is still what the note started from and Stop was not pressed. A note that fails,
   is stopped, hits its step limit with something changed, or whose final render fails changes nothing
   the user can see; its downloads stay in `work/assets` but are not offered again.
+
+## Checker
+
+A note's edit is checked before it becomes a version (`ai/src/checker.ts`, prompt `ai/prompts/checker.md`)
+when Settings > "Double-check each edit" is on (`settings.json` `checkEdits`, passed to `applyNote` as
+`checkEdit`). It is off by default until the eval harness measures the tokens and time it adds; with it
+off a note runs exactly as without a checker.
+
+1. **Candidate.** The editor's last preview when nothing changed after it, otherwise a new
+   `render --draft`. A draft carries the receipt and `verify`, and never adds a version. The checker's
+   drafts don't count against the editor's preview cap. A draft that fails to render ends the check
+   with `error` (after undoing the repair it was meant to show, if any); the note still makes its version.
+2. **Check.** One request to the editor's model with no tools and no earlier conversation. It
+   contains the note, the receipt's facts (with the words a cut removed or brought back), the
+   candidate's `verify`, `warnings` and `broll` report, the words the video now says, and up to 6
+   frames from `look_at_frames` at the moments the facts touch: each new cut join (a take that
+   now starts or ends elsewhere, including the video's last word), each changed b-roll, each added or removed zoom, and the middle of
+   the video for caption, mirror or pause changes. The facts are fenced as data. The reply is
+   `{verdict: pass|fix, fixes: [{problem, request}], scores}` with 1-5 scores for `asked`,
+   `nothingElse`, `hook`, `pacing`, `captions`, `visuals`, `sound`. An unreadable reply is asked
+   for once more. So is one whose `problem` (shown to the creator) is over 180 characters or two
+   sentences, or names word ids, tools or fields.
+3. **Repair.** A `fix` sends the requests and the note to the editor in a new run on the same
+   project, which says the reviewer is not the user. At most 2 repair rounds; each is followed by a
+   new check of a new candidate. A repair that changes nothing, or that stops with an AI error (its
+   project changes, downloads and style rules are undone), ends the loop.
+4. **Result.** `versions/vN/check.json` and `AgentResult.check` hold `{verdict, repairs, rounds,
+   error?, cost: {tokens, seconds}}`. `verdict` is `pass`, `unresolved` (fixes remain: the summary
+   ends with the checker's plain-words problems, never as a success) or `error` (no usable check;
+   the version is kept and the summary is the editor's). `cost` counts checker requests and repair
+   runs, from the first check to the last. Each round records `frames: {asked, seen, error?}`, so a
+   pass made without the frames it asked for says so.
+
+Fast notes (no model) and notes that end with no change are not checked.
 
 ## One writer per project
 

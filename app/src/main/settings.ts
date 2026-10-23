@@ -23,6 +23,9 @@ export interface Settings {
   /** null = never chosen (main/permissions.ts notificationsWanted) */
   notifications: boolean | null
   speechCheck: SpeechCheckResult | null
+  /** Settings > "Double-check each edit": passed to every AI note as `checkEdit`. Off by default until
+   * the eval harness measures the tokens and time it adds. */
+  checkEdits: boolean
 }
 
 const DEFAULTS: Settings = {
@@ -37,7 +40,25 @@ const DEFAULTS: Settings = {
   updateCheckedAt: null,
   updateLatest: null,
   updateDismissed: null,
-  updateHistory: null
+  updateHistory: null,
+  checkEdits: false
+}
+
+
+const DEFAULTS: Settings = {
+  firstRunDone: false,
+  root: null,
+  fasterExports: false,
+  aiAutoPicked: false,
+  aiCarriedOver: false,
+  notifications: null,
+  speechCheck: null,
+  checkUpdates: true,
+  updateCheckedAt: null,
+  updateLatest: null,
+  updateDismissed: null,
+  updateHistory: null,
+  checkEdits: false
 }
 
 export async function loadSettings(): Promise<Settings> {

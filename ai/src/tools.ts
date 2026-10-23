@@ -16,7 +16,11 @@ import { AgentEvent, AIError, EngineHost, ImagePart, ToolSchema } from './types'
 import { StyleStore, cleanRuleText, noteAsksToRemember } from './style';
 import { BlockedUrlError, LookupFn, UnsafePathError, guardedFetch, pathProblem, safeResolve, slugName, sniffImage } from './safety';
 
-export interface RenderInfo { version: number; draft: boolean; result: any }
+export interface RenderInfo {
+  version: number; draft: boolean; result: any;
+  /** a preview the checker asked for (editor.ts candidateRender): it does not use up the editor's previews */
+  checker?: boolean;
+}
 
 export interface ToolState {
   changed: Set<string>;
@@ -34,6 +38,8 @@ export interface ToolState {
   dirty?: Set<string>;
   /** render_draft was skipped (nothing visible changed): look_at_frames looks at the current version instead */
   previewSkipped?: boolean;
+  /** an undone repair's preview overwrote versions/preview/: no earlier preview is on disk (editor.ts finalize) */
+  previewReplaced?: boolean;
   /** raw-take times of the cover stills the model was shown (set_cover on one of them is exact) */
   coverCandidates?: number[];
 }
@@ -475,10 +481,11 @@ export async function doRender(ctx: ToolContext, draft: boolean, announce = true
   if (ctx.renderGate) await ctx.renderGate.catch(() => undefined);
   // a skipped preview stood for the edit as it was then: from here on only this render does
   ctx.state.previewSkipped = false;
-  ctx.state.dirty = new Set();
   const out = draft && ctx.note ? ['--out', ctx.note.dir] : [];
   const args = [...(draft ? ['--draft', ...out] : []), ...(ctx.jobId ? ['--job-id', ctx.jobId] : [])];
   const result = await engine(ctx, 'render', args, draft ? 'Making a preview' : 'Making the final video');
+  // only a render that finished shows the changes: after a failed one they are still unseen (checkAndRepair)
+  ctx.state.dirty = new Set();
   const p = await loadProject(ctx.projectDir, ctx.note?.file);
   const version = Number(result?.version ?? p.version ?? 0);
   ctx.project = p;
@@ -1374,7 +1381,7 @@ const tools: ToolDef[] = [
     description: 'Render a quick preview of the current edit. Needed before look_at_frames.',
     parameters: S.obj({}),
     async run(ctx) {
-      const drafts = ctx.state.renders.filter((r) => r.draft).length;
+      const drafts = ctx.state.renders.filter((r) => r.draft && !r.checker).length;
       if (ctx.maxDraftRenders !== undefined && drafts >= ctx.maxDraftRenders) {
         throw new ToolInputError('No more previews for this task. Call finish now. The final full-quality video includes every change. If you SAW a problem you could not fix, say so plainly in your summary; small fixes the checks asked for (a longer anchor, a removed or moved card, a zoom) need no mention.');
       }
