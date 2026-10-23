@@ -45,6 +45,7 @@ export function App() {
   const [toast, setToast] = useState<{ text: string; kind?: 'error' | 'info'; id: number } | null>(null)
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
   const [veil, setVeil] = useState<Veil | null>(null)
+  const [arriving, setArriving] = useState(false)
   const [libraryAdded, setLibraryAdded] = useState<{ results: DropResult[]; at: number } | undefined>()
   const notify = useCallback<Notify>((text, kind) => setToast({ text, kind, id: Date.now() }), [])
   const closeToast = useCallback(() => setToast(null), [])
@@ -229,7 +230,10 @@ export function App() {
           <FirstRun
             platform={info.platform}
             onDone={async () => {
+              // it ends on a new reel with no video yet, and the window around it slides in (first-run.css)
               await reel.app.finishFirstRun()
+              await newReel(go, notify)
+              setArriving(true)
               setInfo(await reel.app.info())
             }}
           />
@@ -245,7 +249,7 @@ export function App() {
   return (
     <NotifyCtx.Provider value={notify}>
       <TitleBarProvider>
-        <div className={`shell ${platform}${rail ? ' rail' : ''}`}>
+        <div className={`shell ${platform}${rail ? ' rail' : ''}${arriving ? ' arriving' : ''}`}>
           <TitleBar rail={rail} onToggle={toggleRail} />
           <Sidebar section={section} go={go} provider={provider} userName={info.userName} onNewReel={() => void newReel(go, notify)} />
           <main className="main">

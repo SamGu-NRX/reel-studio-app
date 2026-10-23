@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, SHOTS, dropFiles, launch, makeMedia, passFirstRun, passMacStage, shot, openSettings, startReel } from './helpers'
+import { BASE, SHOTS, dropFiles, launch, makeMedia, modelReady, passFirstRun, shot, openSettings, startReel } from './helpers'
 
 /** Each test starts on a fresh profile of its own, so neither depends on the order specs run in. */
 function freshProfile(name: string): { root: string; env: Record<string, string> } {
@@ -31,21 +31,22 @@ test('make a reel end to end', async () => {
   await expect(page.getByText('Welcome to Reel Studio')).toBeVisible()
   await shot(page, '01-firstrun-welcome')
   await page.getByTestId('get-started').click()
-  // the sample edits itself while the listening model downloads beside it (instant with the stand-in engine)
-  await expect(page.getByTestId('model-line')).toBeVisible()
+  // the sample is made on the Reel screen's own rows while the listening model downloads (instant with the stand-in)
+  await expect(page.getByTestId('steps-list')).toBeVisible()
   await shot(page, '02-firstrun-sample')
   await page.getByTestId('demo-skip').click()
   await page.getByTestId('demo-next').click()
-  await passMacStage(page)
-  await expect(page.getByRole('heading', { name: 'Connect your AI editor' })).toBeVisible()
-  await expect(page.getByTestId('model-line')).toContainText('Listening model ready')
+  await expect(page.getByRole('heading', { name: 'Choose your editor' })).toBeVisible()
+  await modelReady(page)
   await shot(page, '03-firstrun-connect')
-  await page.getByTestId('skip').click()
-  await page.getByTestId('share-no').click()
+  await page.getByTestId('not-now').click()
 
-  // ---- home ----
-  await expect(page.getByTestId('reels-empty')).toBeVisible()
-  await shot(page, '04-home-empty')
+  // ---- your turn: a new reel with no video yet, then Reels ----
+  await expect(page.getByTestId('planned-stage')).toBeVisible()
+  await shot(page, '04-your-turn')
+  await page.getByTestId('nav-home').click()
+  await expect(page.getByTestId('project-card')).toHaveCount(1)
+  await shot(page, '04-home')
 
   // nothing posted yet, so no Insights in the sidebar
   await expect(page.getByTestId('nav-insights')).toHaveCount(0)
@@ -196,8 +197,8 @@ test('make a reel end to end', async () => {
   await page.getByTestId('resume').click()
   await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 240_000 })
   await page.getByTestId('nav-home').click()
-  // the first reel, the planned one, and the one that was paused
-  await expect(page.getByTestId('project-card')).toHaveCount(3)
+  // the first run's new reel, the first reel, the planned one, and the one that was paused
+  await expect(page.getByTestId('project-card')).toHaveCount(4)
   await shot(page, '19-home')
   await app.close()
 })
@@ -209,7 +210,8 @@ test('a force quit mid-job recovers on the next start', async () => {
   await passFirstRun(page)
   const before = await page.getByTestId('project-card').count()
   await page.getByTestId('new-reel').click()
-  // Drag and drop this time (the first test used the file picker).
+  // Drag and drop this time (the first test used the file picker), once the new reel is on screen.
+  await expect(page.getByTestId('planned-stage')).toBeVisible()
   await dropFiles(page, 'planned-stage', [media.video])
   await expect(page.getByTestId('note-progress')).toContainText(/Listening/, { timeout: 60_000 })
   // Like a crash or Task Manager "End task": no quit handlers run. Only the app's main process is

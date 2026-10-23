@@ -2,10 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { ModelStatus } from '../../../../shared/api'
 import { reel, userMessage } from '../../api'
 import { useModelStatus } from '../connect'
-import { Icon } from '../icons'
 
 const mb = (b: number) => Math.round(b / 1e6)
-const CHECK_FAILED = "I couldn't work out the fastest settings for this computer, so the listening model uses its usual ones. Everything still works."
 
 /** "About a minute left", from a smoothed download rate. null until there is enough to go on. */
 export function etaWords(left: number, rate: number): string | null {
@@ -18,10 +16,10 @@ export function etaWords(left: number, rate: number): string | null {
 }
 
 /**
- * The listening model, started the moment the first run starts: a copy already on this computer is used, else it
- * downloads. It never blocks a step; this is the one quiet line that says how far along it is.
+ * The listening model, started on Get started (`active`): a copy already on this computer is used, else it
+ * downloads. It never holds up a step.
  */
-export function useListeningModel(): { s: ModelStatus | null; eta: string | null; error: string | null; retry: () => void } {
+function useListeningModel(active: boolean): { s: ModelStatus | null; eta: string | null; error: string | null; retry: () => void } {
   const { s, looked, failed, retry } = useModelStatus()
   const [error, setError] = useState<string | null>(null)
   const started = useRef(false)
@@ -29,10 +27,10 @@ export function useListeningModel(): { s: ModelStatus | null; eta: string | null
   const [rate, setRate] = useState(0)
 
   useEffect(() => {
-    if (!looked || !s || started.current || s.installed || s.downloading || s.checking) return
+    if (!active || !looked || !s || started.current || s.installed || s.downloading || s.checking) return
     started.current = true
     reel.model.download().catch((e) => setError(userMessage(e)))
-  }, [looked, s])
+  }, [active, looked, s])
 
   useEffect(() => {
     if (!s?.downloading) return
@@ -48,7 +46,7 @@ export function useListeningModel(): { s: ModelStatus | null; eta: string | null
   return {
     s,
     eta: s?.downloading && s.total > 0 ? etaWords(s.total - s.bytes, rate) : null,
-    error: error ?? s?.error ?? (failed ? "I couldn't check for the listening model." : null),
+    error: error ?? s?.error ?? (failed ? "Couldn't check for the listening model." : null),
     retry: () => {
       setError(null)
       started.current = false
@@ -59,89 +57,45 @@ export function useListeningModel(): { s: ModelStatus | null; eta: string | null
   }
 }
 
-export function ModelLine({ model, place, computer }: { model: ReturnType<typeof useListeningModel>; place: 'panel' | 'side'; computer: string }) {
-  const { s, eta, error, retry } = model
-  if (!s && !error) return null
-  const pct = s && s.total > 0 ? s.bytes / s.total : (s?.pct ?? 0) / 100
-  const panel = place === 'panel'
-  let body
+/**
+ * The listening model's line in the first run's footer, only while it is on its way or stuck. Once it is here the
+ * line goes: nothing is waiting on it, so nothing needs saying. Its progress renders only this line.
+ */
+export function ModelLine({ active, computer }: { active: boolean; computer: string }) {
+  const { s, eta, error, retry } = useListeningModel(active)
+  if (!active) return null
   if (error)
-    body = (
-      <>
-        <Icon name="alert" size={15} />
-        <b>Listening model</b>
-        <button className="link inline n" onClick={retry} data-testid="model-retry">
-          Try again
-        </button>
-        <span className="sub" data-testid="model-error">
+    return (
+      <div className="fr-dl" role="alert" data-testid="model-line">
+        <span className="fr-dl-1">
+          <b>Couldn't get the listening model</b>
+          <button className="lk" onClick={retry} data-testid="model-retry">
+            Try again
+          </button>
+        </span>
+        <span className="fr-dl-2" data-testid="model-error" title={error}>
           {error}
         </span>
-      </>
+      </div>
     )
-  else if (s!.installed)
-    body = (
-      <>
-        <Icon name="check" size={15} />
-        <b>Listening model ready</b>
-        <span className="n" />
-        {panel &&
-          (s!.checkFailed ? (
-            <span className="sub" data-testid="model-check-failed">
-              {CHECK_FAILED}
-            </span>
-          ) : (
-            <span className="sub">
-              {s!.reused ? `Found one already on this ${computer}, so nothing to download.` : `It writes down every word you say, on this ${computer}.`}
-            </span>
-          ))}
-      </>
-    )
-  else if (s!.checking)
-    body = (
-      <>
-        <Icon name="wave" size={15} />
-        <b>Listening model</b>
-        <span className="n" />
-        <span className="sub">Checking the copy already on this {computer}</span>
-      </>
-    )
-  else
-    body = (
-      <>
-        <Icon name="wave" size={15} />
-        <b>Listening model</b>
-        <span className="n">{s!.total > 0 ? `${mb(s!.bytes)} of ${mb(s!.total)} MB` : `${s!.pct}%`}</span>
-        <span
-          className="bar"
-          role="progressbar"
-          aria-label="Listening model download"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(Math.min(1, pct) * 100)}
-        >
-          <i style={{ transform: `scaleX(${Math.min(1, pct).toFixed(4)})` }} />
-        </span>
-        <span className="sub">
-          {panel
-            ? `${eta ? `${eta}. ` : ''}It writes down every word you say, on this ${computer}.`
-            : s!.downloading
-              ? (eta ?? 'Downloading')
-              : 'Waiting to download'}
-        </span>
-      </>
-    )
+  if (!s || s.installed) return null
+  const pct = Math.min(1, s.total > 0 ? s.bytes / s.total : s.pct / 100)
   return (
-    <div className={`fr-dl at-${place}${s?.installed ? ' ready' : ''}`} data-testid="model-line">
-      {body}
-      {/* said once per change of state, never once per percent */}
-      <span className="sr-only" role="status">
-        {error
-          ? `Listening model: ${error}`
-          : s!.installed
-            ? 'Listening model ready'
-            : s!.checking
-              ? 'Checking the listening model'
-              : 'Downloading the listening model'}
+    <div
+      className="fr-dl"
+      role="progressbar"
+      aria-label="Listening model download"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(pct * 100)}
+      data-testid="model-line"
+    >
+      <span className="fr-dl-1">
+        <b>{s.checking ? 'Checking the listening model' : 'Listening model'}</b>
+        {!s.checking && <span className="n">{s.total > 0 ? `${mb(s.bytes)} of ${mb(s.total)} MB` : `${s.pct}%`}</span>}
+      </span>
+      <span className="fr-dl-2">
+        {eta ? `${eta}. ` : ''}It writes down what you say, on this {computer}.
       </span>
     </div>
   )

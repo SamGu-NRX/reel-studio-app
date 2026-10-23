@@ -17,7 +17,7 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { chooseClaudeCode, dropFiles, launch, passFirstRun, passMacStage, passSample, SHOTS, openSettings, newReel } from './helpers'
+import { chooseClaudeCode, dropFiles, launch, passFirstRun, passSample, SHOTS, openSettings, newReel } from './helpers'
 
 const DIR = process.env.REELSTUDIO_README_DIR
 const VIDEO = process.env.REELSTUDIO_README_VIDEO
@@ -147,17 +147,15 @@ test('public: first-run connect screen and the script screen', async () => {
   const { app, page } = await launch({ REELSTUDIO_ROOT: join(DIR!, 'public root'), REELSTUDIO_USER_DATA: join(DIR!, 'public user data'), REELSTUDIO_MOCK_AI: '1' })
   try {
     await passSample(page)
-    await passMacStage(page)
-    await expect(page.getByTestId('skip')).toBeVisible()
+    await expect(page.getByTestId('not-now')).toBeVisible()
     await snap(page, 'connect-ai')
-    await page.getByTestId('skip').click()
-    await page.getByTestId('share-no').click()
-    await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
-    await snap(page, 'home-empty')
-    // planning a reel: a reel with no video, its notes column the place to get a script
-    await page.getByTestId('new-reel').click()
+    // the first run ends on a reel with no video, its notes column the place to get a script
+    await page.getByTestId('not-now').click()
     await expect(page.getByTestId('planned-stage')).toBeVisible()
     await snap(page, 'plan-a-reel')
+    await page.getByTestId('nav-home').click()
+    await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
+    await snap(page, 'home-empty')
   } finally {
     await app.close().catch(() => {})
   }

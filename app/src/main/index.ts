@@ -389,7 +389,8 @@ async function appInfo(): Promise<AppInfo> {
     userName: await accountNameRead,
     models: s.models,
     sharing: s.sharing,
-    phoneView: s.phoneView
+    phoneView: s.phoneView,
+    soundEffects: s.soundEffects
   }
 }
 
@@ -573,6 +574,11 @@ function registerIpc(): void {
     await saveSettings({ phoneView: view })
     return appInfo()
   })
+  handle('app:setSoundEffects', async (_e, on: unknown) => {
+    if (typeof on !== 'boolean') throw { code: 'BAD_INPUT', userMessage: 'Choose whether to play sound effects.' }
+    await saveSettings({ soundEffects: on })
+    return appInfo()
+  })
   handle('app:setFasterExports', async (_e, on: boolean) => {
     if (typeof on !== 'boolean') throw { code: 'BAD_INPUT', userMessage: 'Choose whether to make reels at 30 fps.' }
     await saveSettings({ fasterExports: on })
@@ -581,11 +587,11 @@ function registerIpc(): void {
   handle('app:clipboardFiles', () => clipboardFiles(TEST ? async () => testClipboard.items : undefined))
   handle('app:takeOpenFiles', async () => (await loadSettings()).firstRunDone ? pendingOpenFiles.splice(0) : [])
   handle('app:finishFirstRun', async () => {
-    // Windows and Linux skip the "Your Mac" stage, so their folder is made here (on a Mac it already exists).
+    // The first run never asks about the folder (ux-foundation-b.md section 4), so the library is made here.
     await ensureRoot().catch((e) => log(`[root] ${String(e)}`))
     perms.markTouched()
     const s = await loadSettings()
-    // A new Mac user who never turned on "Tell me when a video is ready" said no (main/permissions.ts).
+    // Notifications start off on a new Mac, so the first Version 1 asks for them (screens/Reel.tsx notifyAsk).
     const patch = process.platform === 'darwin' && s.notifications === null ? { notifications: false } : {}
     const next = await saveSettings({ firstRunDone: true, ...patch })
     notificationsOn = notificationsWanted(next, process.platform)

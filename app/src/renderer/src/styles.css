@@ -498,33 +498,6 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
 .input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px rgba(191, 54, 38, .16); }
 .field-error { color: var(--pencil); }
 
-/* ---- first run ---- */
-
-.share-never { display: flex; align-items: center; gap: 6px; margin-top: 12px; color: var(--green-ink); font-weight: 600; }
-
-/* Permission rows (components/permissions.tsx): what it is for on the left, one button on the right, a hairline between rows. */
-.perm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.perm-row { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; }
-.perm-row + .perm-row { box-shadow: inset 0 1px 0 var(--line); }
-.perm-icon { flex: none; display: grid; place-items: center; color: var(--ink-2); padding-top: 1px; }
-.perm-text { flex: 1; min-width: 0; }
-.perm-title { font-weight: 620; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
-.perm-optional { font-size: var(--fs-sm); font-weight: 560; color: var(--ink-3); }
-.perm-desc { margin-top: 2px; color: var(--ink-2); }
-.perm-problem { margin-top: 8px; color: var(--pencil); font-weight: 600; }
-.perm-actions { margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-.perm-end { flex: none; align-self: center; min-width: 96px; display: flex; justify-content: flex-end; }
-.perm-ok, .perm-wait { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
-.perm-ok { color: var(--green-ink); }
-.perm-ok .icon { animation: allowed-in .2s var(--ease-out) both; }
-@keyframes allowed-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
-/* Zoomed in (or a narrow window): the button goes under the text, so the text keeps a readable width. */
-@media (max-width: 600px) {
-  .perm-row { flex-wrap: wrap; }
-  .perm-end { flex-basis: 100%; justify-content: flex-start; padding-left: 30px; }
-}
-.perm-wait { color: var(--ink-2); }
-
 .copy-box { padding: 2px 0 2px 14px; box-shadow: inset 2px 0 0 var(--line-strong); white-space: pre-wrap; user-select: text; }
 
 /* ---- the finish moment: the phone slides in, the checks land, the reel plays ---- */

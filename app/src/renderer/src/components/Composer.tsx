@@ -115,13 +115,7 @@ export function Composer({
                 <div>
                   <ul aria-label="Steps" data-testid="steps-list">
                     {firstSteps
-                      ? firstSteps.map((s) => (
-                          <li key={s.id} className={`st-${s.state}`} data-state={s.state}>
-                            <StepMark state={s.state} />
-                            <span className="sl">{STEP_LABEL[s.id]}</span>
-                            {stepNote(s) ? <span className={`sr${s.state === 'skipped' ? ' amber' : ''}`}>{stepNote(s)}</span> : s.result && <span className="sr">{s.result}</span>}
-                          </li>
-                        ))
+                      ? <StepRows steps={firstSteps} />
                       : steps.map((s, i) => (
                           <li key={`${i}-${s}`} className={i === steps.length - 1 ? 'st-now' : 'st-done'}>
                             <StepMark state={i === steps.length - 1 ? 'now' : 'done'} />
@@ -271,6 +265,17 @@ export function Composer({
       )}
     </div>
   )
+}
+
+/** Version 1's rows as main sends them; the first run's sample draws the same rows. */
+export function StepRows({ steps }: { steps: Step[] }) {
+  return steps.map((s) => (
+    <li key={s.id} className={`st-${s.state}`} data-state={s.state}>
+      <StepMark state={s.state} />
+      <span className="sl">{STEP_LABEL[s.id]}</span>
+      {stepNote(s) ? <span className={`sr${s.state === 'skipped' ? ' amber' : ''}`}>{stepNote(s)}</span> : s.result && <span className="sr">{s.result}</span>}
+    </li>
+  ))
 }
 
 function StepMark({ state }: { state: Step['state'] }) {

@@ -13,7 +13,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { CLAUDE_CODE_MISNAMED, attachMemeFlow, chooseClaudeCode, dropFiles, passMacStage, passSample, openSettings, newReel } from './helpers'
+import { CLAUDE_CODE_MISNAMED, attachMemeFlow, chooseClaudeCode, dropFiles, passSample, openSettings, newReel } from './helpers'
 
 const EXE = process.env.REELSTUDIO_E2E_EXE
 const USE_CLAUDE = process.env.REELSTUDIO_E2E_USE_CLAUDE !== '0'
@@ -67,7 +67,7 @@ function newest(dir: string, filter: (n: string) => boolean): string | null {
   return all.length ? join(dir, all[0].n) : null
 }
 
-/** First run on a fresh profile: welcome -> the sample -> the Mac -> Connect. Returns what Connect showed. */
+/** First run on a fresh profile: welcome -> the sample -> Choose your editor. Returns what that step showed. */
 async function firstRun(page: Page): Promise<Record<string, unknown>> {
   const info: Record<string, unknown> = {}
   const welcome = page.getByTestId('get-started')
@@ -75,16 +75,16 @@ async function firstRun(page: Page): Promise<Record<string, unknown>> {
   if (!(await welcome.isVisible())) return info
   await snap(page, `${TAG}-00-welcome`)
   await passSample(page)
-  await passMacStage(page)
   await page.waitForTimeout(2500) // the Claude choice shows once the app has looked for the Claude Code app
   await snap(page, `${TAG}-01-connect`)
-  info.connectButtons = await page.locator('.fr-pane button').allInnerTexts()
-  info.connectText = await page.locator('.fr-pane').innerText()
+  info.connectButtons = await page.locator('.fr-col button').allInnerTexts()
+  info.connectText = await page.locator('.fr-col').innerText()
   info.claudeCode = await page.evaluate(() => (window as any).reel.ai.claudeCodeStatus())
   const picked = USE_CLAUDE && (await chooseClaudeCode(page))
   info.connectAi = picked ? (await page.evaluate(() => (window as any).reel.ai.active())).label : 'none'
-  if (!picked) await page.getByTestId('skip').click()
-  await page.getByTestId('share-no').click()
+  await page.getByTestId(picked ? 'editor-continue' : 'not-now').click()
+  await expect(page.getByTestId('planned-stage')).toBeVisible()
+  await page.getByTestId('nav-home').click()
   await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
   return info
 }
