@@ -1,4 +1,5 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent } from 'electron'
+// Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, safeStorage, shell, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, promises as fs, appendFileSync, mkdirSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import {
@@ -44,6 +45,9 @@ import { closeAnimationRenderer, renderAnimation, TEST_TEMPLATE } from './animat
 import { captureWebsite } from './capture'
 import { createModelManager } from './models'
 import { loadSettings, saveSettings } from './settings'
+import { InstagramService } from './instagram'
+import { registerInstagramIpc } from './instagram-ipc'
+import { InstagramError } from './instagram-http'
 import { createPidRegistry } from './orphans'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
@@ -327,6 +331,23 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
 
 // ---- IPC ----------------------------------------------------------------------------------------
 function registerIpc(): void {
+  const instagram = new InstagramService({
+    dev: DEV_PROVIDERS && !TEST,
+    settings: loadSettings,
+    settingsDir: settingsDir(),
+    projectsDir,
+    secrets: safeStorage,
+    fetch: (url, init) => fetch(url, init),
+    openExternal: (url) => shell.openExternal(url),
+    coverJpeg: (bytes) => {
+      const image = nativeImage.createFromBuffer(bytes)
+      if (image.isEmpty()) throw new InstagramError('IG_COVER', 'The cover image could not be read. Export this version again.')
+      // Meta requires JPEG. Quality 90 is unmeasured and still subject to the API's 8 MB limit.
+      return image.toJPEG(90)
+    }
+  })
+  registerInstagramIpc({ handle, service: instagram, dev: DEV_PROVIDERS && !TEST, saveSettings })
+  app.on('before-quit', () => { instagram.stop() })
   handle('app:info', () => appInfo())
   handle('app:finishFirstRun', async () => {
     await saveSettings({ firstRunDone: true })

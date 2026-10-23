@@ -1,3 +1,5 @@
+// Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
+import type { InstagramApi } from './instagram'
 // Types shared by the main process, the preload bridge and the renderer.
 // Keep this file free of Node and DOM imports.
 import type { ChatAction } from './notes'
@@ -302,6 +304,7 @@ export interface UserError {
 }
 
 export interface ReelApi {
+  instagram: InstagramApi
   app: {
     info(): Promise<AppInfo>
     finishFirstRun(): Promise<void>

@@ -1,0 +1,362 @@
+// Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
+// Publishing: https://developers.facebook.com/documentation/instagram-platform/content-publishing
+// Media: https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/ig-user/media
+// Insights: https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-media/insights/
+import { createHash, randomBytes } from 'node:crypto'
+import { constants, promises as fs } from 'node:fs'
+import { join, relative, isAbsolute } from 'node:path'
+import { Readable } from 'node:stream'
+import { setTimeout as delay } from 'node:timers/promises'
+import type { InstagramMetrics, InstagramOutcome, InstagramPost, InstagramPublishInput, InstagramSession, InstagramSettings } from '../shared/instagram'
+import { instagramCallback } from './instagram-oauth'
+import { httpsUrl, id, INSTAGRAM_GRAPH, INSTAGRAM_SCOPES, INSTAGRAM_VERSION, InstagramError, invalidResponse, jsonPost, object, positive, request, text, type InstagramFetch } from './instagram-http'
+import { InstagramTokenStore, readObject, receipt, saveOutcome, saveReceipt, type InstagramCredentials, type InstagramSecretStore } from './instagram-store'
+
+const DAY = 24 * 60 * 60_000
+const METRICS = {
+  plays: 'views', reach: 'reach', likes: 'likes', comments: 'comments', shares: 'shares', saves: 'saved',
+  averageWatchTimeMs: 'ig_reels_avg_watch_time', totalWatchTimeMs: 'ig_reels_video_view_total_time', skipRatePercent: 'reels_skip_rate'
+} satisfies Record<keyof InstagramMetrics, string>
+
+interface Options {
+  dev: boolean
+  settings: () => Promise<InstagramSettings>
+  settingsDir: string
+  projectsDir: () => string
+  secrets: InstagramSecretStore
+  fetch: InstagramFetch
+  openExternal: (url: string) => Promise<void>
+  coverJpeg: (png: Buffer) => Buffer
+  now?: () => number
+}
+
+export function instagramSettings(value: unknown): InstagramSettings {
+  const s = object(value)
+  if (typeof s.instagramEnabled !== 'boolean' || !Array.isArray(s.instagramUploadOrigins)) return invalidResponse()
+  const appId = s.instagramAppId === null ? null : id(s.instagramAppId)
+  const broker = s.instagramBrokerUrl === null ? null : httpsUrl(s.instagramBrokerUrl)
+  if (broker && (broker.pathname !== '/' || broker.search)) return invalidResponse()
+  const origins = s.instagramUploadOrigins.map((value) => {
+    const u = httpsUrl(value)
+    if (u.pathname !== '/' || u.search) return invalidResponse()
+    return u.origin
+  })
+  return { instagramEnabled: s.instagramEnabled, instagramAppId: appId, instagramBrokerUrl: broker?.origin ?? null, instagramUploadOrigins: origins }
+}
+
+function publishInput(value: unknown): InstagramPublishInput {
+  const p = object(value)
+  if (typeof p.slug !== 'string' || !/^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u.test(p.slug) ||
+      typeof p.version !== 'number' || !Number.isSafeInteger(p.version) || p.version < 1 ||
+      typeof p.caption !== 'string' || [...p.caption].length > 2200)
+    throw new InstagramError('IG_INPUT', 'Choose a finished version and a caption of at most 2,200 characters.')
+  const c = object(p.cover)
+  if (c.kind === 'image') return { slug: p.slug, version: p.version, caption: p.caption, cover: { kind: 'image' } }
+  if (c.kind === 'frame' && typeof c.offsetMs === 'number' && Number.isSafeInteger(c.offsetMs) && c.offsetMs >= 0)
+    return { slug: p.slug, version: p.version, caption: p.caption, cover: { kind: 'frame', offsetMs: c.offsetMs } }
+  throw new InstagramError('IG_COVER', 'Choose a cover image or a frame in the exported video.')
+}
+
+function inside(root: string, target: string): boolean {
+  const rel = relative(root, target)
+  return rel !== '' && rel !== '..' && !rel.startsWith('../') && !rel.startsWith('..\\') && !isAbsolute(rel)
+}
+
+export class InstagramService {
+  private readonly tokens: InstagramTokenStore
+  private queue: Promise<unknown> = Promise.resolve()
+  private connection = new AbortController()
+  private connecting?: AbortController
+
+  constructor(private readonly o: Options) { this.tokens = new InstagramTokenStore(o.settingsDir, o.secrets) }
+  private now(): number { return this.o.now?.() ?? Date.now() }
+  private async config(): Promise<InstagramSettings & { instagramAppId: string; instagramBrokerUrl: string }> {
+    if (!this.o.dev) throw new InstagramError('IG_DISABLED', 'Instagram is available only in developer mode.')
+    const c = instagramSettings(await this.o.settings())
+    if (!c.instagramEnabled) throw new InstagramError('IG_DISABLED', 'Enable the Instagram developer setting first.')
+    if (!c.instagramAppId || !c.instagramBrokerUrl) throw new InstagramError('IG_SETUP', 'Set the Instagram app ID and server URL in developer settings first.')
+    return { ...c, instagramAppId: c.instagramAppId, instagramBrokerUrl: c.instagramBrokerUrl }
+  }
+  private run<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const signal = AbortSignal.any([this.connection.signal, AbortSignal.timeout(10 * 60_000)])
+    const work = async () => {
+      try { signal.throwIfAborted(); return await fn(signal) } catch (e) {
+        if (signal.aborted) throw new InstagramError('IG_CANCELLED', 'The Instagram action was cancelled. Check Instagram before retrying a publish.')
+        throw e
+      }
+    }
+    const result = this.queue.then(work, work)
+    this.queue = result.catch(() => undefined)
+    return result
+  }
+  private async credentials(): Promise<InstagramCredentials> {
+    const c = await this.config()
+    const saved = await this.tokens.load()
+    if (!saved || saved.appId !== c.instagramAppId || saved.brokerUrl !== c.instagramBrokerUrl)
+      throw new InstagramError('IG_TOKEN', 'Connect Instagram again in Settings.')
+    return saved
+  }
+  private async refresh(c: InstagramCredentials, signal: AbortSignal): Promise<InstagramCredentials> {
+    // Meta cannot refresh an expired token or one less than 24 hours old.
+    if (c.expiresAt <= this.now() || c.issuedAt + DAY > this.now())
+      throw new InstagramError('IG_TOKEN', 'Your Instagram connection has expired. Connect Instagram again in Settings.')
+    const url = new URL('https://graph.instagram.com/refresh_access_token')
+    url.search = new URLSearchParams({ grant_type: 'ig_refresh_token', access_token: c.accessToken }).toString()
+    const data = object(await request(this.o.fetch, url.toString(), { method: 'GET' }, signal))
+    if (String(data.token_type).toLowerCase() !== 'bearer') return invalidResponse()
+    const next = { ...c, accessToken: text(data.access_token), issuedAt: this.now(), expiresAt: this.now() + positive(data.expires_in) * 1000 }
+    signal.throwIfAborted()
+    await this.tokens.save(next)
+    return next
+  }
+  private async graph(path: string, init: RequestInit, signal: AbortSignal, onDispatch?: () => void): Promise<unknown> {
+    let c = await this.credentials()
+    if (c.expiresAt <= this.now()) throw new InstagramError('IG_TOKEN', 'Your Instagram connection has expired. Connect Instagram again in Settings.')
+    // An unmeasured seven-day window leaves time to reconnect before expiry.
+    if (c.expiresAt - this.now() <= 7 * DAY && c.issuedAt + DAY <= this.now()) c = await this.refresh(c, signal)
+    const send = () => request(this.o.fetch, `${INSTAGRAM_GRAPH}/${path}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${c.accessToken}` } }, signal, onDispatch)
+    try { return await send() } catch (e) {
+      // A definite OAuth rejection is safe to retry once. Transport and publish errors are never retried.
+      if (!(e instanceof InstagramError) || e.code !== 'IG_TOKEN') throw e
+      c = await this.refresh(c, signal)
+      return send()
+    }
+  }
+  async session(): Promise<InstagramSession> {
+    return this.run(async () => {
+      const settings = await this.config()
+      const c = await this.tokens.load()
+      if (!c || c.appId !== settings.instagramAppId || c.brokerUrl !== settings.instagramBrokerUrl || c.expiresAt <= this.now()) return { connected: false }
+      return { connected: true, accountId: c.accountId, username: c.username, expiresAt: c.expiresAt }
+    })
+  }
+  connect(): Promise<InstagramSession> {
+    this.cancelConnect()
+    const ac = new AbortController()
+    this.connecting = ac
+    return this.run(async (outerSignal) => {
+      const signal = AbortSignal.any([outerSignal, ac.signal])
+      const config = await this.config()
+      this.tokens.assertSecure()
+      const state = randomBytes(32).toString('base64url')
+      const verifier = randomBytes(32).toString('base64url')
+      const listener = await instagramCallback(state, signal)
+      try {
+        await request(this.o.fetch, `${config.instagramBrokerUrl}/api/instagram/oauth/start`, jsonPost({
+          app_id: config.instagramAppId, state, loopback_uri: listener.redirectUri,
+          code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256'
+        }), signal)
+        const url = new URL('https://www.instagram.com/oauth/authorize')
+        url.search = new URLSearchParams({ client_id: config.instagramAppId, redirect_uri: `${config.instagramBrokerUrl}/api/instagram/oauth/callback`,
+          response_type: 'code', scope: INSTAGRAM_SCOPES.join(','), state, enable_fb_login: 'false' }).toString()
+        signal.throwIfAborted()
+        await this.o.openExternal(url.toString())
+        const handoff = await listener.result
+        const data = object(await request(this.o.fetch, `${config.instagramBrokerUrl}/api/instagram/oauth/complete`, jsonPost({ handoff, state, code_verifier: verifier }), signal))
+        const permissions = data.permissions
+        if (String(data.token_type).toLowerCase() !== 'bearer' || !Array.isArray(permissions) || !INSTAGRAM_SCOPES.every((s) => permissions.includes(s)))
+          throw new InstagramError('IG_PERMISSION', 'Allow publishing and insights when connecting your Instagram account.')
+        const accessToken = text(data.access_token)
+        const expiresAt = this.now() + positive(data.expires_in) * 1000
+        const account = await this.profile(accessToken, signal)
+        signal.throwIfAborted()
+        const previous = await this.tokens.load()
+        signal.throwIfAborted()
+        await this.tokens.save({ accessToken, expiresAt, issuedAt: this.now(), ...account, appId: config.instagramAppId, brokerUrl: config.instagramBrokerUrl })
+        if (signal.aborted) {
+          if (previous) await this.tokens.save(previous)
+          else await this.tokens.clear()
+          throw new InstagramError('IG_CANCELLED', 'Instagram connection was cancelled.')
+        }
+        return { connected: true, ...account, expiresAt }
+      } finally {
+        listener.close()
+        if (this.connecting === ac) this.connecting = undefined
+      }
+    })
+  }
+  cancelConnect(): void { this.connecting?.abort() }
+  stop(): void { this.cancelConnect(); this.connection.abort() }
+  async disconnect(): Promise<void> {
+    this.stop()
+    this.connection = new AbortController()
+    const clear = () => this.tokens.clear()
+    const result = this.queue.then(clear, clear)
+    this.queue = result.catch(() => undefined)
+    return result
+  }
+  private async profile(token: string, signal: AbortSignal): Promise<{ accountId: string; username: string }> {
+    const data = object(await request(this.o.fetch, `${INSTAGRAM_GRAPH}/me?fields=user_id,username,account_type`, { method: 'GET', headers: { authorization: `Bearer ${token}` } }, signal))
+    return this.parseProfile(data)
+  }
+  private parseProfile(data: Record<string, unknown>): { accountId: string; username: string } {
+    const p = Array.isArray(data.data) ? object(data.data[0]) : data
+    if (typeof p.account_type !== 'string' || !['BUSINESS', 'MEDIA_CREATOR'].includes(p.account_type.toUpperCase()))
+      throw new InstagramError('IG_PROFESSIONAL', 'Instagram publishing requires a Professional account. Switch to a Business or Creator account in Instagram, then connect again.')
+    return { accountId: id(p.user_id), username: text(p.username) }
+  }
+  private async project(slug: string, version: number): Promise<string> {
+    if (!/^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u.test(slug) || !Number.isSafeInteger(version) || version < 1)
+      throw new InstagramError('IG_INPUT', 'Choose a finished project version.')
+    const root = await fs.realpath(this.o.projectsDir())
+    const dir = await fs.realpath(join(root, slug))
+    if (!inside(root, dir)) throw new InstagramError('IG_PATH', 'This project is outside the Reel Studio projects folder.')
+    await fs.access(join(dir, 'project.json'))
+    return dir
+  }
+  private async openFile(dir: string, file: string, maxSize: number) {
+    const resolved = await fs.realpath(file)
+    if (!inside(dir, resolved)) throw new InstagramError('IG_PATH', 'The export or cover is outside this project.')
+    const handle = await fs.open(resolved, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    try {
+      const stat = await handle.stat()
+      if (!stat.isFile() || stat.size < 1 || stat.size > maxSize) throw new InstagramError('IG_FILE', 'The export or cover is empty, too large or not a regular file.')
+      return { handle, size: stat.size }
+    } catch (e) { await handle.close(); throw e }
+  }
+  private async stagedMedia(dir: string, input: InstagramPublishInput, signal: AbortSignal): Promise<{ videoUrl: string; coverUrl?: string }> {
+    const config = await this.config()
+    const video = await this.openFile(dir, join(dir, 'versions', `v${input.version}`, 'export.mp4'), 300_000_000)
+    try {
+      if (await fs.stat(join(dir, 'versions', `v${input.version}`, '.rendering')).then(() => true, () => false))
+        throw new InstagramError('IG_RENDERING', 'Wait for this version to finish exporting before publishing.')
+      let cover: Buffer | undefined
+      if (input.cover.kind === 'image') {
+        const source = await this.openFile(dir, join(dir, 'versions', `v${input.version}`, 'cover.png'), 32_000_000)
+        try { cover = this.o.coverJpeg(await source.handle.readFile()) } finally { await source.handle.close() }
+        if (!cover.length || cover.length > 8_000_000) throw new InstagramError('IG_COVER', 'The JPEG cover must be smaller than 8 MB.')
+      }
+      const credentials = await this.credentials()
+      const upload = object(await request(this.o.fetch, `${config.instagramBrokerUrl}/api/instagram/uploads`, {
+        ...jsonPost({ video_size: video.size, cover_size: cover?.length ?? null }),
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${credentials.accessToken}` }
+      }, signal))
+      const parseUpload = (value: unknown) => {
+        const part = object(value)
+        const put = httpsUrl(part.upload_url)
+        const read = httpsUrl(part.public_url)
+        if (!config.instagramUploadOrigins.includes(put.origin) || !config.instagramUploadOrigins.includes(read.origin))
+          throw new InstagramError('IG_UPLOAD_HOST', 'The media server returned an unapproved storage address. Check the developer settings.')
+        return { put: put.toString(), read: read.toString() }
+      }
+      const v = parseUpload(upload.video)
+      const c = cover ? parseUpload(upload.cover) : undefined
+      // Stream from the validated descriptor. A 300 MB export must not be buffered in Electron.
+      const stream = video.handle.createReadStream({ autoClose: false })
+      try {
+        const init = { method: 'PUT', headers: { 'content-type': 'video/mp4', 'content-length': String(video.size) }, body: Readable.toWeb(stream), duplex: 'half', redirect: 'error', signal } satisfies RequestInit & { duplex: 'half' }
+        const result = await this.o.fetch(v.put, init)
+        if (!result.ok) throw new InstagramError('IG_UPLOAD', 'The video could not be uploaded. Try again later.')
+        await result.body?.cancel()
+      } finally { stream.destroy() }
+      if (cover && c) {
+        const result = await this.o.fetch(c.put, { method: 'PUT', body: new Uint8Array(cover), headers: { 'content-type': 'image/jpeg' }, redirect: 'error', signal })
+        if (!result.ok) throw new InstagramError('IG_UPLOAD', 'The cover could not be uploaded. Try again later.')
+        await result.body?.cancel()
+      }
+      return { videoUrl: v.read, ...(c ? { coverUrl: c.read } : {}) }
+    } finally { await video.handle.close() }
+  }
+  publish(value: unknown): Promise<InstagramPost> {
+    return this.run(async (signal) => {
+      await this.config()
+      const input = publishInput(value)
+      const dir = await this.project(input.slug, input.version)
+      const c = await this.credentials()
+      const account = this.parseProfile(object(await this.graph('me?fields=user_id,username,account_type', { method: 'GET' }, signal)))
+      if (account.accountId !== c.accountId) throw new InstagramError('IG_ACCOUNT', 'Instagram returned another account. Connect again in Settings.')
+      const inputHash = createHash('sha256').update(JSON.stringify({ caption: input.caption, cover: input.cover })).digest('hex')
+      let saved = await receipt(dir, input.version)
+      if (saved && saved.accountId !== c.accountId) throw new InstagramError('IG_ACCOUNT', 'This version already has a publish attempt for another Instagram account.')
+      if (saved?.state === 'published') {
+        await this.ensureOutcome(dir, saved.post)
+        return saved.post
+      }
+      if (saved?.state === 'publishing') throw new InstagramError('IG_PUBLISH_UNKNOWN', 'A publish was already sent for this version. Check Instagram before trying anything else. The saved container can be reconciled by support.')
+      if (saved && saved.inputHash !== inputHash) throw new InstagramError('IG_PUBLISH_CHANGED', 'This upload has a different caption or cover. Resume it with the original settings, or export a new version.')
+      if (!saved) {
+        const media = await this.stagedMedia(dir, input, signal)
+        const fields = new URLSearchParams({ media_type: 'REELS', video_url: media.videoUrl, caption: input.caption })
+        if (media.coverUrl) fields.set('cover_url', media.coverUrl)
+        else if (input.cover.kind === 'frame') fields.set('thumb_offset', String(input.cover.offsetMs))
+        const data = object(await this.graph(`${c.accountId}/media`, { method: 'POST', body: fields }, signal))
+        saved = { state: 'processing', accountId: c.accountId, containerId: id(data.id), inputHash }
+        await saveReceipt(dir, input.version, saved)
+      }
+      let finished = false
+      // Meta recommends once per minute, for at most five minutes. No busy polling.
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const data = object(await this.graph(`${saved.containerId}?fields=status_code`, { method: 'GET' }, signal))
+        if (data.status_code === 'FINISHED') { finished = true; break }
+        if (data.status_code === 'ERROR' || data.status_code === 'EXPIRED')
+          throw new InstagramError('IG_CONTAINER', 'Instagram could not process this video, or its upload expired. Export a new version before trying again.')
+        if (data.status_code !== 'IN_PROGRESS') return invalidResponse()
+        if (attempt < 5) await delay(60_000, undefined, { signal })
+      }
+      if (!finished) throw new InstagramError('IG_PROCESSING', 'Instagram is still processing the video. Try this version again later to resume checking it.')
+      signal.throwIfAborted()
+      await saveReceipt(dir, input.version, { ...saved, state: 'publishing' })
+      let postId: string
+      let dispatched = false
+      try {
+        postId = id(object(await this.graph(`${c.accountId}/media_publish`, { method: 'POST', body: new URLSearchParams({ creation_id: saved.containerId }) }, signal, () => { dispatched = true })).id)
+      } catch (e) {
+        // A definite rejection did not publish. A lost response may have, so keep the publishing receipt.
+        if (!dispatched || (e instanceof InstagramError && ['IG_RATE_LIMIT', 'IG_TOKEN', 'IG_PERMISSION', 'IG_INPUT'].includes(e.code))) {
+          await saveReceipt(dir, input.version, { ...saved, state: 'processing' })
+          throw e
+        }
+        throw new InstagramError('IG_PUBLISH_UNKNOWN', 'Instagram did not confirm whether this reel was published. Check Instagram before retrying. This version is blocked to prevent a duplicate post.')
+      }
+      const post = { version: input.version, accountId: c.accountId, postId, publishedAt: new Date(this.now()).toISOString() }
+      try {
+        await saveReceipt(dir, input.version, { ...saved, state: 'published', post })
+        await this.ensureOutcome(dir, post)
+      } catch {
+        throw new InstagramError('IG_PUBLISHED_UNSAVED', `Instagram published post ${postId}, but its local record could not be saved. Do not publish it again. Restore disk access and keep this post ID.`)
+      }
+      return post
+    })
+  }
+  private async ensureOutcome(dir: string, post: InstagramPost): Promise<void> {
+    // A retry after a local write failure must keep insights already collected for this post.
+    const saved = await readObject(join(dir, 'outcomes.json'))
+    if (saved && object(object(saved.versions)[`v${post.version}`] ?? {})[post.postId] !== undefined) return
+    await saveOutcome(dir, { ...post, platform: 'instagram', apiVersion: INSTAGRAM_VERSION, observedAt: null, metrics: null })
+  }
+  insights(slug: string, version: number, postId: string): Promise<InstagramOutcome> {
+    return this.run(async (signal) => {
+      await this.config()
+      id(postId)
+      const dir = await this.project(slug, version)
+      const c = await this.credentials()
+      const saved = await receipt(dir, version)
+      if (saved?.state !== 'published' || saved.accountId !== c.accountId || saved.post.postId !== postId)
+        throw new InstagramError('IG_POST', 'This post is not linked to that project version and Instagram account.')
+      const query = new URLSearchParams({ metric: Object.values(METRICS).join(','), period: 'lifetime' })
+      const data = object(await this.graph(`${postId}/insights?${query}`, { method: 'GET' }, signal))
+      if (!Array.isArray(data.data)) return invalidResponse()
+      const values = new Map<string, number | null>()
+      for (const entry of data.data) {
+        const metric = object(entry)
+        const name = text(metric.name)
+        if (values.has(name)) return invalidResponse()
+        const raw = metric.total_value !== undefined ? object(metric.total_value).value
+          : Array.isArray(metric.values) && metric.values.length === 1 ? object(metric.values[0]).value
+          : Array.isArray(metric.values) && metric.values.length === 0 ? null : invalidResponse()
+        if (raw !== null && (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0)) return invalidResponse()
+        values.set(name, raw)
+      }
+      const metrics: InstagramMetrics = {
+        plays: values.get(METRICS.plays) ?? null, reach: values.get(METRICS.reach) ?? null, likes: values.get(METRICS.likes) ?? null,
+        comments: values.get(METRICS.comments) ?? null, shares: values.get(METRICS.shares) ?? null, saves: values.get(METRICS.saves) ?? null,
+        averageWatchTimeMs: values.get(METRICS.averageWatchTimeMs) ?? null, totalWatchTimeMs: values.get(METRICS.totalWatchTimeMs) ?? null,
+        skipRatePercent: values.get(METRICS.skipRatePercent) ?? null
+      }
+      const outcome: InstagramOutcome = { ...saved.post, platform: 'instagram', apiVersion: INSTAGRAM_VERSION, observedAt: new Date(this.now()).toISOString(), metrics }
+      signal.throwIfAborted()
+      await saveOutcome(dir, outcome)
+      return outcome
+    })
+  }
+}
