@@ -87,6 +87,7 @@ export interface SaveConnectionResult {
 /** Mirrors Electron's safeStorage. */
 export interface SecretStore {
   isEncryptionAvailable(): boolean
+  getSelectedStorageBackend?(): string
   encryptString(s: string): Buffer
   decryptString(b: Buffer): string
   getSelectedStorageBackend?(): string
@@ -98,6 +99,8 @@ export interface AI {
   setActive(id: ProviderStatus['id'], connectionId?: string): Promise<void>
   signInChatGPT(openExternal: (url: string) => Promise<void>): Promise<ProviderStatus>
   signOutChatGPT(): Promise<void>
+  stockProviders(): Promise<{ id: 'pexels' | 'pixabay' | 'openverse'; connected: boolean }[]>
+  setStockKey(provider: 'pexels' | 'pixabay', key: string | null): Promise<void>
   setClaudeKey(key: string | null): Promise<ProviderStatus>
   /** `opts.basic`: the simple edit without a model, whatever editor is connected. */
   /** `opts.pauseOn`: an AI failure the app pauses on (a plan at its limit, no internet), thrown instead of a basic version. */

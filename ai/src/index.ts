@@ -1,4 +1,5 @@
 // @reelstudio/ai: providers, prompts, tools and the editor agent loop (docs/architecture.md sections 6 and 8).
+import { StockSearch, StockProvider } from './stock';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
@@ -26,6 +27,8 @@ import * as editor from './editor';
 import { refuseIfOpen } from './owner';
 
 export * from './types';
+export { StockSearch } from './stock';
+export type { StockProvider, StockKind, StockResult } from './stock';
 export * from './project';
 export * from './version-merge';
 export { refuseIfOpen, OWNER_LOCK } from './owner';
@@ -200,7 +203,8 @@ export function createAI(opts: CreateAIOptions) {
     locks.set(key, tail);
     return run;
   }
-  const deps = (host: EngineHost, owner?: string, stuck?: () => unknown): editor.EditorDeps => ({ host, owner, stuck, prompts, style, fetchImpl: opts.fetch, finalRender: opts.finalRender, maxSteps: opts.maxSteps, tokenBudget: opts.tokenBudget, lookup: opts.lookup });
+  const stockSearch = new StockSearch({ settingsDir: opts.settingsDir, key: stockKey, fetchImpl: opts.fetch });
+  const deps = (host: EngineHost, owner?: string, stuck?: () => unknown): editor.EditorDeps => ({ host, owner, stuck, prompts, style, stockSearch, fetchImpl: opts.fetch, finalRender: opts.finalRender, maxSteps: opts.maxSteps, tokenBudget: opts.tokenBudget, lookup: opts.lookup });
   function edit<T>(owner: string | undefined, run: (d: editor.EditorDeps) => Promise<T>): Promise<T> {
     const engine = editHost(opts.host, owner);
     return engine.settle(run(deps(engine.host, owner, engine.stuck)));
@@ -286,6 +290,16 @@ export function createAI(opts: CreateAIOptions) {
       });
     if ((await ask([{ type: 'text', text: 'Say OK.' }])) === 'busy') return false;
     return (await ask([{ type: 'text', text: 'Say OK.' }, { type: 'image', mime: 'image/png', base64: PIXEL_PNG }]).catch(() => 'refused')) === 'answered';
+  }
+
+  async function stockKey(provider: 'pexels' | 'pixabay'): Promise<string | null> {
+    if (!protectedSecretStore(opts.secretStore)) return null;
+    try { return opts.secretStore.decryptString(await fsp.readFile(path.join(opts.settingsDir, `${provider}-key.bin`))); }
+    catch { return null; }
+  }
+
+  function protectedSecretStore(store: SecretStore | undefined): store is SecretStore {
+    return !!store && store.isEncryptionAvailable() && store.getSelectedStorageBackend?.() !== 'basic_text';
   }
 
   async function statusOf(id: ProviderId): Promise<ProviderStatus> {
@@ -544,6 +558,18 @@ export function createAI(opts: CreateAIOptions) {
       await siwc.signOut();
       const s = await settings();
       if (s.active === 'chatgpt') await saveSettings({ active: undefined });
+    },
+    async stockProviders(): Promise<{ id: StockProvider; connected: boolean }[]> {
+      return [{ id: 'pexels', connected: !!await stockKey('pexels') }, { id: 'pixabay', connected: !!await stockKey('pixabay') }, { id: 'openverse', connected: true }];
+    },
+    async setStockKey(provider: 'pexels' | 'pixabay', key: string | null): Promise<void> {
+      if (!['pexels', 'pixabay'].includes(provider) || (key !== null && typeof key !== 'string')) throw new AIError('bad_stock_key', 'Choose Pexels or Pixabay and enter an API key.');
+      const file = path.join(opts.settingsDir, `${provider}-key.bin`);
+      const trimmed = key?.trim();
+      if (!trimmed) { await fsp.rm(file, { force: true }); return; }
+      if (!protectedSecretStore(opts.secretStore)) throw new AIError('no_secure_storage', 'This computer does not have a protected password store, so the stock API key was not saved.');
+      try { await writeFileAtomic(file, opts.secretStore.encryptString(trimmed), 0o600); }
+      catch { throw new AIError('stock_key_save_failed', 'The stock API key could not be saved securely. Try again.'); }
     },
     async setClaudeKey(key: string | null): Promise<ProviderStatus> {
       const trimmed = key?.trim() || null;

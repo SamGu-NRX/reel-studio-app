@@ -218,6 +218,8 @@ export const createMockAI: CreateAI = ({ host }) => {
       throw { code: 'NOT_READY', userMessage: 'Signing in with ChatGPT is not ready in this build yet. Your reels still work without it.' }
     },
     async signOutChatGPT() {},
+    async stockProviders() { return [{ id: 'pexels', connected: false }, { id: 'pixabay', connected: false }, { id: 'openverse', connected: true }] },
+    async setStockKey() { throw { code: 'NOT_READY', userMessage: 'Stock API keys need the AI package. Reinstall Reel Studio and try again.' } },
     async setClaudeKey(key) {
       if (!key) return { id: 'none', connected: true, label: 'No AI' }
       throw { code: 'NOT_READY', userMessage: 'Claude keys are not ready in this build yet. Your reels still work without it.' }

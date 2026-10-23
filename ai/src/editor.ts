@@ -1,4 +1,5 @@
 // High-level editor tasks: firstEdit, applyNote, writeScript, pickTakes, and the no-AI path.
+import { StockSearch } from './stock';
 import * as path from 'node:path';
 import { AgentEvent, AgentResult, AIError, EngineHost, ImagePart, ModelProvider, Phase, ScriptResult, UserFacingError } from './types';
 import { effectiveTokens, runAgent, RunAgentResult, DEFAULT_TOKEN_BUDGET } from './agent';
@@ -28,6 +29,7 @@ export interface EditorDeps {
   prompts: Prompts;
   style: StyleStore;
   fetchImpl?: typeof fetch;
+  stockSearch?: StockSearch;
   maxSteps?: number;
   /** render a full-quality export after a first edit (default true); a note is always saved with its final video */
   finalRender?: boolean;
@@ -120,7 +122,7 @@ async function cacheAnalysis(projectDir: string, result: any): Promise<void> {
 function newCtx(deps: EditorDeps, projectDir: string, provider: ModelProvider | null, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, maxDraftRenders?: number): ToolContext {
   return {
     projectDir, host: deps.host, style: deps.style, emit: onEvent, signal, state: newToolState(),
-    supportsImages: provider?.supportsImages ?? false, fetchImpl: deps.fetchImpl, lookupImpl: deps.lookup, maxDraftRenders,
+    supportsImages: provider?.supportsImages ?? false, fetchImpl: deps.fetchImpl, stockSearch: deps.stockSearch, lookupImpl: deps.lookup, maxDraftRenders,
   };
 }
 

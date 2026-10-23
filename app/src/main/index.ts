@@ -778,6 +778,9 @@ function registerIpc(): void {
   handle('ai:cancelCheck', () => ai.cancelCheck?.())
   changesAI('ai:signOutChatGPT', () => ai.signOutChatGPT())
   changesAI('ai:setClaudeKey', (_e, key: string | null) => ai.setClaudeKey(key))
+  // stock photo and footage keys (stock-search): saved by the AI package like the Claude key, never sent back
+  handle('ai:stockProviders', () => ai.stockProviders())
+  handle('ai:setStockKey', (_e, provider: 'pexels' | 'pixabay', key: string | null) => ai.setStockKey(provider, key))
   // The key goes from the page to the AI package once and never comes back.
   const text = (v: unknown): string => (typeof v === 'string' ? v : '')
   const connectionsNotReady = { code: 'NOT_READY', userMessage: 'Connecting your own AI server is not ready in this build yet. Your reels still work without it.' }
