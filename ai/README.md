@@ -45,6 +45,26 @@ click turns it on. A saved `active: 'claude-cli'` keeps working. Detection is ca
 Prompts are plain markdown in `ai/prompts/`, loaded at runtime. Packaged apps: ship the folder next to
 `dist/` (works inside asar) or at `<resources>/ai/prompts`; override with `REELSTUDIO_PROMPTS_DIR` or `promptsDir`.
 
+## Reading long tool results
+
+`get_transcript`, `get_project`, and `list_library` accept nullable `offset` and `limit` arguments.
+`offset` defaults to 0; `limit` defaults to 8192 and must be an integer from 1 to 8192.
+Offsets count UTF-16 code units in the complete formatted result. An offset beyond the result's length
+returns an error. An offset at its length returns an empty final page.
+
+Short results keep their existing format when both arguments are omitted or null. Longer results,
+and any request with an explicit offset or limit, return JSON with this shape:
+
+```json
+{"text":"...","page":{"offset":0,"limit":8192,"total":24000,"nextOffset":8192}}
+```
+
+Each page contains at most 8192 code units of text, keeping its serialized JSON below 64 KiB even
+when characters need escaping. Pass `nextOffset` as the next request's `offset` until it is null.
+Concatenate the `text` fields before reading the transcript or parsing a project or library's JSON.
+A page can split a Unicode surrogate pair; concatenating the text restores the original string.
+Paging reads current state on each call, so finish a read before editing its project or library.
+
 ## Engine commands used
 
 All with `--project <dir>`: `transcribe`, `analyze` (reads `work/analysis.json`), `autocut`, `render [--draft]`,
@@ -76,3 +96,26 @@ Anthropic adapter (mock HTTP SSE), Sign in with ChatGPT (mock OAuth/OIDC server:
 refresh rotation, revocation, errors), Responses API (namespaced tools, SSE, usage limit, retries), CLI protocol,
 agent loop with a scripted model, and replays of real recorded `claude -p` sessions (`fixtures/`).
 Re-record: `RECORD_LIVE=1 npx vitest run test/fixtures.test.ts`.
+
+## Dev MCP runners
+
+With the dev flag enabled, `ai-settings.json` may select `harness: "claude-code"` with
+`active: "claude-cli"`, or `harness: "codex"` with `active: "codex-cli"`.
+The dev CLI also accepts `--harness claude-code|codex` on `apply-note`.
+The first AI note checks a nonce round-trip through the selected CLI and relay before exposing
+editing tools. Failure logs its reason in a status event and selects the existing text provider
+for the rest of that app session. Cancelling the probe permits a new probe on the next note.
+
+Codex flags were checked against codex-cli 0.163.0. The runner uses `exec --sandbox read-only`,
+ignores user configuration and rules, and disables shell, image, browser, app, plugin and agent
+features. It forwards relay credentials through environment variables, not command arguments.
+This CLI still advertises `apply_patch`; no supported switch to remove it was established.
+The read-only sandbox remains required, and Codex remains dev only. MCP image delivery in Codex
+has not been verified, so its runner reports no image support.
+
+This base does not include #73. Its backend entry point is `ApplyNoteOptions.checkEdits` or the
+`checkEdits` dev setting, also exposed as `--check-edits` in the dev CLI. Claude edits are checked
+by Codex and Codex edits by Claude. The checker receives only project/transcript/frame reads and
+`report_check`; the main process rejects editing calls. Findings return to the editor for at most
+two repairs. An incomplete check discards the note. Findings left after the repair limit appear
+in the saved reply. This slice does not add the #73 settings interface or its check-history files.

@@ -1,8 +1,9 @@
 // High-level editor tasks: firstEdit, applyNote, writeScript, pickTakes, and the no-AI path.
 import * as path from 'node:path';
 import { AgentEvent, AgentResult, AIError, EngineHost, ModelProvider, Phase, ScriptResult, UserFacingError } from './types';
-import { runAgent, RunAgentResult } from './agent';
+import { DEFAULT_TOKEN_BUDGET, runAgent, RunAgentResult } from './agent';
 import { Harness, loopHarness } from './harness';
+import { MAX_REPAIRS, askHarnessChecker, repairTask, unresolvedLine } from './checker';
 import type { LookupFn } from './safety';
 import { Prompts } from './prompts';
 import { StyleStore } from './style';
@@ -38,6 +39,8 @@ export interface EditorDeps {
   fastNotes?: boolean;
   /** what runs a note's AI turns (default our own loop over the provider) */
   harness?: Harness;
+  /** read-only checker on the other MCP harness; used when checkEdits is requested */
+  checkerHarness?: Harness;
 }
 
 export interface EditResult extends AgentResult {
@@ -286,6 +289,8 @@ export interface ApplyNoteOptions {
   /** false: a rule the note asked to remember is only returned (styleRulesAdded), the host asks
    * first; default true saves it to My style with the note */
   saveStyleRules?: boolean;
+  /** run the configured read-only checker and up to two editor repairs before saving */
+  checkEdits?: boolean;
 }
 
 /** What a note says in notes.md: its words, or what was attached when it has none. */
@@ -328,7 +333,7 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     let ctx = await begin();
     const { p: p0 } = await load(ctx);
     // "smaller captions", "quieter music": one direct change and the final render, no AI turns
-    const fast = deps.fastNotes === false || attached.length ? null : planFastNote(note, p0);
+    const fast = deps.fastNotes === false || attached.length || opts.checkEdits ? null : planFastNote(note, p0);
     if (fast) {
       onEvent({ type: 'status', message: 'Making your change', pct: 10, phase: 'final' });
       let ok = true;
@@ -364,7 +369,40 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
         version: baseVersion, styleRulesAdded: [], styleSuggestions: [], changed: [],
       };
     }
-    const summary = withStyleEcho(r.finished || 'I saved your preference.', ctx.state);
+    let said = r.finished || 'I saved your preference.';
+    if (opts.checkEdits && ctx.state.changed.size) {
+      const checker = deps.checkerHarness;
+      if (!checker) throw new AIError('check_failed', 'Connect the other AI app before double-checking this note. Your video is unchanged.');
+      // Checker and repair runs spend the note's remaining token allowance.
+      const budget = deps.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
+      let spent = r.tokens;
+      const count = (tokens: number) => {
+        spent += tokens;
+        if (spent > budget) throw new AIError('token_budget', 'This edit was taking too much AI work, so I stopped to protect your AI usage.');
+      };
+      for (let repairs = 0; ; repairs++) {
+        onEvent({ type: 'status', message: 'Double-checking your change', pct: 85, phase: 'edit' });
+        // The checker cannot render: prepare the current private candidate before its read-only run.
+        if (!ctx.state.renders.length || ctx.state.dirty?.size) await doRender(ctx, true, false);
+        const verdict = await askHarnessChecker(checker, {
+          system: `${deps.prompts.render('checker')}\n\n${DATA_BOUNDARY}`,
+          task: `## The user's note\n${noteText}${files ? `\n\n${files}` : ''}`,
+          ctx, onEvent, signal, maxSteps: 12, tokenBudget: Math.max(0, budget - spent),
+        }, p0);
+        count(verdict.tokens);
+        if (verdict.ok) break;
+        if (repairs === MAX_REPAIRS) { said = `${said} ${unresolvedLine(verdict.findings)}`; break; }
+        onEvent({ type: 'status', message: 'Fixing what the check found', pct: 87, phase: 'edit' });
+        ctx.state.finished = null;
+        const repair = await harness.run({ system: await systemPrompt(deps), task: repairTask(noteText, verdict.findings, files), taskImages: images,
+          ctx, onEvent, signal, tools: TOOL_NAMES.filter((name) => name !== 'add_style_rule'), maxSteps: 12, tokenBudget: Math.max(0, budget - spent),
+          preload: ['get_project', 'get_transcript'] });
+        count(repair.tokens);
+        if (repair.stoppedBy !== 'finish') throw unfinished(ctx.state);
+        said = repair.finished || said;
+      }
+    }
+    const summary = withStyleEcho(said, ctx.state);
     // this note's files, plus files attached to an earlier note that THIS note put in the video ("when I say X")
     const placedNow = placedAssets(await loadProject(projectDir, ctx.note!.file));
     const recorded = [...refs, ...earlier.map((a) => a.asset).filter((r) => placedNow.has(r) && !refs.includes(r))];

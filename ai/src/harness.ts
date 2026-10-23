@@ -1,9 +1,14 @@
 // A harness runs one agent task: it turns the model's tool calls into executeTool calls on the
 // task's ToolContext and returns the results to the model. `loop` is our own loop (agent.ts) over
 // any ModelProvider; `claude-code` lets `claude -p` call the tools natively over MCP (mcp/claudeCode.ts).
-import { AgentEvent, ImagePart, ModelProvider } from './types';
+import { AgentEvent, ImagePart, ModelProvider, ToolSchema } from './types';
 import { runAgent, RunAgentResult } from './agent';
 import type { ToolContext } from './tools';
+
+export interface HarnessTool {
+  schema: ToolSchema;
+  execute(args: unknown): Promise<{ content: string; isError: boolean }>;
+}
 
 export interface HarnessRun {
   system: string;
@@ -14,6 +19,7 @@ export interface HarnessRun {
   /** allowlist of tool names, checked on every call */
   tools: string[];
   maxSteps: number;
+  customTools?: HarnessTool[];
   tokenBudget?: number;
   /** read-only tools run before the first model turn, their results appended to the task */
   preload?: string[];
@@ -23,7 +29,7 @@ export interface HarnessRun {
 }
 
 export interface Harness {
-  readonly id: 'loop' | 'claude-code';
+  readonly id: 'loop' | 'claude-code' | 'codex';
   readonly supportsImages: boolean;
   run(o: HarnessRun): Promise<RunAgentResult>;
 }

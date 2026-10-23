@@ -11,12 +11,14 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import type { HarnessTool } from '../harness';
 import { AgentEvent, ToolSchema } from '../types';
 import { executeTool, toolSchemas, ToolContext } from '../tools';
 import { PARALLEL_SAFE, STAGE, thinkingMessage } from '../agent';
 
 export interface McpRunOptions {
   ctx: ToolContext;
+  customTools?: HarnessTool[];
   /** the only tools this run may call; a call to any other is refused here, whatever the client was told */
   tools: string[];
   /** tool calls before every call but finish is refused */
@@ -73,7 +75,7 @@ export class McpRun {
   private readonly server: net.Server;
 
   private constructor(readonly dir: string, readonly socket: string, private readonly o: McpRunOptions) {
-    this.schemas = toolSchemas(o.tools);
+    this.schemas = [...toolSchemas(o.tools), ...(o.customTools ?? []).filter((t) => o.tools.includes(t.schema.name)).map((t) => t.schema)];
     this.server = net.createServer((s) => this.onConnection(s));
   }
 
@@ -173,7 +175,8 @@ export class McpRun {
       const stage = STAGE[name];
       if (stage) this.o.onEvent({ type: 'status', message: stage.message, pct: stage.pct, phase: 'edit' });
       try {
-        const r = await executeTool(ctx, name, args);
+        const custom = this.o.customTools?.find((t) => t.schema.name === name);
+        const r: Awaited<ReturnType<typeof executeTool>> = custom ? await custom.execute(args) : await executeTool(ctx, name, args);
         return { content: r.content, isError: r.isError, ...(r.images?.length ? { images: r.images.map((img) => ({ mime: img.mime, base64: img.base64 })) } : {}) };
       } catch (e) {
         // what ends the edit in runAgent (Stop, an AIError, a stuck engine) ends this run the same way
