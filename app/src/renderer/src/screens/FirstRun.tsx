@@ -1,10 +1,10 @@
 // The first run, staged in the Reel screen's own layout (ux-foundation-b.md section 4): a welcome; then the sample
-// is made in the player and the notes column, the way the person's own Version 1 will be; then the editor is
-// chosen beside it, which upgrades the sample; then the app opens on a new reel with no video yet.
+// is made in the player and the notes column the way an editor makes Version 1, so it shows everything the product
+// does; then the editor is chosen beside it; then the app opens on a new reel with no video yet.
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProviderInfo } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
-import { STEP_LABEL, type Step } from '../../../shared/steps'
+import type { Step } from '../../../shared/steps'
 import { reel, userMessage } from '../api'
 import { Icon } from '../components/icons'
 import { Logo } from '../components/brand'
@@ -15,12 +15,10 @@ import { createPlayhead, followVideo, usePlayhead, type Playhead } from '../comp
 import { useNotify } from '../App'
 import { Demo, freshSteps, type View } from '../components/first-run/demo'
 import { ModelLine } from '../components/first-run/ModelLine'
-import { EDITS, RAW_LEN, TRANSCRIPT, tokens } from '../components/first-run/sample'
+import { EDIT, RAW_LEN, TRANSCRIPT, tokens } from '../components/first-run/sample'
 import { sound } from '../components/first-run/sound'
-import { rememberSample } from '../components/first-run/handoff'
 import { byKeyboard, reducedMotion } from '../components/motion'
 import rawUrl from '../assets/sample/raw.mp4'
-import simpleUrl from '../assets/sample/simple.mp4'
 import aiUrl from '../assets/sample/ai.mp4'
 import posterUrl from '../assets/sample/raw-poster.jpg'
 import coverUrl from '../assets/sample/cover.jpg'
@@ -32,7 +30,7 @@ import kneadUrl from '../assets/sample/v_knead.jpg'
 import '../components/reel.css'
 import '../components/first-run/first-run.css'
 
-const URLS: Record<View, string> = { raw: rawUrl, simple: simpleUrl, ai: aiUrl }
+const URLS: Record<View, string> = { raw: rawUrl, v1: aiUrl }
 const CAPTION = 'Good bread needs four things and a little time.'
 const EASE_IN_OUT = 'cubic-bezier(.77,0,.175,1)'
 const canFly = () => !reducedMotion() && !byKeyboard() && window.innerWidth > 860
@@ -102,6 +100,9 @@ async function fly(src: string, from: DOMRect, to: DOMRect): Promise<void> {
   )
 }
 
+/** The first run's three parts, named at the top of the notes column. */
+const WHERE = ['The sample', 'Your editor', 'Your reel']
+
 /** Get started: where the welcome's middle reel and the player were, or no flight (reduced motion, keyboard, narrow). */
 type Start = { flight: { from: DOMRect; to: DOMRect } | null }
 type Pane = 'sample' | 'editor'
@@ -123,7 +124,7 @@ function Stage({
   const notify = useNotify()
   const toks = useMemo(tokens, [])
   const segs = useMemo(() => TRANSCRIPT.map((s) => ({ id: s.id, toks: toks.flatMap((t, i) => (t.seg === s.id ? [{ t, i }] : [])) })), [toks])
-  // the two pictures the editor's version adds: the loaf after "bread.", the hands after the kept take's "hands,"
+  // the two pictures Version 1 adds: the loaf after "bread.", the hands after the kept take's "hands,"
   const picAt = useMemo(
     () =>
       new Map([
@@ -138,7 +139,6 @@ function Stage({
   const [paused, setPaused] = useState(false)
   const [held, setHeld] = useState(false)
   const [view, setView] = useState<View>('raw')
-  const [upgrade, setUpgrade] = useState<'making' | 'done' | null>(null)
   const [ai, setAi] = useState<ProviderInfo | null>(null)
   const [leaving, setLeaving] = useState(false)
   const [soundOn, setSoundOn] = useState(sound.on)
@@ -188,8 +188,7 @@ function Stage({
         view: setView,
         held: setHeld,
         finished: () => setFinished(true),
-        paused: setPaused,
-        upgrade: setUpgrade
+        paused: setPaused
       }
     )
     demo.current = d
@@ -239,10 +238,7 @@ function Stage({
     if (pane === 'editor') heading.current?.focus({ preventScroll: true })
   }, [pane])
 
-  const connected = (p: ProviderInfo) => {
-    setAi(p)
-    void demo.current?.upgrade()
-  }
+  const connected = (p: ProviderInfo) => setAi(p)
   // An editor already on from before counts as connected; one switched off while here does not.
   useEffect(() => {
     if (pane !== 'editor') return
@@ -256,7 +252,6 @@ function Stage({
   const finish = async () => {
     demo.current?.holdEnd()
     demo.current?.setPaused(true)
-    rememberSample(upgrade !== null)
     setLeaving(true)
     if (!reducedMotion() && !byKeyboard()) await new Promise((r) => window.setTimeout(r, LEAVE_MS))
     try {
@@ -276,7 +271,7 @@ function Stage({
 
   const current = steps.find((s) => s.state === 'now')
   const doneCount = steps.filter((s) => s.state === 'done' || s.state === 'skipped').length
-  const version = upgrade === 'done' ? 2 : finished ? 1 : null
+  const version = finished ? 1 : null
   const hold = (on: boolean) => (on ? demo.current?.holdStart() : demo.current?.holdEnd())
 
   return (
@@ -356,10 +351,24 @@ function Stage({
         </section>
 
         <div className="ncol fr-col">
-          <div className="notes-h">
+          {/* the top of the column says where in the first run this is and what the column shows; the thread follows
+              under it and the progress or the picker sits at the bottom, where a reel's note box is */}
+          <div className="notes-h fr-h">
+            <ol className="fr-where" aria-label="Getting started" data-testid="first-run-where">
+              {WHERE.map((w, i) => (
+                <li key={w} aria-current={i === (pane === 'sample' ? 0 : 1) ? 'step' : undefined} className={i < (pane === 'sample' ? 0 : 1) ? 'done' : undefined}>
+                  {w}
+                </li>
+              ))}
+            </ol>
             <h2 ref={heading} tabIndex={-1} id="fr-h">
               {pane === 'sample' ? 'How a reel gets made' : 'Choose your editor'}
             </h2>
+            <p className="fr-lead" data-testid="first-run-lead">
+              {pane === 'sample'
+                ? 'A raw take of someone talking, made into Version 1 the way your editor makes yours.'
+                : 'Your editor picks your best takes, adds pictures and makes the changes you ask for, on your own Claude or ChatGPT plan.'}
+            </p>
           </div>
           <div className="log fr-log" role="log" aria-labelledby="fr-h">
             <div className="fr-log-in">
@@ -379,7 +388,7 @@ function Stage({
                   <span className="sep" aria-hidden>
                     ·
                   </span>
-                  <span className="t">0:24 down to 0:12</span>
+                  <span className="t">0:24 down to {EDIT.len}</span>
                 </div>
               ) : (
                 <div className="nt-res quiet" aria-busy>
@@ -433,34 +442,11 @@ function Stage({
                 ))}
               </p>
             </article>
-            {upgrade && (
-              <article className="nt">
-                {upgrade === 'done' ? (
-                  <div className="nt-res enter" data-testid="sample-v2">
-                    <span className="nk ok">
-                      <Icon name="check" size={12} stroke={2.4} />
-                    </span>
-                    <b className="v">Version 2</b>
-                    <span className="sep" aria-hidden>
-                      ·
-                    </span>
-                    <span className="t wrap">What an editor adds: a better take and two pictures</span>
-                  </div>
-                ) : (
-                  <div className="nt-res quiet" aria-busy>
-                    <span className="nk">
-                      <span className="spin" />
-                    </span>
-                    <span className="t">Making Version 2</span>
-                  </div>
-                )}
-              </article>
-            )}
             </div>
           </div>
 
           <div className="cbox bare">
-            <div className={`stripwrap${!finished || upgrade === 'making' ? ' on' : ''}`}>
+            <div className={`stripwrap${!finished ? ' on' : ''}`}>
               <div>
                 {!finished && (
                   <>
@@ -477,22 +463,15 @@ function Stage({
                       </span>
                       <span className="spin light" aria-hidden />
                       <b>Making Version 1</b>
-                      <span className="m">{current ? ` · ${STEP_LABEL[current.id]}` : ''}</span>
+                      {/* the list above names the step; the strip says how far along */}
+                      <span className="m">{current ? ` · Step ${steps.indexOf(current) + 1} of ${steps.length}` : ''}</span>
                     </div>
                   </>
-                )}
-                {finished && upgrade === 'making' && (
-                  <div className="strip" role="status" data-testid="note-progress">
-                    <span className="spin light" aria-hidden />
-                    <b>Making Version 2</b>
-                    <span className="m"> · {STEP_LABEL.edit}</span>
-                  </div>
                 )}
               </div>
             </div>
             {pane === 'editor' && (
               <div className="connect-cin fr-pick" data-testid="composer-connect">
-                <p className="fr-why">Your editor picks your best takes, adds pictures and makes the changes you ask for, on your own Claude or ChatGPT plan.</p>
                 <ConnectAI onConnected={connected} />
               </div>
             )}
@@ -526,10 +505,10 @@ function Stage({
 /** The time on the sample and its length, as the log states it: one render a second while it plays. */
 function Clock({ playhead, view }: { playhead: Playhead; view: View }) {
   const second = usePlayhead(playhead, Math.floor)
-  const dur = view === 'raw' ? RAW_LEN : EDITS[view].dur
+  const dur = view === 'raw' ? RAW_LEN : EDIT.dur
   return (
     <span className="tc" data-testid="time">
-      {clock(Math.min(second, Math.floor(dur)))} <span>/ {view === 'raw' ? clock(RAW_LEN) : EDITS[view].len}</span>
+      {clock(Math.min(second, Math.floor(dur)))} <span>/ {view === 'raw' ? clock(RAW_LEN) : EDIT.len}</span>
     </span>
   )
 }

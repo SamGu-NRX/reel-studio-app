@@ -89,8 +89,9 @@
 .ring .rt { position: absolute; left: 48px; top: 10px; background: #fff; color: var(--ink); font-size: var(--fs-sm); font-weight: 650; padding: 3px 7px; border-radius: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* The timeline, as wide as the stage: phrase ticks, version marks (✓), your waiting notes (yellow), a dragged range. */
-.tl { position: relative; flex: none; height: 28px; margin-top: 12px; cursor: pointer; touch-action: none; outline: none; }
-html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 4px; }
+.tl { position: relative; flex: none; height: 28px; margin-top: 12px; cursor: pointer; touch-action: none; }
+.tl-track { position: absolute; inset: 0; outline: none; }
+html.kb .tl-track:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 4px; }
 .tl-ticks { position: absolute; left: 0; top: 2px; width: 100%; height: 6px; overflow: visible; }
 .tl-ticks path { stroke: var(--ink-4); stroke-width: 1; vector-effect: non-scaling-stroke; fill: none; }
 .tl-rail, .tl-fill { position: absolute; left: 0; right: 0; top: 14px; height: 4px; border-radius: 4px; pointer-events: none; }
@@ -102,17 +103,22 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .tl-head { position: absolute; inset: 0; pointer-events: none; }
 .tl-head i { position: absolute; left: -6px; top: 10px; width: 12px; height: 12px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 3px var(--paper); pointer-events: auto; cursor: grab; }
 .tl-sel { position: absolute; top: 12px; height: 8px; border-radius: 3px; background: var(--marker); pointer-events: none; }
+/* Beside the slider (Timeline.tsx): each mark is a 24 px target around its 14 px dot. */
+.tl-marks { position: absolute; inset: 0; pointer-events: none; }
 .tl-mark {
-  position: absolute; top: 9px; width: 14px; height: 14px; margin-left: -7px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center;
-  box-shadow: 0 0 0 2px var(--paper); cursor: pointer; z-index: 1;
+  position: absolute; top: 4px; width: 24px; height: 24px; margin-left: -12px; padding: 0; border: 0; border-radius: 50%; background: none; display: grid; place-items: center;
+  cursor: pointer; z-index: 1; pointer-events: auto; color: var(--green-ink);
 }
-.tl-mark.made { background: var(--green-tint); color: var(--green-ink); }
-.tl-mark.waiting { background: var(--marker); cursor: default; }
+.tl-mark::before { content: ''; position: absolute; left: 5px; top: 5px; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 0 2px var(--paper); }
+.tl-mark.made::before { background: var(--green-tint); }
+.tl-mark.waiting::before { background: var(--marker); }
+.tl-mark > svg { position: relative; }
+html.kb .tl-mark:focus-visible { outline: 2px solid var(--ink); outline-offset: 0; }
 @media (hover: hover) and (pointer: fine) {
-  .tl-mark { transition: transform 150ms var(--ease-out); }
-  .tl-mark:hover { transform: scale(1.15); }
+  .tl-mark::before { transition: transform 150ms var(--ease-out); }
+  .tl-mark:hover::before { transform: scale(1.15); }
 }
-.tl-mark .n { position: absolute; top: -5px; right: -6px; min-width: 12px; height: 12px; border-radius: 6px; background: var(--ink); color: #fff; font-size: 9px; font-weight: 700; line-height: 12px; padding: 0 3px; }
+.tl-mark .n { position: absolute; top: 0; right: -1px; min-width: 12px; height: 12px; border-radius: 6px; background: var(--ink); color: #fff; font-size: 9px; font-weight: 700; line-height: 12px; padding: 0 3px; }
 .tl-tip {
   position: absolute; bottom: calc(100% + 8px); left: 50%; translate: -50% 0; z-index: 5; display: grid; gap: 1px; text-align: left; white-space: nowrap; max-width: 260px;
   background: var(--surface); color: var(--ink); box-shadow: var(--e2); border-radius: 8px; padding: 6px 9px; font-size: var(--fs-sm); line-height: 16px; pointer-events: none;
@@ -132,7 +138,7 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .transport .tc span { color: var(--ink-3); font-weight: 500; }
 .transport .sp { flex: 1; }
 .transport .speed {
-  height: 28px; min-width: 40px; padding: 0 8px; border: 0; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--ink);
+  height: 32px; min-width: 40px; padding: 0 8px; border: 0; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--ink);
   font: inherit; font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer;
 }
 .transport .speed.on { background: var(--ink); color: #fff; box-shadow: none; }
@@ -193,14 +199,15 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .nk.stop { background: var(--sunk); color: var(--ink-2); }
 .nk.pause { background: var(--amber-tint); color: var(--amber); }
 .nk .wait-dot { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink-4); }
-.nt-res .v { border: 0; background: none; padding: 0; font: inherit; color: var(--ink); font-weight: 650; white-space: nowrap; cursor: pointer; flex: none; }
+/* text buttons in a line of the log: 24 px tall targets (WCAG 2.5.8) though they read as words */
+.nt-res .v { border: 0; background: none; padding: 0; min-height: 24px; display: inline-flex; align-items: center; font: inherit; color: var(--ink); font-weight: 650; white-space: nowrap; cursor: pointer; flex: none; }
 @media (hover: hover) and (pointer: fine) { .nt-res .v:hover { text-decoration: underline; text-underline-offset: 3px; } }
 .nt-res.cur .v { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
 .nt-res .t { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-width: 0; flex: 0 1 auto; }
 .nt-res .sep { color: var(--ink-4); flex: none; margin: 0 -2px; }
 .nt-res .t.wrap { white-space: normal; overflow-wrap: anywhere; }
 .nt-res .lk, .reply-acts .lk, .dacts .lk, .script .lk {
-  flex: none; border: 0; background: none; padding: 0; font: inherit; font-size: var(--fs-base); font-weight: 600; color: var(--ink-2); display: inline-flex; align-items: center; gap: 5px;
+  flex: none; border: 0; background: none; padding: 0; min-height: 24px; font: inherit; font-size: var(--fs-base); font-weight: 600; color: var(--ink-2); display: inline-flex; align-items: center; gap: 5px;
   text-decoration: underline; text-decoration-color: rgba(22, 30, 26, .3); text-underline-offset: 3px; white-space: nowrap; cursor: pointer;
 }
 @media (hover: hover) and (pointer: fine) { :is(.nt-res, .reply-acts, .dacts, .script) .lk:not(:disabled):hover { color: var(--ink); text-decoration-color: currentColor; } }
@@ -275,9 +282,11 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .steps.on > div { opacity: 1; transform: none; }
 .steps ul { list-style: none; margin: 0; padding: 10px 12px 6px; font-size: var(--fs-base); }
 .steps.on + .strip { border-radius: 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12); }
-.steps li { display: flex; align-items: center; gap: 8px; min-height: 24px; white-space: nowrap; min-width: 0; }
-.steps li .sl { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.steps li .sr { margin-left: auto; padding-left: 10px; flex: none; color: rgba(255, 255, 255, .6); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.steps li { display: flex; align-items: flex-start; gap: 8px; min-height: 24px; padding: 3px 0; min-width: 0; line-height: var(--lh-base); }
+/* A label is never cut: one line at 1280 wide, and in a narrower column it wraps under itself. */
+.steps li .sl { min-width: 0; text-wrap: pretty; }
+.steps li > :is(.ok, .todo, .spin) { margin-top: 2.5px; }
+.steps li .sr { margin-left: auto; padding-left: 10px; flex: none; white-space: nowrap; color: rgba(255, 255, 255, .6); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .steps li .sr.amber { color: var(--amber-tint); }
 .steps li.st-now { color: #fff; font-weight: 600; }
 .steps li.st-todo, .steps li.st-skipped, .steps li.st-stopped { color: rgba(255, 255, 255, .55); }
@@ -306,9 +315,10 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 @starting-style { .tchip:not(.suggest) { opacity: 0; scale: .96; } }
 .tchip.suggest { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--ink-2); font-weight: 600; cursor: pointer; }
 .tchip-split .tchip.suggest:first-child { border-radius: 999px 0 0 999px; padding-right: 6px; }
-.tchip-split .tchip.caret { border-radius: 0 999px 999px 0; padding: 0 6px 0 5px; margin-left: -1px; }
+.tchip-split .tchip.caret { border-radius: 0 999px 999px 0; padding: 0 6px 0 5px; margin-left: -1px; min-width: 24px; justify-content: center; }
 @media (hover: hover) and (pointer: fine) { .tchip.suggest:not(:disabled):hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink-3); } }
-.tchip .x { width: 18px; height: 18px; margin-right: -4px; border: 0; background: none; border-radius: 50%; color: var(--marker-ink); display: grid; place-items: center; padding: 0; cursor: pointer; }
+.tchip .x { position: relative; width: 18px; height: 18px; margin-right: -4px; border: 0; background: none; border-radius: 50%; color: var(--marker-ink); display: grid; place-items: center; padding: 0; cursor: pointer; }
+.tchip .x::after { content: ''; position: absolute; inset: -3px; }
 .tchip .spot-n { width: 16px; height: 16px; margin-left: -4px; border-radius: 50%; background: var(--marker); display: grid; place-items: center; font-size: 10px; }
 .tchip-split .pop .kbd { font-size: 11px; }
 .send { width: 34px; height: 34px; border-radius: 999px; border: 0; display: grid; place-items: center; background: var(--sunk); color: var(--ink-3); flex: none; transition: transform 120ms var(--ease-out), background-color 120ms ease; }
@@ -345,8 +355,8 @@ html.kb :is(.acc > div, .stripwrap > div, .steps > div, .tchip, .spot, .draghand
 @media (prefers-reduced-motion: reduce) {
   .acc > div, .stripwrap > div, .steps > div { transform: none; transition-property: opacity; }
   .phone.landing .phone-screen > video.layer.loading { filter: none; }
-  .nt-res.enter { animation: line-fade 180ms ease both; }
   .spot { transition-property: opacity; }
   .helper .hb i { animation: none; width: 100%; opacity: .5; }
+  @keyframes line-in { from { opacity: 0; } }
+  @keyframes helper-run { from, to { transform: none; } }
 }
-@keyframes line-fade { from { opacity: 0; } }

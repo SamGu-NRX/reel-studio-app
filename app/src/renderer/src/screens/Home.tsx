@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import type { ProjectSummary } from '../../../shared/api'
 import { STILL_WORKING } from '../../../shared/live'
 import { dayLabel } from '../../../shared/notes-log'
+import { pausedWords } from '../../../shared/pause'
 import { reel, userMessage } from '../api'
 import { useNotify } from '../App'
 import type { Go } from '../nav'
@@ -10,7 +11,7 @@ import { Icon } from '../components/icons'
 import { TitleBarSlot } from '../components/titlebar'
 import { byKeyboard, reducedMotion } from '../components/motion'
 import { SampleReel } from '../components/SampleReel'
-import { PickFiles } from '../components/ui'
+import { IS_MAC, PickFiles } from '../components/ui'
 import { useModelStatus } from '../components/connect'
 import { createFromFiles, newReel } from './create'
 import '../components/home.css'
@@ -34,23 +35,15 @@ const stateOf = (p: ProjectSummary): State =>
 /** The reel can't move without you (Activity's first group). A pause that continues on its own is still Making. */
 const needsYou = (p: ProjectSummary): boolean => {
   const s = stateOf(p)
-  return s === 'novideo' || s === 'failed' || (s === 'paused' && !p.continuesAt)
+  return s === 'novideo' || s === 'failed' || (s === 'paused' && !p.pausedFor)
 }
-const inMaking = (p: ProjectSummary): boolean => stateOf(p) === 'making' || (stateOf(p) === 'paused' && !!p.continuesAt)
+const inMaking = (p: ProjectSummary): boolean => stateOf(p) === 'making' || (stateOf(p) === 'paused' && !!p.pausedFor)
 
 function leftWords(l: Live): string | null {
   if (l.overdue) return STILL_WORKING
   if (l.secondsLeft === null || l.secondsLeft < 0) return null
   if (l.secondsLeft < 20) return 'Almost done'
   return `About ${Math.max(1, Math.round(l.secondsLeft / 60))} min left`
-}
-
-/** "Continues at 3:40 PM" today; on a later day just the day, which fits the card's one line. */
-function continuesWords(iso: string, now: Date): string {
-  const d = new Date(iso)
-  const days = Math.round((new Date(d.toDateString()).getTime() - new Date(now.toDateString()).getTime()) / 86_400_000)
-  if (days <= 0) return `Continues at ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-  return `Continues ${days === 1 ? 'tomorrow' : d.toLocaleDateString([], { weekday: 'long' })}`
 }
 
 /** How many card columns fit: every grid on the page shares them, so Activity's groups line up. */
@@ -335,9 +328,11 @@ function Card({ p, live, now, onOpen, onResume }: { p: ProjectSummary; live?: Li
     meta = `Making Version ${p.version + 1}`
     label += `, making Version ${p.version + 1}${left ? `, ${left.toLowerCase()}` : ''}`
   } else if (state === 'paused') {
-    // continuing on its own, the pause mark on the picture says Paused and the line says when (it doesn't fit both)
-    meta = p.continuesAt ? (
-      <span className="amber">{continuesWords(p.continuesAt, now)}</span>
+    // continuing on its own, the pause mark on the picture says Paused and the line says when or what for (it doesn't fit both)
+    meta = p.pausedFor ? (
+      <span className="amber" data-testid="card-paused-for">
+        {pausedWords(p.pausedFor, now, IS_MAC ? 'Mac' : 'PC')}
+      </span>
     ) : (
       <span className="amber">
         Paused ·{' '}
@@ -346,7 +341,7 @@ function Card({ p, live, now, onOpen, onResume }: { p: ProjectSummary; live?: Li
         </button>
       </span>
     )
-    label += ', paused'
+    label += p.pausedFor ? `, paused. ${pausedWords(p.pausedFor, now, IS_MAC ? 'Mac' : 'PC')}` : ', paused'
   } else if (state === 'failed') {
     meta = (
       <span className="red">

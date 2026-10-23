@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { BIN_FOLDERS, binDir, projectsDir, libraryDir, reelStudioRoot } from './paths'
 import type {
   ChatMessage,
+  PausedFor,
   ChecklistItem,
   NoteAttachment,
   NoteOutcome,
@@ -47,8 +48,8 @@ export interface AppState {
   queue?: QueuedNote[]
   /** The queue waits for "Run next": after Stop, a failed note, or a restart. */
   queueHeld?: boolean
-  /** Paused without you (ISO): the job continues on its own at this time. */
-  pausedUntil?: string
+  /** Paused without you: why, and when it continues on its own (main/pause.ts). Cleared when any job starts. */
+  paused?: PausedFor
   /** Each time a version was posted. Insights joins the sidebar once any reel has one (ux-foundation-b.md section 6);
    * posting itself is not built yet (spec.md section 11), so nothing writes this today. */
   posted?: { version: number; platform: 'instagram'; at: string }[]
@@ -277,6 +278,49 @@ export async function createPlanned(): Promise<string> {
     s.createdAt = new Date().toISOString()
   })
   return slug
+}
+
+/**
+ * A New reel nobody has done anything with: still "New reel", nothing planned or queued, no video and nothing else
+ * in its folder. Leaving one, or pressing New reel again, must not leave a pile of empty cards on Reels.
+ */
+export function isUntouchedPlanned(s: AppState, files: string[]): boolean {
+  return (
+    s.status === 'planned' &&
+    !s.job &&
+    s.title === PLANNED_TITLE &&
+    s.chat.length === 0 &&
+    !s.queue?.length &&
+    files.every((f) => f === 'app.json')
+  )
+}
+
+/** Removes `slug` if it is an untouched New reel and no job runs on it. Read and removal share the app.json lane, so a
+ * write that touches it first (a script, a rename, a video) keeps it. */
+export async function discardIfUntouched(slug: string, running: (slug: string) => boolean): Promise<boolean> {
+  const dir = projectDir(slug)
+  return serialized(join(dir, 'app.json'), async () => {
+    if (running(slug)) return false
+    const files = await fs.readdir(dir).catch(() => null)
+    if (!files || !isUntouchedPlanned(await readAppStateNow(join(dir, 'app.json')), files)) return false
+    await fs.rm(dir, { recursive: true, force: true })
+    return true
+  })
+}
+
+/** New reel: an untouched one already there is the new reel (⌘N twice opens the same one); otherwise a new one. */
+export async function planReel(running: (slug: string) => boolean): Promise<string> {
+  const slugs = await fs.readdir(projectsDir()).catch(() => [] as string[])
+  for (const slug of slugs) {
+    try {
+      projectDir(slug)
+    } catch {
+      continue
+    }
+    const files = await fs.readdir(projectDir(slug)).catch(() => null)
+    if (files && !running(slug) && isUntouchedPlanned(await readAppState(slug), files)) return slug
+  }
+  return createPlanned()
 }
 
 /** The newest script the editor wrote for this reel. */
@@ -586,7 +630,7 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
       take: null,
       versionAt: null,
       series: null,
-      continuesAt: null,
+      pausedFor: null,
       posted: !!st.posted?.length
     }
   }
@@ -616,7 +660,7 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
     take: !last?.cover && srcPath && existsSync(srcPath) ? mediaUrl(srcPath) : null,
     versionAt: last?.createdAt ?? null,
     series: typeof p.series === 'string' && p.series.trim() ? p.series.trim() : null,
-    continuesAt: status === 'interrupted' && st.pausedUntil ? st.pausedUntil : null,
+    pausedFor: st.paused ?? null,
     posted: !!st.posted?.length
   }
 }
@@ -727,7 +771,7 @@ export async function detail(slug: string): Promise<ProjectDetail> {
     lastError: st.lastError,
     queue: st.queue ?? [],
     queueHeld: !!st.queueHeld,
-    job: st.job ? { id: st.job.id, kind: st.job.kind, message: 'Working on it', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false } : null,
+    job: st.job ? { id: st.job.id, kind: st.job.kind, message: 'Working on it', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false, waiting: false } : null,
     aiEdited: !!st.aiEdited
   }
 }

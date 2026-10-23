@@ -52,7 +52,8 @@ export function VersionRows({ rows, asked }: { rows: VersionRow[] | null | undef
 /** Version 1 before it exists: being made, paused, or failed. */
 export type FirstState =
   | { kind: 'making'; heard: string[]; editor: boolean }
-  | { kind: 'paused' }
+  /** `why`: paused without you, and when it goes on (shared/pause.ts); null when the person pressed Stop */
+  | { kind: 'paused'; why: string | null }
   | { kind: 'failed'; why: string; extra?: ReactNode }
 
 const BASIC = 'Basic version: pauses and retakes removed, subtitles and a cover'
@@ -87,7 +88,8 @@ export function NotesLog({
   onBasic,
   onCopy,
   onError,
-  answerError
+  answerError,
+  pausedWhy
 }: {
   slug: string
   entries: LogEntry[]
@@ -122,6 +124,8 @@ export function NotesLog({
   onError: (message: string) => void
   /** saving a "Remember this for next time?" answer failed: the question keeps its buttons */
   answerError: { id: string; text: string } | null
+  /** a note paused without you (a plan at its limit): why, and when it goes on */
+  pausedWhy: string | null
 }) {
   const box = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<Record<number, boolean>>({})
@@ -240,9 +244,11 @@ export function NotesLog({
           <span className="nk pause">
             <Icon name="pause" size={11} stroke={2.4} />
           </span>
-          <span className="t">Paused. Nothing is lost.</span>
+          <span className="t wrap" data-testid="first-paused-why">
+            Paused. {f.why ?? 'Nothing is lost.'}
+          </span>
           <button className="btn primary small" onClick={onResume} data-testid="resume">
-            Resume
+            {f.why ? 'Resume now' : 'Resume'}
           </button>
         </div>
       )
@@ -303,6 +309,15 @@ export function NotesLog({
                 Try again
               </button>
             )}
+          </div>
+        )
+      case 'paused':
+        return (
+          <div className="nt-res paused" data-testid="log-paused">
+            <span className="nk pause">
+              <Icon name="pause" size={11} stroke={2.4} />
+            </span>
+            <span className="t wrap">Paused. {pausedWhy ?? 'It waits below.'}</span>
           </div>
         )
       case 'stopped':

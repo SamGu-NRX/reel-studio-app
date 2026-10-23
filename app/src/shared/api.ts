@@ -37,8 +37,9 @@ export interface ProjectSummary {
   versionAt: string | null
   /** project.json `series`: the group it belongs to on Reels, or null. */
   series: string | null
-  /** A Paused reel that continues on its own at this time (ISO; app.json `pausedUntil`), or null when it waits for you. */
-  continuesAt: string | null
+  /** Paused without you (app.json `paused`): it continues on its own, and this says when or what for. Null when it
+   * runs, or waits for you. */
+  pausedFor: PausedFor | null
   /** A version of it was posted (app.json `posted`). */
   posted: boolean
 }
@@ -113,7 +114,18 @@ export interface ChatMessage {
 }
 
 /** done: the note made a new version. failed: an error, or nothing changed. stopped: Stop, or the app quit. */
-export type NoteOutcome = 'done' | 'failed' | 'stopped'
+export type NoteOutcome = 'done' | 'failed' | 'stopped' | 'paused'
+
+/** What stopped work the person didn't stop (ux-foundation-b.md section 3.4): a plan at its limit, no internet, the
+ * computer asleep, or a quit. */
+export type PauseReason = 'limit' | 'offline' | 'sleep' | 'quit'
+export interface PausedFor {
+  reason: PauseReason
+  /** when it continues (ISO), when that is known (a plan's reset time) */
+  until: string | null
+  /** the editor whose plan it is ("Claude"), for the words; null when not known */
+  editor: string | null
+}
 
 /** A note's moment: the time in the version watched, and the words on screen then. */
 export interface NoteMoment {
@@ -201,7 +213,7 @@ export interface ProjectDetail extends ProjectSummary {
   queue: QueuedNote[]
   /** True: the queue waits for "Run next" (after Stop, a failed note, or a restart). */
   queueHeld: boolean
-  job: { id: string; kind: JobKind; message: string; pct: number; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean; steps?: Step[] } | null
+  job: { id: string; kind: JobKind; message: string; pct: number; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean; waiting: boolean; steps?: Step[] } | null
   /** A small picture for each b-roll item with an image file (broll id -> reel-media URL). Animations and
    * text-only items have none (the Pictures list names them in words instead of a file name). */
   brollThumbs: Record<string, string>
@@ -222,7 +234,7 @@ export interface ProjectJson {
   version: number
   format?: { width: number; height: number; fps: number }
   /** `mirror`: the take is mirrored, the engine flips the picture (absent = as filmed) */
-  sources?: { id: string; path: string; duration?: number; rotation?: number; mirror?: boolean }[]
+  sources?: { id: string; path: string; originalName?: string; duration?: number; rotation?: number; mirror?: boolean }[]
   /** The group this reel belongs to on Reels ("Sourdough basics"). */
   series?: string
   transcript?: { file: string; language?: string }
@@ -274,7 +286,7 @@ export type Phase = 'listen' | 'analyze' | 'firstLook' | 'edit' | 'final'
  */
 export type JobUpdate =
   /** pct restarts per step unless aggregate marks whole-job progress. thinking = waiting on AI. */
-  | { type: 'status'; message: string; pct?: number; aggregate?: true; phase?: Phase; thinking?: boolean; noAI?: boolean }
+  | { type: 'status'; message: string; pct?: number; aggregate?: true; phase?: Phase; thinking?: boolean; /** the message is the wait for the editor itself (ai agent.ts waitWords) */ waiting?: boolean; noAI?: boolean }
   | { type: 'tool'; name: string; summary: string }
   /** A render finished. firstLook = the quick no-AI preview made while the AI still edits (not a version).
    * file = the engine's output path (absolute); main turns it into `video` for the renderer. */
@@ -295,7 +307,7 @@ export type JobEvent = Ids &
      * runs (thinking kept), so a bar fed by `overall` never freezes. */
     /** overdue = the current phase outlasted its usable estimate: show "Still working, almost there", no number. */
     /** steps: a first edit's rows (shared/steps.ts) */
-    | { type: 'status'; message: string; pct: number; phase?: Phase; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean; steps?: Step[] }
+    | { type: 'status'; message: string; pct: number; phase?: Phase; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean; waiting: boolean; steps?: Step[] }
     | { type: 'tool'; name: string; summary: string }
     /** video = a playable reel-media URL of a stable copy (never the file the engine overwrites next). */
     | { type: 'render'; version: number; draft: boolean; firstLook: boolean; video: string | null }
@@ -304,6 +316,8 @@ export type JobEvent = Ids &
     | { type: 'done'; summary: string; version?: number }
     | { type: 'error'; code: string; userMessage: string }
     | { type: 'cancelled' }
+    /** Stopped by something outside the person (main/pause.ts); it continues on its own. */
+    | { type: 'paused'; paused: PausedFor }
   )
 
 export interface LibraryFile {
@@ -581,6 +595,8 @@ export interface ReelApi {
     setActive(id: ProviderInfo['id'], connectionId?: string): Promise<void>
     signInChatGPT(): Promise<ProviderInfo>
     cancelSignIn(): Promise<void>
+    /** Cancel on "Checking Claude…": the check stops and nothing is connected. */
+    cancelCheck(): Promise<void>
     signOutChatGPT(): Promise<void>
     setClaudeKey(key: string | null): Promise<ProviderInfo>
     /** A fresh look at the person's own Claude Code app. */
@@ -604,6 +620,8 @@ export interface ReelApi {
     create(files: string[]): Promise<{ slug: string; jobId: string; skipped: DropResult[] }>
     /** New reel: a reel with no video yet, titled "New reel" until the editor titles it. */
     plan(): Promise<{ slug: string }>
+    /** Leaving a reel: a New reel nobody touched is removed. */
+    leave(slug: string): Promise<void>
     /** The video for a planned reel: its first edit starts, and the editor gets the reel's script. */
     addVideo(slug: string, files: string[]): Promise<{ jobId: string; skipped: DropResult[] }>
     /** The editor writes a script for a planned reel from `idea` (a job: its status line, Stop, the script in the chat). */

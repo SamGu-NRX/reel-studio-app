@@ -1,18 +1,11 @@
 import { useRef, useState } from 'react'
-import { sampleUpgraded } from './first-run/handoff'
-import { EDITS } from './first-run/sample'
+import { EDIT } from './first-run/sample'
 import { Icon } from './icons'
 import coverUrl from '../assets/sample/cover.jpg'
-import simpleUrl from '../assets/sample/simple.mp4'
 import aiUrl from '../assets/sample/ai.mp4'
 
-/**
- * The sample reel on an empty Reels screen, to play again: the edit the person watched during the first run (the
- * editor's version if they connected one).
- */
+/** The sample reel on an empty Reels screen, to play again: the Version 1 the person watched being made in the first run. */
 export function SampleReel() {
-  const upgraded = sampleUpgraded()
-  const edit = EDITS[upgraded ? 'ai' : 'simple']
   const video = useRef<HTMLVideoElement>(null)
   const [playing, setPlaying] = useState(false)
 
@@ -36,7 +29,7 @@ export function SampleReel() {
       <button className="im" onClick={toggle} aria-label={playing ? 'Pause the sample reel' : 'Play the sample reel'} data-testid="sample-card">
         <video
           ref={video}
-          src={upgraded ? aiUrl : simpleUrl}
+          src={aiUrl}
           poster={coverUrl}
           muted
           playsInline
@@ -54,7 +47,7 @@ export function SampleReel() {
       </button>
       <figcaption>
         <b>Sample</b>
-        <span>{edit.len}</span>
+        <span>{EDIT.len}</span>
       </figcaption>
     </figure>
   )

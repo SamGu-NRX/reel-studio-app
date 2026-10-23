@@ -4,10 +4,11 @@ import { clock } from '../../../shared/progress'
 import { EMPTY_LIVE, liveFromDetail, reduceLive, type LiveState } from '../../../shared/live'
 import { NO_TIMELINE, noSpeech, noteMarks, noteMoment, sourceAt, wordsAt, wordsBetween, type RenderSegment } from '../../../shared/moments'
 import { notesLog, type LogEntry } from '../../../shared/notes-log'
+import { pausedSentence, pausedWords } from '../../../shared/pause'
 import type { Step } from '../../../shared/steps'
 import { droppedPaths, reel, userMessage } from '../api'
 import type { Go } from '../nav'
-import { Confirm, PickFiles, Spinner, useFileDrop } from '../components/ui'
+import { Confirm, IS_MAC, PickFiles, Spinner, useFileDrop } from '../components/ui'
 import { Icon } from '../components/icons'
 import { PhonePlayer } from '../components/Player'
 import type { SubtitleLook } from '../../../shared/caption-presets'
@@ -38,7 +39,6 @@ const ACTION_TAB: Partial<Record<ChatAction, Tab>> = {
 }
 
 const NOTIFY_ASKED = 'rs.notify-asked'
-const fileName = (p: string): string => p.split(/[\\/]/).pop() ?? p
 const pinsKey = (slug: string): string => `rs.pins.${slug}`
 /** After closing something from the keyboard, focus lands on the timeline rather than the page. */
 const keyboardBackToTimeline = (): void => {
@@ -202,6 +202,9 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     [load, play]
   )
 
+  // a New reel left untouched goes (main/store.ts isUntouchedPlanned)
+  useEffect(() => () => void reel.projects.leave(slug).catch(() => {}), [slug])
+
   useEffect(() => {
     void load(true)
     reel.ai
@@ -237,7 +240,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
         setFirstSteps(null)
         // an export or a script ends with no new version
         void (e.version === undefined ? load() : land(e.version))
-      } else if (e.type === 'error' || e.type === 'cancelled') {
+      } else if (e.type === 'error' || e.type === 'cancelled' || e.type === 'paused') {
         setJob(null)
         setFirstSteps(null)
         void load()
@@ -339,7 +342,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                 : { id: d.job.id, kind: d.job.kind === 'rerender' ? 'hand' : d.job.kind === 'first-edit' ? 'first-edit' : d.job.kind === 'script' ? 'script' : 'note' }
               : null,
             planned: d.status === 'planned',
-            sourceName: d.project.sources?.[0]?.path ? fileName(d.project.sources[0].path) : null,
+            source: d.project.sources?.[0] ?? null,
             now: new Date()
           })
         : [],
@@ -365,6 +368,11 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
 
   const planned = d.status === 'planned'
   const hasVersions = d.versions.length > 0
+  const computer = IS_MAC ? 'Mac' : 'PC'
+  // paused without you (shared/pause.ts): why, and when it goes on by itself
+  const pausedWhy = d.pausedFor ? pausedSentence(d.pausedFor, new Date(), computer) : null
+  const heldWords = d.pausedFor ? pausedWords(d.pausedFor, new Date(), computer) : null
+  const heldWhy = heldWords && heldWords[0].toLowerCase() + heldWords.slice(1)
   const connect = () => go({ name: 'connect', back: { name: 'reel', slug } })
   const making = job && d.job && d.job.kind !== 'export' && d.job.kind !== 'script' ? (latestN ?? 0) + 1 : null
   const first: FirstState | null =
@@ -374,7 +382,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
         ? { kind: 'making', heard: firstSteps?.some((s) => s.id === 'listen' && s.state === 'done') ? heard : [], editor: !aiOff }
         : d.status === 'failed'
           ? { kind: 'failed', why: d.lastError?.userMessage ?? 'This version could not be made.', extra: d.lastError?.code === 'MODEL_MISSING' ? <ModelDownload secondary /> : undefined }
-          : { kind: 'paused' }
+          : { kind: 'paused', why: pausedWhy }
   const firstLook = first?.kind === 'making' ? (job?.preview?.video ?? null) : null
 
   const note = async (text: string, files: string[] | undefined, moment: NoteMoment | undefined) => {
@@ -689,7 +697,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   )
 
   return (
-    <div className="reel-page">
+    <div className="reel-page" data-slug={slug}>
       <TitleBarSlot title={title} actions={actions} />
       <div className="reel-b">
         <section className="stage" aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
@@ -816,6 +824,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                 onCopy={(t) => void reel.app.copyText(t).then(() => notify('Copied.'))}
                 onError={(m) => notify(m, 'error')}
                 answerError={answerError}
+                pausedWhy={pausedWhy}
               />
               {showComposer && (
                 <div
@@ -885,6 +894,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                       )
                     }
                     held={d.queueHeld ? waiting : 0}
+                    heldWhy={heldWhy}
                     alert={alert}
                     connect={
                       aiOff ? (

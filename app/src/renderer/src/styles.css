@@ -201,8 +201,9 @@ a { color: inherit; }
 @media (hover: hover) and (pointer: fine) { .btn.primary.danger:not(:disabled):hover { background: #A62E20; } }
 .btn.primary .spin { border-color: rgba(255, 255, 255, .35); border-top-color: #fff; }
 
+/* 32 px: the title bar and the transport have room for it (WCAG 2.5.8 asks 24; dense panels use .small) */
 .icon-btn {
-  width: 28px; height: 28px; border: 0; border-radius: 999px; padding: 0; background: transparent; color: var(--ink-2);
+  width: 32px; height: 32px; border: 0; border-radius: 999px; padding: 0; background: transparent; color: var(--ink-2);
   display: inline-grid; place-items: center; cursor: pointer; flex: none; transition: background-color 120ms ease, color 120ms ease;
 }
 @media (hover: hover) and (pointer: fine) { .icon-btn:not(:disabled):hover { background: var(--wash); color: var(--ink); } }
@@ -451,8 +452,8 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
 /* captions.POP_IN: from 80% to full size in 120 ms, decelerating */
 @media (prefers-reduced-motion: no-preference) {
   .sub-sample.pop { animation: fade .15s ease-out, sub-pop .12s cubic-bezier(.25, .75, .5, 1); }
+  @keyframes sub-pop { from { scale: .8; } }
 }
-@keyframes sub-pop { from { scale: .8; } }
 
 
 /* ---- library ---- */
@@ -512,18 +513,21 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
   .page { padding-left: 28px; padding-right: 28px; }
 }
 
-/* Reduced motion: nothing slides, scales or staggers, but things still fade in, and a spinner still turns
-   (a frozen spinner reads as "stuck"). */
+/* Reduced motion: nothing slides or scales, but things still fade in at their designed length, and a spinner still
+   turns (a frozen spinner reads as "stuck"). Two rules carry it, so a component's own reduced-motion fade is never
+   cut short: a transition may only fade, recolour or blur; and each keyframe that moves has a fade-only twin, declared
+   in the same file after it (the later @keyframes of a name wins). test/reduced-motion.test.ts checks every keyframe. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: 1ms !important; }
-  .modal, .more-menu, .drawer, .toast { animation: fade .15s ease-out !important; }
-  .drawer.closing { animation: fade-out .12s ease-out forwards !important; }
-  .spin { animation: spin .8s linear infinite !important; }
-  .thinking i { animation: breathe-soft 1.8s ease-in-out infinite !important; }
-  .thinking i:nth-child(2) { animation-delay: .3s !important; }
-  .thinking i:nth-child(3) { animation-delay: .6s !important; }
-    .update-pop { transform: none; }
+  *, *::before, *::after { transition-property: opacity, color, background-color, border-color, outline-color, box-shadow, filter, visibility !important; }
+  .update-pop { transform: none; }
   .update-pill:active { transform: none; }
+  @keyframes breathe { 0%, 100% { opacity: .2; } 50% { opacity: .85; } }
+  @keyframes word-in { from { opacity: 0; } }
+  @keyframes slide-in { from { opacity: 0; } }
+  @keyframes slide-out { to { opacity: 0; } }
+  @keyframes pop-in { from { opacity: 0; } }
+  @keyframes toast-in { from { opacity: 0; transform: translateX(-50%); } to { opacity: 1; transform: translateX(-50%); } }
+  @keyframes phone-in { from { opacity: 0; } }
 }
 @keyframes fade-out { to { opacity: 0; } }
 @keyframes breathe-soft { 0%, 100% { opacity: .2; } 50% { opacity: .85; } }

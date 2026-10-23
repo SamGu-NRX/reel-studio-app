@@ -84,10 +84,12 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
   const box = useRef<HTMLDivElement>(null)
   const wasBusy = useRef(busy)
 
-  // The pill pressed is gone while the check runs; when it ends, focus goes to the row's new pill, not the page.
+  // The pill pressed gives way to Cancel while the check runs, and Cancel to the row's new pill when it ends: focus
+  // follows to the button in the same place, never to the page.
   useEffect(() => {
-    const row = wasBusy.current === 'claude' ? 'claude-cli' : wasBusy.current
-    if (row && !busy && document.activeElement === document.body)
+    const at = busy ?? wasBusy.current
+    const row = at === 'claude' ? 'claude-cli' : at
+    if (row && document.activeElement === document.body)
       box.current?.querySelector<HTMLElement>(`[data-provider="${row}"] .pv-main > button`)?.focus({ preventScroll: true })
     wasBusy.current = busy
   }, [busy])
@@ -107,7 +109,8 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
       await reel.ai.setActive('claude-cli')
       connected(await reel.ai.active())
     } catch (e) {
-      setClaudeError(claudeCheckFailed(e))
+      // Cancel: back to where it was, with nothing to explain
+      if (errorCode(e) !== 'cancelled') setClaudeError(claudeCheckFailed(e))
     } finally {
       setBusy(null)
     }
@@ -222,6 +225,11 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
       </>
     )
     claudeTone = 'busy'
+    claudeAction = (
+      <button className="btn small ghost" onClick={() => void reel.ai.cancelCheck()} data-testid="claude-check-cancel">
+        Cancel
+      </button>
+    )
   } else if (claudeError) {
     claudeStatus = claudeError
     claudeTone = 'error'

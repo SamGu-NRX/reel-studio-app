@@ -7,10 +7,11 @@ import { useActiveEditor } from './connect'
 import { SettingRow, Switch, useShown } from './settings-rows'
 import type { SettingId } from './settings-index'
 
+// What each role does in this build (ai editor.ts): the line says only that.
 const ROLES: [ModelRole, SettingId, string][] = [
-  ['editor', 'model-edits', 'Makes the edits in your notes.'],
-  ['checker', 'model-checks', 'Looks over every edit on its own before it’s saved.'],
-  ['writer', 'model-titles', 'Titles, version summaries and status lines. A small, fast model is enough.']
+  ['editor', 'model-edits', 'Makes Version 1 and the changes in your notes.'],
+  ['checker', 'model-checks', 'Proofreads Version 1’s subtitles against what you said.'],
+  ['writer', 'model-titles', 'Writes scripts and their titles, and a caption the editor left out. A small, fast model is enough.']
 ]
 
 /** Claude Code's model names, as `claude --help` lists them for `--model` (2.1.308). */
@@ -29,8 +30,8 @@ async function offeredModels(p: ProviderInfo | null): Promise<string[]> {
 }
 
 /**
- * Settings › Editor › Advanced: a model per role, each Auto unless you pick one the editor offers. The choices are
- * saved; the editor does not read them yet, and the line under the rows says so.
+ * Settings › Editor › Advanced: a model per role, each Auto unless you pick one the editor offers. Each job reads them
+ * as it starts (ai index.ts modelForRole); ChatGPT and a Claude key pick their own model.
  */
 export function Models({ info, onInfo, onError }: { info: AppInfo; onInfo: (i: AppInfo) => void; onError: (m: string) => void }) {
   const [provider] = useActiveEditor()
@@ -128,7 +129,7 @@ export function Models({ info, onInfo, onError }: { info: AppInfo; onInfo: (i: A
           }
         />
       ))}
-      {anyShown && <p className="srow-foot">Auto picks from what your editor offers. Saved on this computer; the editor doesn’t use these choices yet.</p>}
+      {anyShown && <p className="srow-foot">Auto lets your editor choose. A change applies from the next version made.</p>}
     </div>
   )
 }

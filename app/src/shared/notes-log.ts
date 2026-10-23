@@ -13,6 +13,8 @@ export type LogResult =
   | { kind: 'making'; v: number }
   | { kind: 'failed'; text: string }
   | { kind: 'stopped'; kept: number }
+  /** stopped by a plan at its limit: it waits in the queue and goes on by itself (shared/pause.ts) */
+  | { kind: 'paused' }
   /** an answer that made no version: the no-AI reply, or a question back */
   | { kind: 'reply'; text: string; actions: ChatAction[]; messageId: string }
   /** the editor's script for a reel planned before it had a video, and while it writes one */
@@ -48,8 +50,8 @@ export function notesLog(input: {
   running: { id: string; kind: 'first-edit' | 'note' | 'hand' | 'script' } | null
   /** the reel has no video yet: only its planning shows */
   planned?: boolean
-  /** the raw take's file name */
-  sourceName: string | null
+  /** the raw take as project.json lists it: `originalName` is the file the person brought in, `path` the copy (media/take01.mp4) */
+  source: { path: string; originalName?: string } | null
   now: Date
 }): LogEntry[] {
   const { chat, made, versions, running, now } = input
@@ -58,7 +60,7 @@ export function notesLog(input: {
     key: 'video',
     day: null,
     at: versions[0]?.createdAt ?? chat.find((m) => !m.plan)?.at ?? now.toISOString(),
-    ask: { kind: 'video', text: input.sourceName ? `Your video, ${input.sourceName}` : 'Your video' },
+    ask: { kind: 'video', text: input.source ? `Your video, ${input.source.originalName || input.source.path.split(/[\\/]/).pop()}` : 'Your video' },
     result: null,
     extra: []
   }
@@ -84,7 +86,7 @@ export function notesLog(input: {
     }
     if (m.version !== undefined) {
       // a stopped or failed note made no version: one that follows it was made some other way
-      if (open && !open.result && open.outcome !== 'stopped' && open.outcome !== 'failed') open.result = { kind: 'version', v: m.version, text: m.text }
+      if (open && !open.result && open.outcome !== 'stopped' && open.outcome !== 'failed' && open.outcome !== 'paused') open.result = { kind: 'version', v: m.version, text: m.text }
       else {
         const record = made.find((r) => r.version === m.version && r.by === 'hand')
         const what = record?.summary.trim()
@@ -107,6 +109,7 @@ export function notesLog(input: {
       else if (running?.kind === 'first-edit') e.result = { kind: 'making', v: 1 }
     } else if (running && e.jobId === running.id) e.result = { kind: 'making', v: latest + 1 }
     else if (e.outcome === 'stopped') e.result = { kind: 'stopped', kept: latest }
+    else if (e.outcome === 'paused') e.result = { kind: 'paused' }
     else if (e.outcome === 'failed') e.result = { kind: 'failed', text: DONE_FAIL }
   }
   if (running?.kind === 'hand') entries.push({ key: running.id, day: null, at: now.toISOString(), ask: { kind: 'hand', text: 'Your changes' }, result: { kind: 'making', v: latest + 1 }, extra: [] })

@@ -1,5 +1,5 @@
-// The first run's bundled sample (assets/sample, credits in THIRD_PARTY.md): one raw take, what the simple edit and
-// the AI edit keep of it, and the words with their times. The clips were rendered from these same ranges.
+// The first run's bundled sample (assets/sample, credits in THIRD_PARTY.md): one raw take, what the editor's
+// Version 1 keeps of it, and the words with their times. The clips were rendered from these same ranges.
 
 export type SegKind = 'filler' | 'pause' | 'restart' | 'keep' | 'take'
 export interface Seg {
@@ -29,31 +29,13 @@ export const TRANSCRIPT: Seg[] = [
 ]
 export const RAW_LEN = 24
 
-export type EditName = 'simple' | 'ai'
-interface EditDef {
-  len: string
-  /** [segment, start, end] in raw.mp4, in the order the edit plays them */
-  segs: [string, number, number][]
-}
-const DEFS: Record<EditName, EditDef> = {
-  simple: {
-    len: '0:12',
-    segs: [
-      ['r3', 6.8, 9.7],
-      ['r4', 10.5, 13.7],
-      ['r5', 14.5, 18.7],
-      ['r6', 19.3, 20.7]
-    ]
-  },
-  ai: {
-    len: '0:09',
-    segs: [
-      ['r3', 6.8, 9.7],
-      ['r5', 14.5, 18.7],
-      ['r6', 19.3, 20.7]
-    ]
-  }
-}
+/** The ranges of raw.mp4 the sample's Version 1 (ai.mp4) plays, in order: the better of the two takes of the
+ * middle line, with the pauses, the false start and the filler gone. */
+const KEPT: [string, number, number][] = [
+  ['r3', 6.8, 9.7],
+  ['r5', 14.5, 18.7],
+  ['r6', 19.3, 20.7]
+]
 
 export interface Edit {
   len: string
@@ -61,17 +43,15 @@ export interface Edit {
   kept: Set<string>
   map: { id: string; a: number; b: number; ed: number }[]
 }
-export const EDITS: Record<EditName, Edit> = Object.fromEntries(
-  (Object.entries(DEFS) as [EditName, EditDef][]).map(([name, d]) => {
-    let t = 0
-    const map = d.segs.map(([id, a, b]) => {
-      const m = { id, a, b, ed: t }
-      t += b - a
-      return m
-    })
-    return [name, { len: d.len, dur: t, kept: new Set(d.segs.map((s) => s[0])), map }]
+export const EDIT: Edit = (() => {
+  let t = 0
+  const map = KEPT.map(([id, a, b]) => {
+    const m = { id, a, b, ed: t }
+    t += b - a
+    return m
   })
-) as Record<EditName, Edit>
+  return { len: '0:09', dur: t, kept: new Set(KEPT.map((s) => s[0])), map }
+})()
 
 /** Time in the edit for a time in the raw take, or null when that moment was cut. */
 export function toEdit(edit: Edit, raw: number): number | null {
@@ -140,8 +120,12 @@ export function subGroups(edit: Edit, toks: Token[]): SubGroup[] {
   }))
 }
 
-/** What the simple edit cuts: the false start, the filler and every pause. */
-export const SIMPLE_CUTS = ['r0', 'p1', 'r1', 'p2', 'r2', 'p3', 'p4', 'p5', 'p6', 'p7']
+/** What goes first: the filler, the false start and every pause. */
+export const CUTS = ['r0', 'p1', 'r1', 'p2', 'r2', 'p3', 'p4', 'p5', 'p6', 'p7']
+/** The weaker of the two takes of the middle line, which the editor drops for the better one. */
+export const WEAKER_TAKE = 'r4'
+/** Everything Version 1 leaves out. */
+export const ALL_CUTS = [...CUTS, WEAKER_TAKE]
 /** The three snips the demo makes, each with the length after it and where the phone jumps to in the raw take. */
 export const SNIPS: { segs: string[]; len: string; jump: number }[] = [
   { segs: ['r0', 'p1'], len: '0:21', jump: 2.5 },

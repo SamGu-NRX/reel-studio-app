@@ -99,7 +99,13 @@ export interface AI {
   signOutChatGPT(): Promise<void>
   setClaudeKey(key: string | null): Promise<ProviderStatus>
   /** `opts.basic`: the simple edit without a model, whatever editor is connected. */
-  firstEdit(projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts?: { owner?: string; basic?: boolean }): Promise<AgentResult>
+  /** `opts.pauseOn`: an AI failure the app pauses on (a plan at its limit, no internet), thrown instead of a basic version. */
+  firstEdit(
+    projectDir: string,
+    onEvent: (e: AgentEvent) => void,
+    signal?: AbortSignal,
+    opts?: { owner?: string; basic?: boolean; pauseOn?: (e: { code: string; resetsAt?: string }) => boolean }
+  ): Promise<AgentResult>
   /** `opts.attachments`: `work/assets/attach-*` refs main already checked (the AI checks them again).
    * `opts.id`: the job id the note is saved under. `opts.saveStyleRules: false`: return rules, the app asks.
    * `opts.owner`: the job's owner token, which the note joins instead of taking the project. */
@@ -126,6 +132,8 @@ export interface AI {
   updateStyleRule?(id: string, patch: { text?: string; paused?: boolean }): Promise<StyleRule>
   /** Optional extras from @reelstudio/ai. */
   cancelSignInChatGPT?(): void | Promise<void>
+  /** Stops setActive('claude-cli')'s check call, which then throws code 'cancelled'. Optional: older packages lack it. */
+  cancelCheck?(): void
   /** A fresh look at the person's own Claude Code app (`bin` stays in main). Optional: older packages lack it. */
   claudeCodeStatus?(): Promise<ClaudeCodeStatus>
   /** The person's own servers (provider 'custom'). Optional: older packages and the mock lack them. */
@@ -151,6 +159,8 @@ export interface CreateAIOptions {
   settingsDir: string
   dev?: boolean
   secretStore?: SecretStore
+  /** Settings › Editor › Models: a model per role, 'auto' for the editor's own (ai index.ts modelForRole). */
+  roleModels?: () => Promise<Partial<Record<'editor' | 'checker' | 'writer', string>>>
 }
 
 export type CreateAI = (opts: CreateAIOptions) => AI

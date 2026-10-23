@@ -177,7 +177,7 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
      * note runs only after a finished job; any other end holds the queue.
      * Decided in the reel's queue lane, so a note sent meanwhile waits for the decision. */
     onJobEvent(e: JobEvent): void {
-      if (!e.slug || (e.type !== 'done' && e.type !== 'error' && e.type !== 'cancelled')) return
+      if (!e.slug || (e.type !== 'done' && e.type !== 'error' && e.type !== 'cancelled' && e.type !== 'paused')) return
       const slug = e.slug
       const ended = jobs.get(e.jobId)?.done ?? Promise.resolve()
       const byStop = stopped.delete(e.jobId)

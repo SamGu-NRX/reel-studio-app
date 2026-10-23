@@ -85,11 +85,12 @@ html.kb .ssearch input:focus-visible { outline: 0; }
 .mpick:disabled { opacity: .45; cursor: default; }
 .mi-sp { width: 16px; flex: none; }
 
-.switch { flex: none; position: relative; width: 36px; height: 22px; border: 0; border-radius: 11px; background: var(--line-strong); padding: 0; cursor: pointer; transition: background-color 150ms ease; }
-.switch::after { content: ''; position: absolute; inset: -11px -4px; }
+/* 24 px tall, so the switch itself is a whole target (WCAG 2.5.8) wherever a row sits close under it */
+.switch { flex: none; position: relative; width: 40px; height: 24px; border: 0; border-radius: 12px; background: var(--line-strong); padding: 0; cursor: pointer; transition: background-color 150ms ease; }
+.switch::after { content: ''; position: absolute; inset: -10px -4px; }
 .switch[aria-checked="true"] { background: var(--ink); }
-.switch i { position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform 150ms cubic-bezier(.2, .8, .2, 1); }
-.switch[aria-checked="true"] i { transform: translateX(14px); }
+.switch i { position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform 150ms cubic-bezier(.2, .8, .2, 1); }
+.switch[aria-checked="true"] i { transform: translateX(16px); }
 .switch:disabled { opacity: .45; cursor: default; }
 
 html.kb .switch i { transition: none; }

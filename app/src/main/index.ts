@@ -1,7 +1,7 @@
 import { clipboardFiles, filesFromArgv } from './intake'
 import { accountName } from './account'
 import { versionRows, type VersionRow } from '../shared/version-diff'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent, Notification } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, net, powerMonitor, powerSaveBlocker, safeStorage, shell, type IpcMainInvokeEvent, Notification } from 'electron'
 import { existsSync, promises as fs, appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -34,13 +34,14 @@ import { handleMediaProtocol, registerMediaScheme } from './media'
 import {
   addChat,
   carryScript,
-  createPlanned,
   detail,
+  discardIfUntouched,
   ensureRoot,
   listProjects,
   searchProjects,
   listVersions,
   PLANNED_TITLE,
+  planReel,
   PREVIEW_DIR,
   projectDir,
   readAppState,
@@ -61,6 +62,7 @@ import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { libraryPreview } from './library-preview'
 import { readLesson } from './style-learn'
 import { createJobManager } from './jobs'
+import { createPauser, pauseFor, quitQuestion } from './pause'
 import { createNoteQueue, type NoteToRun, type StartHand } from './note-queue'
 import { handEditJob, HAND_MESSAGE } from './hand-edit'
 import { parseHandEdit } from '../shared/hand-edit'
@@ -209,11 +211,47 @@ if (TEST) (globalThis as { __reelClipboard?: unknown }).__reelClipboard = testCl
 const workGate = createWorkGate()
 // Honest progress (main/progress.ts): phase times measured on this computer, per minute of video.
 const speedHistoryFile = (): string => join(settingsDir(), 'speed-history.json')
+// Paused without you (main/pause.ts): work a plan limit, no internet, sleep or a quit stopped goes on by itself.
+// A pause's margin after a plan's reset time is shortened only under test.
+const pauser = createPauser({
+  online: () => net.isOnline(),
+  resume: (slug) => continuePaused(slug),
+  log,
+  ...(TEST && process.env.REELSTUDIO_PAUSE_MARGIN_MS ? { marginMs: Number(process.env.REELSTUDIO_PAUSE_MARGIN_MS) } : {})
+})
+/** When the computer last went to sleep: a job that fails after it paused for it. */
+let sleptAt = 0
+/** The editor's name for the words of a pause ("Your Claude plan…"). */
+const editorName = (p: { id: string } | null): string | null =>
+  p?.id === 'claude-cli' || p?.id === 'claude' ? 'Claude' : p?.id === 'chatgpt' ? 'ChatGPT' : null
+const pauseCtx = (kind: 'first-edit' | 'note', startedAt: number, editor: string | null) => ({ kind, online: net.isOnline(), slept: sleptAt > startedAt, editor })
+
+/** Continues a paused reel: Version 1 starts again where it stopped (listening kept); waiting notes run on. */
+async function continuePaused(slug: string): Promise<void> {
+  const st = await readAppState(slug)
+  if (!st.paused || jobs.forSlug(slug)) return
+  const dir = projectDir(slug)
+  if ((await listVersions(dir)).some((v) => !v.draft)) {
+    await updateAppState(slug, (s) => void delete s.paused)
+    return noteQueue.runNext(slug)
+  }
+  if (!existsSync(join(dir, 'project.json'))) {
+    await updateAppState(slug, (s) => {
+      delete s.paused
+      s.status = 'failed'
+      s.lastError = { code: 'CANNOT_RESUME', userMessage: 'This reel’s video never finished copying. Delete the reel and drop the video in again.' }
+    })
+    return
+  }
+  startFirstEdit(slug, null)
+}
+
 const jobs = createJobManager(
   (e: JobEvent) => {
     broadcast('job:event', e)
     feedback.onJobEvent(e)
     noteQueue.onJobEvent(e)
+    if (e.type === 'paused' && e.slug) pauser.schedule(e.slug, e.paused)
   },
   log,
   {
@@ -236,10 +274,13 @@ const jobs = createJobManager(
 /** A note job: the AI applies it as one all-or-nothing change (ai applyNote) on the newest version. */
 async function startNote(slug: string, { id: noteId, text, attachments, moment }: NoteToRun, record: (s: AppState) => void): Promise<string> {
   const dir = projectDir(slug)
+  const startedAt = Date.now()
+  let editor: string | null = null
   return jobs.start(
     slug,
     'note',
     async (emit, signal, { owner }) => {
+      editor = editorName(await ai.active().catch(() => null))
       const before = (await readProject(slug)).version ?? 0
       // saved under its queue entry's id (note-queue.ts); the app asks before anything goes into My style
       const opts = { attachments: attachments.map((f) => f.asset), id: noteId, saveStyleRules: false, ...(owner ? { owner } : {}) }
@@ -253,7 +294,7 @@ async function startNote(slug: string, { id: noteId, text, attachments, moment }
       const changedIt = r.version > before || r.changed.length > 0
       return { ...reply, outcome: changedIt ? 'done' : 'failed', made: { by: 'note', summary: text } }
     },
-    { note: text || attachments.map((f) => f.name).join(', '), record }
+    { note: text || attachments.map((f) => f.name).join(', '), record, pause: (e) => pauseFor(e, pauseCtx('note', startedAt, editor)) }
   )
 }
 /** A change from "Edit it myself", when its turn comes: render only, never the editor (hand-edit.ts). */
@@ -402,6 +443,10 @@ function owned(args: string[], owner: string | null): string[] {
 /** `basic`: the version is made without the editor (a failed Version 1's "Make a basic version"). */
 function startFirstEdit(slug: string, initArgs: { title: string; files: string[] } | null, basic = false): string {
   const dir = projectDir(slug)
+  const startedAt = Date.now()
+  let editor: string | null = null
+  // a plan at its limit, no internet or sleep pauses Version 1 to continue by itself (main/pause.ts)
+  const pause = (e: unknown) => (basic ? null : pauseFor(e, pauseCtx('first-edit', startedAt, editor)))
   return jobs.start(slug, 'first-edit', async (emit, signal, { owner }) => {
     if (initArgs && !existsSync(join(dir, 'project.json'))) {
       const { fasterExports } = await loadSettings()
@@ -417,6 +462,7 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
     // in case the app closed between the copy and this)
     await carryScript(slug)
     const provider = basic ? null : await ai.active().catch(() => null)
+    editor = editorName(provider)
     // A render event with firstLook = the quick no-AI draft is ready while the AI keeps editing; the
     // Reel screen plays it (shared/live.ts) and says what it is. Once listening is done (the first
     // status of a later phase), the words heard go to the Reel screen ("I heard: ...").
@@ -434,7 +480,7 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
         }
       },
       signal,
-      { ...(owner ? { owner } : {}), ...(basic ? { basic } : {}) }
+      { ...(owner ? { owner } : {}), ...(basic ? { basic } : { pauseOn: (e) => pause(e) !== null }) }
     )
     // Honest "What I did": only an AI that ran to the end picked the takes and wrote the caption.
     // A notice means it stopped and (usually) the simple edit stepped in, so claim nothing.
@@ -444,7 +490,7 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
     })
     if (r.notice?.userMessage) await addChat(slug, 'editor', r.notice.userMessage)
     return replyAskingAboutStyle(r, r.summary)
-  })
+  }, { pause })
 }
 
 /** The editor's reply into the chat, then one "Remember this for next time?" per My style rule the AI
@@ -680,6 +726,7 @@ function registerIpc(): void {
   changesAI('ai:setActive', (_e, id, connectionId?: string) => ai.setActive(id, typeof connectionId === 'string' ? connectionId : undefined))
   changesAI('ai:signInChatGPT', () => ai.signInChatGPT((url) => shell.openExternal(url)))
   handle('ai:cancelSignIn', () => ai.cancelSignInChatGPT?.())
+  handle('ai:cancelCheck', () => ai.cancelCheck?.())
   changesAI('ai:signOutChatGPT', () => ai.signOutChatGPT())
   changesAI('ai:setClaudeKey', (_e, key: string | null) => ai.setClaudeKey(key))
   // The key goes from the page to the AI package once and never comes back.
@@ -720,7 +767,7 @@ function registerIpc(): void {
     const d = await detail(slug)
     const running = jobs.forSlug(slug)
     d.job = running
-      ? { id: running.id, kind: running.kind, message: jobs.message(running), pct: running.pct, overall: running.overall, secondsLeft: running.secondsLeft, overdue: running.overdue, thinking: running.thinking, steps: running.steps }
+      ? { id: running.id, kind: running.kind, message: jobs.message(running), pct: running.pct, overall: running.overall, secondsLeft: running.secondsLeft, overdue: running.overdue, thinking: running.thinking, waiting: running.waiting, steps: running.steps }
       : null
     if (!running && d.status === 'working') d.status = 'interrupted'
     return d
@@ -759,7 +806,10 @@ function registerIpc(): void {
     const jobId = startFirstEdit(slug, { title, files: videos })
     return { slug, jobId, skipped }
   })
-  handle('projects:plan', async () => ({ slug: await createPlanned() }))
+  const running = (slug: string): boolean => !!jobs.forSlug(slug)
+  handle('projects:plan', async () => ({ slug: await planReel(running) }))
+  // Leaving a New reel nobody touched removes it (store.ts isUntouchedPlanned).
+  handle('projects:leave', async (_e, slug: string) => void (await discardIfUntouched(slug, running)))
   handle('projects:addVideo', async (_e, slug: string, files: string[]) => {
     const st = await readAppState(slug)
     if (st.status !== 'planned') throw { code: 'HAS_VIDEO', userMessage: 'This reel already has its video. Drop it on Reels to make a new reel.' }
@@ -794,6 +844,8 @@ function registerIpc(): void {
     if (!existsSync(join(dir, 'project.json'))) {
       throw { code: 'CANNOT_RESUME', userMessage: 'This reel’s video never finished copying. Delete the reel and drop the video in again.' }
     }
+    // the person's Resume: nothing waits to continue it on its own any more
+    pauser.cancel(slug)
     return { jobId: startFirstEdit(slug, null, basic === true) }
   })
   handle('projects:note', async (_e, slug: string, text: string, attachments?: unknown, at?: unknown, onVersion?: unknown) => {
@@ -934,6 +986,7 @@ function registerIpc(): void {
     return result
   })
   handle('projects:remove', async (_e, slug: string) => {
+    pauser.cancel(slug)
     await coverScans.stop(slug)
     const running = jobs.forSlug(slug)
     if (running) {
@@ -947,7 +1000,11 @@ function registerIpc(): void {
   handle('queue:edit', (_e, slug: string, id: string, text: string) => noteQueue.edit(slug, String(id), String(text ?? '')))
   handle('queue:cancel', (_e, slug: string, id: string) => noteQueue.cancel(slug, String(id)))
   handle('queue:move', (_e, slug: string, id: string, by: number) => noteQueue.move(slug, String(id), by < 0 ? -1 : 1))
-  handle('queue:runNext', (_e, slug: string) => noteQueue.runNext(slug))
+  handle('queue:runNext', async (_e, slug: string) => {
+    pauser.cancel(slug)
+    await updateAppState(slug, (s) => void delete s.paused)
+    await noteQueue.runNext(slug)
+  })
   handle('queue:clear', (_e, slug: string) => noteQueue.clear(slug))
 
   handle('library:list', async () => {
@@ -1291,13 +1348,16 @@ app.whenReady().then(async () => {
     if (recovered.length) log(`[recover] cleaned up ${recovered.join(', ')}`)
     await sweepExportStaging(binDir('exports')).catch((e) => log(`[export] ${String(e)}`))
     await noteQueue.recover().catch((e) => log(`[queue] ${String(e)}`))
+    // a New reel left untouched when the app last closed
+    for (const slug of await fs.readdir(projectsDir()).catch(() => [] as string[])) await discardIfUntouched(slug, () => false).catch(() => false)
   }
   const loaded = await loadAI(
     {
       host,
       settingsDir: join(settingsDir(), 'ai'),
       dev: DEV_PROVIDERS,
-      secretStore: safeStorage
+      secretStore: safeStorage,
+      roleModels: async () => (await loadSettings()).models
     },
     log
   )
@@ -1309,6 +1369,23 @@ app.whenReady().then(async () => {
   setAsrThreads(await models.savedThreads()) // before any engine call can start
   registerIpc()
   createWindow()
+  // What a quit, a plan limit or no internet paused last time goes on now, or when it can (main/pause.ts). Sleep
+  // was a different run of the app, so it waits only for the network.
+  for (const p of await listProjects().catch(() => [])) {
+    if (p.pausedFor) pauser.schedule(p.slug, p.pausedFor.reason === 'sleep' ? { ...p.pausedFor, reason: 'offline' } : p.pausedFor)
+  }
+  powerMonitor.on('suspend', () => void (sleptAt = Date.now()))
+  powerMonitor.on('resume', () => pauser.woke())
+  // B section 7: the computer stays awake while a reel is being made
+  let awake: number | null = null
+  setInterval(() => {
+    const busy = jobs.making().length > 0
+    if (busy && awake === null) awake = powerSaveBlocker.start('prevent-app-suspension')
+    else if (!busy && awake !== null) {
+      powerSaveBlocker.stop(awake)
+      awake = null
+    }
+  }, 5000).unref()
   await updates.init()
   updates.start() // 15 s after the window, so launch is never slower
   // A model that was here before the timing check existed, or whose check a video interrupted, so it never slows launch.
@@ -1326,14 +1403,30 @@ app.on('before-quit', (e) => {
     void killAllEngines()
     return
   }
-  // Stop running work cleanly so the next start finds a tidy project.
+  // Ask once while a reel is being made (B section 7), then stop running work cleanly so the next start finds a tidy
+  // project, and continues what was being made.
   e.preventDefault()
-  quitting = true
-  void jobs
-    .cancelAll()
-    .then(() => killAllEngines())
-    .finally(() => app.quit())
+  if (askingToQuit) return
+  void (async () => {
+    const making = jobs.making()
+    const q = quitQuestion(making.length)
+    if (q) {
+      askingToQuit = true
+      const ask = { type: 'question' as const, message: q.message, buttons: [q.yes, 'Cancel'], defaultId: 0, cancelId: 1 }
+      // a test answers with REELSTUDIO_TEST_QUIT (stay = Cancel); the question still goes to main.log
+      const yes = TEST
+        ? process.env.REELSTUDIO_TEST_QUIT !== 'stay'
+        : (await (win && !win.isDestroyed() ? dialog.showMessageBox(win, ask) : dialog.showMessageBox(ask))).response === 0
+      askingToQuit = false
+      log(`[quit] ${q.message} ${yes ? 'Quit' : 'Cancel'}`)
+      if (!yes) return
+      for (const slug of making) await updateAppState(slug, (s) => void (s.paused = { reason: 'quit', until: null, editor: null })).catch(() => undefined)
+    }
+    quitting = true
+    await jobs.cancelAll().then(() => killAllEngines()).finally(() => app.quit())
+  })()
 })
+let askingToQuit = false
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

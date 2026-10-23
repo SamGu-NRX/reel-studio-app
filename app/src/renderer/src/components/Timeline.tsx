@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PlacedWord } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
 import { momentLabel } from '../../../shared/moments'
@@ -20,11 +20,16 @@ const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(
 const DRAG_PX = 4
 // Shorter ranges are a click that wobbled.
 const MIN_RANGE_S = 0.6
+// Each mark is a 24 px target (WCAG 2.5.8); marks closer than that share one.
+const MARK_PX = 24
 
 /**
  * The timeline under the video, as wide as the stage: a tick where each phrase starts, the notes that made versions,
  * the notes still waiting. Click to seek, drag the head to scrub, drag anywhere else for a range (the composer gets it).
  * The arrows step a second; with Shift they stretch a range from the playhead.
+ *
+ * The marks sit beside the slider, not in it: a slider's children are presentational, so a screen reader never
+ * reached marks inside it. Each is its own button in the tab order, named by what it is.
  */
 export function Timeline({
   playhead,
@@ -44,6 +49,14 @@ export function Timeline({
   onPlay: (v: number) => void
 }) {
   const track = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(0)
+  useLayoutEffect(() => {
+    const el = track.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   const fill = useRef<HTMLSpanElement>(null)
   const head = useRef<HTMLSpanElement>(null)
   const [sel, setSel] = useState<{ a: number; b: number } | null>(null)
@@ -148,76 +161,89 @@ export function Timeline({
   }
 
   const pct = (t: number): string => `${(clamp(t, 0, duration) / (duration || 1)) * 100}%`
-  // marks closer than 2% of the timeline share one target, which plays the newest version among them
+  const groups = markGroups(marks, duration, width)
+  return (
+    <div className="tl" onPointerDown={down}>
+      <div
+        ref={track}
+        className="tl-track"
+        role="slider"
+        tabIndex={0}
+        aria-label="Time in your reel. Drag to mark a range; Shift and the arrow keys do the same."
+        aria-valuemin={0}
+        aria-valuemax={Math.round(duration)}
+        onKeyDown={key}
+        data-testid="timeline"
+      >
+        <svg className="tl-ticks" viewBox="0 0 1000 6" preserveAspectRatio="none" aria-hidden>
+          <path d={ticks} />
+        </svg>
+        <span className="tl-rail" aria-hidden />
+        <span className="tl-fill" ref={fill} aria-hidden />
+        {sel && (
+          <>
+            <span className="tl-sel" style={{ left: pct(sel.a), width: `calc(${pct(sel.b)} - ${pct(sel.a)})` }} aria-hidden />
+            <span className="tl-tip dark" style={{ left: pct(sel.b) }} aria-hidden>
+              {momentLabel({ at: Math.floor(sel.a), to: Math.ceil(sel.b) })}
+            </span>
+          </>
+        )}
+        <span className="tl-heads" aria-hidden>
+          <span className="tl-head" ref={head}>
+            <i />
+          </span>
+        </span>
+      </div>
+      {duration > 0 && groups.length > 0 && (
+        <div className="tl-marks" role="group" aria-label="Notes on the timeline">
+          {groups.map(({ at, items }) => {
+            const id = items[0].id
+            const v = Math.max(0, ...items.map((m) => m.v ?? 0))
+            return (
+              <button
+                key={id}
+                className={`tl-mark${v ? ' made' : ' waiting'}`}
+                style={{ left: pct(at) }}
+                aria-label={markLabel(items)}
+                onPointerEnter={() => setLit(id)}
+                onPointerLeave={() => setLit(null)}
+                onFocus={() => setLit(id)}
+                onBlur={() => setLit(null)}
+                onClick={() => (v ? onPlay(v) : transport.seek(at))}
+                data-testid="timeline-mark"
+              >
+                {v ? <Icon name="check" size={9} stroke={3} /> : null}
+                {items.length > 1 && <span className="n">{items.length}</span>}
+                {lit === id && (
+                  <span className={`tl-tip${at / duration < 0.2 ? ' start' : at / duration > 0.8 ? ' end' : ''}`}>
+                    {items.map((m) => (
+                      <span key={m.id}>
+                        <b>{m.v ? `Version ${m.v}` : 'Waiting'}</b> {m.text}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Marks closer than one target's width share it; the target plays the newest version among them. */
+export function markGroups(marks: TimelineMark[], duration: number, width: number): { at: number; items: TimelineMark[] }[] {
   const groups: { at: number; items: TimelineMark[] }[] = []
   for (const m of [...marks].sort((a, b) => a.at - b.at)) {
     const last = groups[groups.length - 1]
-    if (last && duration && (m.at - last.at) / duration < 0.02) last.items.push(m)
+    if (last && duration && width && ((m.at - last.at) / duration) * width < MARK_PX) last.items.push(m)
     else groups.push({ at: m.at, items: [m] })
   }
-  return (
-    <div
-      ref={track}
-      className="tl"
-      role="slider"
-      tabIndex={0}
-      aria-label="Time in your reel. Drag to mark a range; Shift and the arrow keys do the same."
-      aria-valuemin={0}
-      aria-valuemax={Math.round(duration)}
-      onPointerDown={down}
-      onKeyDown={key}
-      data-testid="timeline"
-    >
-      <svg className="tl-ticks" viewBox="0 0 1000 6" preserveAspectRatio="none" aria-hidden>
-        <path d={ticks} />
-      </svg>
-      <span className="tl-rail" aria-hidden />
-      <span className="tl-fill" ref={fill} aria-hidden />
-      {sel && (
-        <>
-          <span className="tl-sel" style={{ left: pct(sel.a), width: `calc(${pct(sel.b)} - ${pct(sel.a)})` }} aria-hidden />
-          <span className="tl-tip dark" style={{ left: pct(sel.b) }} aria-hidden>
-            {momentLabel({ at: Math.floor(sel.a), to: Math.ceil(sel.b) })}
-          </span>
-        </>
-      )}
-      {duration > 0 &&
-        groups.map(({ at, items }) => {
-          const id = items[0].id
-          const v = Math.max(0, ...items.map((m) => m.v ?? 0))
-          return (
-            <button
-              key={id}
-              className={`tl-mark${v ? ' made' : ' waiting'}`}
-              style={{ left: pct(at) }}
-              tabIndex={v ? 0 : -1}
-              aria-label={items.map((m) => (m.v ? `Version ${m.v}: ${m.text}` : `Waiting, ${clock(m.at)}: ${m.text}`)).join('; ')}
-              onPointerEnter={() => setLit(id)}
-              onPointerLeave={() => setLit(null)}
-              onFocus={() => setLit(id)}
-              onBlur={() => setLit(null)}
-              onClick={() => (v ? onPlay(v) : transport.seek(at))}
-              data-testid="timeline-mark"
-            >
-              {v ? <Icon name="check" size={9} stroke={3} /> : null}
-              {items.length > 1 && <span className="n">{items.length}</span>}
-              {lit === id && (
-                <span className={`tl-tip${at / duration < 0.2 ? ' start' : at / duration > 0.8 ? ' end' : ''}`}>
-                  {items.map((m) => (
-                    <span key={m.id}>
-                      <b>{m.v ? `Version ${m.v}` : 'Waiting'}</b> {m.text}
-                    </span>
-                  ))}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      <span className="tl-heads" aria-hidden>
-        <span className="tl-head" ref={head}>
-          <i />
-        </span>
-      </span>
-    </div>
-  )
+  return groups
+}
+
+/** What a screen reader hears on a mark: what each note there made, or that it waits, and when. */
+export function markLabel(items: TimelineMark[]): string {
+  return items.map((m) => (m.v ? `Version ${m.v}, at ${clock(m.at)}: ${m.text}` : `Waiting, at ${clock(m.at)}: ${m.text}`)).join('; ')
 }

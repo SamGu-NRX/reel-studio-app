@@ -91,11 +91,14 @@ export async function passSample(page: Page): Promise<void> {
 
 /** New reel from the sidebar, then its video from the stage's file picker: Version 1 is made on the Reel screen. */
 export async function startReel(page: Page, video: string): Promise<void> {
-  // on another planned reel already, wait for the new one to replace it before giving it the video
+  // On a planned reel already: New reel stays on it if nothing was done with it (main store.ts planReel), else
+  // opens another, which must be on screen before it gets the video.
   const stage = page.getByTestId('planned-stage')
-  const old = (await stage.count()) ? await stage.elementHandle() : null
+  const reelPage = page.locator('.reel-page')
+  const before = (await stage.count()) ? await reelPage.getAttribute('data-slug') : null
+  const untouched = !!before && (await page.getByTestId('plan-empty').count()) > 0 && (await page.getByTestId('title').textContent()) === 'New reel'
   await page.getByTestId('new-reel').click()
-  if (old) await expect.poll(() => old.evaluate((el) => el.isConnected)).toBe(false)
+  if (before && !untouched) await expect(reelPage).not.toHaveAttribute('data-slug', before)
   await stage.getByTestId('file-input').setInputFiles([video])
 }
 

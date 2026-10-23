@@ -22,6 +22,8 @@ export interface LiveState {
   overdue: boolean
   /** Waiting on the AI's answer: show "thinking", not "stuck". */
   thinking: boolean
+  /** `message` is the wait for the editor ("Waiting for Claude to answer"), shown in place of the step. */
+  waiting: boolean
   /** Words heard so far (in order). */
   words: string[]
   /** The newest thing to play while working. */
@@ -41,6 +43,7 @@ export const EMPTY_LIVE: LiveState = {
   secondsLeft: null,
   overdue: false,
   thinking: false,
+  waiting: false,
   words: [],
   preview: null,
   tools: [],
@@ -59,10 +62,11 @@ export function reduceLive(s: LiveState, e: JobEvent): LiveState {
         overall: Math.max(base.overall, e.overall),
         secondsLeft: e.secondsLeft,
         overdue: e.overdue,
-        thinking: e.thinking
+        thinking: e.thinking,
+        waiting: e.waiting
       }
     case 'tool':
-      return { ...base, thinking: false, tools: [...base.tools.slice(-3), e.summary] }
+      return { ...base, thinking: false, waiting: false, tools: [...base.tools.slice(-3), e.summary] }
     case 'heard':
       return { ...base, words: e.words }
     case 'render':
@@ -77,13 +81,14 @@ export function reduceLive(s: LiveState, e: JobEvent): LiveState {
     case 'error':
       return { ...base, thinking: false, end: { kind: 'error', code: e.code, userMessage: e.userMessage } }
     case 'cancelled':
+    case 'paused':
       return { ...base, thinking: false, end: { kind: 'cancelled' } }
   }
 }
 
 /** State from `projects:get` when a screen opens on a job that is already running. */
-export function liveFromDetail(job: { id: string; message: string; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean }): LiveState {
-  return { ...EMPTY_LIVE, jobId: job.id, message: job.message, overall: job.overall, secondsLeft: job.secondsLeft, overdue: job.overdue, thinking: job.thinking }
+export function liveFromDetail(job: { id: string; message: string; overall: number; secondsLeft: number | null; overdue: boolean; thinking: boolean; waiting: boolean }): LiveState {
+  return { ...EMPTY_LIVE, jobId: job.id, message: job.message, overall: job.overall, secondsLeft: job.secondsLeft, overdue: job.overdue, thinking: job.thinking, waiting: job.waiting }
 }
 
 /** The time-left words for a running job: honest, or none. */

@@ -237,7 +237,7 @@ function ScrubTime({ playhead, dur }: { playhead: Playhead; dur: number }) {
 const RATES = [1, 1.5, 2]
 const RATE_KEY = 'rs.speed'
 
-const MARK_STATE: Record<NoteMark['state'], string> = { making: 'Being made', done: 'Done', failed: "Didn't work", stopped: 'Stopped' }
+const MARK_STATE: Record<NoteMark['state'], string> = { making: 'Being made', done: 'Done', failed: "Didn't work", stopped: 'Stopped', paused: 'Paused' }
 
 const typing = (t: EventTarget | null): boolean => {
   const el = t as HTMLElement | null

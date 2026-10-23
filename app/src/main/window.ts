@@ -237,7 +237,7 @@ export function createJobFeedback(opts: {
         return
       }
       // only the end of a job clears the bar (tool, render, reply, heard are mid-job news)
-      if (e.type !== 'done' && e.type !== 'error' && e.type !== 'cancelled') return
+      if (e.type !== 'done' && e.type !== 'error' && e.type !== 'cancelled' && e.type !== 'paused') return
       stages.delete(key)
       if (!stages.size) setBar(-1)
       if (!e.slug) return

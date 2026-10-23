@@ -1,7 +1,7 @@
 // Long-running work (first edit, notes, re-renders). One job per project at a time. Every event
 // goes to the renderer; app.json records the running job so a crash can be recovered at startup.
 import { randomUUID } from 'node:crypto'
-import type { JobEvent, JobKind, JobUpdate, Phase, VersionMade } from '../shared/api'
+import type { JobEvent, JobKind, JobUpdate, PausedFor, Phase, VersionMade } from '../shared/api'
 import { cleanPartialVersions, listVersions, projectDir, recordVersionMade, settleNote, updateAppState, settleInterrupted, stamp, type AppState } from './store'
 import { claimProject, type ProjectOwner } from './owner'
 import type { ChatLine } from './style-consent'
@@ -56,6 +56,8 @@ interface Running {
   secondsLeft: number | null
   overdue: boolean
   thinking: boolean
+  /** `message` is the wait for the editor (Waiting for Claude to answer), not the step's work */
+  waiting: boolean
   steps?: Step[]
   /** The project owner token its engine commands carry (owner.ts); null until the project is claimed. */
   owner: string | null
@@ -98,12 +100,13 @@ export function createJobManager(
   }
 
   /** `record`: more changes to app.json, saved in the same write that records the job as running. */
-  function start(slug: string | null, kind: JobKind, fn: JobFn, opts: { note?: string; record?: (s: AppState) => void } = {}): string {
+  /** `pause`: whether a failure pauses the job to continue on its own (main/pause.ts) rather than failing it. */
+  function start(slug: string | null, kind: JobKind, fn: JobFn, opts: { note?: string; record?: (s: AppState) => void; pause?: (err: unknown) => PausedFor | null } = {}): string {
     assertCanStart()
     if (slug) refuseIfBusy(slug)
     const id = randomUUID()
     const abort = new AbortController()
-    const job: Running = { id, slug, kind, abort, message: 'Getting started', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false, owner: null, waitingForRender: false, report: () => undefined, done: Promise.resolve() }
+    const job: Running = { id, slug, kind, abort, message: 'Getting started', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false, waiting: false, owner: null, waitingForRender: false, report: () => undefined, done: Promise.resolve() }
     jobs.set(id, job)
     const send = (e: JobEvent): void => broadcast(e)
     let history: SpeedHistory = { v: 1, phases: {} }
@@ -128,7 +131,7 @@ export function createJobManager(
       const secondsLeft = job.waitingForRender || (slug && progress && !mediaSec) ? null : snap.etaSec
       job.secondsLeft = secondsLeft
       job.overdue = !job.waitingForRender && snap.overdue
-      send({ jobId: id, slug, type: 'status', message: shown(job), pct: job.pct, ...(phase ? { phase } : {}), overall: snap.overall, secondsLeft: job.secondsLeft, overdue: job.overdue, thinking: job.thinking, ...(job.steps ? { steps: job.steps } : {}) })
+      send({ jobId: id, slug, type: 'status', message: shown(job), pct: job.pct, ...(phase ? { phase } : {}), overall: snap.overall, secondsLeft: job.secondsLeft, overdue: job.overdue, thinking: job.thinking, waiting: job.waiting, ...(job.steps ? { steps: job.steps } : {}) })
     }
     job.report = status
     // re-broadcast once a second: time moves the bar and the estimate even while the AI thinks
@@ -145,6 +148,7 @@ export function createJobManager(
           await updateAppState(slug, (s) => {
             s.job = { id, kind, startedAt: new Date().toISOString(), note: opts.note }
             s.lastError = null
+            delete s.paused
             if (kind === 'first-edit') s.status = 'working'
             opts.record?.(s)
           })
@@ -183,10 +187,12 @@ export function createJobManager(
               job.steps = rows.steps()
             }
             job.thinking = !!e.thinking
+            job.waiting = !!e.waiting
             status()
           } else if (e.type === 'tool') {
             log(`[job ${kind}] tool ${e.name}`)
             job.thinking = false // the AI answered
+            job.waiting = false
             send({ jobId: id, slug, type: 'tool', name: e.name, summary: e.summary })
           } else if (e.type === 'render') {
             const r = e
@@ -230,7 +236,8 @@ export function createJobManager(
         await Promise.allSettled(pending)
         const err = toUserError(e)
         const cancelled = err.code === 'CANCELLED' || abort.signal.aborted
-        if (!cancelled) log(`[job ${kind}] ${err.code}: ${err.message ?? ''}`)
+        const paused = cancelled ? null : (opts.pause?.(e) ?? null)
+        if (!cancelled) log(`[job ${kind}] ${err.code}: ${err.message ?? ''}${paused ? ` (paused: ${paused.reason})` : ''}`)
         if (slug && err.code === 'ENGINE_STUCK') stuck.set(slug, { code: err.code, userMessage: err.userMessage })
         // Without the project (an earlier job could not be settled) this job wrote nothing, and app.json's
         // record of that earlier job must stay for settleInterrupted. With a stuck engine nothing is
@@ -239,15 +246,16 @@ export function createJobManager(
           await cleanPartialVersions(projectDir(slug)).catch(() => [])
           await updateAppState(slug, (s) => {
             s.job = null
-            if (kind === 'first-edit') s.status = cancelled ? 'interrupted' : 'failed'
+            if (kind === 'first-edit') s.status = cancelled || paused ? 'interrupted' : 'failed'
+            if (paused) s.paused = paused
             // An export failure is shown in the export dialog; the video itself is fine.
-            if (!cancelled && kind !== 'export') s.lastError = { code: err.code, userMessage: err.userMessage }
-            settleNote(s, id, cancelled ? 'stopped' : 'failed')
+            else if (!cancelled && kind !== 'export') s.lastError = { code: err.code, userMessage: err.userMessage }
+            settleNote(s, id, cancelled ? 'stopped' : paused ? 'paused' : 'failed')
           }).catch(() => {})
         }
-        if (slug && !cancelled && kind !== 'first-edit' && kind !== 'export')
+        if (slug && !cancelled && !paused && kind !== 'first-edit' && kind !== 'export')
           await updateAppState(slug, (s) => void s.chat.push(stamp({ from: 'editor', text: err.userMessage, ...(kind === 'script' ? { plan: true as const } : {}) }))).catch(() => {})
-        send(cancelled ? { jobId: id, slug, type: 'cancelled' } : { jobId: id, slug, type: 'error', code: err.code, userMessage: err.userMessage })
+        send(cancelled ? { jobId: id, slug, type: 'cancelled' } : paused ? { jobId: id, slug, type: 'paused', paused } : { jobId: id, slug, type: 'error', code: err.code, userMessage: err.userMessage })
       } finally {
         clearInterval(tick)
         if (!(slug && stuck.has(slug))) await owner?.release().catch((e) => log(`[job ${kind}] could not let go of the project: ${String(e)}`))
@@ -330,7 +338,9 @@ export function createJobManager(
       all.forEach((j) => j.abort.abort())
       await Promise.race([Promise.all(all.map((j) => j.done)), new Promise((r) => setTimeout(r, 4000))])
     },
-    runningCount: () => jobs.size
+    runningCount: () => jobs.size,
+    /** Reels a version is being made for (a first edit, a note, a hand edit): what a quit asks about. */
+    making: (): string[] => [...new Set([...jobs.values()].filter((j) => j.slug && (j.kind === 'first-edit' || j.kind === 'note' || j.kind === 'rerender')).map((j) => j.slug!))]
   }
 }
 

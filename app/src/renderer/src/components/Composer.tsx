@@ -47,6 +47,7 @@ export function Composer({
   stepNote: running,
   under,
   held,
+  heldWhy,
   alert,
   connect,
   onSend,
@@ -81,6 +82,8 @@ export function Composer({
   under?: ReactNode
   /** notes held after Stop or a failed note */
   held: number
+  /** held by a pause that ends by itself ("Continues at 3:40 PM"), not by the person */
+  heldWhy?: string | null
   alert: string | null
   /** the editor picker, in place of the box, when no editor is connected */
   connect: ReactNode
@@ -101,7 +104,8 @@ export function Composer({
   // Steps opens per job: Version 1 starts open, a note starts closed
   const stepsOpen = job ? (stepsToggled === job.jobId ? !stepsOpenFirst : stepsOpenFirst) : false
   const now = firstSteps?.find((s) => s.state === 'now')
-  const current = firstSteps ? (now ? STEP_LABEL[now.id] : null) : job?.message
+  // Version 1 names its step, unless the step is waiting on the editor: then the wait is what is happening
+  const current = firstSteps && !job?.waiting ? (now ? STEP_LABEL[now.id] : null) : job?.message
   const pct = job ? Math.min(1, job.overall / 100) : 0
   const left = job ? timeLeftWords(job) : null
 
@@ -141,7 +145,8 @@ export function Composer({
                 <b aria-hidden>{making ? `Making Version ${making}` : job.message}</b>
                 <span className="m" data-testid="note-time-left">
                   {left ? ` · ${left}` : ''}
-                  {making && current ? ` · ${current}` : ''}
+                  {/* the open list above names the step; the strip says it only when the list is shut, or when it is a wait */}
+                  {making && current && (!stepsOpen || job.waiting) ? ` · ${current}` : ''}
                 </span>
                 <span className="sp" />
                 <button className="sbtn" aria-expanded={stepsOpen} onClick={() => setStepsToggled((t) => (t === job.jobId ? null : job.jobId))} data-testid="steps">
@@ -156,7 +161,7 @@ export function Composer({
           {stripShown && strip === 'held' && (
             <div className="strip wait" role="status" data-testid="queue-held">
               <b data-testid="queue-count">{held === 1 ? '1 note held' : `${held} notes held`}</b>
-              <span className="m">· waiting for you to send</span>
+              <span className="m">· {heldWhy ?? 'waiting for you to send'}</span>
               <span className="sp" />
               <button className="sbtn" onClick={onClear} data-testid="queue-clear">
                 Clear

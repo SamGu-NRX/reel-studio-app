@@ -1,6 +1,7 @@
-// The first run's sample editing itself on the Reel screen's own player: the words fill in while the take
-// fast-forwards, a pencil strikes the filler, the false start and the pauses, three snips land (each with its
-// sound, the new length and the picture jumping on the same frame), subtitles come in, and a cover is picked.
+// The first run's sample editing itself on the Reel screen's own player, the way an editor makes Version 1: the
+// words fill in while the take fast-forwards, a pencil strikes the filler, the false start and the pauses, three
+// snips land (each with its sound, the new length and the picture jumping on the same frame), the weaker of two takes
+// goes and two pictures come in, subtitles come in, and a cover is picked.
 //
 // It drives DOM refs, so playback never re-renders React, and it moves things with transform and opacity only. It
 // never reads layout while anything moves: a snip lets the paragraph reflow once instead of sliding every word to
@@ -9,7 +10,7 @@
 // One <video> plays the sample. Changing what it shows swaps its source; the frame on screen is copied to a canvas
 // first and covers the swap, so nothing goes black and no second video is ever playing.
 import type { Step, StepId } from '../../../../shared/steps'
-import { EDITS, RAW_LEN, SIMPLE_CUTS, SNIPS, subGroups, toEdit, toRaw, type EditName, type SubGroup, type Token } from './sample'
+import { ALL_CUTS, CUTS, EDIT, RAW_LEN, SNIPS, WEAKER_TAKE, subGroups, toEdit, toRaw, type SubGroup, type Token } from './sample'
 import { sound } from './sound'
 
 const EASE = 'cubic-bezier(.2,.8,.2,1)'
@@ -35,8 +36,17 @@ const frameShown = (v: HTMLVideoElement) =>
 /** The rows the sample shows, Version 1's own (shared/steps.ts), one for each thing the welcome promised. */
 export const SAMPLE_STEPS: StepId[] = ['listen', 'retakes', 'edit', 'subtitles', 'cover']
 export const freshSteps = (): Step[] => SAMPLE_STEPS.map((id) => ({ id, state: 'todo' }))
+/** Each row's result word once it is done. */
+export const RESULT = {
+  listen: (toks: Token[]) => `${toks.filter((x) => x.text).length} words`,
+  retakes: '0:24 → 0:12',
+  edit: 'Take 2 · 2 pictures',
+  subtitles: 'Key words marked',
+  cover: 'Smiling at the camera'
+}
 
-export type View = 'raw' | EditName
+/** What the player shows: the raw take, or Version 1 (ai.mp4). */
+export type View = 'raw' | 'v1'
 
 export interface DemoEls {
   video: HTMLVideoElement
@@ -63,8 +73,6 @@ export interface DemoEvents {
   held(on: boolean): void
   finished(): void
   paused(p: boolean): void
-  /** Version 2 (the editor's) is being made, then is on screen */
-  upgrade(state: 'making' | 'done'): void
 }
 
 export class Demo {
@@ -78,10 +86,8 @@ export class Demo {
   private frame = 0
   private curGroup: SubGroup | null = null
   private curWord: number | null = null
-  private groups: Record<EditName, SubGroup[]>
+  private groups: SubGroup[]
   private steps = freshSteps()
-  private upgraded = false
-  private upgrading = false
   finished = false
 
   constructor(
@@ -90,7 +96,7 @@ export class Demo {
     private urls: Record<View, string>,
     private on: DemoEvents
   ) {
-    this.groups = { simple: subGroups(EDITS.simple, toks), ai: subGroups(EDITS.ai, toks) }
+    this.groups = subGroups(EDIT, toks)
     this.frame = requestAnimationFrame(this.sync)
     // the raw take loads under the welcome, so Get started finds the player ready
     this.src = 'raw'
@@ -124,7 +130,7 @@ export class Demo {
       }
       this.src = name
       v.src = this.urls[name]
-      // a version loops while it is watched; the raw take plays once, for listening or while held
+      // Version 1 loops while it is watched; the raw take plays once, for listening or while held
       v.loop = name !== 'raw'
     }
     if (at != null) v.currentTime = at
@@ -195,10 +201,9 @@ export class Demo {
       this.mark(this.holding ? this.find((w) => !!w.text && t >= w.s && t < w.e) : null)
       return
     }
-    const edit = EDITS[this.view]
-    this.setSubs(this.groups[this.view].find((g) => t >= g.s && t < g.e) ?? null)
-    const raw = toRaw(edit, t)
-    this.mark(this.find((w) => !!w.text && edit.kept.has(w.seg) && raw >= w.s && raw < w.e))
+    this.setSubs(this.groups.find((g) => t >= g.s && t < g.e) ?? null)
+    const raw = toRaw(EDIT, t)
+    this.mark(this.find((w) => !!w.text && EDIT.kept.has(w.seg) && raw >= w.s && raw < w.e))
   }
 
   private find(f: (t: Token) => boolean): number | null {
@@ -258,12 +263,12 @@ export class Demo {
     this.step('listen', 'now')
     await this.listen(R)
     if (!this.ok(R)) return
-    this.step('listen', 'done', `${this.toks.filter((x) => x.text).length} words`)
+    this.step('listen', 'done', RESULT.listen(this.toks))
     await wait(300)
     if (!this.ok(R)) return
 
     this.step('retakes', 'now')
-    await wait(this.strike(SIMPLE_CUTS))
+    await wait(this.strike(CUTS))
     if (!this.ok(R)) return
     await wait(250)
     for (const [n, cut] of SNIPS.entries()) {
@@ -285,18 +290,42 @@ export class Demo {
       await wait(420)
     }
     if (!this.ok(R)) return
-    this.step('retakes', 'done', '0:24 → 0:12')
-    // Without an editor nobody picks takes or pictures: the row says so, the way Version 1 says it.
-    this.step('edit', 'skipped')
+    this.step('retakes', 'done', RESULT.retakes)
+
+    // the editor's part: the weaker of the two takes goes, and a picture comes in for each thing named
+    this.step('edit', 'now')
+    this.tag('Picking the best take')
+    await wait(this.strike([WEAKER_TAKE]) + 250)
+    if (!this.ok(R)) return
+    const s = this.snip([WEAKER_TAKE])
+    window.setTimeout(() => this.ok(R) && sound.play('cut', 1.2), reduced() ? 0 : 140)
+    await s
+    await wait(350)
+    if (!this.ok(R)) return
+    this.tag('Adding pictures')
+    this.els.pics.forEach((p, i) => {
+      p.classList.remove('gone')
+      if (!reduced())
+        p.animate(
+          [
+            { opacity: 0, transform: 'scale(.85)' },
+            { opacity: 1, transform: 'none' }
+          ],
+          { duration: 220, delay: i * 80, easing: EASE, fill: 'backwards' }
+        )
+    })
+    await wait(700)
+    if (!this.ok(R)) return
+    this.step('edit', 'done', RESULT.edit)
 
     this.step('subtitles', 'now')
-    this.view = 'simple'
+    this.view = 'v1'
     this.subsOn = true
     this.tag(null)
-    void this.show('simple', { at: 0 })
+    void this.show('v1', { at: 0 })
     await wait(3000)
     if (!this.ok(R)) return
-    this.step('subtitles', 'done', 'Key words marked')
+    this.step('subtitles', 'done', RESULT.subtitles)
 
     this.step('cover', 'now')
     await this.pickCover(R)
@@ -308,12 +337,13 @@ export class Demo {
 
   private doneSteps(): Step[] {
     const result: Partial<Record<StepId, string>> = {
-      listen: `${this.toks.filter((x) => x.text).length} words`,
-      retakes: '0:24 → 0:12',
-      subtitles: 'Key words marked',
-      cover: 'Smiling at the camera'
+      listen: RESULT.listen(this.toks),
+      retakes: RESULT.retakes,
+      edit: RESULT.edit,
+      subtitles: RESULT.subtitles,
+      cover: RESULT.cover
     }
-    return SAMPLE_STEPS.map((id) => (id === 'edit' ? { id, state: 'skipped' } : { id, state: 'done', result: result[id] }))
+    return SAMPLE_STEPS.map((id) => ({ id, state: 'done', result: result[id] }))
   }
 
   /**
@@ -367,7 +397,7 @@ export class Demo {
     await done(cover.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: EASE }))
     if (!this.ok(R)) return
     cover.classList.remove('show')
-    void this.show('simple', { at: 0 })
+    void this.show('v1', { at: 0 })
   }
 
   private finish() {
@@ -383,11 +413,15 @@ export class Demo {
       e.classList.add('in')
       e.getAnimations().forEach((a) => a.cancel())
     })
-    for (const id of SIMPLE_CUTS) {
+    for (const id of ALL_CUTS) {
       const seg = this.els.segs.get(id)!
       seg.getAnimations().forEach((a) => a.cancel())
       seg.classList.add('gone')
       seg.querySelectorAll('.tk').forEach((c) => c.classList.add('cut'))
+    }
+    for (const p of this.els.pics) {
+      p.getAnimations().forEach((a) => a.cancel())
+      p.classList.remove('gone')
     }
     this.mark(null)
     this.steps = this.doneSteps()
@@ -396,27 +430,25 @@ export class Demo {
     this.els.scrim.classList.remove('show')
     this.els.cover.classList.remove('show')
     this.tag(null)
-    this.view = 'simple'
+    this.view = 'v1'
     this.subsOn = true
     // reduced motion: nothing plays by itself once the story is told; Play starts the reel
     if (reduced()) this.setPaused(true)
-    void this.show('simple', { at: 0 })
+    void this.show('v1', { at: 0 })
     this.finish()
   }
 
-  /** Press and hold: the original plays where the version was, and the cut words and pauses come back. */
+  /** Press and hold: the original plays where the version was, and the cut words, pauses and take come back. */
   holdStart(): void {
-    // not while the editor's version is being made: the transcript is changing under the original
-    if (!this.finished || this.holding || this.upgrading) return
+    if (!this.finished || this.holding) return
     this.holding = true
     this.on.held(true)
-    const v = this.view as EditName
-    const at = toRaw(EDITS[v], this.els.video.currentTime)
+    const at = toRaw(EDIT, this.els.video.currentTime)
     this.els.cover.classList.remove('show')
     void this.show('raw', { at, play: !this.paused })
     this.tag('Original · 0:24')
     this.setSubs(null)
-    for (const id of SIMPLE_CUTS.concat(v === 'ai' ? ['r4'] : [])) this.els.segs.get(id)!.classList.remove('gone')
+    for (const id of ALL_CUTS) this.els.segs.get(id)!.classList.remove('gone')
     for (const p of this.els.pics) p.classList.add('gone')
   }
 
@@ -425,48 +457,9 @@ export class Demo {
     if (!this.holding) return
     this.holding = false
     this.on.held(false)
-    const v = this.view as EditName
-    void this.show(v, { at: toEdit(EDITS[v], this.els.video.currentTime), play: !this.paused })
+    void this.show('v1', { at: toEdit(EDIT, this.els.video.currentTime), play: !this.paused })
     this.tag(null)
-    for (const id of SIMPLE_CUTS.concat(v === 'ai' ? ['r4'] : [])) this.els.segs.get(id)!.classList.add('gone')
-    if (v === 'ai') for (const p of this.els.pics) p.classList.remove('gone')
-  }
-
-  /**
-   * What an editor adds, on the same sample: the weaker of two takes goes and two pictures come in. The result is
-   * bundled, so the log says what an editor adds rather than crediting the one just connected.
-   */
-  async upgrade(): Promise<void> {
-    if (this.upgraded) return
-    this.upgraded = true
-    this.holdEnd()
-    this.upgrading = true
-    const R = this.run
-    this.on.upgrade('making')
-    await wait(400)
-    if (!this.ok(R)) return
-    await wait(this.strike(['r4']) + 250)
-    if (!this.ok(R)) return
-    const s = this.snip(['r4'])
-    window.setTimeout(() => this.ok(R) && sound.play('cut'), reduced() ? 0 : 140)
-    await s
-    await wait(400)
-    if (!this.ok(R)) return
-    this.els.pics.forEach((p, i) => {
-      p.classList.remove('gone')
-      if (!reduced())
-        p.animate(
-          [
-            { opacity: 0, transform: 'scale(.85)' },
-            { opacity: 1, transform: 'none' }
-          ],
-          { duration: 220, delay: i * 80, easing: EASE, fill: 'backwards' }
-        )
-    })
-    this.view = 'ai'
-    this.subsOn = true
-    this.upgrading = false
-    void this.show('ai', { at: 0 })
-    this.on.upgrade('done')
+    for (const id of ALL_CUTS) this.els.segs.get(id)!.classList.add('gone')
+    for (const p of this.els.pics) p.classList.remove('gone')
   }
 }

@@ -54,7 +54,7 @@
 .platform-win32 .fr-tb, .platform-linux .fr-tb { padding: 0 150px 0 16px; }
 .fr-tb .rt-title { flex: 1; }
 .fr-snd {
-  -webkit-app-region: no-drag; height: 28px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; color: var(--ink-2);
+  -webkit-app-region: no-drag; height: 32px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: var(--ink-2);
   font: inherit; font-size: var(--fs-base); font-weight: 560; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, color 120ms ease;
 }
 @media (hover: hover) and (pointer: fine) { .fr-snd:hover { background: var(--wash); color: var(--ink); } }
@@ -106,9 +106,18 @@
 .fr-hint.show { opacity: 1; }
 
 /* ---------- the notes column ---------- */
-/* Reversed with one child, the log starts scrolled to its end and stays there as lines arrive, without measuring. */
+/* Its top says where in the first run this is (the onboarding prototype's step line) and what the column shows. */
+.fr-col .fr-h { height: auto; display: grid; justify-items: start; gap: 4px; padding: 10px 0 6px; }
+.fr-where { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 560; color: var(--ink-3); }
+.fr-where li { display: inline-flex; align-items: center; gap: 7px; }
+.fr-where li::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.fr-where li.done { color: var(--ink-2); }
+.fr-where li[aria-current] { color: var(--ink); }
+.fr-lead { font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-2); max-width: 46ch; text-wrap: pretty; }
+/* Reversed with one child, the log stays scrolled to its end as lines arrive, without measuring; the child's free
+   space goes below it, so a short thread starts under the heading instead of sinking to the bottom. */
 .fr-log { flex-direction: column-reverse; }
-.fr-log-in { display: flex; flex-direction: column; gap: 12px; }
+.fr-log > .fr-log-in { display: flex; flex-direction: column; gap: 12px; margin-top: 0; margin-bottom: auto; }
 .fr-log .nt-res b.v { cursor: default; }
 @media (hover: hover) and (pointer: fine) { .fr-log .nt-res b.v:hover { text-decoration: none; } }
 /* the words as they are heard; the marker follows the voice, the pencil marks the cuts */
@@ -136,7 +145,6 @@
 .fr-words .tk.pic { padding: 0; margin: 0; vertical-align: -8px; }
 .fr-words .tk.pic img { width: 22px; height: 30px; object-fit: cover; border-radius: 4px; display: block; box-shadow: 0 0 0 2px var(--marker); }
 
-.connect-cin > p.fr-why { font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 400; color: var(--ink-2); margin-bottom: 4px; }
 .fr-pick { animation: fr-up 220ms cubic-bezier(.2, .8, .2, 1) both; }
 
 .fr-foot { flex: none; display: flex; align-items: center; gap: 12px; min-height: 50px; padding-top: 12px; }
@@ -155,7 +163,8 @@
 html.kb :is(.fr-stage .phone, .fr-welcome.leaving, .fr-stage.leaving) { transition: none; }
 html.kb :is(.fr-stage.on .stage, .fr-stage.on .fr-col, .fr-pick, .shell.arriving > *) { animation: none; }
 @media (prefers-reduced-motion: reduce) {
-  .fr-welcome > *, .fr-stage.on .fr-col, .fr-pick { animation-name: fr-in; }
+  @keyframes fr-rise { from { opacity: 0; } }
+  @keyframes fr-up { from { opacity: 0; } }
   .fr-stage .phone, .fr-stage .phone.fr-held, .fr-stage.leaving .phone { transform: none; transition: none; }
   .fr-words .tk { transform: none; transition: opacity 160ms cubic-bezier(.2, .8, .2, 1); }
   .fr-words .tk::after { transition: none; }
@@ -167,4 +176,4 @@ html.kb :is(.fr-stage.on .stage, .fr-stage.on .fr-col, .fr-pick, .shell.arriving
 @keyframes fr-side { from { opacity: 0; transform: translateX(-16px); } }
 .shell.arriving > .side { animation: fr-side 220ms cubic-bezier(.2, .8, .2, 1) both; }
 .shell.arriving > .titlebar, .shell.arriving > .main { animation: fr-in 220ms 60ms cubic-bezier(.2, .8, .2, 1) both; }
-@media (prefers-reduced-motion: reduce) { .shell.arriving > .side { animation-name: fr-in; } }
+@media (prefers-reduced-motion: reduce) { @keyframes fr-side { from { opacity: 0; } } }

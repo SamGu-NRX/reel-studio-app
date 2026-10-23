@@ -23,6 +23,8 @@ import {
   brollLabel,
   carryScript,
   createPlanned,
+  discardIfUntouched,
+  planReel,
   readProject,
   settleInterrupted,
   stamp
@@ -347,6 +349,30 @@ describe('brollLabel (grandma3 #9: only pictures are called pictures)', () => {
 })
 
 describe('a reel planned before it has a video', () => {
+  // fails if New reel (⌘N) pressed again makes a second empty reel, or leaving one keeps it on Reels
+  it('reuses an untouched New reel and removes it on leaving; anything done to it keeps it', async () => {
+    setupPaths()
+    const idle = () => false
+    const first = await planReel(idle)
+    expect(await planReel(idle)).toBe(first)
+    // a job running on it (a script being written) keeps it, and New reel makes another
+    expect(await discardIfUntouched(first, (s) => s === first)).toBe(false)
+    expect(await planReel((s) => s === first)).not.toBe(first)
+    expect(await discardIfUntouched(first, idle)).toBe(true)
+    const left = (await listProjects()).map((p) => p.slug)
+    expect(left).not.toContain(first)
+    expect(left).toHaveLength(1)
+
+    const renamed = left[0]
+    await updateAppState(renamed, (s) => void (s.title = 'Sourdough'))
+    const planned = await planReel(idle)
+    await updateAppState(planned, (s) => void s.chat.push(stamp({ from: 'you', text: 'an idea', plan: true })))
+    const dropped = await planReel(idle)
+    fakeProject(dropped) // its video arrived
+    for (const slug of [renamed, planned, dropped]) expect(await discardIfUntouched(slug, idle)).toBe(false)
+    expect((await listProjects()).map((p) => p.slug).sort()).toEqual([renamed, planned, dropped].sort())
+  })
+
   // fails if attaching a video to a planned reel loses its script: the editor reads it from project.json
   it('lists as planned, then carries its newest script into the project the video makes', async () => {
     setupPaths()

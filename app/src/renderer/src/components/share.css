@@ -106,4 +106,6 @@ html.kb .sp-chev { transition: none; }
   .sp-bar i.run { animation: none; width: 100%; opacity: .45; }
   .share-ring { transform: rotate(-90deg); }
   .share-ring.run { animation: breathe-soft 1.8s ease-in-out infinite !important; }
+  @keyframes share-turn { from, to { transform: rotate(-90deg); } }
+  @keyframes sp-run { from, to { transform: none; } }
 }
