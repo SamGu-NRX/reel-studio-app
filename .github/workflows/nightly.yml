@@ -1,0 +1,125 @@
+name: Nightly alpha
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or tag to package
+        required: true
+        default: redesign-alpha
+        type: string
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-alpha
+  cancel-in-progress: false
+
+env:
+  BUILD_REF: ${{ inputs.ref || 'redesign-alpha' }}
+
+jobs:
+  build-macos:
+    name: Build and test macOS arm64
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - name: Check out requested ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          ref: ${{ env.BUILD_REF }}
+          persist-credentials: false
+
+      - name: Build unsigned DMG
+        run: packaging/build-mac.sh
+        env:
+          REELSTUDIO_RELEASE_REPO: SamGu-NRX/reel-studio-app
+
+      - name: Install and smoke-test packaged app
+        run: |
+          dmg=$(find app/release -maxdepth 1 -name '*.dmg' -type f -print -quit)
+          test -n "$dmg"
+          TEST_APPS_DIR="$RUNNER_TEMP/reel-studio-mac-install" \
+            packaging/test-mac-install.sh "$dmg" --unsigned --timeout 600
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nightly-macos-arm64
+          path: app/release/*.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+  build-windows:
+    name: Build and test Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out requested ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          ref: ${{ env.BUILD_REF }}
+          persist-credentials: false
+
+      - name: Build unsigned NSIS installer
+        shell: pwsh
+        run: .\packaging\build-win.ps1
+        env:
+          REELSTUDIO_RELEASE_REPO: SamGu-NRX/reel-studio-app
+
+      - name: Install and smoke-test packaged app
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem app\release -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'No NSIS installer was produced' }
+          powershell -ExecutionPolicy Bypass -File packaging\test-win-install.ps1 `
+            -Installer $installer.FullName `
+            -InstallDir (Join-Path $env:RUNNER_TEMP 'reel-studio-win-install')
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nightly-windows-x64
+          path: app/release/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish nightly prerelease
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out packaged ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          ref: ${{ env.BUILD_REF }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download installers
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: nightly-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create fork prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha7=$(git rev-parse --short=7 HEAD)
+          date=$(date -u +%Y-%m-%d)
+          tag="nightly-${date}-${sha7}"
+          test -n "$(find release-assets -type f -print -quit)"
+          gh release create "$tag" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$BUILD_REF" \
+            --prerelease \
+            --title "Nightly alpha ${date} (${sha7})" \
+            --notes "Automated fork-only nightly build from ${BUILD_REF} at ${sha7}. macOS is ad-hoc signed and was not notarized."
+          echo "release_url=https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}" >> "$GITHUB_STEP_SUMMARY"
