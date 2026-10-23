@@ -1,8 +1,8 @@
 // Long-running work (first edit, notes, re-renders). One job per project at a time. Every event
 // goes to the renderer; app.json records the running job so a crash can be recovered at startup.
 import { randomUUID } from 'node:crypto'
-import type { JobEvent, JobKind, JobUpdate, Phase } from '../shared/api'
-import { addChat, cleanPartialVersions, projectDir, settleNote, updateAppState } from './store'
+import type { JobEvent, JobKind, JobUpdate, Phase, VersionMade } from '../shared/api'
+import { addChat, cleanPartialVersions, listVersions, projectDir, recordVersionMade, settleNote, updateAppState } from './store'
 import { toUserError } from './engine'
 import { learn, ProgressTracker, type SpeedHistory, parseHistory, type ProgressKind } from './progress'
 import type { WorkGate } from './work-gate'
@@ -22,8 +22,14 @@ export interface ProgressDeps {
 
 /** Turns a finished render into a playable URL of a copy that is safe to play (index.ts). */
 export type ToVideo = (slug: string, e: Extract<JobUpdate, { type: 'render' }>) => Promise<string | null>
-/** `outcome`: for a note, whether it changed the video (absent = it did). */
-export type JobFn = (emit: Emit, signal: AbortSignal) => Promise<{ summary: string; version?: number; quiet?: boolean; outcome?: 'done' | 'failed' }>
+/**
+ * `outcome`: for a note, whether it changed the video (absent = it did). `made`: what this job changed, recorded for
+ * `version` only if the job's own final render made it (see start).
+ */
+export type JobFn = (
+  emit: Emit,
+  signal: AbortSignal
+) => Promise<{ summary: string; version?: number; quiet?: boolean; outcome?: 'done' | 'failed'; made?: Pick<VersionMade, 'by' | 'summary'> }>
 
 interface Running {
   id: string
@@ -107,6 +113,10 @@ export function createJobManager(
         // main.log gets each new status line and each AI step, timed, so a slow edit can be traced afterwards
         const t0 = Date.now()
         let logged = ''
+        // What made a version is recorded where success is announced, only if this job's final render produced it
+        // and it did not exist before (an unchanged edit re-renders, and so reuses, the current version).
+        const existed = new Set(slug ? (await listVersions(projectDir(slug))).filter((v) => !v.draft).map((v) => v.n) : [])
+        const finals = new Set<number>()
         const res = await fn((e) => {
           if (e.type === 'status') {
             if (e.message && e.message !== logged) log(`[job ${kind}] ${(logged = e.message)}`)
@@ -131,6 +141,7 @@ export function createJobManager(
             send({ jobId: id, slug, type: 'tool', name: e.name, summary: e.summary })
           } else if (e.type === 'render') {
             const r = e
+            if (!r.draft) finals.add(r.version)
             const video = slug && toVideo ? toVideo(slug, r).catch(() => null) : Promise.resolve(null)
             pending.push(video.then((v) => send({ jobId: id, slug, type: 'render', version: r.version, draft: r.draft, firstLook: !!r.firstLook, video: v })))
           } else if (e.type === 'reply') send({ jobId: id, slug, type: 'reply', text: e.text })
@@ -147,6 +158,10 @@ export function createJobManager(
             s.status = 'ready'
             settleNote(s, id, res.outcome ?? 'done')
           })
+          const n = res.version
+          if (res.made && n !== undefined && finals.has(n) && !existed.has(n)) {
+            await recordVersionMade(slug, { version: n, ...res.made, at: new Date().toISOString() })
+          }
           if (!res.quiet) await addChat(slug, 'editor', res.summary, res.version)
         }
         log(`[job ${kind}] done in ${Math.round((Date.now() - t0) / 1000)} s`)
