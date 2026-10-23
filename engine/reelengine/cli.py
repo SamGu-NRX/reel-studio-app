@@ -106,6 +106,25 @@ def cmd_autocut(args):
     return analyze.autocut(_project(args), gap_cap=args.gap_cap)
 
 
+def cmd_make_variant(args):
+    from .variation import create_variant
+    try:
+        value = json.loads(args.value) if args.value is not None else None
+    except (ValueError, TypeError):
+        raise EngineError("BAD_VARIANT", "--value must be JSON", "The trial choice must be valid JSON.")
+    return create_variant(_project(args), args.variable, value=value)
+
+
+def cmd_lint_edit(args):
+    from . import project, render, tools
+    from .lint_edit import prepare
+    pdir = _project(args)
+    edit = project.load(pdir)
+    tl = project.timeline(pdir, edit)
+    ctx = render.make_ctx(pdir, edit, tl, True, tools.root_dir(args.root), pdir / "work" / "render")
+    return prepare(ctx, tl)
+
+
 def cmd_render(args):
     from . import render
     return render.run(_project(args), draft=args.draft, window=args.window,
@@ -425,8 +444,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--name")
     sp = add("analyze", cmd_analyze, "pauses, retakes, default cut")
     sp.add_argument("--faces-only", action="store_true", help="only the face track (no transcript needed)")
+    sp = add("make-variant", cmd_make_variant, "save a one-variable trial")
+    sp.add_argument("--variable", required=True, choices=["seed", "hook", "cover", "caption", "brightness"])
+    sp.add_argument("--value", help="editor's alternative, encoded as JSON; omit for a new seed or +8%% exposure")
     sp = add("autocut", cmd_autocut, "write the deterministic default cut")
     sp.add_argument("--gap-cap", type=float)
+    sp = add("lint-edit", cmd_lint_edit, "check the edit without rendering")
+    sp.add_argument("--root")
     sp = add("render", cmd_render, "render project.json")
     sp.add_argument("--draft", action="store_true")
     sp.add_argument("--window", help="a:b output seconds")

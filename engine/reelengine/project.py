@@ -6,10 +6,12 @@ atomic (write a temp file, then replace) so a crash mid-save can never leave hal
 from __future__ import annotations
 
 import copy
+import contextlib
 import datetime as _dt
 import json
 import os
 import re
+import threading
 import unicodedata
 import uuid
 from pathlib import Path
@@ -18,6 +20,61 @@ from typing import Optional
 from . import cut as cutmod
 from . import safepath
 from .proto import EngineError
+
+
+_OWNER_GUARD = threading.Lock()
+_OWNER_LOCKS = {}
+_OWNER_DEPTH = threading.local()
+
+
+@contextlib.contextmanager
+def owner_lock(project_dir: Path):
+    """Serialize engine writers; the kernel releases this lock if a writer exits."""
+    folder = Path(project_dir).resolve()
+    key = (os.getpid(), str(folder))
+    with _OWNER_GUARD:
+        mutex = _OWNER_LOCKS.setdefault(key, threading.RLock())
+    with mutex:
+        owned = getattr(_OWNER_DEPTH, 'owned', set())
+        if key in owned:
+            yield
+            return
+        folder.mkdir(parents=True, exist_ok=True)
+        fd = os.open(folder / '.project-owner.lock', os.O_RDWR | os.O_CREAT, 0o600)
+        acquired = False
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                if os.fstat(fd).st_size == 0:
+                    os.write(fd, b'\0')
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            acquired = True
+            _OWNER_DEPTH.owned = owned | {key}
+            yield
+        finally:
+            _OWNER_DEPTH.owned = owned
+            try:
+                if acquired:
+                    if os.name == 'nt':
+                        import msvcrt
+                        os.lseek(fd, 0, os.SEEK_SET)
+                        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
+
+
+def _recover_trial(project_dir):
+    if (Path(project_dir) / '.trial-transaction.json').exists():
+        from .variation import recover_transaction
+        recover_transaction(project_dir)
+
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema" / "project.schema.json"
 SCHEMA_VERSION = 1
@@ -158,6 +215,15 @@ def project_file(project_dir: Path) -> Path:
 
 
 def load(project_dir: Path, check: bool = True, file: Optional[Path] = None) -> dict:
+    # a note's private copy (#29) is not project.json: no trial to recover, and no other writer
+    if file is not None or not project_file(project_dir).exists():
+        return _load(project_dir, check, file)
+    with owner_lock(project_dir):
+        _recover_trial(project_dir)
+        return _load(project_dir, check)
+
+
+def _load(project_dir: Path, check: bool = True, file: Optional[Path] = None) -> dict:
     pf = Path(file) if file is not None else project_file(project_dir)
     if not pf.exists():
         raise EngineError("NO_PROJECT", f"no project.json in {project_dir}",
@@ -176,6 +242,23 @@ def load(project_dir: Path, check: bool = True, file: Optional[Path] = None) -> 
 
 
 def save(project_dir: Path, proj: dict, touch: bool = True, file: Optional[Path] = None) -> None:
+    if file is not None:
+        _save(project_dir, proj, touch, file)
+        return
+    with owner_lock(project_dir):
+        _recover_trial(project_dir)
+        _save(project_dir, proj, touch)
+
+
+def update_version(project_dir: Path, version: int, file: Optional[Path] = None) -> None:
+    """Patch the renderer's version without overwriting an edit or trial commit. `file`: a note's private copy."""
+    with owner_lock(project_dir) if file is None else contextlib.nullcontext():
+        fresh = load(project_dir, file=file)
+        fresh['version'] = max(int(fresh.get('version') or 0), version)
+        save(project_dir, fresh, file=file)
+
+
+def _save(project_dir: Path, proj: dict, touch: bool = True, file: Optional[Path] = None) -> None:
     if touch:
         proj["updatedAt"] = now_iso()
     problems = validate(proj)
@@ -276,7 +359,8 @@ def timeline(project_dir: Path, proj: dict, words: Optional[list] = None) -> cut
                           "There's nothing in the edit yet. Let me pick your takes first.")
     return cutmod.build_timeline(words, keep, source_meta(proj),
                                  gap_cap=float(c.get("gapCap", cutmod.GAP_CAP)),
-                                 min_saving=float(c.get("minSaving", cutmod.MIN_SAVING)))
+                                 min_saving=float(c.get("minSaving", cutmod.MIN_SAVING)),
+                                 join_fps=float(proj["format"]["fps"]))
 
 
 def _anchor_slots(proj: dict):

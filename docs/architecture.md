@@ -213,14 +213,42 @@ The agent loop lives in `ai/`. Tools are strict JSON-schema functions that opera
 small TypeScript project API and then ask the main process to re-render. The set:
 
 `get_project`, `get_transcript` (with retake groups and pauses from `analyze`), `set_cut(keep)`,
-`set_gap_cap`, `set_caption_style`, `add_caption_correction`, `list_library(kind)`, `choose_music(track,
+`set_gap_cap`, `set_cut_style(preset, seed)`, `set_caption_style`, `add_caption_correction`, `list_library(kind)`, `choose_music(track,
 startAt, level)`, `set_music_automation`, `add_broll(anchor, treatment, asset, params)`, `update_broll`,
 `remove_broll`, `set_mirror(on, source)` (flip a mirrored take; the editor calls it when text in the room reads
 backwards in the frames it looks at, or when a note says the video is mirrored), `resolve_asset(kind, intent, phase, candidateId)`, `list_assets`, `preview_asset`, `export_asset_credits`, `search_images(query)` / `fetch_image(url)`, `capture_website(url)` (a screenshot of a public web page in a locked-down offscreen window, for an app or site the speaker names), `make_animation(template, params)`, `set_zoom`,
 `set_sfx` (built-in sound effects, each hitting on a word, a b-roll's appearance or a cut; the engine plays at
 most one every 2 seconds, under the voice),
 `set_cover(atSourceTime, text)`, `write_post(caption, hashtags[5], keywords)`, `add_style_rule(rule)`,
-`render_draft`, `look_at_frames(times)` (returns images for vision models), `finish(summary_for_user)`.
+`lint_edit` (deterministic repairs and issues, see `docs/edit-lint.md`), `render_draft` (runs the same lint before encoding), `look_at_frames(times)` (returns images for vision models), `finish(summary_for_user)`.
+
+`make_variant(variable, hook?, cover?, caption?, brightness?)` saves a trial changing one of
+`seed`, `hook`, `cover`, `caption`, or `brightness`. The editor supplies the alternative hook word
+range, cover, or post caption. Seed trials generate a new seed in the same style; brightness
+trials multiply footage exposure by 1.08 or 0.92. `trials.json` beside the project records
+`{parent_version, variable, from, to}`. These fields and their types remain unchanged. New
+records also include `parent_id` and `parent_snapshot`, a project-relative path under
+`trials/parents/`. That file is the exact pre-trial project, identified by its SHA-256 digest.
+`parent_version` remains the last final render number; several unrendered edits can share it.
+Comparison readers, including the learning loop, must use `parent_snapshot` when present and
+fall back to the rendered version only for older records. Trials never create or overwrite a
+rendered version snapshot.
+
+Engine project reads, writes and final render version updates share `.project-owner.lock`.
+The OS releases ownership when a process exits; the file stays in place so waiters keep locking
+the same file. A trial checks that its parent is still current, then durably records both states
+and both trial logs in `.trial-transaction.json` before replacing either public file. It writes
+the project first and the trial log second. The next engine project access finishes an interrupted
+transaction under the same lock. Recovery refuses to overwrite a state outside that transaction.
+Non-engine writers must coordinate with the owner lock; this lock does not cover independent
+filesystem writes.
+
+For projects with `cutStyle`, one RNG resolves the framing scale, starting framing, card lead,
+cadence phase, tied accent choices, and existing J/L frame offsets. `set_zoom` accepts an optional
+`accentGroup` for equally suitable moments. The renderer returns the resolved decisions in
+`variation` and stores them in its render report. Projects without `cutStyle` retain their
+existing framing and timing. Preset values define the cadence band and two nominal framings;
+the seed changes neither the preset nor its budgets, transition options, or audio levels.
 
 Agent tasks:
 

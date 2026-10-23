@@ -13,6 +13,8 @@
     "createdAt": { "type": "string" },
     "updatedAt": { "type": "string" },
     "version": { "type": "integer", "minimum": 0 },
+    "exposure": { "type": "number", "minimum": 0.125, "maximum": 8, "description": "linear footage exposure multiplier, limited to ffmpeg exposure's -3 to +3 stops; absent means 1" },
+    "beatAccents": { "type": "boolean", "description": "Snap SFX hits and b-roll starts to detected music beats within 0.12 seconds. Absent or false leaves their timing unchanged unless cutStyle.preset is hyper. Speech cuts never move; b-roll keeps its word lead." },
     "format": {
       "type": "object",
       "required": ["width", "height", "fps"],
@@ -49,18 +51,28 @@
         "model": { "type": "string" }
       }
     },
+    "cutStyle": {
+      "type": "object",
+      "required": ["preset", "seed"],
+      "properties": {
+        "preset": { "enum": ["clean", "standard", "hyper", "punchline"] },
+        "seed": { "type": "integer" }
+      }
+    },
     "cut": {
       "type": "object",
       "required": ["keep"],
       "properties": {
         "keep": {
           "type": "array",
+          "prefixItems": [{ "$ref": "#/$defs/wordRange", "not": { "required": ["join"] } }],
           "items": {
             "type": "object",
             "required": ["from", "to"],
             "properties": {
               "from": { "$ref": "#/$defs/wordId" },
-              "to": { "$ref": "#/$defs/wordId" }
+              "to": { "$ref": "#/$defs/wordId" },
+              "join": { "$ref": "#/$defs/join" }
             }
           }
         },
@@ -164,10 +176,11 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["anchor", "scale"],
+        "required": ["anchor"],
         "properties": {
           "anchor": { "$ref": "#/$defs/wordRange" },
           "scale": { "type": "number", "minimum": 1, "maximum": 3 },
+          "kind": { "enum": ["punch", "snap", "drift"] },
           "style": { "enum": ["snap"], "description": "snap = eased punch-in and release with motion blur; absent = hard cut" }
         }
       }
@@ -261,6 +274,14 @@
   },
   "$defs": {
     "wordId": { "type": "string", "pattern": "^w[0-9]+$" },
+    "join": {
+      "type": "object",
+      "required": ["transition", "frames"],
+      "properties": {
+        "transition": { "enum": ["hard", "j", "l", "smash"] },
+        "frames": { "type": "integer", "minimum": 0 }
+      }
+    },
     "wordRange": {
       "type": "object",
       "required": ["from", "to"],

@@ -140,17 +140,56 @@ def merge_contiguous(words: list, runs: list) -> list:
     return out
 
 
+def run_bounds(words: list, i0: int, i1: int, src_dur: float, tail_cap: float) -> tuple:
+    """Source handles stop at adjacent transcript words, even when those words were removed."""
+    src = words[i0]["source"]
+    prev = words[i0 - 1] if i0 > 0 and words[i0 - 1]["source"] == src else None
+    nxt = words[i1 + 1] if i1 + 1 < len(words) and words[i1 + 1]["source"] == src else None
+    return (prev["e"] if prev else 0.0,
+            nxt["s"] if nxt else (src_dur or words[i1]["e"] + tail_cap))
+
+
+def join_runs(words: list, keep: list) -> list:
+    """Merge the same runs as hard cuts, retaining each declared boundary's occurrence.
+
+    Markers travel with runs rather than word ids: reordered and repeated ranges may
+    refer to the same word at different output times.
+    """
+    runs = []
+    previous_end = None
+    index = {w["id"]: i for i, w in enumerate(words)}
+    resolved = iter(resolve_ranges(words, keep))
+    for k, rng in enumerate(keep or []):
+        join = rng.get("join")
+        if join is not None:
+            if (k == 0 or not isinstance(join, dict)
+                    or join.get("transition") not in ("hard", "j", "l", "smash")
+                    or type(join.get("frames")) is not int or join["frames"] < 0):
+                raise EngineError("BAD_JOIN", f"cut.keep[{k}].join needs a transition and non-negative integer frames after the first range",
+                                  "Choose a join after the first range, with a whole number of frames.")
+        parts = [next(resolved)]
+        end = max(index[rng["from"]], index[rng["to"]])
+        while parts[-1][1] != end:
+            parts.append(next(resolved))
+        for j, (i0, i1) in enumerate(parts):
+            markers = [(i0, previous_end, join)] if j == 0 and join and join["transition"] != "hard" else []
+            if runs and i0 == runs[-1][1] + 1 and words[i0]["source"] == words[runs[-1][1]]["source"]:
+                old0, _, old_markers = runs[-1]
+                runs[-1] = (old0, i1, old_markers + markers)
+            else:
+                runs.append((i0, i1, markers))
+        if parts:
+            previous_end = parts[-1][1]
+    return runs
+
+
 def plan_run(words: list, i0: int, i1: int, gap_cap: float, min_saving: float, fps: float,
              src_dur: float, is_first: bool, is_last: bool) -> list:
     """Source pieces [(s, e)] that play words[i0..i1] with their pauses capped."""
     ws = words[i0:i1 + 1]
-    src = ws[0]["source"]
-    prev = words[i0 - 1] if i0 > 0 and words[i0 - 1]["source"] == src else None
-    nxt = words[i1 + 1] if i1 + 1 < len(words) and words[i1 + 1]["source"] == src else None
     lead_cap = HEAD_LEAD if is_first else max(0.0, gap_cap - AFTER_SHARE)
     tail_cap = TAIL_KEEP if is_last else min(AFTER_SHARE, gap_cap)
-    lo = prev["e"] if prev else 0.0
-    hi = nxt["s"] if nxt else (src_dur or ws[-1]["e"] + tail_cap)
+    lo, hi = run_bounds(words, i0, i1, src_dur, tail_cap)
     first_s, last_e = ws[0]["s"], ws[-1]["e"]
     start = min(first_s, max(lo, first_s - lead_cap, 0.0))
     end = max(last_e, min(hi, last_e + tail_cap))
@@ -198,12 +237,13 @@ def plan_run(words: list, i0: int, i1: int, gap_cap: float, min_saving: float, f
 
 
 def build_timeline(words: list, keep: list, sources: dict, gap_cap: float = GAP_CAP,
-                   min_saving: float = MIN_SAVING) -> Timeline:
+                   min_saving: float = MIN_SAVING, join_fps: float = 30.0) -> Timeline:
     """sources: {sid: {"duration": float, "fps": float}}."""
-    runs = merge_contiguous(words, resolve_ranges(words, keep))
+    runs = join_runs(words, keep)
     segments, words_out, first_pos = [], [], {}
+    joins = []
     out = 0.0
-    for n, (i0, i1) in enumerate(runs):
+    for n, (i0, i1, markers) in enumerate(runs):
         src = words[i0]["source"]
         meta = sources.get(src) or {}
         fps = float(meta.get("fps") or 30.0)
@@ -234,7 +274,62 @@ def build_timeline(words: list, keep: list, sources: dict, gap_cap: float = GAP_
             first_pos.setdefault(w["id"], (round(os_, 4), round(oe, 4)))
         run_segs[0].first_word = words[i0]["id"]
         run_segs[-1].last_word = words[i1]["id"]
+        # Split a merged contiguous range only at a declared join. The two pieces
+        # still show exactly the same source frames and have the same total length.
+        for wi, previous_end, join in markers:
+            t = snap(words[wi]["s"], fps)
+            for si, seg in enumerate(run_segs):
+                if seg.src_start <= t < seg.src_end:
+                    prior_word_in_piece = any(w["e"] > seg.src_start + EPS and w["s"] < t
+                                              for w in words[i0:wi])
+                    if seg.src_start + EPS < t and prior_word_in_piece:
+                        # There is no picture discontinuity here. A J/L handle would
+                        # replay the same samples; clamp to zero without adding fades.
+                        if join["transition"] in ("j", "l"):
+                            break
+                        right = Segment(src, t, seg.src_end, seg.out_start + t - seg.src_start,
+                                        first_word=words[wi]["id"], last_word=seg.last_word)
+                        seg.src_end, seg.last_word = t, words[previous_end]["id"]
+                        run_segs.insert(si + 1, right)
+                    else:
+                        right = seg
+                    right.first_word = words[wi]["id"]
+                    joins.append((right, wi, previous_end, join))
+                    break
+                if t < seg.src_start:
+                    seg.first_word = words[wi]["id"]
+                    joins.append((seg, wi, previous_end, join))
+                    break
         segments.extend(run_segs)
+    for incoming, wi, previous_end, join in joins:
+        si = next(i for i, seg in enumerate(segments) if seg is incoming)
+        if si == 0:
+            continue
+        outgoing = segments[si - 1]
+        incoming.join_transition = join["transition"]
+        incoming.join_requested_frames = join["frames"]
+        if join["transition"] == "j":
+            meta = sources.get(incoming.source) or {}
+            lo, _ = run_bounds(words, wi, wi, float(meta.get("duration") or 0), TAIL_KEEP)
+            room = min(incoming.src_start - lo, outgoing.duration)
+        elif join["transition"] == "l":
+            meta = sources.get(outgoing.source) or {}
+            _, hi = run_bounds(words, previous_end, previous_end, float(meta.get("duration") or 0), TAIL_KEEP)
+            if meta.get("duration"):
+                hi = min(hi, float(meta["duration"]))
+            room = min(hi - outgoing.src_end, incoming.duration)
+        else:
+            continue
+        # A boundary inside one continuous source span has no alternate audio to
+        # bridge. Mixing its handle with itself would double the same samples.
+        if outgoing.source == incoming.source and abs(outgoing.src_end - incoming.src_start) < EPS:
+            room = 0.0
+        frames = min(join["frames"], max(0, math.floor(room * join_fps + 1e-4)))
+        incoming.join_frames = frames
+        if join["transition"] == "j":
+            incoming.audio_lead = frames / join_fps
+        else:
+            outgoing.audio_tail = frames / join_fps
     index = {w["id"]: i for i, w in enumerate(words)}
     kept_index = sorted({index[wid] for wid in first_pos})
     return Timeline(segments=segments, duration=round(out, 6), words_out=words_out,

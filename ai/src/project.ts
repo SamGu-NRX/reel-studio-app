@@ -6,6 +6,8 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+import { CUT_STYLES, CutPreset } from './cut-style';
+
 export interface Format { width: number; height: number; fps: number }
 export interface Source {
   id: string; path: string; duration?: number; fps?: number; width?: number; height?: number; rotation?: number;
@@ -13,7 +15,9 @@ export interface Source {
   mirror?: boolean;
   [k: string]: unknown;
 }
+export interface Join { transition: 'hard' | 'j' | 'l' | 'smash'; frames: number }
 export interface WordAnchor { from: string; to: string }
+export interface CutRange extends WordAnchor { join?: Join }
 export interface Word { id: string; source: string; s: number; e: number; w: string; [k: string]: unknown }
 export interface Transcript { words: Word[]; language?: string; [k: string]: unknown }
 
@@ -49,7 +53,8 @@ export interface Broll {
   id: string; anchor: WordAnchor; leadIn?: number; treatment: Treatment | string;
   asset: string | null; assets?: string[]; params: BrollParams; [k: string]: unknown;
 }
-export interface Zoom { anchor: WordAnchor; scale: number; style?: 'snap'; [k: string]: unknown }
+export type ZoomKind = 'punch' | 'snap' | 'drift';
+export interface Zoom { anchor: WordAnchor; scale?: number; kind?: ZoomKind; style?: 'snap'; accentGroup?: string; [k: string]: unknown }
 /** A built-in sound effect (engine/reelengine/sfx) whose hit lands on one moment: a word's start, a b-roll's
  * appearance, or the cut into the kept range that starts with that word. */
 export interface Sfx { at: { word: string } | { broll: string } | { cut: string }; sound: string; gainDb?: number }
@@ -73,13 +78,17 @@ export interface NoteEntry {
   receipt?: EditReceipt;
 }
 
+export interface CutStyle { preset: CutPreset; seed: number }
+
 export interface Project {
   schemaVersion: 1;
   id: string; title: string; slug: string; createdAt: string; updatedAt: string; version: number;
   format: Format;
+  cutStyle?: CutStyle;
+  exposure?: number;
   sources: Source[];
   transcript: { file: string; language?: string };
-  cut: { keep: WordAnchor[]; gapCap: number; minSaving?: number; [k: string]: unknown };
+  cut: { keep: CutRange[]; gapCap: number; minSaving?: number; [k: string]: unknown };
   captions: Captions;
   music: Music;
   broll: Broll[];
@@ -168,10 +177,21 @@ export function validateProject(p: unknown, transcript?: Transcript): string[] {
   const q = p as Record<string, any>;
   if (q.schemaVersion !== 1) out.push('schemaVersion must be 1');
   for (const k of ['id', 'title', 'slug']) if (!isStr(q[k])) out.push(`${k} must be a string`);
+  if (q.cutStyle !== undefined) {
+    if (!q.cutStyle || typeof q.cutStyle !== 'object' || !Object.prototype.hasOwnProperty.call(q.cutStyle, 'preset') || !Object.prototype.hasOwnProperty.call(q.cutStyle, 'seed')) out.push('cutStyle needs preset and seed');
+    else if (typeof q.cutStyle.preset !== 'string' || !Object.prototype.hasOwnProperty.call(CUT_STYLES, q.cutStyle.preset)) out.push('cutStyle.preset must be clean, standard, hyper, or punchline');
+    else if (!Number.isInteger(q.cutStyle.seed)) out.push('cutStyle.seed must be an integer');
+  }
   if (!q.format || !isNum(q.format.width) || !isNum(q.format.height) || !isNum(q.format.fps)) out.push('format needs width/height/fps');
+  // ffmpeg exposure accepts -3 to +3 stops, equivalent to these linear multipliers.
+  if (q.exposure !== undefined && (!isNum(q.exposure) || q.exposure < 0.125 || q.exposure > 8)) out.push('exposure must be a number between 0.125 and 8');
   if (!Array.isArray(q.sources)) out.push('sources must be an array');
   if (!q.cut || !Array.isArray(q.cut.keep)) out.push('cut.keep must be an array');
   else if (!isNum(q.cut.gapCap) || q.cut.gapCap < 0) out.push('cut.gapCap must be a number >= 0');
+  if (Array.isArray(q.cut?.keep)) q.cut.keep.forEach((a: any, i: number) => {
+    const problem = joinProblem(a?.join, i);
+    if (problem) out.push(`cut.keep[${i}].join: ${problem}`);
+  });
   if (!q.captions || typeof q.captions.enabled !== 'boolean') out.push('captions.enabled must be a boolean');
   if (q.captions?.hidden != null && !Array.isArray(q.captions.hidden)) out.push('captions.hidden must be an array');
   if (!q.music || typeof q.music.enabled !== 'boolean') out.push('music.enabled must be a boolean');
@@ -465,15 +485,27 @@ export function approxDuration(t: Transcript, keep: WordAnchor[], gapCap: number
 
 const round = (x: number) => Math.round(x * 1000) / 1000;
 
+function joinProblem(join: unknown, index: number): string | null {
+  if (join === undefined) return null;
+  if (index === 0) return 'not allowed on the first range';
+  if (!join || typeof join !== 'object') return 'needs transition and frames';
+  const j = join as Partial<Join>;
+  if (!['hard', 'j', 'l', 'smash'].includes(j.transition ?? '')) return 'transition must be hard, j, l or smash';
+  if (!Number.isSafeInteger(j.frames) || j.frames! < 0) return 'frames must be a non-negative integer';
+  return null;
+}
+
 /** Merge adjacent/overlapping ranges in transcript order is NOT done: keep is output order. Normalize = drop empties. */
-export function normalizeKeep(t: Transcript, keep: WordAnchor[]): { keep: WordAnchor[]; problems: string[] } {
+export function normalizeKeep(t: Transcript, keep: CutRange[]): { keep: CutRange[]; problems: string[] } {
   const idx = wordIndex(t);
   const problems: string[] = [];
-  const out: WordAnchor[] = [];
+  const out: CutRange[] = [];
   keep.forEach((a, i) => {
-    const pr = anchorProblem(idx, a);
+    // Tool schemas use null for optional fields; persisted projects omit them.
+    const join = a.join ?? undefined;
+    const pr = anchorProblem(idx, a) ?? joinProblem(join, i);
     if (pr) problems.push(`keep[${i}]: ${pr}`);
-    else out.push({ from: a.from, to: a.to });
+    else out.push({ from: a.from, to: a.to, ...(join ? { join: { ...join } } : {}) });
   });
   // overlap check (same word kept twice plays twice; that is almost always a mistake)
   const seen = new Map<string, number>();

@@ -262,7 +262,7 @@ def test_snap_zoom_never_moves_across_a_cut(tmp_path, media, fps):
     ending, across = zoom.build_zooms(ctx)
     assert ending.t1 == pytest.approx(cut1, abs=0.5 / fps) and ending.ramp_out == 0 and ending.ramp_in > 0
     assert across.t0 < cut2 < across.t1 and across.ramp_in > 0 and across.ramp_out > 0
-    assert across.t0 + across.ramp_in < cut2 < across.t1 - across.ramp_out
+    assert across.t0 + across.ramp_in / fps < cut2 < across.t1 - across.ramp_out / fps
 
 
 def test_snap_zoom_on_a_short_word_after_a_cut_still_shows(tmp_path, media):

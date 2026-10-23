@@ -33,7 +33,7 @@ from typing import Optional
 import numpy as np
 
 from .compose_util import ctx_words, fmt_of, word_start
-from .music import HOP, SR, block_power, decode, lufs, speech_mask
+from .music import HOP, SR, accent_time, block_power, decode, lufs, speech_mask
 
 PACK_DIR = Path(__file__).resolve().parent / "sfx"
 MIN_GAP = 2.0
@@ -109,10 +109,18 @@ def plan(ctx) -> tuple[list, list]:
     in time order; left_out: [{"at", "sound", "skipped"}] with the reason in plain words."""
     pack = load_pack()
     cands, left = [], []
-    for i, e in enumerate((ctx.project or {}).get("sfx") or []):
+    entries = [(e, None) for e in (ctx.project or {}).get("sfx") or []]
+    explicit_cuts = {(e.get("at") or {}).get("cut") for e, _ in entries}
+    for seg in ctx.out_timeline:
+        if seg.join_transition == "smash" and seg.first_word not in explicit_cuts:
+            # A short impact uses the pack's measured onset and existing level caps.
+            # This is a starting choice, not a listening-tested default.
+            t = round(seg.out_start * fmt_of(ctx)[2]) / fmt_of(ctx)[2]
+            entries.append(({"at": {"cut": seg.first_word}, "sound": "impact-hit"}, t))
+    for i, (e, automatic_time) in enumerate(entries):
         at = e.get("at") or {}
         snd = pack.get(e.get("sound"))
-        t = hit_time(ctx, at) if snd else None
+        t = (automatic_time if automatic_time is not None else hit_time(ctx, at)) if snd else None
         if snd is None:
             left.append({"at": at, "sound": e.get("sound"), "skipped": "it is not one of the built-in sounds"})
         elif t is None:
@@ -124,7 +132,16 @@ def plan(ctx) -> tuple[list, list]:
             cands.append((t, i, {"t": t, "start": start, "end": start + snd["seconds"], "sound": snd,
                                  "gainDb": float(e.get("gainDb") or 0.0), "at": at}))
     placed = []
-    for t, _, c in sorted(cands, key=lambda k: k[:2]):
+    cands.sort(key=lambda k: k[:2])
+    for k, (t, _, c) in enumerate(cands):
+        # B-roll has already checked its word lead; snapping again could move its sound off the card.
+        if not c["at"].get("broll"):
+            onset = c["sound"]["onsetMs"] / 1000
+            earliest = onset + (placed[-1]["end"] if placed else 0.0)
+            t = accent_time(ctx, t, earliest=earliest,
+                            previous=placed[-1]["t"] if placed else None,
+                            following=cands[k + 1][0] if k + 1 < len(cands) else None, min_gap=MIN_GAP)
+            c.update(t=t, start=t - onset, end=t - onset + c["sound"]["seconds"])
         if placed and (t - placed[-1]["t"] < MIN_GAP or c["start"] < placed[-1]["end"]):
             left.append({"at": c["at"], "sound": c["sound"]["id"],
                          "skipped": f"it is too close to another sound effect (one at a time, {MIN_GAP:g} seconds apart)"})

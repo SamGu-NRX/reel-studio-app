@@ -31,6 +31,11 @@ def test_render_has_every_planned_frame(tmp_path, video, keep):
     fx.make_project(pdir, video, keep=keep)
     res = render.run(pdir, draft=True, root=tmp_path, verify=False)
     assert _frames(Path(res["file"])) == round(res["duration"] * 30)
+    manifest = json.loads((Path(res["versionDir"]) / "render_draft.json").read_text())
+    meter = res["visualChanges"]
+    assert meter == manifest["visualChanges"]
+    assert meter["overall"]["cuts"] == len(manifest["segmentsDetail"]) - 1
+    assert meter["overall"]["brollStarts"] == meter["overall"]["zoomStarts"] == 0
 
 
 def test_sound_lasts_as_long_as_the_picture(tmp_path):
@@ -172,3 +177,40 @@ def test_previews_never_make_version_folders(tmp_path, video):
     assert f2["version"] == 2 and folders() == ["preview", "v1", "v2"]
     # the same edit again reuses v2
     assert render.run(pdir, draft=False, root=tmp_path, verify=False)["version"] == 2
+
+
+def test_meter_drops_broll_removed_after_a_render(tmp_path, video):
+    from reelengine import project
+
+    pdir = tmp_path / "p"
+    fx.make_project(pdir, video, keep=((0.1, 11.9),), extra={"broll": [
+        {"id": "b1", "anchor": {"from": "w5", "to": "w10"}, "treatment": "text-pop",
+         "asset": None, "params": {"text": "proof"}},
+    ]})
+    before = render.run(pdir, draft=True, root=tmp_path, verify=False, cover=False)
+    assert before["visualChanges"]["overall"]["brollStarts"] == 1
+    p = project.load(pdir)
+    p["broll"] = []
+    project.save(pdir, p)
+    after = render.run(pdir, draft=True, root=tmp_path, verify=False, cover=False)
+    assert after["layers"] == 0
+    assert after["visualChanges"]["overall"]["brollStarts"] == 0
+
+
+def test_window_meter_counts_only_visual_starts_in_the_rendered_interval(tmp_path, video):
+    pdir = tmp_path / "p"
+    fx.make_project(pdir, video, keep=((0.1, 11.9),), extra={
+        "broll": [
+            {"id": f"b{i}", "anchor": {"from": f"w{word}", "to": f"w{word + 1}"},
+             "treatment": "text-pop", "asset": None, "params": {"text": "proof"}}
+            for i, word in enumerate([1, 5, 21, 28])
+        ],
+        "zooms": [{"anchor": {"from": f"w{word}", "to": f"w{word + 1}"}, "scale": 1.15}
+                  for word in [20, 28]],
+    })
+    result = render.run(pdir, draft=True, window="7:11", root=tmp_path, verify=False, cover=False)
+    for row in result["visualChanges"].values():
+        assert row["seconds"] == 4
+        assert row["zoomStarts"] == 1
+        assert row["brollStarts"] == 1
+        assert row["perMinute"] == 30

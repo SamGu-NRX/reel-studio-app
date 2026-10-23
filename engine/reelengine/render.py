@@ -2,12 +2,13 @@
 for a final render; drafts and window previews overwrite versions/preview/ (docs/versions.md).
 
 Order of operations (docs/architecture.md section 5): cut video (+ zooms) -> overlay layers by z -> captions burned
-last -> mux the audio. The audio is built FIRST, as its own file: the cut voice (sample-exact
-atrim/concat of the same segments the picture uses), then A2's music mix (or plain loudness
-normalisation to -14 LUFS when no music module is installed). The video pass maps that file.
+last -> mux the audio. The audio is built FIRST, as its own file: the cut voice, then the music
+and SFX mix (or plain loudness normalisation to -14 LUFS without the music module). The video pass
+maps that file.
 
-Segment boundaries are on the source frame grid (cut.py), so each segment's picture and sound are
-the same length and the concat cannot drift. Every ffmpeg input is bounded.
+Segment boundaries are on the source frame grid (cut.py). Ordinary cuts concatenate matching
+picture and voice spans. J/L joins overlap bounded audio handles on the same output clock without
+moving the kept speech or lengthening the picture. Every ffmpeg input is bounded.
 
 Inputs are opened in LANES: each lane is one ffmpeg input of a source whose segments run forward in
 source time. A cut in source order is one lane per source. A reordered cut (hook recorded last,
@@ -27,6 +28,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import captions as capmod, cut as cutmod, project as projmod, render_identity, safepath, tools
+from .cut_style import visual_change_meter
 from .proto import EngineError, log, progress
 from .render_ctx import Layer, RenderCtx, Segment, ZoomSpan
 
@@ -87,7 +89,14 @@ def pick_version(project_dir: Path, proj: dict, root: Optional[Path] = None) -> 
         snap = vdir / "project.json"
         if snap.exists():
             try:
-                same = projmod.edit_signature(projmod.read_json(snap)) == projmod.edit_signature(proj)
+                prior = projmod.read_json(snap)
+                same = projmod.edit_signature(prior) == projmod.edit_signature(proj)
+                # Caption trials need distinct versions even though their video pixels match.
+                trials_file = Path(project_dir) / "trials.json"
+                if same and trials_file.exists():
+                    trials = projmod.read_json(trials_file)
+                    if any(t.get("parent_version") == cur and t.get("variable") == "caption" for t in trials):
+                        same = False
                 fp = vdir / "assets.json"
                 if same and fp.exists():
                     same = projmod.read_json(fp) == asset_fingerprint(project_dir, proj, root)
@@ -272,11 +281,13 @@ def voice_signature(segments: list, src_paths: dict) -> str:
             return [str(p), None, None]
     data = [1, [[s.source, round(s.src_start, 6), round(s.src_end, 6)] for s in segments],
             {k: st(v) for k, v in sorted(src_paths.items())}]
+    if any(s.audio_lead or s.audio_tail for s in segments):
+        data.append([[s.out_start, s.audio_lead, s.audio_tail] for s in segments])
     return hashlib.sha1(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path) -> Path:
-    """The cut voice: atrim/concat of exactly the picture's segments, 48 kHz stereo wav.
+    """48 kHz stereo voice. J/L mix source handles across an unchanged picture clock.
     Kept (same file, same mtime) when the segments and sources are unchanged, so music.build_audio's
     mix cache, keyed on this file's mtime, hits on every render that did not change the cut."""
     sig = voice_signature(segments, src_paths)
@@ -287,6 +298,10 @@ def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path) -> 
     except OSError:
         pass
     sig_file.unlink(missing_ok=True)
+    overlap = any(s.audio_lead or s.audio_tail for s in segments)
+    if overlap:
+        segments = [Segment(s.source, s.src_start - s.audio_lead, s.src_end + s.audio_tail,
+                            s.out_start - s.audio_lead) for s in segments]
     lanes = plan_lanes(segments)
     cmd = [ctx.ffmpeg, "-y", "-nostdin", "-hide_banner", "-loglevel", "error"]
     seg_input = {}
@@ -307,9 +322,15 @@ def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path) -> 
         f = min(fade, d / 4)
         chains.append(f"[{pad}]atrim=start={_f(seg.src_start - seek)}:end={_f(seg.src_end - seek)},"
                       f"asetpts=PTS-STARTPTS,aresample=48000,"
-                      f"afade=t=in:d={_f(f)},afade=t=out:st={_f(max(0.0, d - f))}:d={_f(f)}[a{i}]")
+                      f"afade=t=in:d={_f(f)},afade=t=out:st={_f(max(0.0, d - f))}:d={_f(f)}"
+                      + (f",adelay={round(seg.out_start * 48000)}S:all=1" if overlap else "") + f"[a{i}]")
         labels.append(f"[a{i}]")
-    if len(segments) == 1:
+    if overlap:
+        # Place rather than concat the handles: concat would lengthen the reel and
+        # shift every later word. Fades remain local to each source's audio edges.
+        chains.append("".join(labels) + f"amix=inputs={len(labels)}:normalize=0,"
+                      f"apad=whole_dur={_f(ctx.duration)},atrim=duration={_f(ctx.duration)}[aout]")
+    elif len(segments) == 1:
         chains.append(f"{labels[0]}anull[aout]")
     else:
         chains.append("".join(labels) + f"concat=n={len(segments)}:v=0:a=1[aout]")
@@ -457,7 +478,7 @@ def _snap_chain(zi: int, z: ZoomSpan, k0: int, k1: int, crop: tuple, scale_chain
     reach = max(math.hypot(cx - fx, cy - fy) for cx in (0, out_w) for cy in (0, out_h))
 
     def scale(k, u):    # the zoom's scale u of the way through frame k's shutter
-        return 1 + (s_end - 1) * progress(z, k / fps + t_shift + u * SHUTTER / fps)
+        return 1 + (s_end - 1) * progress(z, k / fps + t_shift + u * SHUTTER / fps, fps)
 
     def shutter(k):     # (doublings, smallest tap's scale, scale ratio between taps); None = held
         a, b = scale(k, 0), scale(k, 1)
@@ -510,6 +531,33 @@ def _snap_chain(zi: int, z: ZoomSpan, k0: int, k1: int, crop: tuple, scale_chain
     pad = f",tpad=start={k0}" if k0 > 0 else ""
     chains.append("".join(labels) + f"concat=n={len(runs)}:v=1:a=0,setpts=N/({fps}*TB),fps={fps}{pad}[zz{zi}]")
     return chains
+
+
+def _ramp_chain(zi: int, z: ZoomSpan, k0: int, k1: int, crop: tuple, fps: float,
+                t_shift: float, out_w: int, out_h: int, draft: bool, command_file: Path) -> str:
+    # ffmpeg evaluates crop w/h at setup, so a w='...t...' expression cannot animate. sendcmd updates
+    # all four crop values on each frame, then one fixed scale restores the output dimensions.
+    # This uses the regular crop/resize path instead of a general perspective warp.
+    from .zoom import progress
+    cw, ch, x, y = crop
+    target = f"crop@r{zi}"
+    commands = []
+    for k in range(k0, k1):
+        amount = progress(z, k / fps + t_shift, fps)
+        scale = 1 + (out_w / cw - 1) * amount
+        q = (1 - 1 / scale) / (1 - cw / out_w)
+        wi = round((out_w + (cw - out_w) * q) / 2) * 2
+        he = round((out_h + (ch - out_h) * q) / 2) * 2
+        xx = min(max(0, round(x * q / 2) * 2), out_w - wi)
+        yy = min(max(0, round(y * q / 2) * 2), out_h - he)
+        # Half a frame early avoids delaying a command when its printed time rounds above the PTS.
+        at = max(0, (k - k0 - 0.5) / fps)
+        commands.append(f"{at:.9f} {target} w {wi},{target} h {he},{target} x {xx},{target} y {yy};")
+    command_file.write_text("\n".join(commands), encoding="utf-8", newline="\n")
+    pad = f",fps={fps},tpad=start={k0}" if k0 else ""
+    return (f"[zs{zi}]trim=start_frame={k0}:end_frame={k1},setpts=PTS-STARTPTS,"
+            f"sendcmd=f={command_file.name},{target}={out_w}:{out_h}:0:0,"
+            f"scale={out_w}:{out_h}:eval=frame:flags={'fast_bilinear' if draft else 'lanczos'},setsar=1{pad}[zz{zi}]")
 
 
 def build_video_cmd(ctx: RenderCtx, segments: list, src_meta: dict, src_paths: dict, faces: dict,
@@ -574,6 +622,10 @@ def build_video_cmd(ctx: RenderCtx, segments: list, src_meta: dict, src_paths: d
     else:
         chains.append("".join(labels) + f"concat=n={len(segments)}:v=1:a=0,{tail}[base0]")
     cur = "base0"
+    exposure = float(ctx.project.get("exposure", 1.0))
+    if exposure != 1.0:
+        chains.append(f"[{cur}]exposure=exposure={_f(math.log2(exposure))}[exposed]")
+        cur = "exposed"
     # zooms move the FOOTAGE, so they sit on the base, under every card and caption
     for zi, z in enumerate(zooms or []):
         t0, t1 = z.t0 - t_shift, z.t1 - t_shift
@@ -596,7 +648,11 @@ def build_video_cmd(ctx: RenderCtx, segments: list, src_meta: dict, src_paths: d
         k1 = int(math.ceil(t1 * fps - 1e-6))
         # a crop rounded to the full width or height has no fixed point to grow from
         if (z.ramp_in or z.ramp_out) and cw < out_w and ch < out_h and k1 > k0:
-            chains += _snap_chain(zi, z, k0, k1, (cw, ch, x, y), scale_chain, fps, t_shift, out_w, out_h, ctx.draft)
+            if z.blur:
+                chains += _snap_chain(zi, z, k0, k1, (cw, ch, x, y), scale_chain, fps, t_shift, out_w, out_h, ctx.draft)
+            else:
+                chains.append(_ramp_chain(zi, z, k0, k1, (cw, ch, x, y), fps, t_shift, out_w, out_h, ctx.draft,
+                                           graph_file.with_name(f"{graph_file.stem}.zoom{zi}.cmd")))
         else:
             chains.append(f"[zs{zi}]trim=start={_f(t0)}:end={_f(t1)},setpts=PTS-STARTPTS,{scale_chain}{pad}[zz{zi}]")
         chains.append(f"[zm{zi}][zz{zi}]overlay=0:0:eof_action=pass:repeatlast=0:"
@@ -704,10 +760,17 @@ def parse_window(spec: Optional[str], duration: float):
 
 
 def make_ctx(project_dir: Path, proj: dict, tl, draft: bool, root: Path, rwork: Path) -> RenderCtx:
+    from .variation import resolve
+    effective, decisions = resolve(proj, tl)
+    if decisions is None:
+        effective = proj
+    # Seeded offsets must reach the audio planner, not only the render metadata.
+    resolved_tl = projmod.timeline(project_dir, effective, tl.words)
+    tl.segments[:] = resolved_tl.segments
     def _progress(stage, pct, message):
         progress(stage or STAGE, pct, message)
 
-    return RenderCtx(project=proj, project_dir=project_dir, root=root, out_timeline=tl.segments,
+    return RenderCtx(project=effective, variation=decisions, project_dir=project_dir, root=root, out_timeline=tl.segments,
                      word_out_time=tl.word_out_time, duration=tl.duration, fmt=dict(proj["format"]),
                      draft=draft, work=project_dir / "work", ffmpeg=tools.ffmpeg(),
                      ffprobe=tools.ffprobe(), progress=_progress, word_out_end=tl.word_out_end, is_kept=tl.is_kept,
@@ -879,6 +942,8 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
     ctx = make_ctx(project_dir, proj, tl, draft, root, rwork)
     ctx.out_dir = vdir
     ctx.window = win
+    from .lint_edit import prepare
+    lint = prepare(ctx, tl)
     timings = {}
 
     # 1. audio (always the full cut, then sliced for a window, so the music sits where it will)
@@ -886,7 +951,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
     t = time.time()
     audio = build_audio(ctx, tl.segments, src_paths, rwork, warnings)
     timings["audio"] = round(time.time() - t, 2)
-    if proj.get("sfx"):
+    if proj.get("sfx") or any(s.join_transition == "smash" for s in tl.segments):
         try:
             from . import sfx as sfxmod
             placed, left = sfxmod.plan(ctx)
@@ -899,7 +964,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
 
     # 2. b-roll layers + zooms (A2)
     t = time.time()
-    layers, zooms, layer_items = [], [], []
+    layers, zooms, layer_items, raw_broll = [], [], [], []
     layers_report = project_dir / "work" / "layers" / "layers.json"
     layers_report.unlink(missing_ok=True)       # read below and by the AI: only this render's
     broll = _opt_module("broll")
@@ -908,6 +973,9 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
         try:
             layers = list(broll.build_layers(ctx) or [])
             layer_items = projmod.read_json(project_dir / "work" / "layers" / "layers.json").get("items") or []
+            # the visual-change meter counts the pictures that made it into the video (cut-vocab)
+            if layers:
+                raw_broll = layer_items
         except EngineError as exc:
             log(f"# b-roll skipped: {exc.message}")
             warnings.append(f"The b-roll was left out of this version: {exc.user_message}")
@@ -920,9 +988,9 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
     broll_report = [r for r in broll_report if r.get("id") not in {g["id"] for g in gone_rows}] + gone_rows
     warnings += gone_warns
     zoom = _opt_module("zoom")
-    if zoom is not None and proj.get("zooms"):
+    if zoom is not None and (proj.get("zooms") or ctx.variation is not None):
         try:
-            zooms = list(zoom.build_zooms(ctx) or [])
+            zooms = ctx.lint_zooms
         except Exception as exc:   # noqa: BLE001
             log(f"# zoom.build_zooms failed: {exc!r}")
             warnings.append(ZOOMS_FAILED)
@@ -1020,13 +1088,17 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
             warnings.append("libass did not report its font choice; caption font unverified")
     os.replace(out_part, out)
 
+    visual_changes = visual_change_meter(dur, segments, raw_broll, zooms, visual_offset=t_shift)
     result = {"renderId": render_id, "inputFingerprint": input_fp, "fps": fps,
               "version": version, "preview": preview, "versionDir": str(vdir), "file": str(out),
               "draft": draft, "window": list(win) if win else None, "firstLook": first_look,
               "duration": round(dur, 3), "segments": len(segments), "encoder": encoder,
               "size": [out_w, out_h], "layers": len(layers), "zooms": len(zooms),
-              "captions": len(cap_report), "warnings": warnings,
+              "captions": len(cap_report), "warnings": warnings, "visualChanges": visual_changes,
               "broll": [r for r in broll_report if r.get("fallback") or r.get("skipped") or r.get("remake")]}
+    result.update(lint)
+    if ctx.variation is not None:
+        result["variation"] = ctx.variation
 
     # 5. cover (full renders only; a preview may skip it). It ran beside the encode (above).
     if cover_job is not None:
@@ -1082,9 +1154,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
         if not preview and int(proj.get("version") or 0) != version:
             # Re-read: an edit saved during this 1-2 minute render must survive. Patch the one field
             # render owns instead of writing back the dict loaded at the start.
-            fresh = projmod.load(project_dir, file=project_file)
-            fresh["version"] = version          # project.version = the last FINAL version
-            projmod.save(project_dir, fresh, file=project_file)
+            projmod.update_version(project_dir, version, file=project_file)  # project.version = the last FINAL version
     progress(STAGE, 100, "Your video is ready", force=True)
     return result
 

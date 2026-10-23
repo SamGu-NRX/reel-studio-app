@@ -2,6 +2,15 @@
 
 All additive (optional fields only), per docs/architecture.md section 3. Schema: `engine/reelengine/schema/project.schema.json`.
 
+## 2026-10-23 (beat accents)
+
+- `beatAccents` (boolean, optional): `true` snaps SFX hits and b-roll starts to the nearest detected
+  music beat within 0.12 s, including frame rounding. Missing or `false` preserves existing timing.
+  `cutStyle.preset: "hyper"` also enables accents when present. Disabled music or a track with no
+  detected beats leaves timing unchanged. Beat times follow the song's `startAt` in the mix.
+  A b-roll start cannot precede its anchor word by more than its `leadIn`, or the default card lead.
+  SFX tied to b-roll follow that start. Word-anchored speech cuts and word times never move.
+
 ## 2026-10-22 (render identity and edit receipts)
 
 - `notes[].receipt` (object, optional): what the version this note ended on changed since the version
@@ -116,6 +125,7 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
 
 ## 2026-10-22 (snap zooms)
 
+- `zooms[].kind` is optionally `punch`, `snap`, or `drift`. Named defaults read the selected cut preset; an explicit scale remains supported. `accentGroup` optionally marks tied candidate moments for seeded selection. Drift uses an eased ramp across the span, while punch changes scale immediately.
 - `zooms[].style` (`"snap"`, absent = the hard punch-in as before): the zoom eases in over about 0.22 s
   (ease-out) and back over about 0.3 s (a critically damped spring), with motion blur only while the scale
   moves. Motion never runs across a jump cut. Either end falls back to the hard cut of a default zoom where
@@ -145,3 +155,31 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
   most 20. A change made while the editor is busy waits in the reel's note queue; the app writes its id here in the
   same project.json write that saves it, after its final render, and that id is the queue's proof it ran (as a note's
   id in `notes` is). Written only by the app (app/src/main/hand-edit.ts); the engine ignores it.
+
+## 2026-10-23 (cut vocabulary)
+
+- `cutStyle` (optional): `{preset, seed}` selects the reel's fixed cut vocabulary. Presets are `clean`, `standard`, `hyper`, and `punchline`; the seed is an integer used for repeatable within-style choices. The preset values are defined in `engine/reelengine/cut_style.py` and mirrored in the AI package.
+
+## 2026-10-23 (per-join transitions)
+
+- Each `cut.keep[]` range after the first may carry `join: {transition, frames}`.
+  `transition` is `hard`, `j`, `l` or `smash`; `frames` is a non-negative integer in
+  output-frame units. Missing joins and explicit `hard` retain hard-cut timing.
+  Request 6-12 frames as a starting range, not a measured optimum.
+- J adds source audio before the incoming picture starts. L keeps the outgoing
+  source audio after its picture ends. The engine clamps these handles at adjacent
+  transcript words, source bounds and the neighboring output segment, then rounds
+  down to whole output frames. A continuous source span or no room means no bridge.
+- Picture timing, kept-word audio timing and total duration do not move. The voice
+  renderer overlaps the handles with the existing 6 ms edge fades instead of
+  concatenating extra time. Word-anchored captions therefore keep their timestamps.
+- `smash` keeps a hard picture cut, derives an `impact-hit` at `at.cut`, and adds a
+  200 ms, -6 dB dip through the music automation curve. These sound choices are
+  starting values without listening-test evidence. The existing SFX spacing and
+  loudness limits still apply; skipped hits produce the existing render warnings.
+  An explicit SFX at that cut replaces the automatic hit. The dip uses the existing
+  gain smoothing and only applies when a music track plays.
+- `frames` has no effect for hard or smash. Derived effects do not modify the saved
+  project. Removing a join removes its automatic effects on the next render.
+  The AI's `set_cut` accepts joins and forbids J/L with beat accents on the same join
+  in its editing guidance; beat-accent scheduling is not part of this schema.

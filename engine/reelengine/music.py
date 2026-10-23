@@ -37,7 +37,7 @@ from typing import Optional
 
 import numpy as np
 
-from .compose_util import (EngineError, ffmpeg_bin, log, probe, report, resolve_asset, run, word_end,
+from .compose_util import (EngineError, ffmpeg_bin, fmt_of, log, probe, report, resolve_asset, run, word_end,
                            word_start)
 from .project import song_ref
 
@@ -53,6 +53,7 @@ LEVELS = {
 LIFT_CAP = 6.0            # quiet bars lifted at most this much
 CUT_CAP = 12.0            # loud bars cut at most this much
 MUSIC_EQ = "highpass=f=90,lowshelf=f=160:g=-6"
+BEAT_MAX_SHIFT = 0.12
 
 
 # --- decoding ----------------------------------------------------------------------------------
@@ -273,19 +274,27 @@ def music_gain_curve(ctx, music: np.ndarray, voice: np.ndarray, mcfg: dict, offs
             if i < nb:
                 u = (k + 1) / (ramp + 1)
                 g[i] = max(g[i], intro[i] * (1 - u) + g[i] * u)
-    # word-anchored automation
-    autos = []
+    # Word automation and derived smash dips share the same gain curve and smoothing.
+    autos, spans = [], []
     for a in mcfg.get("automation") or []:
         t0 = word_start(ctx, a.get("fromWord")) if a.get("fromWord") else 0.0
         t1 = word_end(ctx, a.get("toWord")) if a.get("toWord") else None
         if t0 is None:
             continue
         t1 = t1 if t1 is not None else nb * HOP
+        spans.append((t0, t1, float(a.get("gainDb", 0.0))))
+    for seg in ctx.out_timeline:
+        if seg.join_transition == "smash":
+            # A 200 ms, -6 dB dip leaves room for the impact without ducking a whole
+            # sentence. These are untested starting values, not measured preferences.
+            t0 = round(seg.out_start * fmt_of(ctx)[2]) / fmt_of(ctx)[2]
+            spans.append((t0, t0 + 0.2, -6.0))
+    for t0, t1, gain_db in spans:
         i0, i1 = int((t0 - offset) / HOP), int(math.ceil((t1 - offset) / HOP))
         i0, i1 = max(0, i0), min(nb, i1)
         if i1 > i0:
-            g[i0:i1] += float(a.get("gainDb", 0.0))
-            autos.append({"from": round(t0, 3), "to": round(t1, 3), "gainDb": float(a.get("gainDb", 0.0))})
+            g[i0:i1] += gain_db
+            autos.append({"from": round(t0, 3), "to": round(t1, 3), "gainDb": gain_db})
     g = _smooth_db(g, HOP)
     rep = {"level": level, "voiceSpeechLUFS": round(V, 2), "musicMedianLUFS": round(m_med, 2),
            "targetGapDb": preset["gap"], "baseGainDb": round(base, 2), "automation": autos,
@@ -343,7 +352,8 @@ def build_audio(ctx, voice_wav) -> Path:
             raise EngineError("MUSIC_MISSING", f"music not found: {track}",
                               "The song for this video is missing. Pick another song.")
     effects = None
-    if (ctx.project or {}).get("sfx"):
+    smash_times = [s.out_start for s in ctx.out_timeline if s.join_transition == "smash"]
+    if (ctx.project or {}).get("sfx") or smash_times:
         # built before the cache lookup so a failure keeps them out of the key, not just out of the mix
         try:
             from . import sfx as sfxmod
@@ -356,6 +366,8 @@ def build_audio(ctx, voice_wav) -> Path:
             log(f"# sound effects skipped: {exc!r}")
     key = [3, str(voice_wav), voice_wav.stat().st_size, voice_wav.stat().st_mtime_ns,
            mcfg, str(track) if track else None, track.stat().st_mtime_ns if track else None, offset]
+    if smash_times:
+        key.append(["smash", smash_times, fmt_of(ctx)[2]])
     if effects is not None:
         key.append(fx_key)
         ctx.sfx_mixed = rows
@@ -368,10 +380,8 @@ def build_audio(ctx, voice_wav) -> Path:
     mix = voice.copy()
     if track is not None:
         report(ctx, "music", 25, "Adding music")
-        start = float(mcfg.get("startAt", 0.0) or 0.0) + offset
         tinfo = probe(track, ctx)
-        if start >= tinfo["duration"] - 1.0:
-            start = 0.0
+        start = track_start(mcfg, tinfo["duration"], offset)
         music = decode(track, ctx, start=start, dur=dur, af=MUSIC_EQ)
         short = music.shape[0] < voice.shape[0] - SR * 0.1
         if music.shape[0] < voice.shape[0]:
@@ -432,23 +442,29 @@ def build_audio(ctx, voice_wav) -> Path:
 # --- track analysis ----------------------------------------------------------------------------
 
 def _onset_envelope(mono: np.ndarray, sr: int, n_fft: int = 1024, hop: int = 512) -> np.ndarray:
-    """Spectral flux (log magnitude, half-wave rectified), one value per hop."""
+    """Positive spectral change, with window centres on the audio clock.
+
+    The L2 magnitude change preserves transient strength. Summing log changes
+    gave quiet broadband hi-hats more weight than louder tonal beat clicks.
+    """
     n = len(mono)
     if n < n_fft:
         return np.zeros(1)
-    frames = 1 + (n - n_fft) // hop
+    # Padding keeps clicks at either edge visible and centres frame i at i*hop.
+    mono = np.pad(mono, (n_fft // 2, n_fft // 2))
+    frames = 1 + n // hop
     win = np.hanning(n_fft).astype(np.float32)
     env = np.zeros(frames, np.float32)
     prev = None
     for s in range(0, frames, 2048):
         idx = np.arange(s, min(frames, s + 2048))
         seg = np.stack([mono[i * hop: i * hop + n_fft] for i in idx]) * win
-        mag = np.log1p(10 * np.abs(np.fft.rfft(seg, axis=1)))
+        mag = np.abs(np.fft.rfft(seg, axis=1))
         if prev is not None:
             mag_all = np.vstack([prev[None, :], mag])
         else:
-            mag_all = np.vstack([mag[:1], mag])
-        flux = np.maximum(0, np.diff(mag_all, axis=0)).sum(axis=1)
+            mag_all = np.vstack([np.zeros_like(mag[:1]), mag])
+        flux = np.sqrt((np.maximum(0, np.diff(mag_all, axis=0)) ** 2).sum(axis=1))
         env[idx] = flux
         prev = mag[-1]
     env -= np.convolve(env, np.ones(16) / 16, mode="same")     # remove slow trend
@@ -459,10 +475,12 @@ def _tempo_and_beats(env: np.ndarray, fps: float) -> tuple[Optional[float], list
     """(bpm, beat times, confidence 0..1) from an onset envelope via autocorrelation + phase pick."""
     if len(env) < fps * 4 or env.max() <= 0:
         return None, [], 0.0
-    e = (env - env.mean()) / (env.std() + 1e-9)
+    # Smooth only the tempo evidence: narrow transients split across adjacent hops,
+    # so raw integer-lag correlation can prefer a half-tempo harmonic (140 -> 70).
+    smooth = np.convolve(env, [0.25, 0.5, 0.25], mode="same")
+    e = (smooth - smooth.mean()) / (smooth.std() + 1e-9)
     ac = np.correlate(e, e, mode="full")[len(e) - 1:]
     ac /= ac[0] + 1e-9
-    lags = np.arange(len(ac))
     bpm_of = lambda lag: 60.0 * fps / lag  # noqa: E731
     lo, hi = int(fps * 60 / 180), int(fps * 60 / 60)
     best, best_lag = -1e9, None
@@ -482,15 +500,55 @@ def _tempo_and_beats(env: np.ndarray, fps: float) -> tuple[Optional[float], list
         period = l + float(np.clip(d, -0.5, 0.5))
     else:
         period = float(l)
-    phases = [env[int(p)::max(1, int(round(period)))].sum() for p in range(int(round(period)))]
-    phase = int(np.argmax(phases))
-    beats, t = [], float(phase)
-    while t < len(env):
-        i = int(round(t))
-        w = max(1, int(period * 0.1))
-        j = i - w + int(np.argmax(env[max(0, i - w): i + w + 1])) if i - w >= 0 else i
+    padded = np.pad(env, (1, 1))
+    peaks = np.flatnonzero((env > padded[:-2]) & (env >= padded[2:]))
+    a, b, c = padded[peaks], env[peaks], padded[peaks + 2]
+    positions = np.maximum(0, peaks + np.clip(
+        (a - c) / (2 * (a - 2 * b + c) + 1e-12), -0.5, 0.5))
+
+    # Refine the lag with local onset intervals before assigning beat numbers.
+    # Average without amplitude weights: hop alignment changes peak strength,
+    # so weighting those intervals biases the period on long click tracks.
+    intervals = []
+    for t in positions:
+        start, end = np.searchsorted(positions, [t + period * 0.8, t + period * 1.2])
+        if start < end:
+            j = start + int(np.argmax(env[peaks[start:end]]))
+            intervals.append(positions[j] - t)
+    if len(intervals) >= 4:
+        refined = float(np.mean(intervals))
+        if abs(refined - period) < period * 0.05:
+            period = refined
+
+    # Score the same fractional period we emit. Rounding the stride accumulates
+    # phase error across a track even when its BPM estimate is close.
+    frames = np.arange(len(env))
+    phases = np.arange(0, period, 0.5)
+    phase = float(max(phases, key=lambda p: np.interp(
+        np.arange(p, len(env), period), frames, smooth).sum()))
+
+    # Fit period and phase to nearby onsets over the whole track.
+    for _ in range(3):
+        numbers = np.rint((positions - phase) / period)
+        keep = np.abs(positions - (phase + numbers * period)) < period * 0.2
+        if keep.sum() < 4:
+            break
+        design = np.column_stack([np.ones(keep.sum()), numbers[keep]])
+        weights = np.sqrt(env[peaks[keep]])
+        fitted_phase, fitted_period = np.linalg.lstsq(
+            design * weights[:, None], positions[keep] * weights, rcond=None)[0]
+        if abs(fitted_period - period) > period * 0.05:
+            break
+        phase, period = float(fitted_phase), float(fitted_period)
+    phase %= period
+    beats = []
+    for t in np.arange(phase - period, len(env) + period * 0.1, period):
+        near = np.flatnonzero(np.abs(positions - t) <= period * 0.1)
+        # A grid point without an onset is not a beat to accent, including silence.
+        if not len(near):
+            continue
+        j = positions[near[np.argmax(env[peaks[near]])]]
         beats.append(round(max(0, j) / fps, 3))
-        t += period
     conf = float(np.clip(ac[best_lag], 0, 1))
     return round(bpm_of(period), 1), beats, round(conf, 3)
 
@@ -527,7 +585,7 @@ def find_arrivals(curve: list, window: float, lookback: float = 30.0, top: int =
             for d, o, b, a in sorted(picked, key=lambda m: m[1])]
 
 
-ANALYSIS_VERSION = 3     # bump when analyze_track's output changes (the analysis cache key)
+ANALYSIS_VERSION = 4     # recompute beat grids made with rounded phase strides and early timestamps
 
 
 def mood_of(energy: str, brightness: str, dynamic: bool, bpm) -> str:
@@ -569,9 +627,10 @@ def analyze_track(path, ctx=None) -> dict:
         seg = st[k: k + int(window)]
         curve.append([float(k), round(float(np.mean(np.maximum(seg, -60.0))), 1)])
     arrivals = find_arrivals(curve, window)
-    hop = 512
-    env = _onset_envelope(mono.astype(np.float32), sr, 1024, hop)
+    n_fft, hop = 1024, 512
+    env = _onset_envelope(mono.astype(np.float32), sr, n_fft, hop)
     bpm, beats, conf = _tempo_and_beats(env, sr / hop)
+    beats = [b for b in beats if b < len(mono) / sr]
     onset_rate = float((env > env.mean() + 2 * env.std()).mean() * sr / hop) if len(env) else 0.0
     spec = np.abs(np.fft.rfft(mono[: sr * 60] if len(mono) > sr * 60 else mono))
     freqs = np.fft.rfftfreq(min(len(mono), sr * 60), 1 / sr)
@@ -661,12 +720,83 @@ def analyze_track_cached(path, ctx=None, cache_dir: Optional[Path] = None) -> di
     return r
 
 
-def snap_to_beat(t: float, beats: list[float], max_shift: float = 0.12) -> float:
+def track_start(mcfg: dict, duration: float, offset: float = 0.0) -> float:
+    """The mixer restarts a song when its requested in-point leaves less than a second."""
+    start = float(mcfg.get("startAt", 0.0) or 0.0) + offset
+    return 0.0 if start >= duration - 1.0 else start
+
+
+def accent_beats(ctx) -> list[float]:
+    """Detected beats on the full output clock, only for projects that request accents."""
+    proj = ctx.project or {}
+    style = proj.get("cutStyle")
+    if proj.get("beatAccents") is not True and not (isinstance(style, dict) and style.get("preset") == "hyper"):
+        return []
+    mcfg = proj.get("music") or {}
+    if not mcfg.get("enabled", True) or not mcfg.get("track"):
+        return []
+    try:
+        path = resolve_asset(ctx, mcfg["track"])
+        stat = path.stat()
+        key = (str(path), stat.st_size, stat.st_mtime_ns)
+        cached = getattr(ctx, "_accent_analysis", None)
+        if cached is None or cached[0] != key:
+            info = analyze_track_cached(path, ctx)
+            cached = (key, info["beats"], probe(path, ctx)["duration"])
+            ctx._accent_analysis = cached
+        _, beats, duration = cached
+    except (EngineError, OSError, ValueError) as exc:
+        log(f"# beat accents skipped: {exc}")
+        return []
+    # Preview windows slice the full audio mix, so their beats use this same full-cut clock.
+    start = track_start(mcfg, duration)
+    return [b - start for b in beats if 0 <= b - start < ctx.duration]
+
+
+def snap_to_beat(t: float, beats: list[float], max_shift: float = BEAT_MAX_SHIFT) -> float:
     """Nearest beat within max_shift seconds, else t unchanged."""
     if not beats:
         return t
     b = min(beats, key=lambda x: abs(x - t))
     return b if abs(b - t) <= max_shift else t
+
+
+def accent_time(ctx, t: float, earliest: float = 0.0, *, previous: Optional[float] = None,
+                following: Optional[float] = None, min_gap: float = 0.0) -> float:
+    """Snap an accent to a beat on the frame grid without exceeding its timing bounds."""
+    beat = snap_to_beat(t, accent_beats(ctx))
+    if beat == t:
+        requests = getattr(ctx, "_lint_snap_requests", None)
+        if requests is not None and t in accent_beats(ctx):
+            row = {"original": t, "snapped": t}
+            if row not in requests:
+                requests.append(row)
+        return t
+    fps = fmt_of(ctx)[2]
+    snapped = round(beat * fps) / fps
+    # Frame rounding must preserve both the card lead and the 120 ms limit, including an SFX
+    # tied to a b-roll start whose original time was already rounded onto the frame grid.
+    if (snapped < earliest or snapped >= ctx.duration or abs(snapped - t) > BEAT_MAX_SHIFT
+            or abs(snapped - round(t * fps) / fps) > BEAT_MAX_SHIFT):
+        return t
+    from .lint_edit import snap_crosses
+    events = getattr(ctx, "_lint_events", [s.out_start for s in ctx.out_timeline[1:]])
+    requests = getattr(ctx, "_lint_snap_requests", None)
+    if requests is not None:
+        row = {"original": t, "snapped": snapped, "previous": previous, "following": following, "min_gap": min_gap}
+        if row not in requests:
+            requests.append(row)
+    if ((previous is not None and snapped - previous <= min_gap)
+            or (following is not None and following - snapped <= min_gap)):
+        return t
+    # A boundary belongs to the incoming shot: landing on it is a forward crossing.
+    for segment in ctx.out_timeline:
+        cut = round(segment.out_start * fps) / fps
+        if t < cut <= snapped or snapped < cut <= t:
+            return t
+    if snap_crosses(t, snapped, events):
+        return t
+    return snapped
 
 
 def main(argv=None) -> int:

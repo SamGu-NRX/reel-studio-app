@@ -142,6 +142,7 @@ export class FakeHost implements EngineHost {
         await fsp.writeFile(pj, JSON.stringify(p, null, 2));
         return { keep: p.cut.keep };
       }
+      case 'lint-edit': return { fixed: [], issues: [] };
       case 'render': {
         if (this.failRender) throw { code: 'RENDER_FAILED', userMessage: 'The video could not be made.' };
         // docs/versions.md: a draft goes to --out (default versions/preview/) and never bumps the

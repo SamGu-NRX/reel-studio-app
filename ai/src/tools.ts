@@ -3,11 +3,11 @@
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { AssetCandidate, AssetKind, FrozenAsset, MediaEngine, PendingAsset, ASSET_KINDS, STILL_KINDS, commitAsset, committedAsset, exportCredits, freezeLibraryFile, readAssets, removeFiles } from './assets';
 import { readAttachment } from './attachments';
 import {
-  Analysis, Broll, CaptionStyle, LIBRARY_FOLDERS, LibraryKind, MusicFrozen, MusicLevel, Project, Sfx, Transcript, TREATMENTS, Word, WordAnchor,
+  Analysis, Broll, CaptionStyle, LIBRARY_FOLDERS, LibraryKind, MusicFrozen, MusicLevel, Project, Sfx, Transcript, TREATMENTS, Word, WordAnchor, Zoom,
   anchorText, anchorWords, approxDuration, approxOutputTimes, keptWords, loadAnalysis, loadProject, loadTranscript,
   captionsUnderInstagram, nextBrollId, normalizeKeep, captionCorrectionProblem, saveProject, validateProject, wordIndex, anchorProblem, PROJECT_FILE, versionDir,
 } from './project';
@@ -17,6 +17,7 @@ import { SFX_SOUNDS } from './sfx.generated';
 import { ANIMATION_IDS, ENGINE_FED, TimedWord, alignWordTimes, animationParamsSchema, cleanParams, itemTimes, phraseTime, templateSpec } from './animations';
 import { chooseReadableLayout, minHeroPx } from './readable';
 import { AgentEvent, AIError, EngineHost, ImagePart, ToolSchema } from './types';
+import { CUT_STYLES, CutPreset } from './cut-style';
 import { StyleStore, cleanRuleText, noteAsksToRemember } from './style';
 import { BlockedUrlError, LookupFn, UnsafePathError, guardedFetch, pathProblem, safeResolve, slugName, sniffImage } from './safety';
 
@@ -364,6 +365,7 @@ function projectView(ctx: ToolContext, p: Project, t: Transcript): unknown {
     title: p.title,
     version: p.version,
     format: p.format,
+    ...(p.cutStyle ? { cutStyle: p.cutStyle, cutStyleSettings: CUT_STYLES[p.cutStyle.preset] } : {}),
     sources: p.sources.map((s) => ({ id: s.id, duration: s.duration, mirror: s.mirror === true })),
     cut: cutSummary(t, p),
     captions: p.captions,
@@ -1182,6 +1184,15 @@ const PARAMS = S.obj({
 // and the colour of the spoken word fine-tune a look; turning the highlight on or off changes it.
 const captionLook = (st: CaptionStyle): string =>
   JSON.stringify([!!st.box, !!st.pop, !!st.highlight, st.case ?? null, st.maxWords ?? null, st.outline ?? null, st.outlineColor ?? null]);
+function addCutStyleVerdicts(meter: any, preset?: CutPreset): void {
+  if (!preset) return;
+  const band = CUT_STYLES[preset].secondsPerVisualChange;
+  for (const key of ['overall', 'first5', 'first30']) {
+    const row = meter[key];
+    if (!row) continue;
+    row.verdict = band === null ? 'not applicable' : (row.perMinute > 0 && row.perMinute >= 60 / band[1] && row.perMinute <= 60 / band[0] ? 'in band' : 'out of band');
+  }
+}
 
 const tools: ToolDef[] = [
   {
@@ -1218,8 +1229,14 @@ const tools: ToolDef[] = [
   },
   {
     name: 'set_cut',
-    description: 'Replace the whole cut. keep = inclusive word-id ranges in OUTPUT order. Everything not listed is removed.',
-    parameters: S.obj({ keep: S.arr(ANCHOR, 'ranges to keep, in the order they should play', { minItems: 1 }) }),
+    description: 'Replace the whole cut. keep = inclusive word-id ranges in OUTPUT order. Optional joins after the first range: hard, j, l or smash. J/L frames are clamped by the engine to available source handles; 6-12 frames is a starting range.',
+    parameters: S.obj({ keep: S.arr(S.obj({
+      ...ANCHOR.properties,
+      join: S.opt(S.obj({
+        transition: S.enum(['hard', 'j', 'l', 'smash']),
+        frames: S.int('Requested overlap in output frames, usually 6-12; ignored for hard and smash', { minimum: 0 }),
+      }, 'Join into this range; null on the first range or for the default hard cut')),
+    }), 'ranges to keep, in the order they should play', { minItems: 1 }) }),
     async run(ctx, args) {
       const { t } = await load(ctx);
       const { keep, problems } = normalizeKeep(t, args.keep);
@@ -1230,6 +1247,46 @@ const tools: ToolDef[] = [
         content: { ok: true, ...(cutSummary(t, p) as object) },
         summary: 'Picked your best takes',
       };
+    },
+  },
+  {
+    name: 'set_cut_style',
+    description: 'Choose the reel cut style. Pick clean for serious or emotional material, standard by default, hyper for high-energy lists, or punchline for comedy. A seed makes accent choices repeatable.',
+    parameters: S.obj({ preset: S.enum(['clean', 'standard', 'hyper', 'punchline']), seed: S.opt(S.int('integer seed; omit to generate one')) }),
+    async run(ctx, args) {
+      const seed = args.seed === null || args.seed === undefined ? randomInt(0, 2 ** 31) : args.seed;
+      await mutate(ctx, 'cutStyle', (p) => { p.cutStyle = { preset: args.preset as CutPreset, seed }; });
+      return { content: { ok: true, cutStyle: { preset: args.preset, seed }, settings: CUT_STYLES[args.preset as CutPreset] }, summary: `Set cut style to ${args.preset} (seed ${seed})` };
+    },
+  },
+  {
+    name: 'make_variant',
+    description: 'Make a trial changing exactly one variable. seed generates and logs a new seed in the same style. For hook, choose a different opening among your candidates and pass its word range; the body stays fixed. For cover or caption, supply your alternative. brightness is +8 or -8 percent exposure. The engine saves the edit and a trials.json record with its parent version. Render to compare.',
+    parameters: S.obj({
+      variable: S.enum(['seed', 'hook', 'cover', 'caption', 'brightness']),
+      hook: S.opt(ANCHOR),
+      cover: S.opt(S.obj({ atSourceTime: S.num('raw-take seconds', { minimum: 0 }), source: S.str(), text: S.opt(S.str()) })),
+      caption: S.opt(S.str('alternative post caption')),
+      brightness: S.opt(S.num('+8 or -8 percent; default +8')),
+    }),
+    async run(ctx, args) {
+      const fields = ['hook', 'cover', 'caption', 'brightness'];
+      if (fields.some((field) => field !== args.variable && args[field] != null)) {
+        throw new ToolInputError('Supply an alternative for only the selected variable.');
+      }
+      let choice = args[args.variable];
+      if (args.variable === 'caption' && typeof choice === 'string') {
+        const { p } = await load(ctx);
+        choice = await captionWithCredits(ctx.projectDir, p, choice);
+      }
+      const extra = ['--variable', args.variable];
+      if (choice != null) extra.push('--value', JSON.stringify(choice));
+      const result = await engine(ctx, 'make-variant', extra, 'Making a trial');
+      ctx.project = await loadProject(ctx.projectDir);
+      const field = args.variable === 'caption' ? 'post' : args.variable;
+      ctx.state.changed.add(field);
+      (ctx.state.dirty ??= new Set()).add(field);
+      return { content: { ok: true, trial: result.trial }, summary: `Made a ${args.variable} trial` };
     },
   },
   {
@@ -1635,12 +1692,13 @@ const tools: ToolDef[] = [
   },
   {
     name: 'set_zoom',
-    description: 'Replace all zoom-ins. Each zoom spans one whole line, from its first word to its last; scale ~1.08-1.15. Use on punchlines and key lines, and on face-only stretches with no b-roll (about 3-6 per minute, never two back to back). Save style "snap" (a quick eased push-in with motion blur) for the one or two biggest punchlines; the rest stay hard cuts. Empty list = no zooms.',
-    parameters: S.obj({ zooms: S.arr(S.obj({ anchor: ANCHOR, scale: S.num('1.0-1.5', { minimum: 1, maximum: 1.6 }), style: S.opt(S.enum(['snap'], 'null = hard cut in and out')) })) }),
+    description: 'Replace authored zoom accents. Choose punch for an instant crop, snap for a quick eased push-in, or drift for a slow scale. With cutStyle, the seed chooses one moment per accentGroup and style framing continues with an empty list. Without cutStyle, an empty list removes zooms.',
+    parameters: S.obj({ zooms: S.arr(S.obj({ anchor: ANCHOR, scale: S.opt(S.num('1.0-1.5', { minimum: 1, maximum: 1.6 })), kind: S.opt(S.enum(['punch', 'snap', 'drift'])), style: S.opt(S.enum(['snap'], 'legacy alias')),
+      accentGroup: S.opt(S.str('same group for equally good candidate moments')) })) }),
     async run(ctx, args) {
       const { t } = await load(ctx);
-      args.zooms.forEach((z: any, i: number) => checkAnchor(t, z.anchor, `zooms[${i}]`));
-      await mutate(ctx, 'zooms', (p) => { p.zooms = args.zooms.filter((z: any) => z.scale > 1.001).map((z: any) => ({ anchor: z.anchor, scale: z.scale, ...(z.style ? { style: z.style } : {}) })); });
+      args.zooms.forEach((z: Zoom, i: number) => checkAnchor(t, z.anchor, `zooms[${i}]`));
+      await mutate(ctx, 'zooms', (p) => { p.zooms = args.zooms.filter((z: Zoom) => z.scale == null || z.scale > 1.001).map((z: Zoom) => ({ anchor: z.anchor, ...(z.scale == null ? {} : { scale: z.scale }), ...(z.kind ? { kind: z.kind } : {}), ...(z.style ? { style: z.style } : {}), ...(z.accentGroup ? { accentGroup: z.accentGroup } : {}) })); });
       return { content: { ok: true, count: ctx.project!.zooms.length }, summary: args.zooms.length ? 'Added a few zoom-ins on the big moments' : 'Took out the zooms' };
     },
   },
@@ -1808,6 +1866,15 @@ const tools: ToolDef[] = [
     },
   },
   {
+    name: 'lint_edit',
+    description: 'Check the edit deterministically before rendering. The engine applies listed fixes during rendering. Address issues and render again; fixed items need no re-check.',
+    parameters: S.obj({}),
+    async run(ctx) {
+      const result = await engine(ctx, 'lint-edit');
+      return { content: result };
+    },
+  },
+  {
     name: 'render_draft',
     description: 'Render a quick preview of the current edit. Needed before look_at_frames.',
     parameters: S.obj({}),
@@ -1820,13 +1887,18 @@ const tools: ToolDef[] = [
       // show the same frames. The full-quality render after finish includes the change anyway.
       const prior = ctx.state.renders.at(-1);
       if (!visibleChangeSinceRender(ctx) && (prior || ctx.state.changed.size)) {
+        const lint = await engine(ctx, 'lint-edit');
         ctx.state.previewSkipped = true;
-        return { content: { ok: true, skipped: 'Nothing visible changed since the last preview, so I did not make a new one. The final video after finish includes your change. Do not render again for this.', version: prior?.version ?? null } };
+        const visualChanges = prior?.result?.visualChanges as any;
+        if (visualChanges) addCutStyleVerdicts(visualChanges, ctx.project?.cutStyle?.preset);
+        return { content: { ok: true, skipped: 'Nothing visible changed since the last preview, so I did not make a new one. The final video after finish includes your change. Do not render again for this.', version: prior?.version ?? null, issues: lint.issues ?? [], fixed: lint.fixed ?? [], ...(visualChanges ? { visualChanges } : {}) } };
       }
       const info = await doRender(ctx, true);
       const r = info.result ?? {};
       const p = ctx.project!;
       const notes: string[] = [];
+      const visualChanges = r.visualChanges as any;
+      if (visualChanges) addCutStyleVerdicts(visualChanges, p.cutStyle?.preset);
       // Some engine builds do not draw every layer yet. Never delete the user's edit because a frame lacks it.
       if (p.broll.length && r.layers === 0) notes.push('This preview engine did not draw the b-roll layers. They are saved in the project and will appear when supported, so do not remove them because frames lack them.');
       if (p.zooms.length && r.zooms === 0) notes.push('This preview engine did not apply zooms yet; they are saved in the project.');
@@ -1841,13 +1913,17 @@ const tools: ToolDef[] = [
         return { id: b.id, problem: b.remake, covers: b.clash ?? [],
           fix: item ? { tool: 'update_broll', args: { id: b.id, anchor: { from: item.anchor.from, to: item.anchor.to } } } : null };
       });
-      const bare = ctx.transcript ? faceOnlyStretches(p, ctx.transcript) : [];
-      if (bare.length) notes.push(`${bare.length} stretch${bare.length > 1 ? 'es' : ''} of plain face over 4 s (see faceOnly): the screen should change every 3 to 5 s. Fill each now: first a picture, an animation or a label for something said there (search for it in this same reply); a zoom on a whole line in its MIDDLE only where nothing there can be shown (set_zoom replaces the list: send every zoom).`);
+      const cadence = p.cutStyle ? CUT_STYLES[p.cutStyle.preset].secondsPerVisualChange : undefined;
+      // The rendered meter includes cuts; the anchor estimate only sees b-roll and zooms.
+      const cadenceMet = p.cutStyle && visualChanges?.overall?.verdict === 'in band';
+      const bare = ctx.transcript && cadence !== null && !cadenceMet ? faceOnlyStretches(p, ctx.transcript, cadence?.[1] ?? 4.5) : [];
+      const cadenceAdvice = cadence ? `over ${cadence[1]} s (see faceOnly): the screen should change every ${cadence[0]} to ${cadence[1]} s` : 'over 4 s (see faceOnly): the screen should change every 3 to 5 s';
+      if (bare.length) notes.push(`${bare.length} stretch${bare.length > 1 ? 'es' : ''} of plain face ${cadenceAdvice}. Fill each now: first a picture, an animation or a label for something said there (search for it in this same reply); a zoom on a whole line in its MIDDLE only where nothing there can be shown (set_zoom replaces the list: send every zoom).`);
       // pictures clumped in one half: a long run held up by zooms alone reads as unedited
-      const noPicture = ctx.transcript ? faceOnlyStretches(p, ctx.transcript, 10, false) : [];
+      const noPicture = !p.cutStyle && ctx.transcript ? faceOnlyStretches(p, ctx.transcript, 10, false) : [];
       if (noPicture.length) notes.push(`${noPicture.length === 1 ? 'One stretch has' : `${noPicture.length} stretches have`} no picture for over 10 s (see noPicture; zooms alone): the pictures are clumped. Put a picture or an animation on something said in the middle of each (a word card does not count: a real thing, place, number, list or quote).`);
       const perMin = (p.zooms.length * 60) / Math.max(20, typeof r.duration === 'number' ? r.duration : 60);
-      if (perMin > 10) notes.push(`${p.zooms.length} zooms is about ${Math.round(perMin)} a minute, which reads as constant: keep 4 to 8 a minute, on punchlines and in the middle of bare stretches (set_zoom replaces the list).`);
+      if (!p.cutStyle && perMin > 10) notes.push(`${p.zooms.length} zooms is about ${Math.round(perMin)} a minute, which reads as constant: keep 4 to 8 a minute, on punchlines and in the middle of bare stretches (set_zoom replaces the list).`);
       const pops = popCards(p);
       if (pops.length > 2) notes.push(`${pops.length} big word cards (see wordCards): they read as filler and each one stays up about 2 s, past the end of a short line. Keep at most 2 (a number or a name the viewer must remember); replace the rest with a picture or an animation, or remove them.`);
       const flashes = await shortFlashes(r.file, p, ctx.transcript);
@@ -1856,9 +1932,10 @@ const tools: ToolDef[] = [
       if (names.length) notes.push(`Named things the viewer hears but never sees (see namedNotShown). A brand, app, product, company or show: search_images "<name> logo" and place it on its words; a place or event: "<name> photo". Skip people the viewer would not know and anything that is not really a name.`);
       const moments = brollMoments(p);
       const want = Math.round((typeof r.duration === 'number' ? r.duration : 60) / 6);
-      if (moments < Math.round(want * 0.75)) notes.push(`Only ${moments} b-roll moments (pictures, animations, labels; the hook title not counted) for a ${Math.round(r.duration ?? 60)} s video: hand edits carry about ${want}. Before finishing, add pictures or animations for the named things, places, numbers and examples still bare: search_images for them now, all in one reply.`);
+      if (!p.cutStyle && moments < Math.round(want * 0.75)) notes.push(`Only ${moments} b-roll moments (pictures, animations, labels; the hook title not counted) for a ${Math.round(r.duration ?? 60)} s video: hand edits carry about ${want}. Before finishing, add pictures or animations for the named things, places, numbers and examples still bare: search_images for them now, all in one reply.`);
       if (remakeAnimations.length) notes.push(`Animation${remakeAnimations.length > 1 ? 's' : ''} ${remakeAnimations.map((a: any) => a.id).join(', ')} now cover${remakeAnimations.length > 1 ? '' : 's'} the face or captions because the edit changed after ${remakeAnimations.length > 1 ? 'they were' : 'it was'} made. Remake each one now with its "fix" call (update_broll with the same anchor re-renders it into the free space), then render_draft again.`);
-      return { content: { ok: true, version: info.version, duration: r.duration ?? null, verify: r.verify ?? null, warnings: r.warnings ?? null,
+      return { content: { ok: true, version: info.version, issues: r.issues ?? [], fixed: r.fixed ?? [], duration: r.duration ?? null, verify: r.verify ?? null, warnings: r.warnings ?? null,
+        ...(r.variation ? { variation: r.variation } : {}),
         ...(shown.length ? { brollShownDifferently: shown.map((b: any) => ({ id: b.id, treatment: b.treatment, ...(b.fallback ? { shownAs: b.shownAs, why: b.fallback } : { skipped: b.skipped }) })) } : {}),
         ...(remakeAnimations.length ? { remakeAnimations } : {}),
         ...(bare.length ? { faceOnly: bare } : {}),
@@ -1866,7 +1943,8 @@ const tools: ToolDef[] = [
         ...(pops.length > 2 ? { wordCards: pops } : {}),
         ...(flashes.length ? { tooShort: flashes } : {}),
         ...(names.length ? { namedNotShown: names } : {}),
-        brollMoments: { have: moments, handEditsCarry: want },
+        brollMoments: { have: moments, ...(!p.cutStyle ? { handEditsCarry: want } : {}) },
+        ...(visualChanges ? { visualChanges, settings: p.cutStyle ? CUT_STYLES[p.cutStyle.preset] : undefined } : {}),
         ...(notes.length ? { note: notes.join(' ') } : {}) } };
     },
   },

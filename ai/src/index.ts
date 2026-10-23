@@ -28,6 +28,8 @@ export * from './project';
 export * from './version-merge';
 export { refuseIfOpen, OWNER_LOCK } from './owner';
 export { TOOLS, TOOL_NAMES, toolSchemas, executeTool, newToolState } from './tools';
+export { CUT_STYLES } from './cut-style';
+export type { CutPreset } from './cut-style';
 export type { ToolContext, ToolDef } from './tools';
 export { runAgent } from './agent';
 export { loopHarness } from './harness';
