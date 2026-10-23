@@ -68,11 +68,13 @@ import { loadSettings, saveSettings } from './settings'
 import { createPidRegistry } from './orphans'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
-import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord } from '../shared/api'
+import type { AppInfo, DropResult, ExportResult, JobEvent, PlatformExportResult, ProjectJson, VersionInfo, SettingsPane, CoverCandidate, NoteMoment, PlacedWord } from '../shared/api'
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
 import { aiNoteText, checkMoment, forPerson, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment } from '../shared/moments'
+import { parsePlatformExportRequest } from '../shared/platforms'
+import { checkPlatformExport, exportPlatforms, sweepExportStaging } from './platform-export'
 import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { displayPath } from '../shared/display-path'
@@ -444,7 +446,7 @@ function safeFileName(s: string): string {
   return t.slice(0, 80) || 'My video'
 }
 
-async function exportVersion(slug: string, n: number): Promise<ExportResult> {
+async function finishedExportVersion(slug: string, n: number): Promise<VersionInfo> {
   const dir = projectDir(slug)
   let versions = await listVersions(dir)
   let v = versions.find((x) => x.n === n) ?? versions[versions.length - 1]
@@ -453,7 +455,9 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
   if (v.draft) {
     // A preview is not the full-quality file: make it first, as a normal job (progress, Stop, and
     // nothing else can run on this video meanwhile) (review 25).
+    let stopped: AbortSignal | undefined
     jobs.start(slug, 'rerender', async (emit, signal, { owner }) => {
+      stopped = signal
       emit({ type: 'status', message: 'Making the full-quality video', pct: 1, phase: 'final' })
       const r: any = await runEngine(
         'render',
@@ -466,10 +470,16 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
       return { summary: '', version, chat: [] }
     })
     await jobs.forSlug(slug)?.done
+    if (stopped?.aborted) throw { code: 'CANCELLED', userMessage: 'Stopped.' }
     versions = await listVersions(dir)
     v = versions[versions.length - 1]
     if (!v || v.draft) throw { code: 'EXPORT_FAILED', userMessage: 'I could not make the full-quality video. Try Export again.' }
   }
+  return v
+}
+
+async function exportVersion(slug: string, n: number): Promise<ExportResult> {
+  const v = await finishedExportVersion(slug, n)
   const p = await readProject(slug)
   const exportsDir = binDir('exports')
   await fs.mkdir(exportsDir, { recursive: true })
@@ -842,6 +852,37 @@ function registerIpc(): void {
     return parseCoverCandidates(r, source, projectDir(slug))
   })
   handle('projects:stopCoverCandidates', (_e, slug: string) => coverScans.stop(slug))
+  handle('projects:exportPlatforms', async (_e, slug: string, n: number, value: unknown) => {
+    const request = parsePlatformExportRequest(value)
+    updates.assertCanStartWork()
+    if (!(await listVersions(projectDir(slug))).some((v) => v.n === n)) throw { code: 'NO_VERSION', userMessage: 'Choose an available version before exporting for platforms.' }
+    const version = await finishedExportVersion(slug, n)
+    const video = await checkPlatformExport(version.videoPath, request, runEngine)
+    const project = await readProject(slug)
+    const chosenCover = join(dirname(version.videoPath), 'cover.png')
+    let result: PlatformExportResult | null = null
+    let failure: unknown
+    exportsWriting++ // the updater will not restart the app while an export writes its files
+    try {
+      jobs.start(slug, 'export', async (emit, signal) => {
+        emit({ type: 'status', message: 'Saving platform files', pct: 1 })
+        try {
+          result = await exportPlatforms({
+            source: version.videoPath, video, chosenCover: existsSync(chosenCover) ? chosenCover : null, folder: binDir('exports'),
+            name: `${safeFileName(project.title || slug)} - Version ${version.n}`, request, runEngine, signal,
+            onProgress: (message, pct) => emit({ type: 'status', message, pct })
+          })
+          return { summary: '', quiet: true }
+        } catch (e) { failure = e; throw e }
+      })
+      await jobs.forSlug(slug)?.done
+    } finally {
+      exportsWriting--
+    }
+    if (failure) throw failure
+    if (!result) throw { code: 'EXPORT_FAILED', userMessage: 'The export stopped. Try Export again.' }
+    return result
+  })
   handle('projects:remove', async (_e, slug: string) => {
     await coverScans.stop(slug)
     const running = jobs.forSlug(slug)
@@ -1152,6 +1193,7 @@ app.whenReady().then(async () => {
       return []
     })
     if (recovered.length) log(`[recover] cleaned up ${recovered.join(', ')}`)
+    await sweepExportStaging(binDir('exports')).catch((e) => log(`[export] ${String(e)}`))
     await noteQueue.recover().catch((e) => log(`[queue] ${String(e)}`))
   }
   const loaded = await loadAI(

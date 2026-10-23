@@ -74,6 +74,7 @@ const api: ReelApi = {
     exportVersion: (slug, n) => call('projects:export', slug, n),
     coverCandidates: (slug, moments, source) => call('projects:coverCandidates', slug, moments, source),
     stopCoverCandidates: (slug) => call('projects:stopCoverCandidates', slug),
+    exportPlatforms: (slug, n, request) => call('projects:exportPlatforms', slug, n, request),
     remove: (slug) => call('projects:remove', slug)
   },
   notes: {

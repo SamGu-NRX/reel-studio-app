@@ -10,6 +10,7 @@ import type { Go } from '../nav'
 import { Confirm, FOLDER_APP, Modal, Spinner } from '../components/ui'
 import { SendToPhone } from '../components/SendToPhone'
 import { CloudSave } from '../components/CloudSave'
+import { PlatformExportDialog } from '../components/PlatformExportDialog'
 import { Icon } from '../components/icons'
 import { PhonePlayer } from '../components/Player'
 import type { SubtitleLook } from '../../../shared/caption-presets'
@@ -71,6 +72,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const [steps, setSteps] = useState<string[]>([])
   const [drawer, setDrawer] = useState<Tab | null>(null)
   const [exporting, setExporting] = useState<'busy' | ExportResult | null>(null)
+  const [platformPicker, setPlatformPicker] = useState(false)
   const [phoneFirst, setPhoneFirst] = useState(false)
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
   const [providerChecked, setProviderChecked] = useState(false)
@@ -153,7 +155,8 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
       } else if (e.type === 'done' || e.type === 'error' || e.type === 'cancelled') {
         setJob(null)
         setCompare(null)
-        void load(e.type === 'done')
+        // an export ends with no new version
+        void load(e.type === 'done' && e.version !== undefined)
       }
     })
     return () => {
@@ -227,10 +230,10 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   )
 
   useEffect(() => {
-    const fn = () => void doExport()
+    const fn = () => { if (!platformPicker) void doExport() }
     window.addEventListener(EXPORT_EVENT, fn)
     return () => window.removeEventListener(EXPORT_EVENT, fn)
-  }, [doExport])
+  }, [doExport, platformPicker])
 
   // N: ask about the moment on screen.
   useEffect(() => {
@@ -659,6 +662,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
             why={job ? 'Wait for this version to finish' : undefined}
             onExport={() => void doExport()}
             onPhone={() => void doExport(true)}
+            onPlatforms={() => setPlatformPicker(true)}
             exportFile={exportFile}
           />
         </div>
@@ -738,6 +742,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
         />
       )}
 
+      {platformPicker && version && <PlatformExportDialog slug={slug} version={version} post={d.project.post} jobId={job?.jobId || undefined} status={job?.message} onClose={() => setPlatformPicker(false)} />}
       {exporting && <ExportDialog result={exporting} phoneFirst={phoneFirst} onClose={() => setExporting(null)} onSaveCaption={(t) => savePost(t)} />}
     </div>
   )
