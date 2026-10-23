@@ -93,6 +93,8 @@ class RenderCtx:
     window: Optional[tuple] = None                          # (a, b) output seconds when --window used
     out_dir: Optional[Path] = None                          # versions/vN
 
+    src_to_out: Optional[Callable[[str, float], Optional[float]]] = None
+
     def resolve_path(self, p: str) -> Path:
         """Resolve a project.json asset path: 'Library/...' against root, else project-relative.
         Raises EngineError UNSAFE_PATH for anything outside media/, work/ or root/Library."""

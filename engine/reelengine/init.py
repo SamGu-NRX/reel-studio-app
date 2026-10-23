@@ -26,9 +26,6 @@ def run(project_dir: Path, title: str, files: list, slug: str = None) -> dict:
         if not info["hasVideo"] or info["kind"] == "image":
             raise EngineError("NOT_VIDEO", f"{f} has no video stream",
                               f"\"{f.name}\" isn't a video. Drop in the video of you talking.")
-        if not info["hasAudio"]:
-            raise EngineError("NO_AUDIO", f"{f} has no audio stream",
-                              f"\"{f.name}\" has no sound. Try a different file.")
         if info["duration"] < 1.0:
             raise EngineError("TOO_SHORT", f"{f} is {info['duration']}s",
                               f"\"{f.name}\" is too short to make a video from.")

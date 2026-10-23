@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://reelstudio.local/schema/project.schema.json",
   "title": "Reel Studio project",
-  "description": "project.json schemaVersion 1 (docs/architecture.md section 3). Times are seconds. B-roll, zooms, music automation and caption overrides are anchored to transcript WORD IDs, never output seconds. Optional fields may be added; nothing is ever removed or renamed.",
+  "description": "project.json schemaVersion 1 (docs/architecture.md section 3). Times are seconds. B-roll uses word IDs or source-time ranges; zooms, music automation and caption overrides use word IDs, never output seconds. Optional fields may be added; nothing is ever removed or renamed.",
   "type": "object",
   "required": ["schemaVersion", "id", "title", "slug", "format", "sources", "cut"],
   "properties": {
@@ -56,12 +56,9 @@
         "keep": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": ["from", "to"],
-            "properties": {
-              "from": { "$ref": "#/$defs/wordId" },
-              "to": { "$ref": "#/$defs/wordId" }
-            }
+            "if": { "required": ["clip"] },
+            "then": { "$ref": "#/$defs/clip" },
+            "else": { "$ref": "#/$defs/wordRange" }
           }
         },
         "gapCap": { "type": "number", "minimum": 0, "maximum": 5 },
@@ -133,7 +130,7 @@
         "required": ["id", "anchor", "treatment"],
         "properties": {
           "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$", "description": "also part of layer file names: no paths" },
-          "anchor": { "$ref": "#/$defs/wordRange" },
+          "anchor": { "oneOf": [{ "$ref": "#/$defs/wordRange" }, { "$ref": "#/$defs/sourceRange" }] },
           "leadIn": { "type": "number" },
           "treatment": { "type": "string" },
           "asset": { "anyOf": [{ "$ref": "#/$defs/relPath" }, { "type": "null" }] },
@@ -194,6 +191,26 @@
       "type": "object",
       "required": ["from", "to"],
       "properties": { "from": { "$ref": "#/$defs/wordId" }, "to": { "$ref": "#/$defs/wordId" } }
+    },
+    "clip": {
+      "type": "object",
+      "required": ["clip", "source", "in", "out"],
+      "not": { "anyOf": [{ "required": ["from"] }, { "required": ["to"] }] },
+      "properties": {
+        "clip": { "type": "string", "pattern": "^c[0-9]+$" },
+        "source": { "type": "string", "pattern": "^s[0-9]+$" },
+        "in": { "type": "number", "minimum": 0 },
+        "out": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "sourceRange": {
+      "type": "object",
+      "required": ["source", "s", "e"],
+      "properties": {
+        "source": { "type": "string", "pattern": "^s[0-9]+$" },
+        "s": { "type": "number", "minimum": 0 },
+        "e": { "type": "number", "exclusiveMinimum": 0 }
+      }
     },
     "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$" },
     "relPath": {

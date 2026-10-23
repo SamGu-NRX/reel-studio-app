@@ -1,6 +1,6 @@
-"""The cut: word-id ranges -> source segments on the output clock, and every time mapping.
+"""The cut: word-id ranges and clips -> source segments on the output clock.
 
-`cut.keep` is a list of inclusive word-id ranges in OUTPUT order. A range covers every transcript
+`cut.keep` holds inclusive word-id ranges and source-time clips in output order. A range covers every transcript
 word between its two ends (by position in transcript.words). This module turns that into
 Segments (source, src_start, src_end, out_start) and answers "where does word wN land in the
 output?" -- the one mapping that b-roll, zooms, music automation and captions all go through, so a
@@ -197,18 +197,63 @@ def plan_run(words: list, i0: int, i1: int, gap_cap: float, min_saving: float, f
     return [(round(s, 6), round(e, 6)) for s, e in out]
 
 
+def clip_span(item: dict, sources: dict) -> tuple[float, float]:
+    """Validate a clip and snap its bounds to the source frame grid without removing silence."""
+    src = item["source"]
+    if src not in sources:
+        raise EngineError("BAD_CUT", f"clip {item['clip']}: unknown source {src!r}",
+                          "A clip points at a source that is no longer in this project.")
+    start, end = float(item["in"]), float(item["out"])
+    meta = sources[src]
+    duration = float(meta.get("duration") or 0.0)
+    fps = float(meta.get("fps") or 30.0)
+    if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start or (duration and end > duration + EPS):
+        raise EngineError("BAD_CUT", f"clip {item['clip']}: invalid bounds {start}..{end}",
+                          "A clip's start and end must be inside its source video.")
+    start, end = snap(start, fps), snap(end, fps)
+    if duration:
+        end = min(end, math.floor(duration * fps + EPS) / fps)
+    if end - start < 1 / fps - EPS:
+        raise EngineError("BAD_CUT", f"clip {item['clip']}: shorter than one source frame",
+                          "A clip must contain at least one frame.")
+    return round(start, 6), round(end, 6)
+
+
 def build_timeline(words: list, keep: list, sources: dict, gap_cap: float = GAP_CAP,
                    min_saving: float = MIN_SAVING) -> Timeline:
     """sources: {sid: {"duration": float, "fps": float}}."""
-    runs = merge_contiguous(words, resolve_ranges(words, keep))
+    runs, pending = [], []
+    clip_ids = set()
+    for item in keep or []:
+        if "clip" in item:
+            runs.extend(merge_contiguous(words, resolve_ranges(words, pending)))
+            pending = []
+            if item["clip"] in clip_ids:
+                raise EngineError("BAD_CUT", f"duplicate clip id {item['clip']!r}",
+                                  "Each clip in the edit needs its own id.")
+            clip_ids.add(item["clip"])
+            runs.append(item)
+        else:
+            pending.append(item)
+    runs.extend(merge_contiguous(words, resolve_ranges(words, pending)))
     segments, words_out, first_pos = [], [], {}
     out = 0.0
-    for n, (i0, i1) in enumerate(runs):
-        src = words[i0]["source"]
-        meta = sources.get(src) or {}
-        fps = float(meta.get("fps") or 30.0)
-        pieces = plan_run(words, i0, i1, gap_cap, min_saving, fps, float(meta.get("duration") or 0.0),
-                          is_first=(n == 0), is_last=(n == len(runs) - 1))
+    for n, run in enumerate(runs):
+        is_clip = isinstance(run, dict)
+        if is_clip:
+            src = run["source"]
+            pieces = [clip_span(run, sources)]
+            s, e = pieces[0]
+            positions = [i for i, w in enumerate(words)
+                         if w["source"] == src and w["s"] < e and w["e"] > s]
+        else:
+            i0, i1 = run
+            src = words[i0]["source"]
+            meta = sources.get(src) or {}
+            fps = float(meta.get("fps") or 30.0)
+            pieces = plan_run(words, i0, i1, gap_cap, min_saving, fps, float(meta.get("duration") or 0.0),
+                              is_first=(n == 0), is_last=(n == len(runs) - 1))
+            positions = range(i0, i1 + 1)
         run_segs = []
         for s, e in pieces:
             seg = Segment(source=src, src_start=s, src_end=e, out_start=round(out, 6))
@@ -225,15 +270,16 @@ def build_timeline(words: list, keep: list, sources: dict, gap_cap: float = GAP_
                     return seg.out_start + (t - seg.src_start)
             return run_segs[-1].out_end
 
-        for i in range(i0, i1 + 1):
+        for i in positions:
             w = words[i]
             os_, oe = map_t(w["s"]), map_t(w["e"])
             oe = max(oe, os_ + 0.01)
             words_out.append({"id": w["id"], "w": w["w"], "s": round(os_, 4), "e": round(oe, 4),
                               "source": src})
             first_pos.setdefault(w["id"], (round(os_, 4), round(oe, 4)))
-        run_segs[0].first_word = words[i0]["id"]
-        run_segs[-1].last_word = words[i1]["id"]
+        if positions:
+            run_segs[0].first_word = words[positions[0]]["id"]
+            run_segs[-1].last_word = words[positions[-1]]["id"]
         segments.extend(run_segs)
     index = {w["id"]: i for i, w in enumerate(words)}
     kept_index = sorted({index[wid] for wid in first_pos})

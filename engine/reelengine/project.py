@@ -205,13 +205,17 @@ def source_path(project_dir: Path, src: dict, root: Optional[Path] = None) -> Pa
 
 def timeline(project_dir: Path, proj: dict, words: Optional[list] = None) -> cutmod.Timeline:
     """The project's cut on the output clock. Every word anchor maps through this."""
-    if words is None:
-        words = load_transcript(project_dir, proj)["words"]
     c = proj.get("cut") or {}
     keep = c.get("keep") or []
     if not keep:
         raise EngineError("EMPTY_CUT", "cut.keep is empty",
                           "There's nothing in the edit yet. Let me pick your takes first.")
+    if words is None:
+        if all("clip" in item for item in keep):
+            tp = transcript_path(project_dir, proj)
+            words = (read_json(tp).get("words") or []) if tp.exists() else []
+        else:
+            words = load_transcript(project_dir, proj)["words"]
     return cutmod.build_timeline(words, keep, source_meta(proj),
                                  gap_cap=float(c.get("gapCap", cutmod.GAP_CAP)),
                                  min_saving=float(c.get("minSaving", cutmod.MIN_SAVING)))
@@ -266,9 +270,20 @@ def remap_anchors(proj: dict, old_words: list, new_words: list) -> int:
 
 
 def anchor_span(tl: cutmod.Timeline, anchor: dict, lead_in: float = 0.0):
-    """{from,to} word anchor -> (t0, t1) output seconds."""
-    t0 = tl.word_out_time(anchor["from"]) - (lead_in or 0.0)
-    t1 = tl.word_out_end(anchor["to"])
+    """A word range or source-time range -> (t0, t1) output seconds.
+
+    A removed source endpoint has no output span. Repeated footage uses its first occurrence,
+    as word anchors do. Never span a reversed pair of source occurrences after a recut.
+    """
+    if "source" in anchor:
+        t0 = tl.src_to_out(anchor["source"], anchor["s"])
+        t1 = tl.src_to_out(anchor["source"], anchor["e"])
+        if t0 is None or t1 is None or t1 <= t0 or anchor["e"] <= anchor["s"]:
+            return 0.0, 0.0
+        t0 -= lead_in or 0.0
+    else:
+        t0 = tl.word_out_time(anchor["from"]) - (lead_in or 0.0)
+        t1 = tl.word_out_end(anchor["to"])
     t0 = max(0.0, min(t0, tl.duration))
     t1 = max(t0, min(t1, tl.duration))
     return t0, t1

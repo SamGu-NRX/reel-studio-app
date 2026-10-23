@@ -1,6 +1,6 @@
 # project.json schema changes
 
-All additive (optional fields only), per docs/architecture.md section 3. Schema: `engine/reelengine/schema/project.schema.json`.
+Existing project shapes remain valid. New shapes can require a newer engine, as noted below. Schema: `engine/reelengine/schema/project.schema.json`.
 
 ## 2026-10-17 (engine-core, A1)
 
@@ -35,3 +35,24 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
   never flipped; every reader of the face box in output pixels mirrors x (`x' = W - x - w`). Written by the AI's
   `set_mirror` tool and by the "Flip picture (it's mirrored)" toggle in "Edit it myself"; turning it off removes
   the field, so the project matches one that never had it.
+
+## 2026-10-23 (multi-source engine)
+
+- `cut.keep[]` accepts a word range `{from, to}` or a clip
+  `{clip: "c1", source: "s2", in: 12.4, out: 16.8}` in output order. Clip ids are unique
+  within the cut and match `^c[0-9]+$`. Bounds are source seconds, start included and end excluded,
+  inside the named source. The engine snaps them to the source frame grid and rejects clips
+  shorter than one frame. Clips retain silence and never merge with adjacent word ranges.
+- `broll[].anchor` also accepts `{source: "s2", s: 13.0, e: 14.5}` in source seconds.
+  Both endpoints map through the cut, so a recut moves the overlay with the footage. An endpoint
+  removed by trimming leaves no overlay. Repeated source moments use their first output occurrence.
+  Existing lead-in and hold rules still apply. Zooms, captions and music keep their word anchors.
+- All-clip cuts render without `work/transcript.json`. When a transcript exists, words intersecting
+  clips are captioned on the clip's output clock. Mixed cuts still require a transcript for their
+  word ranges. Sources with no audio stream contribute silence, including during `init`.
+- Source paths may use the existing `Library/...` form. Indexed footage references, per-clip audio
+  controls and framing overrides are outside this slice.
+- `schemaVersion` remains 1 and existing projects are not rewritten. Older builds, including main
+  at `31382f9`, reject clip items and source-time b-roll anchors with `BAD_PROJECT` because they
+  require word-range fields. They must refuse rather than ignore the clips and render a different
+  video. Open these projects in a build that supports multi-source cuts.

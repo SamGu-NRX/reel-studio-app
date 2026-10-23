@@ -300,9 +300,20 @@ def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path) -> 
     seg_input = {}
     chains, labels = [], []
     for li, lane in enumerate(lanes):
-        if lane["seek"] > 0:
+        source = lane["source"]
+        probe = tools.text_run([ctx.ffprobe, "-v", "error", "-select_streams", "a:0",
+                                "-show_entries", "stream=index", "-of", "csv=p=0", str(src_paths[source])],
+                               30, "audio probe")
+        has_audio = bool((probe.stdout or "").strip())
+        if has_audio and lane["seek"] > 0:
             cmd += ["-ss", _f(lane["seek"])]
-        cmd += ["-vn", "-i", str(src_paths[lane["source"]])]
+        if has_audio:
+            cmd += ["-vn", "-i", str(src_paths[source])]
+        else:
+            # A clip with no audio is valid. Keep a matching silent lane so the audio concat has
+            # the same segment clock as the picture.
+            cmd += ["-f", "lavfi", "-t", _f(lane["last"] - lane["seek"]),
+                    "-i", "anullsrc=r=48000:cl=stereo"]
         n = len(lane["segs"])
         if n > 1:
             chains.append(f"[{li}:a]asplit={n}" + "".join(f"[A{li}s{si}]" for si in lane["segs"]))
@@ -634,7 +645,7 @@ def make_ctx(project_dir: Path, proj: dict, tl, draft: bool, root: Path, rwork: 
                      word_out_time=tl.word_out_time, duration=tl.duration, fmt=dict(proj["format"]),
                      draft=draft, work=project_dir / "work", ffmpeg=tools.ffmpeg(),
                      ffprobe=tools.ffprobe(), progress=_progress, word_out_end=tl.word_out_end,
-                     words=tl.words)
+                     words=tl.words, src_to_out=tl.src_to_out)
 
 
 GONE_WORDS = "it sits on words that are no longer in the transcript, so it was left out"
@@ -649,6 +660,8 @@ def unknown_anchor_skips(proj: dict, tl) -> tuple:
     for i, b in enumerate(proj.get("broll") or []):
         anc = b.get("anchor") or {}
         ids = [x for x in (anc.get("from"), anc.get("to")) if x]
+        if "source" in anc:
+            continue
         if not ids or any(x not in known for x in ids):
             rows.append({"id": b.get("id", f"b{i + 1}"), "treatment": b.get("treatment"),
                          "skipped": GONE_WORDS})
@@ -730,8 +743,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
         proj = first_look_project(project_dir, proj, music)
     root = tools.root_dir(str(root) if root else None)
     progress(STAGE, 1, "Getting your video ready", force=True)
-    words = projmod.load_transcript(project_dir, proj)["words"]
-    tl = projmod.timeline(project_dir, proj, words)
+    tl = projmod.timeline(project_dir, proj)
     if tl.duration < 0.3 or not tl.segments:
         raise EngineError("EMPTY_CUT", "the cut is empty", "There's nothing left in the edit. Undo the last change.")
     win = parse_window(window, tl.duration)
@@ -753,7 +765,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
     warnings: list = []
 
     src_meta = {s["id"]: s for s in proj["sources"]}
-    src_paths = {s["id"]: projmod.source_path(project_dir, s) for s in proj["sources"]}
+    src_paths = {s["id"]: projmod.source_path(project_dir, s, root=root) for s in proj["sources"]}
     for sid, p in src_paths.items():
         if not p.exists():
             raise EngineError("SOURCE_MISSING", f"missing source {p}",
@@ -1054,7 +1066,7 @@ def cover_only(project_dir: Path, root: Optional[Path] = None) -> dict:
     ctx = make_ctx(project_dir, proj, tl, False, tools.root_dir(str(root) if root else None),
                    project_dir / "work" / "render")
     src_meta = {s["id"]: s for s in proj["sources"]}
-    src_paths = {s["id"]: projmod.source_path(project_dir, s) for s in proj["sources"]}
+    src_paths = {s["id"]: projmod.source_path(project_dir, s, root=root) for s in proj["sources"]}
     warnings: list = []
     progress("cover", 10, "Making your cover", force=True)
     p = render_cover(ctx, proj, tl, src_meta, src_paths, source_faces(project_dir, proj),
