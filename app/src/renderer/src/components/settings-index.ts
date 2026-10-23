@@ -25,7 +25,7 @@ export const SETTINGS = {
   instagram: { section: 'posting', label: 'Instagram', synonyms: ['post', 'posting', 'publish', 'upload', 'social', 'platforms', 'TikTok', 'YouTube', 'Shorts'] },
   'library-folder': { section: 'storage', label: 'Library folder', synonyms: ['folder', 'location', 'where', 'storage', 'save', 'saved', 'path', 'directory', 'Movies', 'Documents', 'Finder', 'Explorer', 'disk', 'files', 'move'] },
   'listening-model': { section: 'storage', label: 'Listening model', synonyms: ['subtitles', 'captions', 'transcript', 'transcription', 'speech', 'speech to text', 'Whisper', 'WhisperX', 'words', 'voice', 'download', 'offline'] },
-  'faster-exports': { section: 'storage', label: 'Faster exports', synonyms: ['30 fps', '30fps', '60 fps', 'fps', 'frame rate', 'export quality', 'quality', 'smooth', 'speed', 'render', 'export'] },
+  'faster-exports': { section: 'storage', label: 'Faster versions', synonyms: ['30 fps', '30fps', '60 fps', 'fps', 'frame rate', 'export quality', 'quality', 'smooth', 'speed', 'render', 'export'] },
   notifications: { section: 'notifications', label: 'Notify when a reel is ready', synonyms: ['notifications', 'alerts', 'notify', 'banner', 'finished', 'done'] },
   sharing: { section: 'privacy', label: 'Share anonymous data to help improve Reel Studio', synonyms: [...SHARING_WORDS, 'tracking', 'diagnostics', 'usage data', 'opt out', 'opt in', 'statistics', 'stats', 'privacy'] },
   'sharing-usage': { section: 'privacy', label: 'Usage', needs: 'sharing', synonyms: [...SHARING_WORDS, 'features', 'errors', 'crashes'] },

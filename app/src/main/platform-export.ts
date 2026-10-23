@@ -50,7 +50,7 @@ async function probe(source: string, runEngine: RunEngine, label: string): Promi
   if (typeof video?.duration !== 'number' || !Number.isFinite(video.duration) || video.duration <= 0 ||
       typeof video.width !== 'number' || typeof video.height !== 'number' || typeof video.fps !== 'number' || typeof video.sizeBytes !== 'number' ||
       typeof video.editList !== 'boolean' || typeof video.maxKeyframeGap !== 'number') {
-    throw { code: 'EXPORT_FAILED', userMessage: `${label}The finished video couldn’t be read. Make this version again, then share it.` }
+    throw { code: 'EXPORT_FAILED', userMessage: `${label}The finished version couldn’t be read. Make this version again, then share it.` }
   }
   return video as FinishedVideo
 }
@@ -94,14 +94,14 @@ export async function exportPlatforms({ tries, folder, runEngine, signal, onProg
       const outputFor = new Map<Platform, string>()
       for (const [index, group] of (sharedVideo ? [] : outputGroups(item.platforms, item.video)).entries()) {
         const output = join(stage, `video-${t + 1}-${index}.mp4`)
-        const message = `Making the ${group.platforms.map((p) => platformRule(p).label).join(' and ')} video${two ? ` for Try ${t + 1}` : ''}`
+        const message = `Making the ${group.platforms.map((p) => platformRule(p).label).join(' and ')} version${two ? ` for Try ${t + 1}` : ''}`
         const encode = group.spec ? ['--width', String(group.spec.width), '--height', String(group.spec.height), '--bitrate', String(group.spec.videoBitrate)] : []
         onProgress?.(message, 0)
         await runEngine('export-media', [item.source, '--dest', output, ...encode], (p) => onProgress?.(message, p.pct), signal)
         const size = (await fs.stat(output)).size
         for (const platform of group.platforms) {
           const rule = platformRule(platform)
-          if (size > rule.maxBytes) throw { code: 'EXPORT_SIZE', userMessage: `${two ? `Try ${t + 1} on ` : ''}${rule.label}: the video is too large. Shorten it and try again.` }
+          if (size > rule.maxBytes) throw { code: 'EXPORT_SIZE', userMessage: `${two ? `Try ${t + 1} on ` : ''}${rule.label}: the reel is too large. Shorten it and try again.` }
           outputFor.set(platform, output)
         }
       }

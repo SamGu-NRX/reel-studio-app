@@ -34,7 +34,7 @@ export function updateSummary(s: UpdateState): string {
     case 'error':
       if (s.errorContext === 'download' && s.availableVersion) return `The download of ${s.availableVersion} stopped. Click to try again.`
       if (s.errorContext === 'install' && s.downloadedVersion) return `Reel Studio ${s.downloadedVersion} did not install. Click to try again.`
-      return s.message ?? 'I could not check for updates.'
+      return s.message ?? 'Reel Studio could not check for updates.'
     case 'up-to-date':
       return `You have the newest version (${s.currentVersion}).`
     case 'disabled':
@@ -72,7 +72,7 @@ export function installQuestion(s: Pick<UpdateState, 'availableVersion' | 'downl
   const v = s.downloadedVersion ?? s.availableVersion
   if (busy.exporting) {
     return {
-      title: 'Your export is still saving',
+      title: 'A reel is still saving',
       body: 'Wait until it is done, then restart to update. Restarting now could leave a broken file.',
       canInstall: false
     }
@@ -80,12 +80,12 @@ export function installQuestion(s: Pick<UpdateState, 'availableVersion' | 'downl
   const stops =
     busy.working > 0
       ? busy.working === 1
-        ? ' A video is being made right now: restarting stops it, and you can start it again after the update.'
-        : ` ${busy.working} videos are being made right now: restarting stops them, and you can start them again after the update.`
+        ? ' A reel is being made right now: restarting stops it, and you can start it again after the update.'
+        : ` ${busy.working} reels are being made right now: restarting stops them, and you can start them again after the update.`
       : ''
   return {
     title: `Install update${v ? ` ${v}` : ''} and restart Reel Studio?`,
-    body: `Reel Studio closes for a moment and opens again on the new version. Your videos and settings stay.${stops}`,
+    body: `Reel Studio closes for a moment and opens again on the new version. Your reels and settings stay.${stops}`,
     canInstall: true
   }
 }

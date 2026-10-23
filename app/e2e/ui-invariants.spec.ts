@@ -133,7 +133,7 @@ async function snapshot(page: Page) {
       const match = text?.match(/(\d+):([0-5]\d)/)
       return match ? Number(match[1]) * 60 + Number(match[2]) : null
     }
-    const range = root.querySelector<HTMLInputElement>('input[aria-label="Position in the video"]')
+    const range = root.querySelector<HTMLInputElement>('input[aria-label="Position in the reel"]')
     const time = root.querySelector('[data-testid="time"]')
     const readout = parse(time?.textContent)
     const chips = Array.from(root.querySelectorAll('[data-testid="moment-suggest"]')).filter(visible).map((chip) => parse(chip.textContent))

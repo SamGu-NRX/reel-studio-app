@@ -76,7 +76,7 @@ test('add your own AI server from Settings', async () => {
     await expect(page.locator('[data-provider="custom"]')).toContainText('Work')
     await expect(page.getByTestId('ai-connected')).toHaveText('Connected')
     // the sidebar follows without leaving Settings
-    await expect(page.getByTestId('ai-status')).toHaveText('AI editor: Work')
+    await expect(page.getByTestId('ai-status')).toHaveText('Editor: Work')
     expect(chats.at(-1)).toEqual({ auth: `Bearer ${KEY}`, model: 'mock-small' })
 
     const seen = await page.evaluate(async () => JSON.stringify([await window.reel.ai.connections(), await window.reel.ai.providers(), await window.reel.ai.active()]))
@@ -95,7 +95,7 @@ test('add your own AI server from Settings', async () => {
     await page.getByTestId('connection-cancel').click()
 
     await page.getByTestId('use-no-ai').click()
-    await expect(page.getByTestId('ai-status')).toHaveText('No AI editor')
+    await expect(page.getByTestId('ai-status')).toHaveText('No editor')
   } finally {
     await app.close()
   }

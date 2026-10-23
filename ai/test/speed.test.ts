@@ -87,14 +87,14 @@ describe('fast notes (no model turns)', () => {
     const r: any = await ai.applyNote(dir, 'make the captions smaller', (e) => events.push(e));
     expect(model.requests).toHaveLength(0);
     expect(r.fast).toBe('captions-smaller');
-    expect(r.summary).toBe('I made the captions a bit smaller.');
+    expect(r.summary).toBe('I made the subtitles a bit smaller.');
     expect(r.changed).toEqual(['captions']);
     expect(Number((await loadProject(dir)).captions.style.size)).toBeLessThan(size);
     expect(host.calls.filter((c) => c.command === 'render').map((c) => c.args.includes('--draft'))).toEqual([false]);
     expect(events.some((e) => e.type === 'status' && e.phase === 'final')).toBe(true);
     // the reply goes out BEFORE the render that makes it true (the app shows it at once)
     const reply = events.findIndex((e) => e.type === 'reply');
-    expect(events[reply]).toEqual({ type: 'reply', text: 'I made the captions a bit smaller.' });
+    expect(events[reply]).toEqual({ type: 'reply', text: 'I made the subtitles a bit smaller.' });
     expect(reply).toBeLessThan(events.findIndex((e) => e.type === 'render'));
     expect((await loadProject(dir)).notes).toEqual([expect.objectContaining({ text: 'make the captions smaller', applied: ['captions'] })]);
   });

@@ -25,10 +25,12 @@ export interface StyleRule {
 export interface StyleFile { version: 1; rules: StyleRule[]; forgotten?: string[] }
 export type Approval = { status: 'saved' | 'exists'; rule: StyleRule } | { status: 'forgotten' };
 
-export const LOWERCASE_CAPTIONS = 'Use lowercase captions.';
+export const LOWERCASE_CAPTIONS = 'Use lowercase subtitles.';
+/** The typed rule's words before the app said "subtitles": saved rules and questions still on screen may carry them. */
+const OLD_LOWERCASE_TEXT = 'Use lowercase captions.';
 const isCaptionCase = (x: unknown): x is CaptionCaseRule => (x as CaptionCaseRule)?.kind === 'caption-case' && (x as CaptionCaseRule).case === 'lower';
 
-const CAPTION_CASE_PROMPT = 'New videos start with lowercase captions (the app sets this). Use another case only when the note asks for it.';
+const CAPTION_CASE_PROMPT = 'New reels start with lowercase subtitles (the app sets this). Use another case only when the note asks for it.';
 
 export function captionCaseProposal(source: StyleSource): StyleProposal {
   return { id: randomUUID(), text: LOWERCASE_CAPTIONS, payload: { kind: 'caption-case', case: 'lower' }, source };
@@ -78,7 +80,9 @@ export class StyleStore {
     }
     if (!Array.isArray(data?.rules)) throw new Error(`${this.file} has no rules list`);
     const forgotten = Array.isArray(data.forgotten) ? data.forgotten.filter((x) => typeof x === 'string') : [];
-    return { version: 1, rules: data.rules.filter((r) => r && typeof r.text === 'string'), ...(forgotten.length ? { forgotten } : {}) };
+    const rules = data.rules.filter((r) => r && typeof r.text === 'string')
+      .map((r) => (r.text === OLD_LOWERCASE_TEXT && isCaptionCase(r.payload) ? { ...r, text: LOWERCASE_CAPTIONS } : r));
+    return { version: 1, rules, ...(forgotten.length ? { forgotten } : {}) };
   }
 
   /** What edits and the My style screen use: nothing when the file can't be read. */
@@ -128,7 +132,7 @@ export class StyleStore {
    * again returns the same rule, and the question of a rule they removed cannot bring it back. */
   async approve(p: StyleProposal): Promise<Approval> {
     return this.serial(async () => {
-      if (!p?.id || p.text !== LOWERCASE_CAPTIONS || !isCaptionCase(p.payload)) throw new Error('the question does not match the rule it would save');
+      if (!p?.id || (p.text !== LOWERCASE_CAPTIONS && p.text !== OLD_LOWERCASE_TEXT) || !isCaptionCase(p.payload)) throw new Error('the question does not match the rule it would save');
       const data = await this.read();
       if (data.forgotten?.includes(p.id)) return { status: 'forgotten' };
       const same = data.rules.find((r) => r.consent?.proposal === p.id);
@@ -144,7 +148,7 @@ export class StyleStore {
       // The same words saved as a plain sentence give way to the typed rule. It gets a new ID: a running note
       // that saved that sentence removes it by ID if the note fails, and must not take the approved rule with it.
       const rule: StyleRule = { id: randomUUID(), createdAt: at, ...fields };
-      const rest = data.rules.filter((r) => normalize(r.text) !== normalize(LOWERCASE_CAPTIONS));
+      const rest = data.rules.filter((r) => ![LOWERCASE_CAPTIONS, OLD_LOWERCASE_TEXT].some((t) => normalize(r.text) === normalize(t)));
       await this.write({ ...data, rules: [...rest, rule] });
       return { status: 'saved', rule };
     });
@@ -160,7 +164,7 @@ export class StyleStore {
     });
   }
 
-  /** New words make a typed rule a plain one: the app cannot apply "lowercase captions for tutorials" itself. */
+  /** New words make a typed rule a plain one: the app cannot apply "lowercase subtitles for tutorials" itself. */
   async update(id: string, patch: { text?: string; paused?: boolean }): Promise<StyleRule> {
     return this.serial(async () => {
       const data = await this.read();

@@ -373,7 +373,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       : d.job?.kind === 'first-edit' || d.status === 'new'
         ? { kind: 'making', heard: firstSteps?.some((s) => s.id === 'listen' && s.state === 'done') ? heard : [], editor: !aiOff }
         : d.status === 'failed'
-          ? { kind: 'failed', why: d.lastError?.userMessage ?? 'The video could not be made.', extra: d.lastError?.code === 'MODEL_MISSING' ? <ModelDownload /> : undefined }
+          ? { kind: 'failed', why: d.lastError?.userMessage ?? 'This version could not be made.', extra: d.lastError?.code === 'MODEL_MISSING' ? <ModelDownload /> : undefined }
           : { kind: 'paused' }
   const firstLook = first?.kind === 'making' ? (job?.preview?.video ?? null) : null
 
@@ -388,7 +388,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     const n = onScreen?.n ?? version?.n
     const tl = n !== undefined ? await reel.projects.timeline(slug, n).catch(() => null) : null
     if (!tl || n === undefined) return NO_TIMELINE
-    if (c.at > tl.duration) return `There's no ${clock(c.at)} in this video. It's ${clock(tl.duration)} long.`
+    if (c.at > tl.duration) return `There's no ${clock(c.at)} in this reel. It's ${clock(tl.duration)} long.`
     const words = c.to !== undefined ? wordsBetween(tl.words, c.at, c.to) : wordsAt(tl.words, c.at)
     return words.length ? noteMoment(c.at, n, words, c.to) : noSpeech(c.at)
   }

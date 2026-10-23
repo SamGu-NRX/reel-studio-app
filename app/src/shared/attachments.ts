@@ -25,7 +25,7 @@ export const MSG = {
   tooMany: `You can attach up to ${MAX_ATTACHMENTS_PER_NOTE} files to one note.`,
   noPicture: 'There is no picture to paste. Copy a picture first, then paste it here.',
   fromWeb: 'Save that picture to your computer first, then drop it here.',
-  failed: "I couldn't add that file. Try again."
+  failed: "That file couldn't be added. Try again."
 } as const
 
 /** What `engine attach` writes; anything else is never an attachment (main re-checks the sidecar). */

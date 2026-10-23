@@ -249,7 +249,7 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
               <ListeningModel />
               <SettingRow
                 id="faster-exports"
-                line="Exports at 30 fps. Leave off to keep the smoother motion of 60 fps footage."
+                line="Makes new reels at 30 fps, which is quicker. Leave off to keep the smoother motion of 60 fps video."
                 control={<Switch on={info.fasterExports} disabled={savingExports} labelledBy="set-faster-exports" onToggle={() => void toggleExports()} testid="faster-exports" />}
               />
             </Section>

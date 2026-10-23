@@ -84,7 +84,7 @@ export function titleFromFile(file: string): string {
     .replace(/\s+/g, ' ')
     .trim()
   t = /[a-z]{2}/i.test(cleaned) ? cleaned : ''
-  if (!t) t = 'My video'
+  if (!t) t = 'My reel'
   if (t.length > 48) t = t.slice(0, 48).replace(/\s+\S*$/, '').trim()
   return t.charAt(0).toUpperCase() + t.slice(1)
 }
@@ -459,7 +459,7 @@ export async function settleInterrupted(slug: string): Promise<'settled' | 'unre
     } else if (st.queue?.some((q) => q.id === st.job?.noteId)) {
       st.chat.push(stamp({ from: 'editor', text: 'Reel Studio closed before that change was made. It is waiting below. Press Send now when you want it.' }))
     } else if (st.status === 'ready' && st.job?.kind !== 'export') {
-      st.chat.push(stamp({ from: 'editor', text: 'Reel Studio closed before I finished that change. Send your note again and I will pick it up.' }))
+      st.chat.push(stamp({ from: 'editor', text: 'Reel Studio closed before that change was finished. Send your note again to make it.' }))
     }
     st.job = null
   })
@@ -515,7 +515,7 @@ export function checklist(p: ProjectJson, words: Word[], kept: string[], version
       key: 'music',
       label: p.music?.track ? 'Added music' : 'No music yet',
       done: !!(p.music?.enabled && p.music?.track),
-      detail: p.music?.track ? niceName(p.music.track) : 'Add a song to your Library and I will use it'
+      detail: p.music?.track ? niceName(p.music.track) : 'Add a song to your Library to use it'
     },
     {
       key: 'broll',
@@ -529,7 +529,7 @@ export function checklist(p: ProjectJson, words: Word[], kept: string[], version
     },
     {
       key: 'post',
-      label: !caption ? 'Post caption: add your own' : aiEdited ? 'Wrote your post caption' : 'Your post caption',
+      label: !caption ? 'Caption: add your own' : aiEdited ? 'Wrote your caption' : 'Your caption',
       done: !!caption
     }
   ]
@@ -680,7 +680,7 @@ export async function searchProjects(query: string): Promise<string[]> {
 export async function detail(slug: string): Promise<ProjectDetail> {
   const dir = projectDir(slug)
   const s = await summary(slug)
-  if (!s) throw { code: 'NOT_FOUND', userMessage: 'I could not find that video. It may have been moved or deleted.' }
+  if (!s) throw { code: 'NOT_FOUND', userMessage: 'That reel could not be found. It may have been moved or deleted.' }
   const project = await readProject(slug).catch(() => ({}) as ProjectJson)
   const versions = await listVersions(dir)
   const words = await readWords(dir, project)

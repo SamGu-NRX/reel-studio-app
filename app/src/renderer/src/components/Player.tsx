@@ -213,7 +213,7 @@ function ScrubRange({ playhead, dur, onSeek }: { playhead: Playhead; dur: number
       max={dur || 1}
       step={0.01}
       defaultValue={0}
-      aria-label="Position in the video"
+      aria-label="Position in the reel"
       aria-keyshortcuts="ArrowLeft ArrowRight"
       onChange={(e) => onSeek(Number(e.target.value))}
     />
@@ -601,7 +601,7 @@ export function PhonePlayer({
     <div
       className={`phone${className ? ` ${className}` : ''}`}
       draggable={!!dragFile}
-      title={dragFile ? 'Drag me out of the window to put your reel on the desktop or in an upload box' : undefined}
+      title={dragFile ? 'Drag the reel out of the window to the desktop or an upload box' : undefined}
       onPointerDown={(e) => {
         dragOrigin.current = e.target
       }}
@@ -620,7 +620,7 @@ export function PhonePlayer({
         <button
           className="draghandle"
           draggable
-          aria-label={`Drag the video out, or press to show it in ${FOLDER_APP}`}
+          aria-label={`Drag the reel out, or press to show it in ${FOLDER_APP}`}
           // dragging needs a pointer: from the keyboard (or a click) the file is shown in Finder, to take from there
           onClick={() => void reel.app.openFolder(dragFile)}
           onDragStart={(e) => {
@@ -632,7 +632,7 @@ export function PhonePlayer({
           data-testid="drag-handle"
         >
           <Icon name="grip" size={16} stroke={2} />
-          <span className="draghandle-tip" aria-hidden>Drag the video into any app</span>
+          <span className="draghandle-tip" aria-hidden>Drag the reel into any app</span>
         </button>
       )}
       <div className="phone-screen" data-lands ref={screenRef} tabIndex={src ? -1 : undefined} onKeyDown={src ? onKey : undefined} {...holdProps}>

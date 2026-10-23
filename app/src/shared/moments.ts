@@ -133,7 +133,7 @@ export const noSpeech = (at: number): string => `No words play at ${clock(at)}. 
  */
 export function checkMoment(m: NoteMoment, timeline: { duration: number; words: PlacedWord[] } | null): { moment: NoteMoment } | { refuse: string } {
   if (!timeline) return { refuse: NO_TIMELINE }
-  if (m.at > timeline.duration) return { refuse: `There's no ${clock(m.at)} in this video. It's ${clock(timeline.duration)} long.` }
+  if (m.at > timeline.duration) return { refuse: `There's no ${clock(m.at)} in this reel. It's ${clock(timeline.duration)} long.` }
   const to = m.to === undefined ? undefined : Math.min(m.to, timeline.duration)
   const words = to === undefined ? wordsAt(timeline.words, m.at) : wordsBetween(timeline.words, m.at, to)
   if (!words.length) return { refuse: noSpeech(m.at) }

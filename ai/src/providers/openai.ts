@@ -53,7 +53,7 @@ export function mapResponsesError(status: number | undefined, body: any, request
   const base = { status, requestId, detail };
   switch (code) {
     case 'subscription_sharing_usage_limit_exceeded':
-      return new AIError('chatgpt_usage_limit', "You have reached your ChatGPT plan's limit for now, so I stopped. Nothing else was used or charged. You can check your usage in ChatGPT settings and try again later.", { ...base, link: USAGE_URL });
+      return new AIError('chatgpt_usage_limit', "You have reached your ChatGPT plan's limit for now, so Reel Studio stopped. Nothing else was used or charged. You can check your usage in ChatGPT settings and try again later.", { ...base, link: USAGE_URL });
     case 'subscription_sharing_user_not_eligible':
       return new AIError('chatgpt_not_eligible', 'Your ChatGPT plan cannot be used in Reel Studio. A Plus or Pro plan works, or you can add a Claude key in Settings.', base);
     case 'subscription_sharing_usage_unavailable':
@@ -69,7 +69,7 @@ export function mapResponsesError(status: number | undefined, body: any, request
       return new AIError('chatgpt_signed_out', 'Your ChatGPT sign-in has ended. Sign in with ChatGPT again in Settings.', base);
   }
   if (status === 429) {
-    return new AIError('chatgpt_usage_limit', "You have reached your ChatGPT plan's limit for now, so I stopped. Nothing else was used or charged. You can check your usage in ChatGPT settings and try again later.", { ...base, link: USAGE_URL });
+    return new AIError('chatgpt_usage_limit', "You have reached your ChatGPT plan's limit for now, so Reel Studio stopped. Nothing else was used or charged. You can check your usage in ChatGPT settings and try again later.", { ...base, link: USAGE_URL });
   }
   if (status === 401) return new AIError('chatgpt_signed_out', 'Your ChatGPT sign-in has ended. Sign in with ChatGPT again in Settings.', base);
   if (status === 403) return new AIError('chatgpt_restricted', 'ChatGPT is not available for this account or in your region.', base);
@@ -142,7 +142,7 @@ export class OpenAIResponsesProvider implements ModelProvider {
       });
     } catch (e: any) {
       if (req.signal?.aborted) throw new AIError('cancelled', 'Stopped.');
-      throw new AIError('offline', 'I could not reach ChatGPT. Check your internet connection and try again.', { retryable: true, detail: e?.message });
+      throw new AIError('offline', 'Reel Studio could not reach ChatGPT. Check your internet connection and try again.', { retryable: true, detail: e?.message });
     }
     const requestId = res.headers.get('x-request-id') ?? undefined;
     if (!res.ok) {
@@ -222,7 +222,7 @@ export async function listChatGPTModels(auth: Pick<SiwcAuth, 'accessToken'>, opt
     // a hung host must not block Settings or an edit forever
     res = await (opts.fetch ?? fetch)(`${(opts.baseURL ?? 'https://api.openai.com/v1').replace(/\/$/, '')}/models`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(opts.timeoutMs ?? 20_000) });
   } catch (e: any) {
-    throw new AIError('offline', 'I could not reach ChatGPT. Check your internet connection and try again.', { retryable: true, detail: e?.message });
+    throw new AIError('offline', 'Reel Studio could not reach ChatGPT. Check your internet connection and try again.', { retryable: true, detail: e?.message });
   }
   const json: any = await res.json().catch(() => null);
   if (!res.ok) throw mapResponsesError(res.status, json, res.headers.get('x-request-id') ?? undefined);

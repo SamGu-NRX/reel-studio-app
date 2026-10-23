@@ -101,7 +101,7 @@ test('shoot: Reel, drawer, export, home', async () => {
   await stubConnected(app)
   await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
   await page.reload()
-  await expect(page.getByTestId('ai-status')).toContainText('AI editor: ChatGPT')
+  await expect(page.getByTestId('ai-status')).toContainText('Editor: ChatGPT')
 
   // the Reel screen, on the final version, paused on a captioned moment (the clip's file name was the title)
   await page.getByTestId('project-card').first().click()

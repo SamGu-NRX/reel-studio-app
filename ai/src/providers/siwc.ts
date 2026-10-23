@@ -111,7 +111,7 @@ export class SiwcAuth {
       // Explicitly allowed (dev CLI --insecure-plaintext): a plain file. Never logged.
       await writeFileAtomic(this.file('chatgpt-credentials.json'), JSON.stringify(c), 0o600);
     } else {
-      throw new AIError('no_secure_storage', 'This computer has no safe place to keep your ChatGPT sign-in, so I did not save it. Sign in again from the Reel Studio app.');
+      throw new AIError('no_secure_storage', 'This computer has no safe place to keep your ChatGPT sign-in, so it was not saved. Sign in again from the Reel Studio app.');
     }
   }
   private async clearCredentials(): Promise<void> {
@@ -126,7 +126,7 @@ export class SiwcAuth {
       const issuer = this.o.issuer.replace(/\/$/, '');
       let res: Response;
       try { res = await this.fetch(`${issuer}/.well-known/openid-configuration`, { headers: { accept: 'application/json' } }); } catch (e: any) {
-        throw new AIError('offline', 'I could not reach ChatGPT. Check your internet connection and try again.', { retryable: true, detail: e?.message });
+        throw new AIError('offline', 'Reel Studio could not reach ChatGPT. Check your internet connection and try again.', { retryable: true, detail: e?.message });
       }
       const d: any = await res.json().catch(() => null);
       const origin = new URL(issuer).origin;
@@ -157,7 +157,7 @@ export class SiwcAuth {
 
   /** Validates an RS256 ID token: signature (JWKS), iss, aud, exp, sub, nonce, azp. Returns claims. */
   async verifyIdToken(idToken: string, clientId: string, nonce?: string): Promise<Record<string, any>> {
-    const bad = (why: string) => new AIError('chatgpt_invalid_identity', 'ChatGPT returned an account I could not verify. Please sign in again.', { detail: why });
+    const bad = (why: string) => new AIError('chatgpt_invalid_identity', 'ChatGPT returned an account Reel Studio could not verify. Please sign in again.', { detail: why });
     const parts = idToken.split('.');
     if (parts.length !== 3) throw bad('malformed jwt');
     let header: any; let claims: any;
@@ -201,7 +201,7 @@ export class SiwcAuth {
         headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
       });
     } catch (e: any) {
-      throw new AIError('offline', 'I could not reach ChatGPT. Check your internet connection and try again.', { retryable: true, detail: e?.message });
+      throw new AIError('offline', 'Reel Studio could not reach ChatGPT. Check your internet connection and try again.', { retryable: true, detail: e?.message });
     }
     const data: any = await res.json().catch(() => null);
     if (!res.ok) {
@@ -270,7 +270,7 @@ export class SiwcAuth {
       if (savedClientId && prevAccount?.email) q.set('login_hint', prevAccount.email);
       // id_token_hint is intentionally not sent: browser openers expose URLs in process arguments.
       try { await openExternal(url.toString()); } catch (e: any) {
-        throw new AIError('browser_unavailable', 'I could not open your web browser. Check that you have a default browser, then try again.', { detail: e?.message });
+        throw new AIError('browser_unavailable', 'Reel Studio could not open your web browser. Check that you have a default browser, then try again.', { detail: e?.message });
       }
       const cb = await listener.result;
       // Save the issued registration BEFORE the one-time code exchange, so a failed exchange

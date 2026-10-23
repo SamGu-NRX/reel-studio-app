@@ -21,11 +21,11 @@ export const ACTION_LABELS: Record<ChatAction, string> = {
   'open-music': 'Open music',
   'open-broll': 'Open pictures',
   'open-cover': 'Open cover',
-  'open-post': 'Open post caption',
+  'open-post': 'Open Share',
   'open-editor': 'Edit it myself',
-  connect: 'Connect an AI editor',
+  connect: 'Connect an editor',
   'remember-yes': 'Yes, remember it',
-  'remember-no': 'No, just this video'
+  'remember-no': 'No, just this reel'
 }
 
 type Topic = Exclude<ChatAction, 'open-editor' | 'connect' | 'remember-yes' | 'remember-no'>
@@ -35,7 +35,7 @@ const TOPICS: { action: Topic; re: RegExp; reply: string }[] = [
   {
     action: 'open-post',
     re: /\b(post caption|instagram caption|description|hashtags?|caption for (the |my )?post)\b/i,
-    reply: 'You can write the caption for your post yourself, then copy it into Instagram.'
+    reply: 'You can write the caption yourself in Share, then copy it into Instagram.'
   },
   {
     action: 'open-captions',
@@ -70,24 +70,24 @@ export interface NoAiReply {
 }
 
 export function noAiReply(note: string, attached = 0): NoAiReply {
-  const why = "I can't change the video from a note yet, because no AI editor is connected."
+  const why = "A note can't change the reel yet, because no editor is connected."
   if (attached > 0) {
-    // a picture or clip on a note needs the AI to place it: say so, and that it is kept for later
+    // a picture or clip on a note needs the editor to place it: say so, and that it is kept for later
     const one = attached === 1
     return {
-      text: `I can't put ${one ? 'your file' : 'your files'} in the video yet, because no AI editor is connected. I kept ${one ? 'it' : 'them'}. Connect an AI editor, then tell me where ${one ? 'it' : 'they'} should go. Or add a picture yourself under "Open pictures".`,
+      text: `${one ? 'Your file is' : 'Your files are'} kept, but ${one ? 'it' : 'they'} can't go in the reel until an editor is connected. Connect an editor, then say where ${one ? 'it' : 'they'} should go. Or add a picture yourself under "Open pictures".`,
       actions: ['open-broll', 'connect']
     }
   }
   const hit = TOPICS.find((t) => t.re.test(note))
   if (hit) {
     return {
-      text: `${why} ${hit.reply} Or connect ChatGPT and I will do it for you from notes like this one.`,
+      text: `${why} ${hit.reply} Or connect an editor to make changes like this from your notes.`,
       actions: [hit.action, 'connect']
     }
   }
   return {
-    text: `${why} You can change the cut, subtitles, music, pictures and cover yourself under "Edit it myself". Or connect ChatGPT and I will do it for you from notes like this one.`,
+    text: `${why} You can change the cut, subtitles, music, pictures and cover yourself under "Edit it myself". Or connect an editor to make changes like this from your notes.`,
     actions: ['open-editor', 'connect']
   }
 }

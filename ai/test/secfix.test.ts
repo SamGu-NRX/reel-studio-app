@@ -215,7 +215,7 @@ describe('finding 14: no "I made that change" when the agent ran out of steps', 
     const loop = Array.from({ length: 10 }, () => ({ toolCalls: [call('get_project')] }));
     const m = new ScriptedModel([{ toolCalls: [call('set_gap_cap', { seconds: 0.4 })] }, ...loop]);
     const err: any = await createAI({ host, settingsDir, providerOverride: m, maxSteps: 4 }).applyNote(dir, 'slower and add music', () => undefined).catch((e) => e);
-    expect(err.userMessage).toMatch(/ran out of time.*did not change your video.*pauses/);
+    expect(err.userMessage).toMatch(/ran out of time.*did not change your reel.*pauses/);
     expect(await fsp.readFile(path.join(dir, 'project.json'), 'utf8')).toBe(before);
     expect(host.calls.filter((c) => c.command === 'render')).toEqual([]);
   });

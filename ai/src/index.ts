@@ -80,7 +80,7 @@ function sameOrigin(a: string, b: string): boolean {
 }
 const CHECK_TIMEOUT_MS = 30_000;
 const PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
-const WEAK_STORE_MESSAGE = 'This computer has no password store Reel Studio can use (such as GNOME Keyring or KWallet), so other apps could read the key. I did not save it. Turn on your password store, then try again.';
+const WEAK_STORE_MESSAGE = 'This computer has no password store Reel Studio can use (such as GNOME Keyring or KWallet), so other apps could read the key. It was not saved. Turn on your password store, then try again.';
 const FIELD_OF: Record<string, ConnectionField> = {
   connection_bad_address: 'address', connection_unreachable: 'address', connection_wrong_address: 'address', connection_timeout: 'address',
   connection_bad_key: 'key', no_secure_storage: 'key', connection_model: 'model',
@@ -190,7 +190,7 @@ export function createAI(opts: CreateAIOptions) {
 
   // ---- Claude key (secret)
   const claudeKey = () => readSecret('claude-key');
-  const storeClaudeKey = (key: string | null) => writeSecret('claude-key', key, 'This computer has no safe place to keep your Claude key, so I did not save it. Add it from the Reel Studio app.');
+  const storeClaudeKey = (key: string | null) => writeSecret('claude-key', key, 'This computer has no safe place to keep your Claude key, so it was not saved. Add it from the Reel Studio app.');
 
   // ---- your own AI server ('custom')
   const connectionSecret = (id: string) => {
@@ -262,7 +262,7 @@ export function createAI(opts: CreateAIOptions) {
         const base = { id, label: c.label, detail: c.model, connectionId: c.id };
         const key = await readSecret(connectionSecret(c.id));
         if (!key && hasSecret(connectionSecret(c.id))) {
-          return { ...base, connected: false, error: { code: 'connection_key_unreadable', userMessage: `I could not read the saved key for ${c.label}. Edit the connection and paste the key again.` } };
+          return { ...base, connected: false, error: { code: 'connection_key_unreadable', userMessage: `Reel Studio could not read the saved key for ${c.label}. Edit the connection and paste the key again.` } };
         }
         // an Anthropic-compatible server always needs a key (connectionProvider); an OpenAI-compatible one may not
         return { ...base, connected: c.kind === 'openai' || !!key };
@@ -324,7 +324,7 @@ export function createAI(opts: CreateAIOptions) {
         // read the address and its key together, never halfway through a save that changes both
         return oneAtATime(async () => {
           const c = activeConnection(await settings());
-          if (!c) throw new AIError('no_ai', 'That connection is no longer saved. Pick your AI editor again in Settings.');
+          if (!c) throw new AIError('no_ai', 'That connection is no longer saved. Pick your editor again in Settings.');
           return connectionProvider(c, await readSecret(connectionSecret(c.id)));
         });
       case 'codex-cli': return new CodexCliProvider({ model: s.cliModel });
@@ -364,7 +364,7 @@ export function createAI(opts: CreateAIOptions) {
     const conn: CustomConnection = { id, label, kind: input.kind, baseURL, model, supportsImages: false };
     try { conn.supportsImages = await checkConnection(conn, key); } catch (e) { return fail(e); }
     if (typed) {
-      try { await writeSecret(secret, key, 'This computer has no safe place to keep that key, so I did not save it.'); } catch (e) { return fail(e); }
+      try { await writeSecret(secret, key, 'This computer has no safe place to keep that key, so it was not saved.'); } catch (e) { return fail(e); }
     }
     const list = (s.connections ?? []).filter((c) => c.id !== id);
     const at = before ? (s.connections ?? []).findIndex((c) => c.id === id) : list.length;
@@ -447,7 +447,7 @@ export function createAI(opts: CreateAIOptions) {
       try {
         await new AnthropicProvider({ apiKey: trimmed, model: s.claudeModel, baseURL: opts.anthropicBaseURL, fetch: opts.fetch }).ping();
       } catch (e: any) {
-        const err = e instanceof AIError ? e : new AIError('claude_error', 'I could not check that key. Try again.');
+        const err = e instanceof AIError ? e : new AIError('claude_error', 'Reel Studio could not check that key. Try again.');
         // Rate-limited / overloaded still proves the key is real: keep it.
         if (!['claude_rate_limited', 'claude_unavailable'].includes(err.code)) return { id: 'claude', connected: false, label: LABELS.claude, error: err.toJSON() };
       }

@@ -62,7 +62,7 @@ export function parseCoverCandidates(r: any, source: string, projectDir: string)
     const t = Number(c?.atSourceTime)
     const name = typeof c?.file === 'string' ? basename(c.file) : ''
     if (!Number.isFinite(t) || !STILL.test(name) || !Array.isArray(c.reasons) || !c.reasons.every(isSignal))
-      throw { code: 'ENGINE_OUTPUT', userMessage: 'I could not look through your video for a cover. Pick any moment below.', message: `cover-candidates row ${JSON.stringify(c)}` }
+      throw { code: 'ENGINE_OUTPUT', userMessage: 'Reel Studio could not look through your video for a cover. Pick any moment below.', message: `cover-candidates row ${JSON.stringify(c)}` }
     if (out.some((o) => Math.abs(o.atSourceTime - t) < 0.3)) continue
     out.push({
       atSourceTime: t,

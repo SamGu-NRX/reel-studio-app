@@ -317,7 +317,7 @@ export function phonePage(p: { title: string; caption: string; size: number; non
 <body>
 <main>
   <div>
-    <h1>Your video is here</h1>
+    <h1>Your reel is here</h1>
     <p class="sub">${esc(p.title)} · ${megabytes(p.size)}</p>
   </div>
   <video src="video.mp4#t=0.1" controls playsinline preload="metadata"></video>
@@ -325,25 +325,25 @@ export function phonePage(p: { title: string; caption: string; size: number; non
   <div class="card" id="ios">
     <h2>iPhone or iPad: save it to Photos</h2>
     <ol>
-      <li>Tap <b>Save video</b> below, then tap <b>Download</b>.</li>
-      <li>Tap the download arrow in Safari's address bar (or <b>aA</b> &rsaquo; <b>Downloads</b>), then tap your video.</li>
+      <li>Tap <b>Save reel</b> below, then tap <b>Download</b>.</li>
+      <li>Tap the download arrow in Safari's address bar (or <b>aA</b> &rsaquo; <b>Downloads</b>), then tap your reel.</li>
       <li>Tap <b>Share</b> (the square with the arrow pointing up), then <b>Save Video</b>. It is now in Photos, ready for Instagram.</li>
     </ol>
   </div>
   <div class="card" id="android">
     <h2>Android: save it to your phone</h2>
     <ol>
-      <li>Tap <b>Save video</b> below.</li>
+      <li>Tap <b>Save reel</b> below.</li>
       <li>It goes to <b>Downloads</b>, and shows up in your Gallery or Photos app.</li>
       <li>Open Instagram, tap <b>+</b>, and pick it.</li>
     </ol>
   </div>
-  <a class="btn" href="video.mp4?save=1" download>Save video</a>
+  <a class="btn" href="video.mp4?save=1" download>Save reel</a>
 
   ${
     caption
       ? `<div class="card">
-    <h2>Your post caption</h2>
+    <h2>Your caption</h2>
     <textarea id="cap" readonly>${esc(caption)}</textarea>
     <button class="btn light" id="copy" type="button">Copy caption</button>
     <p class="ok" id="copied" aria-live="polite"></p>

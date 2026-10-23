@@ -142,7 +142,7 @@ export function UpdateButton() {
       await reel.update.dismiss(version)
       notify('Hidden until tomorrow. You can still update from Settings.')
     } catch {
-      notify('I could not hide the update note. Try again in a moment.', 'error')
+      notify('The update note could not be hidden. Try again in a moment.', 'error')
     }
   }
 
