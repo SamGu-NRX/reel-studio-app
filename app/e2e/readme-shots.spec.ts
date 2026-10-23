@@ -12,7 +12,7 @@
 //          (needs REELSTUDIO_E2E_AI=package, bills one or two AI runs on that Claude plan)
 // shoot  : relaunch on that finished project; the sidebar says ChatGPT is connected (stubbed), and take the
 //          Reel / drawer / export / home pictures.
-// public : first-run connect screen and the script screen on a fresh profile (mock AI: no Claude Code app found).
+// public : first-run connect screen and a planned reel on a fresh profile (mock AI: no Claude Code app found).
 // Output: app/e2e/screenshots/readme/*.png (gitignored); copy the ones you want into docs/images/.
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -77,10 +77,10 @@ test('make: one real reel from the presenter clip', async () => {
     await page.getByTestId('file-input').setInputFiles([SONG!])
     await expect(page.getByTestId('bin-music')).toContainText('Sunny Loop', { timeout: 60_000 })
     await page.getByTestId('nav-home').click()
-    await newReel(app)
-    await dropFiles(page, 'drop-zone', [VIDEO!])
-    await expect(page.getByText('Making your reel')).toBeVisible()
-    await expect(page.getByTestId('player')).toBeVisible({ timeout: 60 * 60_000 })
+    await page.getByTestId('new-reel').click()
+    await dropFiles(page, 'planned-stage', [VIDEO!])
+    await expect(page.getByTestId('note-progress')).toContainText('Making Version 1')
+    await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 60 * 60_000 })
     const replies = page.locator('.bubble.editor:not(.working):not(.reply-pending)')
     const before = await replies.count()
     await page.getByTestId('note-input').fill(NOTE)
@@ -153,10 +153,10 @@ test('public: first-run connect screen and the script screen', async () => {
     await page.getByTestId('share-no').click()
     await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
     await snap(page, 'home-empty')
-    await newReel(app)
-    await page.getByText('I want help writing a script first').click()
-    await page.locator('textarea').first().fill('Three tips for better sleep')
-    await snap(page, 'write-a-script')
+    // planning a reel: a reel with no video, its notes column the place to get a script
+    await page.getByTestId('new-reel').click()
+    await expect(page.getByTestId('planned-stage')).toBeVisible()
+    await snap(page, 'plan-a-reel')
   } finally {
     await app.close().catch(() => {})
   }

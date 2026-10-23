@@ -15,6 +15,7 @@ import type {
   ProjectJson,
   ProjectSummary,
   ScreenStatus,
+  ScriptResult,
   VersionInfo,
   VersionMade,
   Word,
@@ -36,6 +37,8 @@ export interface AppState {
   lastError: { code: string; userMessage: string } | null
   /** Title chosen at creation, shown until project.json exists. */
   title?: string
+  /** When a reel planned before it had a video was made (a reel with a video has project.json's). */
+  createdAt?: string
   /** An AI editor made the first edit (false/absent = the simple no-AI edit). */
   aiEdited?: boolean
   /** What made each version, written once when it was made (jobs.ts). Versions made before these records existed have none. */
@@ -264,6 +267,38 @@ export function settleNote(s: AppState, jobId: string, outcome: NoteOutcome): vo
 
 export const stamp = (line: ChatLine): ChatMessage => ({ id: randomUUID(), at: new Date().toISOString(), ...line })
 
+// ---- a reel planned before it has a video -----------------------------------------------------
+
+export const PLANNED_TITLE = 'New reel'
+
+/** New reel: a folder with only app.json, "No video yet", until a video is added. */
+export async function createPlanned(): Promise<string> {
+  await fs.mkdir(projectsDir(), { recursive: true })
+  const slug = await uniqueSlug(PLANNED_TITLE)
+  await fs.mkdir(projectDir(slug), { recursive: true })
+  await updateAppState(slug, (s) => {
+    s.status = 'planned'
+    s.title = PLANNED_TITLE
+    s.createdAt = new Date().toISOString()
+  })
+  return slug
+}
+
+/** The newest script the editor wrote for this reel. */
+export function latestScript(s: AppState): ScriptResult | null {
+  for (let i = s.chat.length - 1; i >= 0; i--) if (s.chat[i].script) return s.chat[i].script!
+  return null
+}
+
+/** Once `engine init` has made project.json for a planned reel: its newest script goes in, for the editor to read. */
+export async function carryScript(slug: string): Promise<void> {
+  const script = latestScript(await readAppState(slug))
+  if (!script) return
+  const p = await readProject(slug)
+  p.script = script
+  await writeProject(slug, p)
+}
+
 // ---- versions ---------------------------------------------------------------------------------
 
 /**
@@ -426,7 +461,8 @@ export async function settleInterrupted(slug: string): Promise<'settled' | 'unre
   // a note's private copy and drafts (ai editor.ts applyNote), which it deletes itself unless the app died
   await fs.rm(join(dir, 'work', 'notes'), { recursive: true, force: true })
   await updateAppState(slug, (st) => {
-    st.status = st.job?.kind === 'first-edit' || !existsSync(join(dir, 'versions')) ? 'interrupted' : 'ready'
+    if (st.job?.kind === 'script') settleNote(st, st.job.id, 'stopped')
+    else st.status = st.job?.kind === 'first-edit' || !existsSync(join(dir, 'versions')) ? 'interrupted' : 'ready'
     if (saved) {
       const reply = saved.reply ?? `I made your change. It is Version ${saved.version}.`
       st.chat.push(...replyChat(styleConsent(reply, saved.styleRulesAdded, saved.styleSuggestions), saved.version).map(stamp))
@@ -545,18 +581,19 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
     // A folder without a readable project.json is either being created or broken.
     const st = await readAppState(slug).catch(() => null)
     if (!st || !existsSync(join(dir, 'app.json'))) return null
-    const now = new Date().toISOString()
+    const at = st.createdAt ?? new Date().toISOString()
     return {
       slug,
       dir,
       title: st.title ?? slug,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: at,
+      updatedAt: st.chat[st.chat.length - 1]?.at ?? at,
       version: 0,
       thumbnail: null,
-      status: st.job ? 'working' : st.status === 'ready' ? 'failed' : st.status,
+      // a script being written keeps a reel with no video planned
+      status: st.job && st.job.kind !== 'script' ? 'working' : st.status === 'ready' ? 'failed' : st.status,
       waiting: (st.queue ?? []).filter((q) => !q.attempt).length,
-      noVideo: false,
+      noVideo: st.status === 'planned',
       take: null,
       versionAt: null,
       series: null,

@@ -513,8 +513,8 @@ export function createAI(opts: CreateAIOptions) {
       const r = await p.complete({ system: 'Reply with exactly the word OK.', messages: [{ role: 'user', content: [{ type: 'text', text: 'Say OK.' }] }], tools: [], jsonOnly: true, signal });
       return { provider: p.id, model: p.model, reply: r.text.trim() };
     },
-    async firstEdit(projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: { owner?: string } = {}): Promise<AgentResult & { notice?: any }> {
-      return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => editor.firstEdit(d, await modelProvider(), projectDir, onEvent, signal)));
+    async firstEdit(projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: { owner?: string; basic?: boolean } = {}): Promise<AgentResult & { notice?: any }> {
+      return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => editor.firstEdit(d, opts.basic ? null : await modelProvider(), projectDir, onEvent, signal)));
     },
     async applyNote(projectDir: string, note: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: editor.ApplyNoteOptions & { owner?: string } = {}): Promise<AgentResult> {
       return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => editor.applyNote(d, await modelProvider(), projectDir, note, onEvent, signal, opts)));

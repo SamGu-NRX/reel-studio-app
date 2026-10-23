@@ -34,11 +34,14 @@ import { logDuration } from './diagnostics'
 import { handleMediaProtocol, registerMediaScheme } from './media'
 import {
   addChat,
+  carryScript,
+  createPlanned,
   detail,
   ensureRoot,
   listProjects,
   searchProjects,
   listVersions,
+  PLANNED_TITLE,
   PREVIEW_DIR,
   projectDir,
   readAppState,
@@ -398,7 +401,8 @@ function owned(args: string[], owner: string | null): string[] {
   return owner ? [...args, '--owner', owner] : args
 }
 
-function startFirstEdit(slug: string, initArgs: { title: string; files: string[] } | null): string {
+/** `basic`: the version is made without the editor (a failed Version 1's "Make a basic version"). */
+function startFirstEdit(slug: string, initArgs: { title: string; files: string[] } | null, basic = false): string {
   const dir = projectDir(slug)
   return jobs.start(slug, 'first-edit', async (emit, signal, { owner }) => {
     if (initArgs && !existsSync(join(dir, 'project.json'))) {
@@ -411,10 +415,13 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
         signal
       )
     }
-    const provider = await ai.active().catch(() => null)
+    // a reel planned before it had a video: the editor reads its script from project.json (again on a resume,
+    // in case the app closed between the copy and this)
+    await carryScript(slug)
+    const provider = basic ? null : await ai.active().catch(() => null)
     // A render event with firstLook = the quick no-AI draft is ready while the AI keeps editing; the
-    // Working screen plays it (shared/live.ts) and says what it is. Once listening is done (the first
-    // status of a later phase), the words heard go to the Working screen ("I heard: ...").
+    // Reel screen plays it (shared/live.ts) and says what it is. Once listening is done (the first
+    // status of a later phase), the words heard go to the Reel screen ("I heard: ...").
     let heard = false
     const r = await ai.firstEdit(
       dir,
@@ -429,7 +436,7 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
         }
       },
       signal,
-      owner ? { owner } : undefined
+      { ...(owner ? { owner } : {}), ...(basic ? { basic } : {}) }
     )
     // Honest "What I did": only an AI that ran to the end picked the takes and wrote the caption.
     // A notice means it stopped and (usually) the simple edit stepped in, so claim nothing.
@@ -731,7 +738,8 @@ function registerIpc(): void {
     if (!running && d.status === 'working') d.status = 'interrupted'
     return d
   })
-  handle('projects:create', async (_e, files: string[]) => {
+  /** The videos among dropped or picked files; anything else goes to the Library. Throws when there is no video. */
+  const takeVideos = async (files: string[]): Promise<{ videos: string[]; skipped: DropResult[] }> => {
     const videos = files.filter(isVideo)
     const others = files.filter((f) => !isVideo(f))
     const skipped: DropResult[] = others.length ? await addToLibrary(others, runEngine, log) : []
@@ -750,6 +758,10 @@ function registerIpc(): void {
       }
     }
     await ensureRoot()
+    return { videos, skipped }
+  }
+  handle('projects:create', async (_e, files: string[]) => {
+    const { videos, skipped } = await takeVideos(files)
     const title = titleFromFile(videos[0])
     const slug = await uniqueSlug(title)
     await fs.mkdir(projectDir(slug), { recursive: true })
@@ -760,12 +772,42 @@ function registerIpc(): void {
     const jobId = startFirstEdit(slug, { title, files: videos })
     return { slug, jobId, skipped }
   })
-  handle('projects:resume', async (_e, slug: string) => {
+  handle('projects:plan', async () => ({ slug: await createPlanned() }))
+  handle('projects:addVideo', async (_e, slug: string, files: string[]) => {
+    const st = await readAppState(slug)
+    if (st.status !== 'planned') throw { code: 'HAS_VIDEO', userMessage: 'This reel already has its video. Drop it on Reels to make a new reel.' }
+    const { videos, skipped } = await takeVideos(files)
+    const title = st.title && st.title !== PLANNED_TITLE ? st.title : titleFromFile(videos[0])
+    await updateAppState(slug, (s) => void (s.title = title))
+    // refused while a script is still being written; the reel stays planned until its first edit starts
+    return { jobId: startFirstEdit(slug, { title, files: videos }), skipped }
+  })
+  // The editor writes a script for a planned reel. Its title becomes the reel's, unless the person named it.
+  handle('projects:script', async (_e, slug: string, idea: string) => {
+    const words = String(idea ?? '').trim()
+    if (!words) throw { code: 'EMPTY', userMessage: 'Say what the reel is about in a sentence or two first.' }
+    const active = await ai.active().catch(() => null)
+    if (!active?.connected || active.id === 'none') throw { code: 'NO_AI', userMessage: 'Connect an editor to get a script.' }
+    let jobId = ''
+    jobId = jobs.start(
+      slug,
+      'script',
+      async (emit, signal) => {
+        const r = await ai.writeScript(words, emit, signal)
+        const title = r.title?.trim().slice(0, 80)
+        if (title) await updateAppState(slug, (s) => void (s.title === PLANNED_TITLE && (s.title = title)))
+        return { summary: r.hook, chat: [{ from: 'editor', text: r.hook, plan: true, script: r }] }
+      },
+      { record: (s) => void s.chat.push(stamp({ from: 'you', text: words, plan: true, jobId })) }
+    )
+    return { jobId }
+  })
+  handle('projects:resume', async (_e, slug: string, basic?: boolean) => {
     const dir = projectDir(slug)
     if (!existsSync(join(dir, 'project.json'))) {
       throw { code: 'CANNOT_RESUME', userMessage: 'This video never finished copying. Delete it and drop the video in again.' }
     }
-    return { jobId: startFirstEdit(slug, null) }
+    return { jobId: startFirstEdit(slug, null, basic === true) }
   })
   handle('projects:note', async (_e, slug: string, text: string, attachments?: unknown, at?: unknown, onVersion?: unknown) => {
     const dir = projectDir(slug)
@@ -818,8 +860,14 @@ function registerIpc(): void {
     if (!Number.isInteger(n) || n < 0) throw { code: 'BAD_VERSION', userMessage: 'Pick a version of your video first.' }
     return readTimeline(slug, n)
   })
-  handle('projects:update', (_e, slug: string, patch: Partial<ProjectJson>) =>
-    jobs.hold(slug, async () => {
+  handle('projects:update', async (_e, slug: string, patch: Partial<ProjectJson>) => {
+    // a reel with no video yet has no project.json: only its name can change
+    if (!existsSync(join(projectDir(slug), 'project.json'))) {
+      const title = typeof patch?.title === 'string' ? patch.title.trim().slice(0, 120) : ''
+      if (title) await updateAppState(slug, (s) => void (s.title = title))
+      return detail(slug)
+    }
+    return jobs.hold(slug, async () => {
       const p = await readProject(slug)
       for (const k of Object.keys(patch ?? {}) as (keyof ProjectJson)[]) {
         // the "Flip picture" toggle: only each take's mirror flag, never its path or size
@@ -833,7 +881,7 @@ function registerIpc(): void {
       await writeProject(slug, p)
       return detail(slug)
     })
-  )
+  })
   // `change` = what the user changed, in plain words ("bigger yellow subtitles"), for the chat and the version button.
   // A manual change is render-only (no AI), called what it is ("Updating your subtitles", never the engine's
   // own step names like "Adding pictures"), and fast to SEE: a half-size preview first (the Reel screen plays
@@ -986,11 +1034,6 @@ function registerIpc(): void {
       !!yes
     )
   )
-
-  handle('script:write', (_e, idea: string) => {
-    if (!String(idea ?? '').trim()) throw { code: 'EMPTY', userMessage: 'Tell me your idea in a sentence or two first.' }
-    return ai.writeScript(String(idea), () => {})
-  })
 
   handle('update:state', () => updates.state())
   handle('update:check', () => updates.check('button'))

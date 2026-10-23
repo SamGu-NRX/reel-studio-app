@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { planFastNote } from '../../ai/src/fastnote'
 import { withDefaults } from '../../ai/src/project'
-import { aiNoteText, checkMoment, groupMarks, momentRoute, noteMarks, noteMoment, parseMoment, placeWords, sourceAt, typedMoment, wordsAt } from '../src/shared/moments'
+import { NO_TIMELINE, aiNoteText, checkMoment, groupMarks, momentRoute, noteMarks, noteMoment, parseMoment, placeWords, sourceAt, typedMoment, wordsAt } from '../src/shared/moments'
 import type { ChatMessage, Word } from '../src/shared/api'
 
 const you = (id: string, text: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({ id, from: 'you', text, at: '', ...extra })
@@ -70,10 +70,17 @@ describe('notes asked at a moment', () => {
     })
     // never widened to the whole reel
     expect(checkMoment({ ...sent, version: 999999 }, null)).toEqual({
-      refuse: "I can't tell which words play here in this version. Choose Whole reel, or switch to your newest version."
+      refuse: NO_TIMELINE
     })
     expect(checkMoment({ ...sent, at: Number.MAX_VALUE }, render)).toHaveProperty('refuse')
     expect(checkMoment({ ...sent, at: 51 }, render)).toEqual({ refuse: "There's no 0:51 in this video. It's 0:50 long." })
+  })
+
+  // fails if a range dragged on the timeline reaches the AI as only the words around its start
+  it('keeps every word of a range and says the range to the AI', () => {
+    const c = checkMoment(parseMoment({ at: 5, to: 8, version: 2, words: ['w10'], quote: 'x' }), { duration: 50, words: straight })
+    expect(c).toEqual({ moment: expect.objectContaining({ at: 5, to: 8, words: ['w10', 'w11', 'w12', 'w13', 'w14', 'w15'] }) })
+    expect(aiNoteText('cut this', 'moment' in c ? c.moment : undefined)).toMatch(/^From 0:05 to 0:08 \(around "word10 word11/)
   })
 
   it('sends a Just here note to the fast path only for a setting global by nature, with no place in it', async () => {

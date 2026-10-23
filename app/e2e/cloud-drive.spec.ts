@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun, newReel } from './helpers'
+import { BASE, launch, makeMedia, passFirstRun, newReel, makeReel } from './helpers'
 
 test.skip(process.platform !== 'darwin', 'The fake drive folders follow the macOS layout; the native Windows flow runs on a Windows host.')
 
@@ -38,9 +38,7 @@ test('fails if the drive way loses its web links, saves the wrong export or to t
   try {
     await app.evaluate(({ app }, folder) => app.setPath('home', folder), home)
     await passFirstRun(page)
-    await newReel(app)
-    await page.getByTestId('file-input').setInputFiles([media.video])
-    await expect(page.getByTestId('player')).toBeVisible()
+    await makeReel(page, media.video)
     await page.getByTestId('export').click()
     await expect(page.getByTestId('export-saved')).toBeVisible()
     await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -48,24 +46,27 @@ test('fails if the drive way loses its web links, saves the wrong export or to t
     await page.getByTestId('phone-cant').click()
     await page.locator('.phone-fallbacks .phone-way').nth(1).scrollIntoViewIfNeeded()
     await page.getByTestId('phone-back').click()
-    await expect(page.getByTestId('send-to-phone')).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Save to / })).toHaveCount(0)
-    cloud = await openCloudWay(page)
-    await expect(cloud.getByRole('button', { name: /^Save to / })).toHaveText(['Save to iCloud Drive', 'Save to Google Drive (studio)', 'Save to Google Drive (zoe.m)'])
-    await expect(cloud.getByTestId('phone-icloud')).toHaveCount(0)
-
-    await cloud.getByRole('button', { name: 'Save to iCloud Drive', exact: true }).focus()
+    // the export dialog's own saves (Share in the title bar has the same buttons, behind the dialog)
+    const dialog = page.getByTestId('export-dialog')
+    const save = dialog.getByRole('button', { name: 'Save to iCloud Drive', exact: true })
+    await expect(save).toBeVisible({ timeout: 5000 })
+    await expect(dialog.getByRole('button', { name: 'Save to Google Drive · Personal', exact: true })).toBeVisible({ timeout: 5000 })
+    await expect(dialog.getByRole('button', { name: 'Save to Google Drive · Work', exact: true })).toBeVisible({ timeout: 5000 })
+    await save.focus()
     await page.keyboard.press('Enter')
-    const status = cloud.getByTestId('cloud-status')
-    await expect(status).toContainText('Saved to iCloud Drive. It shows up on your phone once your drive finishes syncing.')
-    await expect(status).toContainText('Files app, then iCloud Drive › Reel Studio')
-    const saved = readdirSync(join(iCloud, 'Reel Studio'))
-    expect(saved).toEqual([basename(exported)])
-    expect(readFileSync(join(iCloud, 'Reel Studio', saved[0]))).toEqual(readFileSync(exported))
-
-    await cloud.getByRole('button', { name: 'Save to Google Drive (studio)', exact: true }).click()
-    await expect(status).toContainText('Saved to Google Drive (studio).')
-    await expect(status).toContainText('Drive app')
+    await expect(dialog.getByRole('status')).toContainText('Saved to iCloud Drive')
+    const saved = join(drive, 'Reel Studio')
+    const files = readdirSync(saved)
+    expect(files).toHaveLength(1)
+    const exportFile = await page.getByTestId('export-name').getAttribute('title')
+    if (!exportFile) throw new Error('The export dialog has no video path')
+    expect(readFileSync(join(saved, files[0]))).toEqual(readFileSync(exportFile))
+    await page.getByRole('button', { name: 'Show in Finder', exact: true }).last().focus()
+    await page.keyboard.press('Enter')
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await dialog.getByRole('button', { name: 'Save to Google Drive · Work', exact: true }).focus()
+    await page.keyboard.press('Enter')
+    await expect(dialog.getByRole('status')).toContainText('Saved to Google Drive · Work')
     const workFiles = readdirSync(join(work, 'Reel Studio'))
     expect(workFiles).toHaveLength(1)
     expect(readFileSync(join(work, 'Reel Studio', workFiles[0]))).toEqual(readFileSync(exported))

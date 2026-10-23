@@ -20,7 +20,12 @@ import {
   writeJson,
   detail,
   rootRelative,
-  brollLabel
+  brollLabel,
+  carryScript,
+  createPlanned,
+  readProject,
+  settleInterrupted,
+  stamp
 } from '../src/main/store'
 import { classifyByExtension } from '../src/main/library'
 import { binDir, projectsDir, reelStudioRoot } from '../src/main/paths'
@@ -383,5 +388,44 @@ describe('brollLabel (grandma3 #9: only pictures are called pictures)', () => {
     expect(brollLabel([b('side-card', 'x.jpg'), b('full-frame', 'y.mp4'), b('animation', 'a'), b('text-pop', null)])).toBe(
       'Added 2 pictures, 1 animation and 1 text card'
     )
+  })
+})
+
+describe('a reel planned before it has a video', () => {
+  // fails if attaching a video to a planned reel loses its script: the editor reads it from project.json
+  it('lists as planned, then carries its newest script into the project the video makes', async () => {
+    setupPaths()
+    const slug = await createPlanned()
+    expect((await listProjects()).find((p) => p.slug === slug)).toMatchObject({ title: 'New reel', status: 'planned', version: 0 })
+    // writing a script is a job, and the reel stays planned through it
+    await updateAppState(slug, (s) => void (s.job = { id: 'j1', kind: 'script', startedAt: '' }))
+    expect((await listProjects()).find((p) => p.slug === slug)?.status).toBe('planned')
+    await updateAppState(slug, (s) => void (s.job = null))
+    const older = { hook: 'old hook', script: 'old script', onScreenText: [] }
+    const newest = { hook: 'Flour, water, salt.', script: 'You do not need a mixer.', onScreenText: ['No mixer'], title: 'Sourdough in 60 seconds' }
+    await updateAppState(slug, (s) => {
+      s.chat.push(stamp({ from: 'you', text: 'sourdough without a mixer', plan: true }))
+      s.chat.push(stamp({ from: 'editor', text: 'Here is a script.', plan: true, script: older }))
+      s.chat.push(stamp({ from: 'editor', text: 'Here is another.', plan: true, script: newest }))
+      s.status = 'working'
+    })
+    // what `engine init` leaves when the video arrives
+    fakeProject(slug)
+    await carryScript(slug)
+    expect((await readProject(slug)).script).toEqual(newest)
+    expect((await detail(slug)).chat.filter((m) => m.script).map((m) => m.script)).toEqual([older, newest])
+  })
+
+  // fails if quitting while a script is written leaves the idea with no answer and no way to send it again
+  it('settles a script cut short by a quit as stopped, and stays planned', async () => {
+    setupPaths()
+    const slug = await createPlanned()
+    await updateAppState(slug, (s) => {
+      s.chat.push(stamp({ from: 'you', text: 'an idea', plan: true, jobId: 'j9' }))
+      s.job = { id: 'j9', kind: 'script', startedAt: '' }
+    })
+    expect(await settleInterrupted(slug)).toBe('settled')
+    const st = await readAppState(slug)
+    expect([st.status, st.job, st.chat[0].outcome]).toEqual(['planned', null, 'stopped'])
   })
 })

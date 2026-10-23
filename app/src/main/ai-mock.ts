@@ -317,8 +317,20 @@ export const createMockAI: CreateAI = ({ host }) => {
       return false
     },
 
-    async writeScript(): Promise<ScriptResult> {
-      throw { code: 'NO_AI', userMessage: 'Connect an AI editor in Settings and I can help you write a script.' }
+    // The practice editor (REELSTUDIO_MOCK_NOTE) writes a fixed script, as slowly as it makes a note.
+    async writeScript(idea, onEvent, signal): Promise<ScriptResult> {
+      if (!(noteMs > 0)) throw { code: 'NO_AI', userMessage: 'Connect an editor in Settings to get a script.' }
+      onEvent({ type: 'status', message: 'Writing your script', pct: 10, thinking: true })
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(resolve, noteMs)
+        signal?.addEventListener('abort', () => (clearTimeout(t), reject({ code: 'CANCELLED', userMessage: 'Stopped.' })), { once: true })
+      })
+      return {
+        title: 'Sourdough without a mixer',
+        hook: 'You do not need a mixer to make good sourdough.',
+        script: `${idea.trim()}. Flour, water, salt. Mix it, leave it, fold it four times. Then it sleeps in the fridge, and that is it. The first loaf I made this way cost me [how much you spent] and it was the best one I had made.`,
+        onScreenText: ['No mixer needed', 'Mix, wait, fold', 'Into the fridge']
+      }
     },
 
     async styleRules() {

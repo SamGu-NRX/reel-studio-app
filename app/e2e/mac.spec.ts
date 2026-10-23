@@ -8,7 +8,7 @@
 // "Show in Finder" really opens Finder. PATH is what Finder gives an app, so the app must find the Claude Code app on its own
 // (the run then clicks "Use Claude (your Claude Code app)": nothing picks it automatically). Verify uses the installed engine + ffmpeg exactly as the app spawns them.
 // Per take: drop -> first look -> first edit -> AI note -> manual yellow subtitles -> Export -> Send to my phone.
-// Plus the macOS chrome: the app menu, Edit > Paste into the Claude key, File > New Video, Settings, the title bar.
+// Plus the macOS chrome: the app menu, Edit > Paste into the Claude key, File > New Reel, Settings, the title bar.
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -149,21 +149,21 @@ test(`${TAG}: first run + macOS chrome`, async () => {
     )
     expect((info.menu as { label: string }[]).map((m) => m.label)).toEqual(['Reel Studio', 'File', 'Edit', 'View', 'Window', 'Help'])
 
-    // ---- Settings (Reel Studio > Settings…, ⌘,) and New Video (File > New Video, ⌘N) ----
+    // ---- Settings (Reel Studio > Settings…, ⌘,) and New Reel (File > New Reel, ⌘N: a reel with no video, opened) ----
     await page.getByTestId('nav-home').click()
     info.settingsItem = await menuItem(app, 'Reel Studio', 'Settings…')
     await expect(page.getByTestId('root-display')).toBeVisible()
     info.rootDisplay = await page.getByTestId('root-display').innerText()
     await snap(page, `${TAG}-02-settings-from-menu`)
-    info.newVideoItem = await menuItem(app, 'File', 'New Video')
-    await expect(page.getByTestId('drop-zone')).toBeVisible()
+    info.newVideoItem = await menuItem(app, 'File', 'New Reel')
+    await expect(page.getByTestId('planned-stage')).toBeVisible()
     // the same two through real key presses, when this session may send them
     await page.getByTestId('nav-home').click()
     await expect(page.getByTestId('root-display')).toHaveCount(0)
     info.osCmdComma = await osShortcut(app, ',', () => expect(page.getByTestId('root-display')).toBeVisible({ timeout: 5000 }))
     await page.getByTestId('nav-home').click()
-    await expect(page.getByTestId('drop-zone')).toHaveCount(0)
-    info.osCmdN = await osShortcut(app, 'n', () => expect(page.getByTestId('drop-zone')).toBeVisible({ timeout: 5000 }))
+    await expect(page.getByTestId('planned-stage')).toHaveCount(0)
+    info.osCmdN = await osShortcut(app, 'n', () => expect(page.getByTestId('planned-stage')).toBeVisible({ timeout: 5000 }))
 
     // ---- Edit > Paste into the Claude key box (the reason the Edit menu exists) ----
     await openSettings(page)
@@ -323,13 +323,13 @@ TAKES.forEach((take, i) => {
 
       // ---- drop -> first look -> first edit ----
       await page.getByTestId('nav-home').click()
-      await newReel(app)
+      await page.getByTestId('new-reel').click()
       const t0 = Date.now()
-      await dropFiles(page, 'drop-zone', [take])
-      await expect(page.getByText('Making your reel')).toBeVisible()
-      const look = page.getByTestId('first-look')
+      await dropFiles(page, 'planned-stage', [take])
+      await expect(page.getByTestId('note-progress')).toContainText('Making Version 1')
+      const look = page.getByTestId('first-tag').filter({ hasText: 'First look' })
       let n = 0
-      while (!(await page.getByTestId('player').isVisible())) {
+      while (!(await page.getByTestId('log-play-1').isVisible())) {
         if (await page.getByTestId('screen-error').isVisible()) throw new Error('screen error: ' + (await page.getByTestId('screen-error').innerText()))
         if (Date.now() - t0 > 60 * 60_000) throw new Error('first edit took over an hour')
         if (timings.firstLookSec === undefined && (await look.isVisible())) {
@@ -337,7 +337,7 @@ TAKES.forEach((take, i) => {
           result.firstLookLabel = await look.innerText()
           await page.waitForTimeout(2500)
           result.firstLookVideo = await page.evaluate(() => {
-            const v = document.querySelector('[data-testid=first-look-video]') as HTMLVideoElement | null
+            const v = document.querySelector('[data-testid=player]') as HTMLVideoElement | null
             return v ? { src: v.currentSrc, readyState: v.readyState, t: v.currentTime, w: v.videoWidth, h: v.videoHeight } : null
           })
           await snap(page, `${TAG}-${i}-01-first-look`)

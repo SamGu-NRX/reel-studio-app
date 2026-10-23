@@ -1,7 +1,7 @@
 // "Notes for your editor": the reel's history as one list, oldest first. Each entry is what you asked
 // (your video, a note, or a change you made yourself) and what came of it. Built from app.json's chat and
 // version records only. Keep free of Node and DOM imports.
-import type { ChatAction, ChatMessage, NoteAttachment, NoteMoment, VersionInfo, VersionMade } from './api'
+import type { ChatAction, ChatMessage, NoteAttachment, NoteMoment, ScriptResult, VersionInfo, VersionMade } from './api'
 
 export type LogAsk =
   | { kind: 'video'; text: string }
@@ -15,6 +15,9 @@ export type LogResult =
   | { kind: 'stopped'; kept: number }
   /** an answer that made no version: the no-AI reply, or a question back */
   | { kind: 'reply'; text: string; actions: ChatAction[]; messageId: string }
+  /** the editor's script for a reel planned before it had a video, and while it writes one */
+  | { kind: 'script'; script: ScriptResult }
+  | { kind: 'writing' }
 
 export interface LogEntry {
   key: string
@@ -41,8 +44,10 @@ export function notesLog(input: {
   chat: ChatMessage[]
   made: VersionMade[]
   versions: VersionInfo[]
-  /** the job running now, if any, and whether it is the first edit or a change made by hand */
-  running: { id: string; kind: 'first-edit' | 'note' | 'hand' } | null
+  /** the job running now, if any, and whether it is the first edit, a change made by hand or a script */
+  running: { id: string; kind: 'first-edit' | 'note' | 'hand' | 'script' } | null
+  /** the reel has no video yet: only its planning shows */
+  planned?: boolean
   /** the raw take's file name */
   sourceName: string | null
   now: Date
@@ -52,15 +57,26 @@ export function notesLog(input: {
   const first: LogEntry & { at: string } = {
     key: 'video',
     day: null,
-    at: versions[0]?.createdAt ?? chat[0]?.at ?? now.toISOString(),
+    at: versions[0]?.createdAt ?? chat.find((m) => !m.plan)?.at ?? now.toISOString(),
     ask: { kind: 'video', text: input.sourceName ? `Your video, ${input.sourceName}` : 'Your video' },
     result: null,
     extra: []
   }
-  const entries: (LogEntry & { at: string; outcome?: ChatMessage['outcome']; jobId?: string })[] = [first]
-  let open: (typeof entries)[number] | null = first
+  type Entry = LogEntry & { at: string; outcome?: ChatMessage['outcome']; jobId?: string }
+  // what was said while planning comes first: the idea, then the script the editor wrote for it
+  const plan: Entry[] = []
+  for (const m of chat.filter((x) => x.plan)) {
+    const last = plan[plan.length - 1]
+    if (m.from === 'you') {
+      const result: LogResult | null = running && m.jobId === running.id ? { kind: 'writing' } : m.outcome === 'stopped' ? { kind: 'stopped', kept: 0 } : null
+      plan.push({ key: m.id, day: null, at: m.at, ask: { kind: 'note', text: m.text, moment: null, attachments: [] }, result, extra: [], outcome: m.outcome, jobId: m.jobId })
+    } else if (last && !last.result) last.result = m.script ? { kind: 'script', script: m.script } : { kind: 'failed', text: m.text }
+    else last?.extra.push(m)
+  }
+  const entries: Entry[] = input.planned ? plan : [...plan, first]
+  let open: Entry | null = input.planned ? null : first
 
-  for (const m of chat) {
+  for (const m of chat.filter((x) => !x.plan)) {
     if (m.from === 'you') {
       open = { key: m.id, day: null, at: m.at, ask: { kind: 'note', text: m.text, moment: m.moment ?? null, attachments: m.attachments ?? [] }, result: null, extra: [], outcome: m.outcome, jobId: m.jobId }
       entries.push(open)
@@ -78,15 +94,16 @@ export function notesLog(input: {
       continue
     }
     const last = entries[entries.length - 1]
+    if (!last) continue
     if (open && open.ask.kind === 'note' && !open.result) {
       open.result = open.outcome === 'failed' ? { kind: 'failed', text: m.text } : { kind: 'reply', text: m.text, actions: m.actions ?? [], messageId: m.id }
     } else last.extra.push(m)
   }
 
-  for (const e of entries) {
+  for (const e of entries.slice(plan.length)) {
     if (e.result) continue
     if (e === first) {
-      if (versions.length) e.result = { kind: 'version', v: versions[0].n, text: 'First cut' }
+      if (versions.length) e.result = { kind: 'version', v: versions[0].n, text: 'First edit' }
       else if (running?.kind === 'first-edit') e.result = { kind: 'making', v: 1 }
     } else if (running && e.jobId === running.id) e.result = { kind: 'making', v: latest + 1 }
     else if (e.outcome === 'stopped') e.result = { kind: 'stopped', kept: latest }

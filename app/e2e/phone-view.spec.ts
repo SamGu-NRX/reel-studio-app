@@ -5,7 +5,7 @@
 //
 // Run: npx playwright test e2e/phone-view.spec.ts (after npm run build).
 import { test, expect, type Page } from '@playwright/test'
-import { launch, makeMedia, passFirstRun, newReel } from './helpers'
+import { launch, makeMedia, makeReel, passFirstRun } from './helpers'
 
 const SIZES = [
   { width: 1100, height: 720 },
@@ -13,12 +13,12 @@ const SIZES = [
   { width: 1512, height: 945 }
 ]
 
-/** The phone's screen, its slot, and how far the column's last row reaches. */
+/** The phone's screen, its slot, and how far the stage's last row (the transport) reaches. */
 const layout = (page: Page) =>
   page.evaluate(() => {
     const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect()
-    const col = document.querySelector('.pcol')!
-    return { screen: r('.pcol .phone-screen'), slot: r('.pcol .phone-fill'), bottom: col.lastElementChild!.getBoundingClientRect().bottom, view: innerHeight, scrollW: document.documentElement.scrollWidth, w: innerWidth }
+    const stage = document.querySelector('.stage')!
+    return { screen: r('.stage .phone-screen'), slot: r('.stage .phone-fill'), bottom: stage.lastElementChild!.getBoundingClientRect().bottom, view: innerHeight, scrollW: document.documentElement.scrollWidth, w: innerWidth }
   })
 
 test('fails if the phone stops filling its column at 9:16, the view is not Instagram first and remembered, or full screen cannot close', async () => {
@@ -31,9 +31,7 @@ test('fails if the phone stops filling its column at 9:16, the view is not Insta
   })
   try {
     await passFirstRun(page)
-    await newReel(app)
-    await page.getByTestId('file-input').setInputFiles(media.video)
-    await expect(page.getByTestId('player')).toBeVisible({ timeout: 5 * 60_000 })
+    await makeReel(page, media.video, 5 * 60_000)
 
     for (const size of SIZES) {
       await page.setViewportSize(size)
@@ -46,20 +44,18 @@ test('fails if the phone stops filling its column at 9:16, the view is not Insta
             l.bottom <= l.view,
             l.scrollW <= l.w
           ]
-        }, { message: `phone at ${size.width}x${size.height}: 9:16, full slot height, column inside the window, no sideways scroll` })
+        }, { message: `phone at ${size.width}x${size.height}: 9:16, full slot height, stage inside the window, no sideways scroll` })
         .toEqual([true, true, true, true])
     }
 
-    // Instagram first: its screen is drawn and the speed button is not (the prototype hides it there).
+    // Instagram first: its screen is drawn; speed sits in the transport row under the video in either view.
     await expect(page.getByTestId('ig-overlay')).toBeVisible()
-    await page.getByTestId('phone').hover()
-    await expect(page.getByTestId('speed')).toHaveCount(0)
+    await expect(page.getByTestId('speed')).toBeVisible()
 
     await page.getByTestId('view-clean').click()
     await expect(page.getByTestId('ig-overlay')).toBeHidden()
     await expect(page.getByTestId('view-clean')).toHaveAttribute('aria-checked', 'true')
     await expect.poll(() => page.evaluate(() => window.reel.app.info().then((i) => i.phoneView))).toBe('clean')
-    await page.getByTestId('phone').hover()
     await expect(page.getByTestId('speed')).toBeVisible()
 
     // kept across a restart of the page, from the app's settings

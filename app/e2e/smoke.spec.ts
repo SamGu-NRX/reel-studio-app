@@ -1,5 +1,5 @@
-// End-to-end smoke test: launches the built app, goes through first run, makes a video from a real
-// file, reaches the Reel screen, tries every screen, exports, and survives a quit mid-job.
+// End-to-end smoke test: launches the built app, goes through first run, makes a reel from a real
+// file on the Reel screen, tries every screen, exports, and survives a quit mid-job.
 //
 // Run: npm run e2e (builds first). Env:
 //   REELSTUDIO_E2E_VIDEO   the raw take to use (default: a generated clip)
@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, SHOTS, dropFiles, launch, makeMedia, passFirstRun, passMacStage, shot, openSettings, newReel } from './helpers'
+import { BASE, SHOTS, dropFiles, launch, makeMedia, passFirstRun, passMacStage, shot, openSettings, startReel } from './helpers'
 
 /** Each test starts on a fresh profile of its own, so neither depends on the order specs run in. */
 function freshProfile(name: string): { root: string; env: Record<string, string> } {
@@ -55,30 +55,27 @@ test('make a reel end to end', async () => {
   await expect(page.getByTestId('bin-music').getByText('happy song.mp3')).toBeVisible()
   await shot(page, '05-library')
 
-  // ---- new video: a non-video file is explained, not swallowed ----
-  await page.getByTestId('nav-home').click()
-  await newReel(app)
-  await expect(page.getByText('Drop your video here')).toBeVisible()
-  await shot(page, '06-new-video')
-  await page.getByTestId('file-input').setInputFiles([media.doc])
-  // Inline, under the drop zone; never a toast that follows you to the next screen (critique 1.1).
-  await expect(page.getByTestId('new-error')).toContainText('Drop a video file')
-  await expect(page.getByTestId('toast')).toHaveCount(0)
+  // ---- New reel: a reel with no video yet; a non-video file is explained, not swallowed ----
+  await page.getByTestId('new-reel').click()
+  const stage = page.getByTestId('planned-stage')
+  await expect(stage).toContainText('Drop the video you filmed')
+  await shot(page, '06-new-reel')
+  await stage.getByTestId('file-input').setInputFiles([media.doc])
+  await expect(page.getByTestId('toast')).toContainText('Drop a video file')
+  await expect(stage).toBeVisible()
 
-  // ---- the real file ----
-  await page.getByTestId('file-input').setInputFiles([media.video])
-  await expect(page.getByText('Making your reel')).toBeVisible()
-  await expect(page.getByTestId('new-error')).toHaveCount(0)
-  await expect(page.getByTestId('status-message')).toContainText(/Listening|Copying|Getting/)
-  await expect(page.getByTestId('time-left')).toBeVisible()
-  await expect(page.getByTestId('working-frame')).toBeVisible({ timeout: 60_000 })
-  await shot(page, '07-working')
+  // ---- the real file: Version 1 is made here, the original playing, tagged ----
+  await stage.getByTestId('file-input').setInputFiles([media.video])
+  await expect(page.getByTestId('note-progress')).toContainText('Making Version 1')
+  await expect(page.getByTestId('note-progress')).toContainText(/Listening|Copying|Cutting|Picking|Mixing|Adding|Putting|Making your cover/)
+  await expect(page.getByTestId('first-tag')).toHaveText('Original', { timeout: 60_000 })
+  await shot(page, '07-making')
   // Dock / taskbar progress follows the job (main process; notifications are not shown in tests).
   const fb = await app.evaluate(() => (globalThis as any).__reelFeedback)
   expect(fb.progress.length).toBeGreaterThan(0)
 
   // ---- reel ----
-  await expect(page.getByTestId('player')).toBeVisible({ timeout: 240_000 })
+  await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 240_000 })
   // Version 1 opens on what the first cut did, compared with the raw video.
   await expect(page.getByTestId('chat')).toContainText('Music')
   await page.waitForFunction(() => {
@@ -89,7 +86,7 @@ test('make a reel end to end', async () => {
   const aiSource = await page.evaluate(() => window.reel.app.info().then((i) => i.ai))
 
   // The notes never claim AI work the no-AI path did not do (grandma test 7 + 12).
-  if (aiSource === 'mock') await expect(page.getByTestId('chat')).toContainText('No AI editor yet, so I made a simple cut.')
+  if (aiSource === 'mock') await expect(page.getByTestId('chat')).toContainText('Basic version: pauses and retakes removed')
   // The native player's menu (download, speed, picture-in-picture) is gone.
   expect(await page.getByTestId('player').getAttribute('controls')).toBeNull()
   expect(await page.getByTestId('player').getAttribute('disablepictureinpicture')).not.toBeNull()
@@ -110,13 +107,13 @@ test('make a reel end to end', async () => {
   await expect(page.getByTestId('sub-preview')).toHaveCount(0)
   await page.getByTestId('tab-cut').click()
   await page.getByTestId('make-version').click()
-  await expect(page.getByTestId('version-switch')).toContainText('Version 2', { timeout: 120_000 })
+  await expect(page.getByTestId('version-on-screen')).toContainText('Version 2', { timeout: 120_000 })
   await shot(page, '11-reel-v2')
 
   // ---- no AI connected: no way to ask for a change, one way to connect ----
   if (aiSource === 'mock') {
     await expect(page.getByTestId('composer-connect')).toBeVisible()
-    await expect(page.getByText('Connect an AI editor to ask for changes.')).toBeVisible()
+    await expect(page.getByTestId('composer-connect')).toContainText('Connect an editor to leave notes')
     await expect(page.getByTestId('note-input')).toHaveCount(0)
     await expect(page.getByTestId('change-at')).toHaveCount(0)
   }
@@ -139,19 +136,11 @@ test('make a reel end to end', async () => {
   await openSettings(page)
   await expect(page.getByText('Library folder')).toBeVisible()
   await shot(page, '15-settings')
-  await page.getByTestId('nav-home').click()
-  await newReel(app)
-  await page.getByText('I want help writing a script first').click()
-  await page.getByPlaceholder('What is your video about?').fill('Three tips for better sleep')
-  // No AI: said before typing, and the button is off (no pink error after the fact).
-  const needsAi = page.getByTestId('script-needs-ai')
-  await page.waitForTimeout(300)
-  if (await needsAi.isVisible()) await expect(page.getByTestId('write-script')).toBeDisabled()
-  else {
-    await page.getByTestId('write-script').click()
-    await expect(page.locator('.banner.error').or(page.getByRole('heading', { name: 'What to say' }))).toBeVisible({ timeout: 120_000 })
-  }
-  await shot(page, '16-script')
+  // a reel with no video is the place to plan; with no editor, the picker says what it is for (no grey button)
+  await page.getByTestId('new-reel').click()
+  await expect(page.getByTestId('planned-stage')).toBeVisible()
+  if (aiSource === 'mock') await expect(page.getByTestId('composer-connect')).toContainText('Connect an editor to get a script')
+  await shot(page, '16-plan')
 
   // ---- animation renderer: transparent layer ----
   const anim = join(BASE, 'anim test ü.mov')
@@ -190,10 +179,8 @@ test('make a reel end to end', async () => {
   expect([realProbe.streams[0].codec_name, realProbe.streams[0].width, realProbe.streams[0].height]).toEqual(['qtrle', 1080, 1920])
 
   // ---- quit mid-job, reopen, pick up where we left off ----
-  await page.getByTestId('nav-home').click()
-  await newReel(app)
-  await page.getByTestId('file-input').setInputFiles([media.video])
-  await expect(page.getByTestId('status-message')).toContainText(/Listening/, { timeout: 60_000 })
+  await startReel(page, media.video)
+  await expect(page.getByTestId('note-progress')).toContainText(/Listening/, { timeout: 60_000 })
   await app.close()
 
   ;({ app, page } = await launch(profile.env))
@@ -201,12 +188,13 @@ test('make a reel end to end', async () => {
   await expect(page.locator('[data-testid="project-card"][data-state="paused"]')).toBeVisible()
   await shot(page, '17-home-after-quit')
   await page.locator('[data-testid="project-card"][data-state="paused"]').click()
-  await expect(page.getByText('This video is paused')).toBeVisible()
-  await shot(page, '18-working-stopped')
+  await expect(page.getByTestId('first-paused')).toContainText('Paused')
+  await shot(page, '18-paused')
   await page.getByTestId('resume').click()
-  await expect(page.getByTestId('player')).toBeVisible({ timeout: 240_000 })
+  await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 240_000 })
   await page.getByTestId('nav-home').click()
-  await expect(page.getByTestId('project-card')).toHaveCount(2)
+  // the first reel, the planned one, and the one that was paused
+  await expect(page.getByTestId('project-card')).toHaveCount(3)
   await shot(page, '19-home')
   await app.close()
 })
@@ -217,10 +205,10 @@ test('a force quit mid-job recovers on the next start', async () => {
   let { app, page } = await launch(profile.env)
   await passFirstRun(page)
   const before = await page.getByTestId('project-card').count()
-  await newReel(app)
+  await page.getByTestId('new-reel').click()
   // Drag and drop this time (the first test used the file picker).
-  await dropFiles(page, 'drop-zone', [media.video])
-  await expect(page.getByTestId('status-message')).toContainText(/Listening/, { timeout: 60_000 })
+  await dropFiles(page, 'planned-stage', [media.video])
+  await expect(page.getByTestId('note-progress')).toContainText(/Listening/, { timeout: 60_000 })
   // Like a crash or Task Manager "End task": no quit handlers run. Only the app's main process is
   // killed; the engine it started is left behind as an orphan, which the next start must clean up.
   // app.process() can be a launcher, so ask the main process for its own pid.
@@ -236,7 +224,7 @@ test('a force quit mid-job recovers on the next start', async () => {
   await expect(stopped).toHaveCount(1)
   await stopped.click()
   await page.getByTestId('resume').click()
-  await expect(page.getByTestId('player')).toBeVisible({ timeout: 240_000 })
+  await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 240_000 })
   await shot(page, '20-recovered-after-force-quit')
   await app.close()
 })

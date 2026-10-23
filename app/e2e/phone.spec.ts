@@ -10,7 +10,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun, SHOTS, newReel } from './helpers'
+import { BASE, launch, makeMedia, makeReel, passFirstRun, SHOTS } from './helpers'
 
 const MINE = mkdtempSync(join(BASE, 'phone-'))
 const ROOT = join(MINE, 'Documents', 'Reel Studio')
@@ -53,9 +53,7 @@ test('send to my phone: QR link, phone fetch, Sent!, fallbacks', async () => {
     REELSTUDIO_PHONE_WAIT_MS: '6000'
   })
   await passFirstRun(page)
-  await newReel(app)
-  await page.getByTestId('file-input').setInputFiles([media.video])
-  await expect(page.getByTestId('player')).toBeVisible({ timeout: 10 * 60_000 })
+  await makeReel(page, media.video, 10 * 60_000)
   await expect(page.getByTestId('export')).toBeEnabled({ timeout: 10 * 60_000 })
 
   // ---- export, then the big button ----

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { createAI, loadProject, AgentEvent, AIError, ChatMessage, runAgent, newToolState, StyleStore, Prompts, pickTakes, ReplayProvider, RecordingProvider, TOOLS } from '../src';
 import { refsForMinted } from '../src/providers/replay';
 import { FakeHost, ScriptedModel, makeProject, call, tmpDir, commitLocalAsset, tinyMp3 } from './helpers';
+import { plannedScript } from '../src/editor';
 
 const nullP = { tilt: null, scale: null, text: null };
 
@@ -217,6 +218,15 @@ describe('writeScript and pickTakes', () => {
     const r = await createAI({ host, settingsDir: tmpDir(), providerOverride: model }).writeScript('bread takes forever', () => undefined);
     expect(r).toEqual({ hook: 'Nobody tells you this, about bread', script: 'Line one.', onScreenText: ['WAIT'] });
     expect(model.requests[0].jsonOnly).toBe(true);
+  });
+
+  // fails if the editor's title for a planned reel, or the script it planned, is dropped on the way
+  it('writeScript keeps the title the editor gives, and the first edit reads the planned script', async () => {
+    const model = new ScriptedModel([{ text: '{"title":"Bread, no mixer","hook":"H.","script":"Line one.","onScreenText":[]}' }]);
+    const r = await createAI({ host: new FakeHost(tmpDir()), settingsDir: tmpDir(), providerOverride: model }).writeScript('bread', () => undefined);
+    expect(r.title).toBe('Bread, no mixer');
+    expect(plannedScript({ script: r })).toMatch(/H\.\nLine one\.$/);
+    expect(plannedScript({})).toBe('');
   });
 
   it('pickTakes validates ids and asks for a fix', async () => {
