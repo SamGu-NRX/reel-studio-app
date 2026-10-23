@@ -43,6 +43,7 @@ describe('answering a typed My style question (lowercase captions)', () => {
     ]
     const deps: AnswerDeps = {
       chat: async () => structuredClone(chat),
+      title: async () => 'Baking bread',
       approveStyleProposal: approve,
       settle: async (_slug, id, reply) => {
         await new Promise((r) => setTimeout(r, 5))
@@ -89,6 +90,7 @@ describe('answering a typed My style question (lowercase captions)', () => {
     ]
     const deps: AnswerDeps = {
       chat: async () => structuredClone(chat),
+      title: async () => 'Baking bread',
       approveStyleProposal: async (p) => {
         saved.push(p.id)
         return { status: 'saved' }
@@ -108,5 +110,27 @@ describe('answering a typed My style question (lowercase captions)', () => {
     await answerStyleQuestion(deps, 'bread', 'm1', false)
     expect(saved).toEqual([])
     expect(chat.at(-1)?.text).toBe('OK, only for this video.')
+  })
+})
+
+describe('a rule kept from a note', () => {
+  it('fails if My style does not remember which note, reel and version it was learned from', async () => {
+    const chat: ChatMessage[] = [
+      { id: 'n1', from: 'you', text: 'make the subtitles bigger', at: '' },
+      { id: 'e1', from: 'editor', text: 'Bigger subtitles.', at: '', version: 2 },
+      { id: 'n2', from: 'you', text: 'always use big subtitles', at: '' },
+      { id: 'e2', from: 'editor', text: 'Made them big.', at: '', version: 3 },
+      { id: 'q', from: 'editor', text: rememberQuestion('Use big subtitles.'), at: '', actions: ['remember-yes', 'remember-no'], suggestion: 'Use big subtitles.' }
+    ]
+    const added: unknown[] = []
+    const deps: AnswerDeps = {
+      chat: async () => structuredClone(chat),
+      title: async () => 'Baking bread',
+      addStyleRule: async (text, from) => added.push({ text, ...from }),
+      settle: async () => {},
+      serialized
+    }
+    await answerStyleQuestion(deps, 'bread', 'q', true)
+    expect(added).toEqual([{ text: 'Use big subtitles.', source: { project: 'bread', title: 'Baking bread', version: 3, note: 'always use big subtitles' } }])
   })
 })

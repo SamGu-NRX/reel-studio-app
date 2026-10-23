@@ -49,6 +49,9 @@ export interface AppState {
   queueHeld?: boolean
   /** Paused without you (ISO): the job continues on its own at this time. */
   pausedUntil?: string
+  /** Each time a version was posted. Insights joins the sidebar once any reel has one (ux-foundation-b.md section 6);
+   * posting itself is not built yet (spec.md section 11), so nothing writes this today. */
+  posted?: { version: number; platform: 'instagram'; at: string }[]
 }
 
 const EMPTY_STATE: AppState = { chat: [], job: null, status: 'new', lastError: null }
@@ -597,7 +600,8 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
       take: null,
       versionAt: null,
       series: null,
-      continuesAt: null
+      continuesAt: null,
+      posted: !!st.posted?.length
     }
   }
   const versions = await listVersions(dir)
@@ -627,7 +631,8 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
     take: !last?.cover && srcPath && existsSync(srcPath) ? mediaUrl(srcPath) : null,
     versionAt: last?.createdAt ?? null,
     series: typeof p.series === 'string' && p.series.trim() ? p.series.trim() : null,
-    continuesAt: status === 'interrupted' && st.pausedUntil ? st.pausedUntil : null
+    continuesAt: status === 'interrupted' && st.pausedUntil ? st.pausedUntil : null,
+    posted: !!st.posted?.length
   }
 }
 

@@ -4,7 +4,7 @@
 // "Remember this for next time?", undoes any rule saved without asking, and drops the announcement.
 // A typed rule (`proposal`, lowercase captions) is asked about the same way and saved with its own consent.
 // No Electron, no files: main passes in the app state and the AI.
-import type { ChatMessage, StyleProposal } from '../shared/api'
+import type { ChatMessage, StyleProposal, StyleRule } from '../shared/api'
 
 /** A chat message before it gets its id and time (store.ts). */
 export type ChatLine = Omit<ChatMessage, 'id' | 'at'>
@@ -55,7 +55,9 @@ export function replyChat(c: StyleConsent, version?: number, proposal?: StylePro
 
 export interface AnswerDeps {
   chat(slug: string): Promise<ChatMessage[]>
-  addStyleRule?(text: string): Promise<unknown>
+  addStyleRule?(text: string, from?: Pick<StyleRule, 'source'>): Promise<unknown>
+  /** The reel's title, for where a rule was learned. */
+  title(slug: string): Promise<string>
   approveStyleProposal?(p: StyleProposal): Promise<{ status: 'saved' | 'exists' | 'forgotten' }>
   declineStyleProposal?(p: StyleProposal): Promise<void>
   /** Take the buttons off the question and add the editor's reply. */
@@ -69,6 +71,15 @@ const TYPED_REPLY = {
   saved: 'Saved. Your next videos will start with lowercase captions. You can change or remove it in My style.',
   exists: 'That is already in My style.',
   forgotten: 'You removed that from My style, so it stays with this video only.'
+}
+
+/** The note a question answers (the last one you sent before it) and the version it made, for My style's "Learned from". */
+async function learnedFrom(d: AnswerDeps, slug: string, messageId: string): Promise<NonNullable<StyleRule['source']>> {
+  const chat = await d.chat(slug)
+  const before = chat.slice(0, chat.findIndex((x) => x.id === messageId))
+  const note = before.filter((x) => x.from === 'you').pop()?.text
+  const version = before.filter((x) => x.from === 'editor' && x.version !== undefined).pop()?.version ?? 0
+  return { project: slug, title: await d.title(slug), version, ...(note ? { note } : {}) }
 }
 
 /** "Remember this for next time?" Yes saves the rule; either answer replaces the buttons with a plain reply.
@@ -87,7 +98,7 @@ export function answerStyleQuestion(d: AnswerDeps, slug: string, messageId: stri
       reply = TYPED_REPLY[r.status]
     } else if (yes) {
       if (!d.addStyleRule) throw NOT_READY
-      await d.addStyleRule(m.suggestion!)
+      await d.addStyleRule(m.suggestion!, { source: await learnedFrom(d, slug, messageId) })
     } else if (m.proposal && d.declineStyleProposal) {
       // a Yes saved just before a crash, then No: the No wins
       await d.declineStyleProposal(m.proposal).catch(() => {

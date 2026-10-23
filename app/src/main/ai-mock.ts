@@ -94,7 +94,7 @@ export const createMockAI: CreateAI = ({ host }) => {
     await writeJson(styleFile(), { ...s, rules })
   }
   /** As the real package's StyleStore.add: the same words again turn a paused rule back on instead of adding a copy. */
-  const addRule = (text: string): Promise<{ added: boolean; rule: StyleRule }> =>
+  const addRule = (text: string, from?: Pick<StyleRule, 'source' | 'imported'>): Promise<{ added: boolean; rule: StyleRule }> =>
     withStyle(async (s) => {
       const dup = s.rules.find((r) => sameRule(r.text) === sameRule(text))
       if (dup) {
@@ -104,7 +104,7 @@ export const createMockAI: CreateAI = ({ host }) => {
         }
         return { added: false, rule: dup }
       }
-      const rule = { id: randomUUID(), text, createdAt: new Date().toISOString() }
+      const rule: StyleRule = { id: randomUUID(), text, createdAt: new Date().toISOString(), ...from }
       await saveRules(s, [...s.rules, rule])
       return { added: true, rule }
     })
@@ -339,8 +339,16 @@ export const createMockAI: CreateAI = ({ host }) => {
     async styleWasDamaged() {
       return withStyle(async (s) => typeof s.damaged === 'string' && existsSync(join(host.reelStudioRoot(), basename(s.damaged)))).catch(() => false)
     },
-    async addStyleRule(text) {
-      return (await addRule(text)).rule
+    async addStyleRule(text, from) {
+      return (await addRule(text, from)).rule
+    },
+    async restoreStyleRule(rule, index) {
+      await withStyle(async (s) => {
+        if (s.rules.some((r) => r.id === rule.id)) return
+        // its question no longer counts as forgotten, as the real store's restore
+        s.forgotten = (s.forgotten ?? []).filter((x) => x !== rule.consent?.proposal)
+        await saveRules(s, [...s.rules.slice(0, index), rule, ...s.rules.slice(index)])
+      })
     },
     // The same answers as the real store (ai/src/style.ts): a removed rule's question cannot bring it back, and the
     // same question answered again returns the rule it saved.
@@ -378,10 +386,14 @@ export const createMockAI: CreateAI = ({ host }) => {
       })
     },
     async removeStyleRule(id) {
-      await withStyle((s) => {
-        const asked = s.rules.find((r) => r.id === id)?.consent?.proposal
+      return withStyle(async (s) => {
+        const index = s.rules.findIndex((r) => r.id === id)
+        if (index < 0) return null
+        const rule = s.rules[index]
+        const asked = rule.consent?.proposal
         if (asked) s.forgotten = [...(s.forgotten ?? []), asked]
-        return saveRules(s, s.rules.filter((r) => r.id !== id))
+        await saveRules(s, s.rules.filter((r) => r.id !== id))
+        return { rule, index }
       })
     }
   }

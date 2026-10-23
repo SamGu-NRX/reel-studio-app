@@ -163,6 +163,18 @@ describe('project store', () => {
     expect(await searchProjects('title other')).toEqual(['other'])
   })
 
+  it('fails if a reel counts as posted (Insights in the sidebar) without a posted record, or not with one', async () => {
+    setupPaths()
+    await ensureRoot()
+    fakeProject('quiet', { versions: [1] })
+    fakeProject('shared', { versions: [1] })
+    await updateAppState('shared', (s) => {
+      s.posted = [{ version: 1, platform: 'instagram', at: new Date().toISOString() }]
+    })
+    const list = await listProjects()
+    expect(Object.fromEntries(list.map((p) => [p.slug, p.posted]))).toEqual({ quiet: false, shared: true })
+  })
+
   it('cleans half-written versions and temp files', async () => {
     setupPaths()
     await ensureRoot()

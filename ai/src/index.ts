@@ -7,7 +7,7 @@ import {
   AgentEvent, AgentResult, AIError, EngineHost, ModelProvider, Part, ProviderId, ProviderStatus, ScriptResult, SecretStore, UserFacingError,
 } from './types';
 import { Prompts, defaultPromptsDir } from './prompts';
-import { StyleStore, StyleProposal } from './style';
+import { StyleStore, StyleProposal, StyleRule } from './style';
 import { loadProject, writeFileAtomic } from './project';
 import { planFastNote } from './fastnote';
 import { AnthropicProvider, DEFAULT_CLAUDE_MODEL, SMALL_CLAUDE_MODEL } from './providers/anthropic';
@@ -539,8 +539,11 @@ export function createAI(opts: CreateAIOptions) {
     },
     async styleRules() { return style.list(); },
     async removeStyleRule(id: string) { return style.remove(id); },
-    /** The user said Yes to a proposed rule (AgentResult.styleSuggestions). Returns the saved rule. */
-    async addStyleRule(text: string) { return (await style.add(text)).rule; },
+    /** The user said Yes to a proposed rule (AgentResult.styleSuggestions), typed one in My style, or kept one
+     * learned from an export. `from`: the note or the export it came from. Returns the saved rule. */
+    async addStyleRule(text: string, from?: Pick<StyleRule, 'source' | 'imported'>) { return (await style.add(text, from)).rule; },
+    /** Undo of removeStyleRule: the rule back at `index`. */
+    async restoreStyleRule(rule: StyleRule, index: number) { return style.restore(rule, index); },
     /** My style started over because its file was damaged; the damaged copy is kept next to it. */
     async styleWasDamaged() { return style.wasDamaged(); },
     /** The user said Yes to AgentResult.styleProposal. */

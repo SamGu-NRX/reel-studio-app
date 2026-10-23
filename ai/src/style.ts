@@ -8,8 +8,8 @@ import { styleFile, writeFileAtomic } from './project';
 /** A rule the app applies itself, through the caption tool, when a new video is made. Only lowercase for now:
  * the caption tool and the engine schema agree on `lower`, but not on sentence case. */
 export interface CaptionCaseRule { kind: 'caption-case'; case: 'lower' }
-/** The video and version whose note the rule came from. */
-export interface StyleSource { project: string; title: string; version: number }
+/** The video and version whose note the rule came from, and the note's words. */
+export interface StyleSource { project: string; title: string; version: number; note?: string }
 /** "Remember this for next time?" for a typed rule. Saved only when the person says Yes to exactly this. */
 export interface StyleProposal { id: string; text: string; payload: CaptionCaseRule; source: StyleSource }
 
@@ -19,6 +19,8 @@ export interface StyleRule {
   paused?: boolean;
   payload?: CaptionCaseRule;
   source?: StyleSource;
+  /** Learned from another editor's export ("Learn from my past edits"): its file name. */
+  imported?: { file: string };
   /** the question the person said Yes to */
   consent?: { proposal: string; at: string };
 }
@@ -124,9 +126,22 @@ export class StyleStore {
   }
 
   /** Adds a rule unless an equivalent one already exists. Every caller is the person asking for the rule (Yes to a
-   * suggestion, or an "always..." note), so an equivalent paused rule is turned back on (PR #83 review, option A). */
-  async add(text: string): Promise<{ added: boolean; rule: StyleRule }> {
-    return this.serial(() => this.addNow(text));
+   * suggestion, an "always..." note, a rule typed in My style or kept from an export), so an equivalent paused rule
+   * is turned back on (PR #83 review, option A). `from`: where it was learned. */
+  async add(text: string, from?: Pick<StyleRule, 'source' | 'imported'>): Promise<{ added: boolean; rule: StyleRule }> {
+    return this.serial(() => this.addNow(text, from));
+  }
+
+  /** Undo of a remove: the same rule back where it was, and its question no longer counts as forgotten. */
+  async restore(rule: StyleRule, index: number): Promise<void> {
+    return this.serial(async () => {
+      const data = await this.read();
+      if (data.rules.some((r) => r.id === rule.id)) return;
+      const rules = [...data.rules];
+      rules.splice(Math.max(0, Math.min(index, rules.length)), 0, rule);
+      const forgotten = (data.forgotten ?? []).filter((id) => id !== rule.consent?.proposal);
+      await this.write({ ...data, version: 1, rules, forgotten: forgotten.length ? forgotten : undefined });
+    });
   }
 
   /** The saved rule equivalent to `text`, if any. */
@@ -135,7 +150,7 @@ export class StyleStore {
     return (await this.list()).find((r) => normalize(r.text) === n);
   }
 
-  private async addNow(text: string): Promise<{ added: boolean; rule: StyleRule }> {
+  private async addNow(text: string, from?: Pick<StyleRule, 'source' | 'imported'>): Promise<{ added: boolean; rule: StyleRule }> {
     const clean = cleanRuleText(text);
     const data = await this.read();
     const dup = data.rules.find((r) => normalize(r.text) === normalize(clean));
@@ -146,7 +161,10 @@ export class StyleStore {
       }
       return { added: false, rule: dup };
     }
-    const rule: StyleRule = { id: randomUUID(), text: clean, createdAt: new Date().toISOString() };
+    const rule: StyleRule = {
+      id: randomUUID(), text: clean, createdAt: new Date().toISOString(),
+      ...(from?.source ? { source: from.source } : {}), ...(from?.imported ? { imported: from.imported } : {}),
+    };
     await this.write({ ...data, rules: [...data.rules, rule] });
     return { added: true, rule };
   }
@@ -207,11 +225,16 @@ export class StyleStore {
     });
   }
 
-  async remove(id: string): Promise<void> {
+  /** Returns the removed rule and where it was, for Undo (restore); null when it was already gone. */
+  async remove(id: string): Promise<{ rule: StyleRule; index: number } | null> {
     return this.serial(async () => {
       const data = await this.read();
-      const asked = data.rules.find((r) => r.id === id)?.consent?.proposal;
+      const index = data.rules.findIndex((r) => r.id === id);
+      if (index < 0) return null;
+      const rule = data.rules[index];
+      const asked = rule.consent?.proposal;
       await this.write({ ...data, rules: data.rules.filter((r) => r.id !== id), ...(asked ? { forgotten: [...(data.forgotten ?? []), asked] } : {}) });
+      return { rule, index };
     });
   }
 

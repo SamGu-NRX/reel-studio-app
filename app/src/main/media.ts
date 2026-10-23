@@ -21,7 +21,10 @@ const TYPES: Record<string, string> = {
   '.mp3': 'audio/mpeg',
   '.m4a': 'audio/mp4',
   '.wav': 'audio/wav',
-  '.aac': 'audio/aac'
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+  '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg'
 }
 
 function inside(file: string, root: string): boolean {

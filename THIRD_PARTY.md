@@ -107,7 +107,7 @@ their license texts are inside the Python folder under `python/` (`licenses` / `
 ### Python packages (installed by pip from PyPI)
 
 The single source of truth is `engine/requirements.txt` (the engine's own exact pins, including transitive
-dependencies) plus `packaging/requirements-extra.txt` (bundle-only extras: pi-heif). `packaging/hash_requirements.py`
+dependencies) plus `packaging/requirements-extra.txt` (bundle-only extras: pi-heif and the reference-import packages). `packaging/hash_requirements.py`
 turns them into `packaging/requirements-runtime.hashed.txt`, which `fetch_runtime.py` installs with
 `pip install --require-hashes --no-deps`; a stale copy stops the build. Versions: see `engine/requirements.txt`.
 
@@ -116,6 +116,9 @@ turns them into `packaging/requirements-runtime.hashed.txt`, which `fetch_runtim
 | numpy | BSD-3-Clause | wheel bundles OpenBLAS (BSD-3-Clause) and, on Windows, GCC runtime libs (GPL with runtime exception) |
 | pillow | HPND | |
 | **pi-heif** | BSD-3-Clause (wrapper); wheel libraries LGPL-3.0 | HEIC/HEIF stills (iPhone photos), decode only. The wheels contain exactly two libraries, **libheif 1.23.0 (LGPL-3.0) and libde265 1.1.0 (LGPL-3.0)**, as separate `.dll` / `.dylib` files that can be replaced (LGPL). **It replaces pillow-heif, whose wheels also bundle x265 (GPL-2.0+) and load it in-process: pillow-heif must never be installed** (`fetch_runtime.py`'s smoke test fails the build if it is). Verified 2026-10-17: no x265, aom, dav1d or other encoder strings in the win_amd64 or macOS arm64 libheif. LGPL source: `pillow_heif-1.4.0.tar.gz` (carries `libheif/build_libs.py`, the build recipe), `libheif-1.23.0.tar.gz`, `libde265-1.1.0.tar.gz`, all in the source mirror above. HEVC is a patent-encumbered codec; decoding HEIC is what iPhones' own photos need, so this is the same exposure every photo app with HEIC import has. |
+| **OpenTimelineIO** 0.18.1 | Apache-2.0 | Reads the timelines in Final Cut Pro and Premiere exports for My style's "Learn from my past edits" (`reelengine import-reference`). |
+| **otio-fcpx-xml-adapter** 1.0.0, **otio-fcp-adapter** 1.0.0 | Apache-2.0 | The OpenTimelineIO adapters for Final Cut Pro X XML and Final Cut 7 / Premiere XML. |
+| **psutil** 7.2.2 | BSD-3-Clause | Watches the import process's memory so a huge export can't exhaust the Mac. |
 | opencv-python-headless | Apache-2.0 | 5.0.0.93, the version the engine's tests ran against; wheel bundles FFmpeg libraries (LGPL-2.1, `texts/lgpl-2.1.txt`) |
 | faster-whisper | MIT | speech to text |
 | ctranslate2 | MIT | the inference engine under faster-whisper (CPU only, no torch) |
