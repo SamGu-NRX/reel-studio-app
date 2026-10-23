@@ -92,6 +92,7 @@ class RenderCtx:
     face_box: Optional[dict] = None                         # output-space face box {x,y,w,h} or None
     window: Optional[tuple] = None                          # (a, b) output seconds when --window used
     out_dir: Optional[Path] = None                          # versions/vN
+    variation: Optional[dict] = None                       # resolved once for the full reel
 
     def resolve_path(self, p: str) -> Path:
         """Resolve a project.json asset path: 'Library/...' against root, else project-relative.

@@ -13,6 +13,7 @@
     "createdAt": { "type": "string" },
     "updatedAt": { "type": "string" },
     "version": { "type": "integer", "minimum": 0 },
+    "exposure": { "type": "number", "minimum": 0.125, "maximum": 8, "description": "linear footage exposure multiplier, limited to ffmpeg exposure's -3 to +3 stops; absent means 1" },
     "format": {
       "type": "object",
       "required": ["width", "height", "fps"],

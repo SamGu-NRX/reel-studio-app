@@ -402,7 +402,7 @@ export function captionsForProofread(t: Transcript, p: Project): string {
 }
 
 /** Changes the user can only hear or read outside the picture: a preview shows nothing new. */
-const NOT_VISIBLE = new Set(['music', 'post', 'cutStyle']);
+const NOT_VISIBLE = new Set(['music', 'post']);
 
 export function visibleChangeSinceRender(ctx: ToolContext): boolean {
   return [...(ctx.state.dirty ?? [])].some((f) => !NOT_VISIBLE.has(f));
@@ -776,6 +776,36 @@ const tools: ToolDef[] = [
     },
   },
   {
+    name: 'make_variant',
+    description: 'Make a trial changing exactly one variable. seed generates and logs a new seed in the same style. For hook, choose a different opening among your candidates and pass its word range; the body stays fixed. For cover or caption, supply your alternative. brightness is +8 or -8 percent exposure. The engine saves the edit and a trials.json record with its parent version. Render to compare.',
+    parameters: S.obj({
+      variable: S.enum(['seed', 'hook', 'cover', 'caption', 'brightness']),
+      hook: S.opt(ANCHOR),
+      cover: S.opt(S.obj({ atSourceTime: S.num('raw-take seconds', { minimum: 0 }), source: S.str(), text: S.opt(S.str()) })),
+      caption: S.opt(S.str('alternative post caption')),
+      brightness: S.opt(S.num('+8 or -8 percent; default +8')),
+    }),
+    async run(ctx, args) {
+      const fields = ['hook', 'cover', 'caption', 'brightness'];
+      if (fields.some((field) => field !== args.variable && args[field] != null)) {
+        throw new ToolInputError('Supply an alternative for only the selected variable.');
+      }
+      let choice = args[args.variable];
+      if (args.variable === 'caption' && typeof choice === 'string') {
+        const { p } = await load(ctx);
+        choice = await captionWithCredits(ctx.projectDir, p, choice);
+      }
+      const extra = ['--variable', args.variable];
+      if (choice != null) extra.push('--value', JSON.stringify(choice));
+      const result = await engine(ctx, 'make-variant', extra, 'Making a trial');
+      ctx.project = await loadProject(ctx.projectDir);
+      const field = args.variable === 'caption' ? 'post' : args.variable;
+      ctx.state.changed.add(field);
+      (ctx.state.dirty ??= new Set()).add(field);
+      return { content: { ok: true, trial: result.trial }, summary: `Made a ${args.variable} trial` };
+    },
+  },
+  {
     name: 'set_gap_cap',
     description: 'Longest pause (seconds) kept between words. ~0.12 tight, 0.25-0.4 for slow heartfelt delivery.',
     parameters: S.obj({ seconds: S.num('0.05 to 1.0', { minimum: 0.02, maximum: 2 }) }),
@@ -1098,12 +1128,15 @@ const tools: ToolDef[] = [
   },
   {
     name: 'set_zoom',
-    description: 'Replace all zoom-ins. Each zoom spans one whole line, from its first word to its last; scale ~1.08-1.15. Use on punchlines and key lines, and on face-only stretches with no b-roll (about 3-6 per minute, never two back to back). Empty list = no zooms.',
-    parameters: S.obj({ zooms: S.arr(S.obj({ anchor: ANCHOR, scale: S.num('1.0-1.5', { minimum: 1, maximum: 1.6 }) })) }),
+    description: 'Replace authored zoom accents. Each spans a whole line. With cutStyle, the engine uses the preset framing and chooses one eligible moment per accentGroup using the seed; style framing continues with an empty list. Without cutStyle, scale ~1.08-1.15 and an empty list removes all zooms.',
+    parameters: S.obj({ zooms: S.arr(S.obj({ anchor: ANCHOR, scale: S.num('1.0-1.5', { minimum: 1, maximum: 1.6 }),
+      accentGroup: S.opt(S.str('same group for equally good candidate moments; with cutStyle the seed chooses one per group')) })) }),
     async run(ctx, args) {
       const { t } = await load(ctx);
       args.zooms.forEach((z: any, i: number) => checkAnchor(t, z.anchor, `zooms[${i}]`));
-      await mutate(ctx, 'zooms', (p) => { p.zooms = args.zooms.filter((z: any) => z.scale > 1.001).map((z: any) => ({ anchor: z.anchor, scale: z.scale })); });
+      await mutate(ctx, 'zooms', (p) => { p.zooms = args.zooms.filter((z: { scale: number }) => z.scale > 1.001)
+        .map((z: { anchor: WordAnchor; scale: number; accentGroup?: string | null }) => ({ anchor: z.anchor, scale: z.scale,
+          ...(z.accentGroup ? { accentGroup: z.accentGroup } : {}) })); });
       return { content: { ok: true, count: ctx.project!.zooms.length }, summary: args.zooms.length ? 'Added a few zoom-ins on the big moments' : 'Took out the zooms' };
     },
   },
@@ -1277,6 +1310,7 @@ const tools: ToolDef[] = [
       if (moments < Math.round(want * 0.75)) notes.push(`Only ${moments} b-roll moments (pictures, animations, labels; the hook title not counted) for a ${Math.round(r.duration ?? 60)} s video: hand edits carry about ${want}. Before finishing, add pictures or animations for the named things, places, numbers and examples still bare: search_images for them now, all in one reply.`);
       if (remakeAnimations.length) notes.push(`Animation${remakeAnimations.length > 1 ? 's' : ''} ${remakeAnimations.map((a: any) => a.id).join(', ')} now cover${remakeAnimations.length > 1 ? '' : 's'} the face or captions because the edit changed after ${remakeAnimations.length > 1 ? 'they were' : 'it was'} made. Remake each one now with its "fix" call (update_broll with the same anchor re-renders it into the free space), then render_draft again.`);
       return { content: { ok: true, version: info.version, duration: r.duration ?? null, verify: r.verify ?? null, warnings: r.warnings ?? null,
+        ...(r.variation ? { variation: r.variation } : {}),
         ...(shown.length ? { brollShownDifferently: shown.map((b: any) => ({ id: b.id, treatment: b.treatment, ...(b.fallback ? { shownAs: b.shownAs, why: b.fallback } : { skipped: b.skipped }) })) } : {}),
         ...(remakeAnimations.length ? { remakeAnimations } : {}),
         ...(bare.length ? { faceOnly: bare } : {}),

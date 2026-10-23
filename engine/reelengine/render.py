@@ -84,7 +84,14 @@ def pick_version(project_dir: Path, proj: dict, root: Optional[Path] = None) -> 
         snap = vdir / "project.json"
         if snap.exists():
             try:
-                same = projmod.edit_signature(projmod.read_json(snap)) == projmod.edit_signature(proj)
+                prior = projmod.read_json(snap)
+                same = projmod.edit_signature(prior) == projmod.edit_signature(proj)
+                # Caption trials need distinct versions even though their video pixels match.
+                trials_file = Path(project_dir) / "trials.json"
+                if same and trials_file.exists():
+                    trials = projmod.read_json(trials_file)
+                    if any(t.get("parent_version") == cur and t.get("variable") == "caption" for t in trials):
+                        same = False
                 fp = vdir / "assets.json"
                 if same and fp.exists():
                     same = projmod.read_json(fp) == asset_fingerprint(project_dir, proj, root)
@@ -506,6 +513,10 @@ def build_video_cmd(ctx: RenderCtx, segments: list, src_meta: dict, src_paths: d
     else:
         chains.append("".join(labels) + f"concat=n={len(segments)}:v=1:a=0,{tail}[base0]")
     cur = "base0"
+    exposure = float(ctx.project.get("exposure", 1.0))
+    if exposure != 1.0:
+        chains.append(f"[{cur}]exposure=exposure={_f(math.log2(exposure))}[exposed]")
+        cur = "exposed"
     # zooms move the FOOTAGE, so they sit on the base, under every card and caption
     for zi, z in enumerate(zooms or []):
         t0, t1 = z.t0 - t_shift, z.t1 - t_shift
@@ -628,10 +639,12 @@ def parse_window(spec: Optional[str], duration: float):
 
 
 def make_ctx(project_dir: Path, proj: dict, tl, draft: bool, root: Path, rwork: Path) -> RenderCtx:
+    from .variation import resolve
+    effective, decisions = resolve(proj, tl)
     def _progress(stage, pct, message):
         progress(stage or STAGE, pct, message)
 
-    return RenderCtx(project=proj, project_dir=project_dir, root=root, out_timeline=tl.segments,
+    return RenderCtx(project=effective, variation=decisions, project_dir=project_dir, root=root, out_timeline=tl.segments,
                      word_out_time=tl.word_out_time, duration=tl.duration, fmt=dict(proj["format"]),
                      draft=draft, work=project_dir / "work", ffmpeg=tools.ffmpeg(),
                      ffprobe=tools.ffprobe(), progress=_progress, word_out_end=tl.word_out_end,
@@ -793,7 +806,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
     broll_report = [r for r in broll_report if r.get("id") not in {g["id"] for g in gone_rows}] + gone_rows
     warnings += gone_warns
     zoom = _opt_module("zoom")
-    if zoom is not None and proj.get("zooms"):
+    if zoom is not None and (proj.get("zooms") or ctx.variation is not None):
         try:
             zooms = list(zoom.build_zooms(ctx) or [])
         except Exception as exc:   # noqa: BLE001
@@ -908,6 +921,8 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
               "size": [out_w, out_h], "layers": len(layers), "zooms": len(zooms),
               "captions": len(cap_report), "warnings": warnings, "visualChanges": visual_changes,
               "broll": [r for r in broll_report if r.get("fallback") or r.get("skipped") or r.get("remake")]}
+    if ctx.variation is not None:
+        result["variation"] = ctx.variation
 
     # 5. cover (full renders only; a preview may skip it). It ran beside the encode (above).
     if cover_job is not None:

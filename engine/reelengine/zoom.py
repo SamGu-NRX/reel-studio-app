@@ -86,4 +86,29 @@ def build_zooms(ctx, with_broll: bool = True) -> list:
             s.t1 = min(s.t1, dur)
         if s.t1 - s.t0 >= 1.0 / fps:
             out.append(s)
+    decisions = getattr(ctx, "variation", None)
+    if decisions:
+        # Explicit accents override the background framing, without applying two crops at once.
+        background = decisions["framing"]
+        boundaries = sorted({t for s in out for t in (s.t0, s.t1)} |
+                            {t for s in background for t in (s["t0"], s["t1"])})
+        resolved = []
+        for a, b in zip(boundaries, boundaries[1:]):
+            mid = (a + b) / 2
+            accent = next((s for s in out if s.t0 <= mid < s.t1), None)
+            base = next((s for s in background if s["t0"] <= mid < s["t1"]), None)
+            scale = accent.scale if accent else base["scale"] if base else 1.0
+            if scale <= 1.001:
+                continue
+            if accent:
+                cx, cy = accent.cx, accent.cy
+            else:
+                from .broll import output_face_union
+                fx, fy, fw, fh = output_face_union(ctx, a, b)
+                cx, cy = clamp_centre(scale, fx + fw / 2, fy + fh / 2 - EYE_BIAS * fh, W, H)
+            if resolved and resolved[-1].t1 == a and (resolved[-1].scale, resolved[-1].cx, resolved[-1].cy) == (scale, cx, cy):
+                resolved[-1].t1 = b
+            else:
+                resolved.append(ZoomSpan(a, b, scale, cx, cy))
+        return resolved
     return out

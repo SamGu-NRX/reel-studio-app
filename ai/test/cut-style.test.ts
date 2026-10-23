@@ -76,14 +76,14 @@ it('keeps an old project unchanged and applies no style verdict', async () => {
   expect({ ...after, updatedAt: before.updatedAt }).toEqual(before);
 });
 
-it('returns the current cadence verdict when a style-only change reuses a preview', async () => {
+it('returns the current cadence verdict after rendering a changed style', async () => {
   const { ctx, host } = await setup();
   const row = { seconds: 5, cuts: 1, brollStarts: 0, zoomStarts: 0, total: 1, perMinute: 12 };
   host.renderExtra = { visualChanges: { overall: row, first5: row, first30: row } };
   await executeTool(ctx, 'render_draft', {});
   await executeTool(ctx, 'set_cut_style', { preset: 'punchline', seed: 1 });
   const result = JSON.parse((await executeTool(ctx, 'render_draft', {})).content);
-  expect(result.skipped).toMatch(/Nothing visible/);
+  expect(result.skipped).toBeUndefined();
   expect(result.visualChanges.overall.verdict).toBe('not applicable');
-  expect(ctx.state.renders).toHaveLength(1);
+  expect(ctx.state.renders).toHaveLength(2);
 });

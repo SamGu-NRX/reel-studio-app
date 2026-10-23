@@ -47,7 +47,7 @@ export interface Broll {
   id: string; anchor: WordAnchor; leadIn?: number; treatment: Treatment | string;
   asset: string | null; assets?: string[]; params: BrollParams; [k: string]: unknown;
 }
-export interface Zoom { anchor: WordAnchor; scale: number; [k: string]: unknown }
+export interface Zoom { anchor: WordAnchor; scale: number; accentGroup?: string; [k: string]: unknown }
 export interface Cover { atSourceTime: number; source: string; text: string | null; [k: string]: unknown }
 export interface Post { caption: string; hashtags: string[]; keywords: string[]; [k: string]: unknown }
 export interface NoteEntry {
@@ -63,6 +63,7 @@ export interface Project {
   id: string; title: string; slug: string; createdAt: string; updatedAt: string; version: number;
   format: Format;
   cutStyle?: CutStyle;
+  exposure?: number;
   sources: Source[];
   transcript: { file: string; language?: string };
   cut: { keep: WordAnchor[]; gapCap: number; minSaving?: number; [k: string]: unknown };
@@ -137,6 +138,8 @@ export function validateProject(p: unknown, transcript?: Transcript): string[] {
     else if (!Number.isInteger(q.cutStyle.seed)) out.push('cutStyle.seed must be an integer');
   }
   if (!q.format || !isNum(q.format.width) || !isNum(q.format.height) || !isNum(q.format.fps)) out.push('format needs width/height/fps');
+  // ffmpeg exposure accepts -3 to +3 stops, equivalent to these linear multipliers.
+  if (q.exposure !== undefined && (!isNum(q.exposure) || q.exposure < 0.125 || q.exposure > 8)) out.push('exposure must be a number between 0.125 and 8');
   if (!Array.isArray(q.sources)) out.push('sources must be an array');
   if (!q.cut || !Array.isArray(q.cut.keep)) out.push('cut.keep must be an array');
   else if (!isNum(q.cut.gapCap) || q.cut.gapCap < 0) out.push('cut.gapCap must be a number >= 0');
