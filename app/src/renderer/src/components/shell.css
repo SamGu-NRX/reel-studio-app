@@ -37,7 +37,7 @@
 .side-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: var(--line-strong); opacity: 0; transition: opacity 120ms ease; }
 @media (hover: hover) and (pointer: fine) { .side-resize:hover::after { opacity: 1; transition-delay: 150ms; } }
 .side-resize:focus-visible::after, html.side-resizing .side-resize::after { opacity: 1; }
-.side-resize:focus-visible { outline: none; }
+.side-resize:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 .rail .side-resize { display: none; }
 html.side-resizing, html.side-resizing * { cursor: col-resize !important; user-select: none; }
 
@@ -48,7 +48,7 @@ html.side-resizing, html.side-resizing * { cursor: col-resize !important; user-s
   font: inherit; font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 540; color: var(--ink-2); text-align: left; white-space: nowrap; overflow: hidden; cursor: pointer;
 }
 .nav button .icon { color: var(--ink-3); }
-.nav button.on { background: rgba(22, 30, 26, .07); color: var(--ink); font-weight: 600; }
+.nav button.on { background: rgba(22, 30, 26, .07); color: var(--ink); }
 .nav button.on .icon { color: var(--ink); }
 @media (hover: hover) and (pointer: fine) { .nav button:not(.on):hover { background: rgba(22, 30, 26, .04); color: var(--ink); } }
 .rail .nav button { width: 40px; padding: 0 12px; }

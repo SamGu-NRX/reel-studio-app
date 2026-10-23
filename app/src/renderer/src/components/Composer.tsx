@@ -128,12 +128,17 @@ export function Composer({
                   {under}
                 </div>
               </div>
-              <div className="strip" role="status" data-testid="note-progress">
+              <div className="strip" data-testid="note-progress">
+                {/* announced once per step, not on every tick of the time left */}
+                <span className="sr-only" role="status">
+                  {making ? `Making Version ${making}` : job.message}
+                  {making && current ? `, ${current}` : ''}
+                </span>
                 <span className="bar" aria-hidden>
                   <i style={{ transform: `scaleX(${pct})` }} />
                 </span>
                 {job.thinking ? <Thinking /> : <span className="spin light" aria-hidden />}
-                <b>{making ? `Making Version ${making}` : job.message}</b>
+                <b aria-hidden>{making ? `Making Version ${making}` : job.message}</b>
                 <span className="m" data-testid="note-time-left">
                   {left ? ` · ${left}` : ''}
                   {making && current ? ` · ${current}` : ''}
