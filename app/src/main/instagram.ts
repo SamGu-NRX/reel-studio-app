@@ -205,13 +205,17 @@ export class InstagramService {
     return dir
   }
   private async openFile(dir: string, file: string, maxSize: number) {
-    const resolved = await fs.realpath(file)
-    if (!inside(dir, resolved)) throw new InstagramError('IG_PATH', 'The export or cover is outside this project.')
-    const handle = await fs.open(resolved, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    const handle = await fs.open(file, constants.O_RDONLY | constants.O_NONBLOCK)
     try {
-      const stat = await handle.stat()
-      if (!stat.isFile() || stat.size < 1 || stat.size > maxSize) throw new InstagramError('IG_FILE', 'The export or cover is empty, too large or not a regular file.')
-      return { handle, size: stat.size }
+      const stat = await handle.stat({ bigint: true })
+      if (!stat.isFile() || stat.size < 1n || stat.size > BigInt(maxSize)) throw new InstagramError('IG_FILE', 'The export or cover is empty, too large or not a regular file.')
+      const resolved = await fs.realpath(file)
+      if (!inside(dir, resolved)) throw new InstagramError('IG_PATH', 'The export or cover is outside this project.')
+      // O_NOFOLLOW cannot stop an ancestor swap. Validate the opened file's identity,
+      // then keep this descriptor for both the cover read and the video stream.
+      const checked = await fs.stat(resolved, { bigint: true })
+      if (checked.dev !== stat.dev || checked.ino !== stat.ino) throw new InstagramError('IG_PATH', 'The export or cover changed while opening it. Try again.')
+      return { handle, size: Number(stat.size) }
     } catch (e) { await handle.close(); throw e }
   }
   private async stagedMedia(dir: string, input: InstagramPublishInput, signal: AbortSignal): Promise<{ videoUrl: string; coverUrl?: string }> {

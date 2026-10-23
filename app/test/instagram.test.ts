@@ -307,6 +307,34 @@ describe('Instagram fixture HTTP', () => {
     await fs.unlink(join(w.version, 'export.mp4')); await fs.symlink(outside, join(w.version, 'export.mp4'))
     await expect(w.service.publish(INPUT)).rejects.toMatchObject({ code: 'IG_PATH' }); w.done()
   })
+  it('rejects a file opened through a swapped ancestor even after that ancestor is restored', async () => {
+    const w = await world(); await w.seed(); w.profile()
+    const versions = join(w.project, 'versions')
+    const parked = join(w.project, 'parked-versions')
+    const outside = join(w.dir, 'outside')
+    await fs.mkdir(join(outside, 'v1'), { recursive: true })
+    await fs.writeFile(join(outside, 'v1', 'export.mp4'), 'private video bytes')
+    const target = await fs.realpath(join(w.version, 'export.mp4'))
+    const open = fs.open.bind(fs)
+    let redirected: Awaited<ReturnType<typeof fs.open>> | undefined
+    const spy = vi.spyOn(fs, 'open').mockImplementation(async (path, flags, mode) => {
+      if (path !== target) return open(path, flags, mode)
+      await fs.rename(versions, parked)
+      await fs.symlink(outside, versions, 'junction')
+      try {
+        redirected = await open(path, flags, mode)
+        return redirected
+      } finally {
+        await fs.unlink(versions)
+        await fs.rename(parked, versions)
+      }
+    })
+    try { await expect(w.service.publish(INPUT)).rejects.toMatchObject({ code: 'IG_PATH' }) }
+    finally { spy.mockRestore() }
+    expect(redirected).toBeDefined()
+    expect(redirected?.fd).toBe(-1)
+    expect(w.calls).toEqual([`${GRAPH}/me?fields=user_id,username,account_type`]); w.done()
+  })
   it('refuses an unapproved signed upload host before sending video bytes', async () => {
     const w = await world(); await w.seed(); w.profile()
     w.steps.push({ url: `${BROKER}/api/instagram/uploads`, method: 'POST', body: { video: { upload_url: 'https://unapproved.example/upload', public_url: 'https://storage.example/video.mp4' } } })
