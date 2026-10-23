@@ -11,7 +11,7 @@ export interface FastCall { name: string; args: Record<string, unknown> }
 export interface FastPlan { kind: string; calls: FastCall[]; summary: string }
 
 /** Words that mean "a specific place", "more than one thing", or "remember this": never fast. */
-const NOT_FAST = /\b(when|where|while|whenever|start|starting|beginning|begin|intro|end|ending|middle|part|parts|after|before|during|first|last|second|seconds|minute|word|words|say|says|said|saying|line|always|every|everywhere|from now|next time|remember|future|and|but|also|plus|then|instead|except|picture|photo|image|cover|zoom|cut|font|color|colour|hashtag|post|song|track|different|change|another|why)\b|\d|["“”?]/;
+const NOT_FAST = /\b(when|where|while|whenever|start|starting|beginning|begin|intro|end|ending|middle|part|parts|after|before|during|first|last|second|seconds|minute|word|words|say|says|said|saying|line|case|always|every|everywhere|from now|next time|remember|future|and|but|also|plus|then|instead|except|picture|photo|image|cover|zoom|cut|font|color|colour|hashtag|post|song|track|different|change|another|why)\b|\d|["“”?]/;
 
 const NEGATED = /\b(not|cannot|can not|dont|don['’]t|never|no longer|keep|leave|stop|without changing)\b|\b\w+n['’]t\b/;
 
