@@ -56,6 +56,7 @@ def test_each_candidate_carries_the_reasons_of_the_frame_that_won(monkeypatch, t
     monkeypatch.setattr(cover, "fmt_of", lambda ctx: (1080, 1920, 30))
     monkeypatch.setattr(cover, "reframe_rect", lambda ctx, sid: None)
     monkeypatch.setattr(cover, "source_path", lambda ctx, sid: "take.mp4")
+    monkeypatch.setattr(cover, "source_mirrored", lambda ctx, sid: False)
     monkeypatch.setattr(cover, "candidate_times", lambda ctx, sid, at, half=None: [r["t"] for r in rows])
     monkeypatch.setattr(cover, "score_frames", lambda ctx, sid, times: [dict(r) for r in rows])
     monkeypatch.setattr(cover, "grab_frame", lambda path, t, ctx: np.zeros((1920, 1080, 3), np.uint8))

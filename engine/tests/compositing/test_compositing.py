@@ -398,8 +398,8 @@ def test_build_audio_plays_the_frozen_copy_of_its_track(tmp_path, media, frozen,
     if frozen:
         mus["frozen"] = {**frozen, "path": song if frozen["path"] == "SONG" else frozen["path"]}
     ctx = _ctx(tmp_path, media["video"], music=mus)
-    music.build_audio(ctx, fx.cut_voice(ctx, tmp_path / "voice.wav"))
-    rep = json.loads((ctx.work / "audio" / "mix.json").read_text())
+    out = music.build_audio(ctx, fx.cut_voice(ctx, tmp_path / "voice.wav"))
+    rep = json.loads(Path(out).with_suffix(".json").read_text())  # each mix's report sits beside it (#29)
     assert Path(rep["music"]["track"]).resolve() == media["song"].resolve()
     assert song in render.asset_fingerprint(ctx.project_dir, ctx.project)
 
