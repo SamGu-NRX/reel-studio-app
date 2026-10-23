@@ -86,6 +86,17 @@ def test_frame_ramps_render_and_window_keeps_progress(tmp_path, take, fps):
     assert widths(window)[0] == pytest.approx(sizes[round(.75 * fps)], abs=1)
 
 
+def test_multiple_ramps_keep_their_own_crop(tmp_path, take):
+    ctx = context(tmp_path, {})
+    spans = [ZoomSpan(.5, 1.5, 1.3, W/2, H/2, ramp_in=12),
+             ZoomSpan(2, 3.5, 1.6, W/2, H/2, ramp_in=12)]
+    combined = widths(encode(ctx, take, spans, "combined"))
+    for i, span in enumerate(spans):
+        alone = widths(encode(ctx, take, [span], f"alone{i}"))
+        a, b = round(span.t0 * FPS), round(span.t1 * FPS)
+        assert np.max(np.abs(combined[a:b] - alone[a:b])) <= 1
+
+
 @pytest.mark.parametrize("style,scale", [
     ({"preset": "clean"}, 1.10), ({"preset": "hyper"}, 1.30),
     ({"preset": "punchline"}, 1.25), ({"preset": "standard"}, 1.15),

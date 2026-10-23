@@ -521,24 +521,30 @@ def _snap_chain(zi: int, z: ZoomSpan, k0: int, k1: int, crop: tuple, scale_chain
 
 
 def _ramp_chain(zi: int, z: ZoomSpan, k0: int, k1: int, crop: tuple, fps: float,
-                t_shift: float, out_w: int, out_h: int, draft: bool) -> str:
-    # crop's width/height expressions are evaluated at setup. A single perspective filter evaluates
-    # the crop rectangle each frame while keeping output dimensions fixed, without per-frame splits.
+                t_shift: float, out_w: int, out_h: int, draft: bool, command_file: Path) -> str:
+    # ffmpeg evaluates crop w/h at setup, so a w='...t...' expression cannot animate. sendcmd updates
+    # all four crop values on each frame, then one fixed scale restores the output dimensions.
+    # This uses the regular crop/resize path instead of a general perspective warp.
+    from .zoom import progress
     cw, ch, x, y = crop
-    frame = f"(in-1+{k0}+{_f((t_shift-z.t0)*fps)})"
-    def ease(u):
-        return f"(1-pow(1-clip({u},0,1),4))"
-    entrance = ease(f"{frame}/{z.ramp_in}") if z.ramp_in else "1"
-    remaining = f"({frame}-{_f((z.t1-z.t0)*fps-z.ramp_out)})/{z.ramp_out}" if z.ramp_out else None
-    amount = f"min({entrance},1-{ease(remaining)})" if remaining else entrance
-    q = f"((1-1/(1+{_f(out_w/cw-1)}*{amount}))/{_f(1-cw/out_w)})"
-    left, top = f"'{x}*{q}'", f"'{y}*{q}'"
-    right, bottom = f"'{out_w}+{x+cw-out_w}*{q}'", f"'{out_h}+{y+ch-out_h}*{q}'"
+    target = f"crop@r{zi}"
+    commands = []
+    for k in range(k0, k1):
+        amount = progress(z, k / fps + t_shift, fps)
+        scale = 1 + (out_w / cw - 1) * amount
+        q = (1 - 1 / scale) / (1 - cw / out_w)
+        wi = round((out_w + (cw - out_w) * q) / 2) * 2
+        he = round((out_h + (ch - out_h) * q) / 2) * 2
+        xx = min(max(0, round(x * q / 2) * 2), out_w - wi)
+        yy = min(max(0, round(y * q / 2) * 2), out_h - he)
+        # Half a frame early avoids delaying a command when its printed time rounds above the PTS.
+        at = max(0, (k - k0 - 0.5) / fps)
+        commands.append(f"{at:.9f} {target} w {wi},{target} h {he},{target} x {xx},{target} y {yy};")
+    command_file.write_text("\n".join(commands), encoding="utf-8", newline="\n")
     pad = f",fps={fps},tpad=start={k0}" if k0 else ""
     return (f"[zs{zi}]trim=start_frame={k0}:end_frame={k1},setpts=PTS-STARTPTS,"
-            f"perspective=x0={left}:y0={top}:x1={right}:y1={top}:x2={left}:y2={bottom}:"
-            f"x3={right}:y3={bottom}:sense=source:eval=frame:interpolation={'linear' if draft else 'cubic'},"
-            f"setsar=1{pad}[zz{zi}]")
+            f"sendcmd=f={command_file.name},{target}={out_w}:{out_h}:0:0,"
+            f"scale={out_w}:{out_h}:eval=frame:flags={'fast_bilinear' if draft else 'lanczos'},setsar=1{pad}[zz{zi}]")
 
 
 def build_video_cmd(ctx: RenderCtx, segments: list, src_meta: dict, src_paths: dict, faces: dict,
@@ -628,7 +634,8 @@ def build_video_cmd(ctx: RenderCtx, segments: list, src_meta: dict, src_paths: d
             if z.blur:
                 chains += _snap_chain(zi, z, k0, k1, (cw, ch, x, y), scale_chain, fps, t_shift, out_w, out_h, ctx.draft)
             else:
-                chains.append(_ramp_chain(zi, z, k0, k1, (cw, ch, x, y), fps, t_shift, out_w, out_h, ctx.draft))
+                chains.append(_ramp_chain(zi, z, k0, k1, (cw, ch, x, y), fps, t_shift, out_w, out_h, ctx.draft,
+                                           graph_file.with_name(f"{graph_file.stem}.zoom{zi}.cmd")))
         else:
             chains.append(f"[zs{zi}]trim=start={_f(t0)}:end={_f(t1)},setpts=PTS-STARTPTS,{scale_chain}{pad}[zz{zi}]")
         chains.append(f"[zm{zi}][zz{zi}]overlay=0:0:eof_action=pass:repeatlast=0:"
