@@ -3,7 +3,7 @@ import { updateAction, type UpdateState } from '../../../shared/update'
 import { installQuestion, type InstallQuestion } from './update-copy'
 import { reel, userMessage } from '../api'
 import { useNotify } from '../App'
-import { Confirm, Modal } from './ui'
+import { Button, Confirm, Modal } from './ui'
 
 let current: UpdateState | null = null
 const listeners = new Set<() => void>()
@@ -89,9 +89,9 @@ export function useUpdateActions(): { act: (s: UpdateState) => Promise<void>; pe
         <h2 id={titleId}>{question.title}</h2>
         <p className="muted">{question.body}</p>
         <div className="row" style={{ justifyContent: 'flex-end' }}>
-          <button className="btn primary" onClick={() => setQuestion(null)} data-autofocus data-testid="confirm-no">
+          <Button kind="primary" onClick={() => setQuestion(null)} data-autofocus data-testid="confirm-no">
             OK
-          </button>
+          </Button>
         </div>
       </Modal>
     ))

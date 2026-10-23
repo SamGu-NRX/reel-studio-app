@@ -4,6 +4,7 @@ import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore, type Rea
 import type { PhoneView } from '../../../shared/api'
 import { reel } from '../api'
 import { Icon } from './icons'
+import { Segmented } from './ui'
 import './Phone.css'
 
 let view: PhoneView = 'instagram'
@@ -68,36 +69,13 @@ export function Phone({ view, caption, className, children, testid }: { view: Ph
 }
 
 /** Instagram or Clean, under the phone. */
+const PHONE_VIEWS = [
+  { key: 'instagram', label: 'Instagram', title: 'Your reel under Instagram’s buttons and caption', testid: 'view-instagram' },
+  { key: 'clean', label: 'Clean', title: 'Your reel alone', testid: 'view-clean' }
+] as const satisfies readonly { key: PhoneView; label: string; title: string; testid: string }[]
+
 export function PhoneViewSwitch({ value, onChange }: { value: PhoneView; onChange: (v: PhoneView) => void }) {
-  const opts: { v: PhoneView; label: string }[] = [
-    { v: 'instagram', label: 'Instagram' },
-    { v: 'clean', label: 'Clean' }
-  ]
-  return (
-    <div className="pview" role="radiogroup" aria-label="Phone view" data-testid="phone-view">
-      {opts.map(({ v, label }) => (
-        <button
-          key={v}
-          role="radio"
-          aria-checked={value === v}
-          tabIndex={value === v ? 0 : -1}
-          title={v === 'instagram' ? 'Your reel under Instagram’s buttons and caption' : 'Your reel alone'}
-          onClick={() => onChange(v)}
-          onKeyDown={(e) => {
-            if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return
-            e.preventDefault()
-            const next = v === 'instagram' ? 'clean' : 'instagram'
-            onChange(next)
-            e.currentTarget.parentElement?.querySelector<HTMLElement>(`[data-v="${next}"]`)?.focus()
-          }}
-          data-v={v}
-          data-testid={`view-${v}`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  )
+  return <Segmented label="Phone view" testid="phone-view" value={value} options={PHONE_VIEWS} onPick={onChange} />
 }
 
 /**

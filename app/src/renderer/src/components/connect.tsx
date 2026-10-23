@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ClaudeCodeInfo, ModelStatus, ProviderInfo } from '../../../shared/api'
 import { errorCode, reel, userMessage } from '../api'
-import { IS_MAC, Progress, Spinner } from './ui'
+import { Button, IS_MAC, Progress, Spinner } from './ui'
 import { Icon } from './icons'
 import { Connections } from './Connections'
 import { BrandMark } from './brand'
@@ -199,16 +199,16 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
   const anyOn = claudeOn || chatgptOn || otherOn
   const claudeLeads = !chatgptOn && (claudeOn || st === 'ready')
   // the leading row's pill is the screen's one filled button, until an editor is connected
-  const primary = (leads: boolean): string => (!anyOn && leads ? ' primary' : '')
+  const lead = (leads: boolean): 'primary' | 'secondary' => (!anyOn && leads ? 'primary' : 'secondary')
   const off = (
-    <button className="btn small ghost" onClick={() => void disconnect()} data-testid="use-no-ai">
+    <Button size="small" kind="tertiary" onClick={() => void disconnect()} data-testid="use-no-ai">
       {active?.id === 'chatgpt' ? 'Sign out' : 'Disconnect'}
-    </button>
+    </Button>
   )
   const checkAgain = (
-    <button className="btn small" onClick={() => void checkClaude()} data-testid="claude-code-check">
+    <Button size="small" onClick={() => void checkClaude()} data-testid="claude-code-check">
       Check again
-    </button>
+    </Button>
   )
 
   let claudeStatus: ReactNode
@@ -226,24 +226,24 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
     )
     claudeTone = 'busy'
     claudeAction = (
-      <button className="btn small ghost" onClick={() => void reel.ai.cancelCheck()} data-testid="claude-check-cancel">
+      <Button size="small" kind="tertiary" onClick={() => void reel.ai.cancelCheck()} data-testid="claude-check-cancel">
         Cancel
-      </button>
+      </Button>
     )
   } else if (claudeError) {
     claudeStatus = claudeError
     claudeTone = 'error'
     claudeAction = (
-      <button className="btn small" onClick={() => void (st === 'ready' ? useClaude() : signInClaude())} disabled={!!busy} data-testid="claude-try-again">
+      <Button size="small" onClick={() => void (st === 'ready' ? useClaude() : signInClaude())} disabled={!!busy} data-testid="claude-try-again">
         Try again
-      </button>
+      </Button>
     )
   } else if (st === 'ready') {
     claudeStatus = `Found on ${HERE}`
     claudeAction = (
-      <button className={`btn small${primary(claudeLeads)}`} onClick={() => void useClaude()} disabled={!!busy} aria-label={USE_CLAUDE_CODE} data-testid="use-claude-code">
+      <Button size="small" kind={lead(claudeLeads)} onClick={() => void useClaude()} disabled={!!busy} aria-label={USE_CLAUDE_CODE} data-testid="use-claude-code">
         Use Claude
-      </button>
+      </Button>
     )
   } else if (st === 'signed_out' && waiting) {
     claudeStatus = (
@@ -256,16 +256,16 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
   } else if (st === 'signed_out') {
     claudeStatus = 'Sign in with your plan'
     claudeAction = (
-      <button className="btn small" onClick={() => void signInClaude()} disabled={!!busy} aria-label="Sign in to your Claude Code app" data-testid="claude-code-signin">
+      <Button size="small" onClick={() => void signInClaude()} disabled={!!busy} aria-label="Sign in to your Claude Code app" data-testid="claude-code-signin">
         Sign in
-      </button>
+      </Button>
     )
   } else {
     claudeStatus = st === 'broken' ? "Your Claude Code app didn't start" : 'Not set up'
     claudeAction = install ? null : (
-      <button className="btn small" onClick={() => setInstall(true)} data-testid="claude-code-toggle">
+      <Button size="small" onClick={() => setInstall(true)} data-testid="claude-code-toggle">
         Set up
-      </button>
+      </Button>
     )
   }
 
@@ -312,13 +312,13 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
         chatgptOn ? (
           off
         ) : busy === 'chatgpt' ? (
-          <button className="btn small ghost" onClick={() => void reel.ai.cancelSignIn()}>
+          <Button size="small" kind="tertiary" onClick={() => void reel.ai.cancelSignIn()}>
             Cancel
-          </button>
+          </Button>
         ) : (
-          <button className={`btn small${primary(!claudeLeads)}`} onClick={() => void chatgpt()} disabled={!!busy} data-testid="signin-chatgpt">
+          <Button size="small" kind={lead(!claudeLeads)} onClick={() => void chatgpt()} disabled={!!busy} data-testid="signin-chatgpt">
             Sign in
-          </button>
+          </Button>
         )
       }
     />
@@ -398,9 +398,9 @@ export function AnthropicKey({ active, onConnected }: { active: ProviderInfo | n
       status={on ? <ConnectedMark /> : (error ?? 'Billed by Anthropic as you use it')}
       action={
         on || open ? null : (
-          <button className="btn small" onClick={() => setOpen(true)} data-testid="claude-key-toggle">
+          <Button size="small" onClick={() => setOpen(true)} data-testid="claude-key-toggle">
             Add key
-          </button>
+          </Button>
         )
       }
     >
@@ -421,9 +421,9 @@ export function AnthropicKey({ active, onConnected }: { active: ProviderInfo | n
               }}
               data-testid="claude-key-input"
             />
-            <button className="btn small" onClick={() => void save()} disabled={!key.trim() || busy} data-testid="use-claude-key">
+            <Button size="small" onClick={() => void save()} disabled={!key.trim() || busy} data-testid="use-claude-key">
               {busy && <Spinner />} Use this key
-            </button>
+            </Button>
           </div>
           <p className="muted-sm">
             No key?{' '}
@@ -539,9 +539,9 @@ export function ModelPanel({ s, onNext, secondary }: { s: ModelStatus; onNext?: 
           </p>
         )}
         {onNext && (
-          <button className="btn primary big" onClick={onNext} data-testid="model-next">
+          <Button kind="primary" size="big" onClick={onNext} data-testid="model-next">
             Next
-          </button>
+          </Button>
         )}
       </div>
     )
@@ -564,20 +564,20 @@ export function ModelPanel({ s, onNext, secondary }: { s: ModelStatus; onNext?: 
             </span>
             <span className="spacer" />
             {s.downloading ? (
-              <button className="btn small ghost" onClick={() => reel.model.cancel()} data-testid="pause-model">
+              <Button size="small" kind="tertiary" onClick={() => reel.model.cancel()} data-testid="pause-model">
                 Pause
-              </button>
+              </Button>
             ) : (
-              <button className="btn small" onClick={() => void reel.model.download()} data-testid="download-model">
+              <Button size="small" onClick={() => void reel.model.download()} data-testid="download-model">
                 Keep downloading
-              </button>
+              </Button>
             )}
           </div>
         </>
       ) : (
-        <button className={`btn big${secondary ? '' : ' primary'}`} onClick={() => void reel.model.download()} data-testid="download-model">
+        <Button size="big" kind={secondary ? 'secondary' : 'primary'} onClick={() => void reel.model.download()} data-testid="download-model">
           Download
-        </button>
+        </Button>
       )}
       {s.error && (
         <div className="banner error" role="alert" data-testid="model-error">

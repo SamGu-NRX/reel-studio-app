@@ -18,6 +18,7 @@ import { ModelLine } from '../components/first-run/ModelLine'
 import { EDIT, RAW_LEN, TRANSCRIPT, tokens } from '../components/first-run/sample'
 import { sound } from '../components/first-run/sound'
 import { byKeyboard, reducedMotion } from '../components/motion'
+import { Button } from '../components/ui'
 import rawUrl from '../assets/sample/raw.mp4'
 import aiUrl from '../assets/sample/ai.mp4'
 import posterUrl from '../assets/sample/raw-poster.jpg'
@@ -63,9 +64,9 @@ export function FirstRun({ onDone, platform }: { onDone: () => Promise<void>; pl
             <img src={posterUrl} alt="" ref={center} />
             <img src={kneadUrl} alt="" />
           </div>
-          <button className="btn primary big" onClick={begin} data-testid="get-started">
+          <Button kind="primary" size="big" onClick={begin} data-testid="get-started">
             Get started
-          </button>
+          </Button>
           <p className="w-foot">Free, no account. Your videos stay on this {computer}.</p>
         </main>
       )}
@@ -482,19 +483,19 @@ function Stage({
             <ModelLine active={!!start} computer={computer} />
             <span className="sp" />
             {pane === 'sample' && !finished && (
-              <button className="btn ghost" onClick={() => demo.current?.skip()} data-testid="demo-skip">
+              <Button kind="tertiary" onClick={() => demo.current?.skip()} data-testid="demo-skip">
                 Skip
-              </button>
+              </Button>
             )}
             {pane === 'sample' && finished && (
-              <button ref={next} className="btn primary" onClick={() => setPane('editor')} data-testid="demo-next">
+              <Button ref={next} kind="primary" onClick={() => setPane('editor')} data-testid="demo-next">
                 Continue
-              </button>
+              </Button>
             )}
             {pane === 'editor' && (
-              <button className={`btn${ai ? ' primary' : ''}`} onClick={() => void finish()} disabled={leaving} data-testid={ai ? 'editor-continue' : 'not-now'}>
+              <Button kind={ai ? 'primary' : 'secondary'} onClick={() => void finish()} disabled={leaving} data-testid={ai ? 'editor-continue' : 'not-now'}>
                 {ai ? 'Continue' : 'Not now'}
-              </button>
+              </Button>
             )}
           </footer>
         </div>

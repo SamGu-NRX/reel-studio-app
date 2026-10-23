@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { CloudDrive } from '../../../shared/api'
 import { errorCode, reel, userMessage } from '../api'
 import { Icon } from './icons'
-import { FOLDER_APP } from './ui'
+import { Button, FOLDER_APP } from './ui'
 
 /** The cloud drives on this computer, and the name each goes by ("Google Drive · Work" when there are two). */
 export function useCloudDrives() {
@@ -56,9 +56,9 @@ export function CloudSave({ video }: { video: string }) {
       <div className="stack" style={{ gap: 8 }}>
         <div className="row wrap" style={{ gap: 8 }}>
           {drives.map((drive) => (
-            <button className="btn small" key={drive.folder} disabled={state.kind === 'saving'} onClick={() => void save(drive)}>
+            <Button size="small" key={drive.folder} disabled={state.kind === 'saving'} onClick={() => void save(drive)}>
               Save to {label(drive)}
-            </button>
+            </Button>
           ))}
         </div>
         <div role="status" className="muted-sm">

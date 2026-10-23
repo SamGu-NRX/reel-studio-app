@@ -6,7 +6,7 @@ import type { Go, SettingsSection } from '../nav'
 import { AnthropicKey, ConnectAI, DevProviders, downloadLine, useActiveEditor, useModelStatus } from '../components/connect'
 import { Connections } from '../components/Connections'
 import { usePermissionStatus } from '../components/permissions'
-import { FOLDER_APP, IS_MAC, Progress, Spinner } from '../components/ui'
+import { Button, FOLDER_APP, IS_MAC, Progress, Spinner } from '../components/ui'
 import { Icon } from '../components/icons'
 import { useUpdateState } from '../components/update'
 import { UpdateSettingsRow, WhatsNew } from '../components/UpdateSettings'
@@ -186,9 +186,9 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
             {hits?.size === 0 && (
               <div className="snone" data-testid="settings-no-match">
                 <p>No settings match “{query.trim()}”.</p>
-                <button className="btn small" onClick={clear}>
+                <Button size="small" onClick={clear}>
                   Clear search
-                </button>
+                </Button>
               </div>
             )}
 
@@ -220,12 +220,12 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
                 }
                 control={
                   <span className="sctl">
-                    <button className="btn small" onClick={() => reel.app.openFolder(info.root)}>
+                    <Button size="small" onClick={() => reel.app.openFolder(info.root)}>
                       Show in {FOLDER_APP}
-                    </button>
-                    <button className="btn small ghost" onClick={() => void change()}>
+                    </Button>
+                    <Button size="small" kind="tertiary" onClick={() => void change()}>
                       Change…
-                    </button>
+                    </Button>
                   </span>
                 }
               >
@@ -239,9 +239,9 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
                           : 'Press Allow so Reel Studio can use this folder.'}
                     </p>
                     {(perm.folder === 'denied' || perm.folder === 'not-asked') && (
-                      <button className="btn small" disabled={pending === 'folder'} onClick={() => void request('folder', () => reel.perm.allowFolder())} data-testid="folder-allow">
+                      <Button size="small" disabled={pending === 'folder'} onClick={() => void request('folder', () => reel.perm.allowFolder())} data-testid="folder-allow">
                         Allow
-                      </button>
+                      </Button>
                     )}
                   </div>
                 )}
@@ -278,19 +278,19 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
                   {alerts !== 'off' && (isMac || alerts === 'asking' || alerts === 'blocked') && (
                     <div className="srow-more row">
                       {isMac && (
-                        <button className="btn small" onClick={() => void reel.perm.openSettings('notifications')} data-testid="notifications-settings">
+                        <Button size="small" onClick={() => void reel.perm.openSettings('notifications')} data-testid="notifications-settings">
                           Open System Settings
-                        </button>
+                        </Button>
                       )}
                       {alerts === 'asking' && pending === null && (
-                        <button className="btn small ghost" onClick={() => void toggleAlerts(true)}>
+                        <Button size="small" kind="tertiary" onClick={() => void toggleAlerts(true)}>
                           Ask again
-                        </button>
+                        </Button>
                       )}
                       {alerts === 'blocked' && (
-                        <button className="btn small ghost" onClick={() => void toggleAlerts(true)}>
+                        <Button size="small" kind="tertiary" onClick={() => void toggleAlerts(true)}>
                           Try again
-                        </button>
+                        </Button>
                       )}
                     </div>
                   )}
@@ -381,13 +381,13 @@ function ListeningModel() {
         ) : s.checking ? (
           <span className="sval">Checking…</span>
         ) : s.downloading ? (
-          <button className="btn small ghost" onClick={() => void reel.model.cancel()} data-testid="pause-model">
+          <Button size="small" kind="tertiary" onClick={() => void reel.model.cancel()} data-testid="pause-model">
             Pause
-          </button>
+          </Button>
         ) : (
-          <button className="btn small" onClick={() => void reel.model.download()} data-testid="download-model">
+          <Button size="small" onClick={() => void reel.model.download()} data-testid="download-model">
             {paused ? 'Keep downloading' : 'Download'}
-          </button>
+          </Button>
         )
       }
     >

@@ -8,7 +8,7 @@ import { pausedSentence, pausedWords } from '../../../shared/pause'
 import type { Step } from '../../../shared/steps'
 import { droppedPaths, reel, userMessage } from '../api'
 import type { Go } from '../nav'
-import { Confirm, IS_MAC, PickFiles, Spinner, useFileDrop } from '../components/ui'
+import { Button, Confirm, IS_MAC, PickFiles, Spinner, useFileDrop } from '../components/ui'
 import { Icon } from '../components/icons'
 import { PhonePlayer } from '../components/Player'
 import type { SubtitleLook } from '../../../shared/caption-presets'
@@ -603,9 +603,9 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
         </span>
       )}
       {older && !compare && (
-        <button className="btn ghost small" onClick={() => watch(latestN!)} data-testid="version-latest">
+        <Button kind="tertiary" size="small" onClick={() => watch(latestN!)} data-testid="version-latest">
           Back to latest
-        </button>
+        </Button>
       )}
     </span>
   )
@@ -613,9 +613,9 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const actions = (
     <>
       {hasVersions && (
-        <button className={`btn ghost${drawer ? ' on' : ''}`} aria-pressed={!!drawer} onClick={() => (drawer ? (setDrawer(null), setHandId(null), setPreview(null)) : openDrawer('cut'))} data-testid="edit-myself">
+        <Button kind="tertiary" className={drawer ? 'on' : undefined} aria-pressed={!!drawer} onClick={() => (drawer ? (setDrawer(null), setHandId(null), setPreview(null)) : openDrawer('cut'))} data-testid="edit-myself">
           <Icon name="sliders" size={16} /> Edit it myself
-        </button>
+        </Button>
       )}
       {hasVersions && (
         <Outs
@@ -1034,7 +1034,7 @@ function PlannedStage({ title, onFiles }: { title: string; onFiles: (paths: stri
         <div className="planned-ask">
           <h2>Drop the video you filmed</h2>
           <p>A few takes are fine. Retakes and pauses come out.</p>
-          <PickFiles className="btn primary" label="Choose video" accept="video/*,.mov,.mp4,.m4v" onFiles={onFiles} />
+          <PickFiles kind="primary" label="Choose video" accept="video/*,.mov,.mp4,.m4v" onFiles={onFiles} />
         </div>
       </div>
     </div>

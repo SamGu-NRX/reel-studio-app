@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react'
+import { Button } from './ui'
 
 /** A bug on one screen must never leave the whole window blank. */
 export class ErrorBoundary extends Component<{ children: ReactNode; onReset: () => void; resetKey: string }, { error: Error | null }> {
@@ -24,9 +25,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode; onReset: () 
           <h2>Sorry, this screen hit a problem</h2>
           <p className="muted">Your reels are safe. Go back and try again. If it keeps happening, restart Reel Studio.</p>
           <div className="row">
-            <button className="btn primary" onClick={() => { this.setState({ error: null }); this.props.onReset() }}>
+            <Button kind="primary" onClick={() => { this.setState({ error: null }); this.props.onReset() }}>
               Back to Reels
-            </button>
+            </Button>
           </div>
         </div>
       </div>

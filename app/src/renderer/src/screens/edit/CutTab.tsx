@@ -5,7 +5,8 @@ import { previewText, subtitleLines } from '../../../../shared/subtitle-lines'
 import { reel, userMessage } from '../../api'
 import { useNotify } from '../../App'
 import { SubtitleLines } from '../../components/SubtitleLines'
-import { pressKeys, Seg, setP, takes, wordKeys, type TabProps } from './controls'
+import { Button, Segmented } from '../../components/ui'
+import { pressKeys, setP, takes, wordKeys, type TabProps } from './controls'
 
 type Captions = NonNullable<ProjectJson['captions']>
 export type CutMode = 'cut' | 'fix'
@@ -87,7 +88,7 @@ export function CutTab({
 
   return (
     <div className="edit-stack">
-      <Seg testid="cut-mode" label="What to do with the words" value={mode} options={MODES} onPick={(k) => onMode(k as CutMode)} />
+      <Segmented testid="cut-mode" label="What to do with the words" value={mode} options={MODES} onPick={onMode} />
       {mode === 'cut' ? (
         <>
           <p className="edit-hint">Click a word to cut it, or a crossed-out word to bring it back.</p>
@@ -166,7 +167,7 @@ export function CutTab({
           )}
           <div className="edit-field">
             <span className="edit-label">Letters</span>
-            <Seg
+            <Segmented
               testid="cap-case"
               label="Letters"
               value={caseOf(captions)}
@@ -190,9 +191,9 @@ export function CutTab({
                     <span className="edit-row-main">
                       {!c.at ? `“${c.from}” reads “${c.to}” everywhere` : c.to ? `“${c.from}” reads “${c.to}” in one place` : `“${c.from}” is off the subtitles in one place`}
                     </span>
-                    <button className="btn small ghost" onClick={() => setCaptions((x) => ({ ...x, corrections: (x.corrections ?? []).filter((y) => y.at !== c.at || y.from !== c.from) }))}>
+                    <Button size="small" kind="tertiary" onClick={() => setCaptions((x) => ({ ...x, corrections: (x.corrections ?? []).filter((y) => y.at !== c.at || y.from !== c.from) }))}>
                       Remove
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -214,9 +215,9 @@ export function CutTab({
             >
               <input className="input" aria-label="As heard" placeholder="As heard" value={fix.from} onChange={(e) => setFix({ ...fix, from: e.target.value })} />
               <input className="input" aria-label="Should read" placeholder="Should read" value={fix.to} onChange={(e) => setFix({ ...fix, to: e.target.value })} />
-              <button className="btn small" disabled={!fix.from.trim() || !fix.to.trim()}>
+              <Button type="submit" size="small" disabled={!fix.from.trim() || !fix.to.trim()}>
                 Fix
-              </button>
+              </Button>
             </form>
           </div>
         </>

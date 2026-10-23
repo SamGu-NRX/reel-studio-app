@@ -57,8 +57,6 @@ label.edit-row-main { flex-direction: row; align-items: center; gap: 10px; curso
 
 .sfx-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .sfx-controls select.input { height: 28px; width: auto; max-width: 100%; font-size: var(--fs-sm); padding: 0 30px 0 10px; background-position: right 8px center; }
-.sfx-controls .seg button { height: 24px; padding: 0 9px; }
-
 .picture-thumb { width: 36px; height: 48px; flex: none; border: 0; padding: 0; border-radius: var(--r-sm); overflow: hidden; background: var(--sunk); color: var(--ink-3); display: grid; place-items: center; cursor: pointer; }
 .picture-thumb:disabled { cursor: default; }
 .picture-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }

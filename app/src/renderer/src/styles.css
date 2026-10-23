@@ -83,8 +83,12 @@ a { color: inherit; }
 .icon { flex: none; display: block; }
 ::placeholder { color: var(--ink-3); opacity: 1; }
 
-:focus { outline: none; }
+/* A ring for the keyboard only (spec section 1). A bare :focus reset would also hide it: :focus outranks the
+   zero-specificity :where() ring. Text fields show focus with their own border and shadow, and what only script
+   focuses (a dialog, a step's heading) needs no ring. */
+:focus:not(:focus-visible) { outline: none; }
 :where(:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+:where(input:not([type="checkbox"], [type="radio"], [type="range"]), textarea, select, [tabindex="-1"]):focus-visible { outline: none; }
 
 /* Thin scrollbars on both systems (no Windows arrows). Only the ::-webkit-scrollbar rules: setting the
    standard scrollbar-width/-color makes Chromium ignore these and draw its own (with arrows on Windows). */
@@ -317,11 +321,25 @@ html.kb .switch { transition: none; }
 .kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 4px; background: var(--sunk); font-size: var(--fs-xs); font-weight: 600; color: var(--ink-3); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
-/* the prototype's segmented control: a sunk track, the chosen side lifted */
-.seg { display: inline-flex; align-self: flex-start; padding: 2px; gap: 2px; border-radius: var(--r-md); background: var(--sunk); }
-.seg button { height: 28px; padding: 0 12px; border: 0; border-radius: var(--r-sm); background: transparent; font: inherit; font-size: var(--fs-sm); font-weight: 560; color: var(--ink-2); cursor: pointer; }
-.seg button:hover:not(.on) { color: var(--ink); }
-.seg button.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(22, 30, 26, .12), 0 0 0 .5px rgba(22, 30, 26, .08); }
+/* The one segmented control (ui.tsx Segmented): a sunk pill track 28 px tall, so it sits level with .btn.small and
+   small selects; equal segments; the chosen one on a lifted thumb that slides, transform only. */
+.segmented {
+  position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-self: flex-start; flex: none;
+  padding: 2px; border-radius: 999px; background: var(--sunk); isolation: isolate;
+}
+.segmented > button {
+  position: relative; z-index: 1; height: 24px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent;
+  font: inherit; font-size: var(--fs-sm); font-weight: 560; color: var(--ink-2); white-space: nowrap; cursor: pointer;
+}
+.segmented > button[aria-checked="true"] { color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .segmented > button[aria-checked="false"]:hover { color: var(--ink); } }
+.segmented > button:focus-visible { outline-offset: 0; }
+.seg-thumb {
+  position: absolute; top: 2px; bottom: 2px; left: 2px; border-radius: 999px; background: var(--surface); pointer-events: none;
+  box-shadow: 0 1px 2px rgba(22, 30, 26, .12), 0 0 0 .5px rgba(22, 30, 26, .08); transition: transform 180ms cubic-bezier(.2, .8, .2, 1);
+}
+html.kb .seg-thumb { transition: none; }
+@media (prefers-reduced-motion: reduce) { .seg-thumb { transition: none; } }
 .pick-words { line-height: 2.1; font-size: var(--fs-md); max-height: 220px; overflow-y: auto; overflow-x: hidden; padding: 4px 0; }
 .input, .textarea, select.input {
   width: 100%; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong);

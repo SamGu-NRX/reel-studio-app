@@ -4,7 +4,7 @@ import { createJobManager } from '../src/main/jobs'
 import { createPauser, pauseFor, quitQuestion } from '../src/main/pause'
 import { projectDir, readAppState, updateAppState } from '../src/main/store'
 import { setupPaths } from './helpers'
-import { pausedSentence, pausedWords } from '../src/shared/pause'
+import { pauseLine, pausedSentence, pausedWords } from '../src/shared/pause'
 
 describe('pauseFor: what pauses instead of failing (ux-foundation-b.md 3.4, 7)', () => {
   const ctx = { kind: 'first-edit' as const, online: true, slept: false, editor: 'Claude' }
@@ -109,6 +109,19 @@ describe('the words of a pause', () => {
     expect(pausedWords({ reason: 'sleep', until: null, editor: null }, now, 'PC')).toBe('Continues when your PC wakes')
     expect(pausedSentence({ reason: 'limit', until: at, editor: 'Claude' }, now, 'Mac')).toBe(`Your Claude plan is at its limit. It resets at ${time}, and this continues then.`)
     expect(pausedSentence({ reason: 'limit', until: null, editor: null }, now, 'Mac')).toBe('Your plan is at its limit. This continues when it resets.')
+  })
+  // fails if a paused card says only that it is paused, without why or what happens next
+  it('on a card, say why it stopped and what happens next, for each reason', () => {
+    const at = new Date(2026, 9, 23, 15, 40).toISOString()
+    const time = new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    const line = (p: Parameters<typeof pauseLine>[0]) => pauseLine(p, now, 'Mac')
+    expect(line(null)).toEqual({ why: 'You paused it', next: 'resumes where it stopped' })
+    expect(line({ reason: 'limit', until: at, editor: 'Claude' })).toEqual({ why: 'Claude plan limit', next: `continues at ${time}` })
+    expect(line({ reason: 'limit', until: new Date(2026, 9, 24, 9).toISOString(), editor: null })).toEqual({ why: 'Plan limit', next: 'continues tomorrow' })
+    expect(line({ reason: 'limit', until: null, editor: null })).toEqual({ why: 'Plan limit', next: 'continues when it resets' })
+    expect(line({ reason: 'offline', until: null, editor: null })).toEqual({ why: 'No internet', next: 'continues once online' })
+    expect(line({ reason: 'sleep', until: null, editor: null })).toEqual({ why: 'Your Mac slept', next: 'continues when it wakes' })
+    expect(line({ reason: 'quit', until: null, editor: null })).toEqual({ why: 'Reel Studio closed', next: 'continuing now' })
   })
   it('asks once before a quit, counting the reels being made', () => {
     expect(quitQuestion(0)).toBeNull()
