@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { createAI, executeTool, loadProject, newToolState, PythonEngineHost, saveProject, StyleStore, ToolContext } from '../src';
+import { createAI, executeTool, loadProject, newToolState, PythonEngineHost, saveProject, StyleStore, ToolContext, validateProject } from '../src';
 import { FakeHost, makeProject, ScriptedModel, call, tmpDir } from './helpers';
 
 const folders: string[] = [];
@@ -129,3 +129,18 @@ it('set_sfx takes the cut into a word range that follows a clip', async () => {
   const r = await executeTool(ctx, 'set_sfx', { sfx: [{ at: { cut: 'w0' }, sound: 'whoosh-quick' }] });
   expect(r.isError, String(r.content)).toBe(false);
 });
+
+// a join bridges two spoken ranges: after a clip there is none, and the engine plays a hard cut, so the AI must
+// never save one and then claim a J-cut
+it('refuses a join on the word range right after a clip, and keeps one between two word ranges', async () => {
+  const { root, dir } = await makeProject();
+  folders.push(root);
+  const p = await loadProject(dir);
+  p.sources.push({ id: 's2', path: 'media/silent.mp4', duration: 4, fps: 30 });
+  const join = { transition: 'j' as const, frames: 6 };
+  p.cut.keep = [{ clip: 'c1', source: 's2', in: 1, out: 3 }, { from: 'w0', to: 'w1', join }];
+  expect(validateProject(p)).toContain('cut.keep[1].join: not allowed right after a clip');
+  p.cut.keep = [{ clip: 'c1', source: 's2', in: 1, out: 3 }, { from: 'w0', to: 'w1' }, { from: 'w3', to: 'w4', join }];
+  expect(validateProject(p)).toEqual([]);
+});
+

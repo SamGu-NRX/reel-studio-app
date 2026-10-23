@@ -194,7 +194,7 @@ export function validateProject(p: unknown, transcript?: Transcript): string[] {
   if (!q.cut || !Array.isArray(q.cut.keep)) out.push('cut.keep must be an array');
   else if (!isNum(q.cut.gapCap) || q.cut.gapCap < 0) out.push('cut.gapCap must be a number >= 0');
   if (Array.isArray(q.cut?.keep)) q.cut.keep.forEach((a: any, i: number) => {
-    const problem = joinProblem(a?.join, i);
+    const problem = joinProblem(a?.join, i, i > 0 ? q.cut.keep[i - 1] : undefined);
     if (problem) out.push(`cut.keep[${i}].join: ${problem}`);
   });
   if (!q.captions || typeof q.captions.enabled !== 'boolean') out.push('captions.enabled must be a boolean');
@@ -523,9 +523,12 @@ export function approxDuration(t: Transcript, keep: CutItem[], gapCap: number): 
 
 const round = (x: number) => Math.round(x * 1000) / 1000;
 
-function joinProblem(join: unknown, index: number): string | null {
+/** `before`: the cut.keep item just before this range, when the caller has the whole cut. */
+function joinProblem(join: unknown, index: number, before?: unknown): string | null {
   if (join === undefined) return null;
   if (index === 0) return 'not allowed on the first range';
+  // a join bridges two spoken ranges; after a clip (multi-source) there is none, and the engine would play a hard cut
+  if (before && typeof before === 'object' && 'clip' in before) return 'not allowed right after a clip';
   if (!join || typeof join !== 'object') return 'needs transition and frames';
   const j = join as Partial<Join>;
   if (!['hard', 'j', 'l', 'smash'].includes(j.transition ?? '')) return 'transition must be hard, j, l or smash';
