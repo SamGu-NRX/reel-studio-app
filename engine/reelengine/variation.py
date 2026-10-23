@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import math
-import os
 import random
 import secrets
 from pathlib import Path
@@ -135,15 +136,42 @@ def make_variant(project: dict, variable: str, *, value=None) -> dict:
     return p
 
 
+def recover_transaction(project_dir: Path) -> None:
+    """Finish a durable trial intent before another engine read or write proceeds.
+
+    Call with the project owner lock held. Only the two recorded states are safe
+    to replay; an unrelated edit must never be replaced during crash recovery.
+    """
+    folder = Path(project_dir)
+    journal = folder / '.trial-transaction.json'
+    if not journal.exists():
+        return
+    transaction = projects.read_json(journal)
+    required = {'before_project', 'after_project', 'before_trials', 'after_trials'}
+    if (not isinstance(transaction, dict) or transaction.get('version') != 1
+            or not required <= transaction.keys()
+            or not all(isinstance(transaction[k], dict) for k in ('before_project', 'after_project'))
+            or not all(isinstance(transaction[k], list) for k in ('before_trials', 'after_trials'))):
+        _bad('The pending trial transaction is invalid. Preserve it for recovery.')
+    project_path, trial_path = folder / 'project.json', folder / 'trials.json'
+    current = projects.read_json(project_path)
+    trials = projects.read_json(trial_path) if trial_path.exists() else []
+    if (current not in (transaction['before_project'], transaction['after_project'])
+            or trials not in (transaction['before_trials'], transaction['after_trials'])):
+        raise EngineError('TRIAL_CONFLICT', 'The project or trials changed during trial recovery.',
+                          'The pending trial conflicts with a newer edit. Preserve both for recovery.')
+    if current != transaction['after_project']:
+        projects.write_json(project_path, transaction['after_project'])
+    if trials != transaction['after_trials']:
+        projects.write_json(trial_path, transaction['after_trials'])
+    journal.unlink()
+    projects._fsync_dir(folder)
+
+
 def create_variant(project_dir: Path, variable: str, *, value=None) -> dict:
-    """Save the new edit with its trial record and preserve the parent's version snapshot."""
+    """Commit one trial and retain its exact parent independently of rendered versions."""
     project_dir = Path(project_dir)
-    lock = project_dir / ".trial-lock"
-    try:
-        fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        _bad("Another trial is being saved. Try again when it finishes.")
-    try:
+    with projects.owner_lock(project_dir):
         parent = projects.load(project_dir)
         variant = make_variant(parent, variable, value=value)
         if variable == "hook":
@@ -155,22 +183,31 @@ def create_variant(project_dir: Path, variable: str, *, value=None) -> dict:
                 if a is None or b is None or b < a or seen.intersection(range(a, b + 1)):
                     _bad("The hook must use real, forward word IDs without repeating the body.")
                 seen.update(range(a, b + 1))
-        trial = {"parent_version": parent.get("version", 0), "variable": variable,
-                 "from": _value(parent, variable), "to": _value(variant, variable)}
+        # Check the revision even under the lock: a caller may have changed the
+        # project while constructing the alternative, before the intent exists.
+        if projects.load(project_dir) != parent:
+            raise EngineError('TRIAL_CONFLICT', 'The project changed while making the trial.',
+                              'The edit changed. Read it again before making a trial.')
         trial_path = project_dir / "trials.json"
         trials = projects.read_json(trial_path) if trial_path.exists() else []
         if not isinstance(trials, list):
             _bad("trials.json must contain a list of trials.")
-        snapshot = project_dir / "versions" / f"v{parent.get('version', 0)}" / "project.json"
-        if not snapshot.exists():
-            projects.write_json(snapshot, parent)
-        projects.write_json(trial_path, [*trials, trial])
-        try:
-            projects.save(project_dir, variant, touch=False)
-        except Exception:
-            projects.write_json(trial_path, trials)
-            raise
+        encoded = json.dumps(parent, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        parent_id = hashlib.sha256(encoded).hexdigest()
+        snapshot = f'trials/parents/{parent_id}.json'
+        snapshot_path = project_dir / snapshot
+        if snapshot_path.exists():
+            if projects.read_json(snapshot_path) != parent:
+                _bad('The saved trial parent does not match its identity.')
+        else:
+            projects.write_json(snapshot_path, parent)
+        trial = {"parent_version": parent.get("version", 0), "variable": variable,
+                 "from": _value(parent, variable), "to": _value(variant, variable),
+                 "parent_id": parent_id, "parent_snapshot": snapshot}
+        # Intent is durable before either public file changes. A restart completes
+        # it once under the owner lock, including exits between the two replacements.
+        projects.write_json(project_dir / '.trial-transaction.json', {
+            'version': 1, 'before_project': parent, 'after_project': variant,
+            'before_trials': trials, 'after_trials': [*trials, trial]})
+        recover_transaction(project_dir)
         return {"project": variant, "trial": trial}
-    finally:
-        os.close(fd)
-        lock.unlink()

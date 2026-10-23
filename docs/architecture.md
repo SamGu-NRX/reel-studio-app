@@ -212,7 +212,22 @@ most one every 2 seconds, under the voice),
 `seed`, `hook`, `cover`, `caption`, or `brightness`. The editor supplies the alternative hook word
 range, cover, or post caption. Seed trials generate a new seed in the same style; brightness
 trials multiply footage exposure by 1.08 or 0.92. `trials.json` beside the project records
-`{parent_version, variable, from, to}`. The parent snapshot is preserved before the edit changes.
+`{parent_version, variable, from, to}`. These fields and their types remain unchanged. New
+records also include `parent_id` and `parent_snapshot`, a project-relative path under
+`trials/parents/`. That file is the exact pre-trial project, identified by its SHA-256 digest.
+`parent_version` remains the last final render number; several unrendered edits can share it.
+Comparison readers, including the learning loop, must use `parent_snapshot` when present and
+fall back to the rendered version only for older records. Trials never create or overwrite a
+rendered version snapshot.
+
+Engine project reads, writes and final render version updates share `.project-owner.lock`.
+The OS releases ownership when a process exits; the file stays in place so waiters keep locking
+the same file. A trial checks that its parent is still current, then durably records both states
+and both trial logs in `.trial-transaction.json` before replacing either public file. It writes
+the project first and the trial log second. The next engine project access finishes an interrupted
+transaction under the same lock. Recovery refuses to overwrite a state outside that transaction.
+Non-engine writers must coordinate with the owner lock; this lock does not cover independent
+filesystem writes.
 
 For projects with `cutStyle`, one RNG resolves the framing scale, starting framing, card lead,
 cadence phase, tied accent choices, and existing J/L frame offsets. `set_zoom` accepts an optional

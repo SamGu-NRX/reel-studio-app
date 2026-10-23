@@ -98,13 +98,38 @@ def test_variant_changes_exactly_one_variable(tmp_path, variable, value, path):
 def test_trials_record_changes_and_keep_parent_snapshot(tmp_path):
     from reelengine.variation import create_variant
     p, _ = reel(tmp_path)
-    result = create_variant(tmp_path, "caption", value="A different caption")
-    assert result["trial"] == {"parent_version": 3, "variable": "caption", "from": "", "to": "A different caption"}
-    assert project.read_json(tmp_path / "trials.json") == [result["trial"]]
-    assert project.load(tmp_path)["post"]["caption"] == "A different caption"
+    # A pre-existing rendered snapshot must never be repurposed for a trial.
+    project.write_json(tmp_path / "versions" / "v3" / "project.json", p)
+    identities = []
+    cases = [("caption", "A different caption"), ("brightness", 8),
+             ("cover", {"atSourceTime": 2, "source": "s1", "text": "Bread"}),
+             ("hook", {"from": "w10", "to": "w19"}), ("seed", None)]
+    for variable, value in cases:
+        before = project.load(tmp_path)
+        result = create_variant(tmp_path, variable, value=value)
+        trial = result["trial"]
+        assert trial["parent_version"] == 3
+        assert trial["variable"] == variable
+        snapshot = project.read_json(tmp_path / trial.get("parent_snapshot", "versions/v3/project.json"))
+        assert snapshot == before
+        identities.append(trial.get("parent_id", f"v{trial['parent_version']}"))
+        # The exact parent, with only this trial's variable applied, is the child.
+        expected = copy.deepcopy(snapshot)
+        if variable == "seed":
+            expected["cutStyle"]["seed"] = trial["to"]
+        elif variable == "hook":
+            expected["cut"]["keep"][0] = trial["to"]
+        elif variable == "cover":
+            expected["cover"] = trial["to"]
+        elif variable == "caption":
+            expected["post"]["caption"] = trial["to"]
+        else:
+            expected["exposure"] = trial["to"]
+        assert project.load(tmp_path) == expected == result["project"]
+        assert project.read_json(tmp_path / "trials.json")[-1] == trial
+    assert len(set(identities)) == 5
+    assert len(project.read_json(tmp_path / "trials.json")) == 5
     assert project.read_json(tmp_path / "versions" / "v3" / "project.json") == p
-    create_variant(tmp_path, "brightness", value=8)
-    assert len(project.read_json(tmp_path / "trials.json")) == 2
 
 
 def test_old_project_is_unchanged(tmp_path):
@@ -215,3 +240,55 @@ def test_accent_ties_only_choose_kept_moments(tmp_path):
         effective, _ = resolve(p, tl)
         assert all(tl.is_kept(z["anchor"]["from"]) and tl.is_kept(z["anchor"]["to"])
                    for z in effective["zooms"])
+
+
+def test_trial_does_not_overwrite_a_concurrent_render_version(tmp_path, monkeypatch):
+    from reelengine import variation
+    p, _ = reel(tmp_path)
+    original = variation.make_variant
+
+    def interleaved(parent, variable, *, value=None):
+        result = original(parent, variable, value=value)
+        rendered = project.load(tmp_path)
+        rendered["version"] = 4
+        project.save(tmp_path, rendered, touch=False)
+        return result
+
+    monkeypatch.setattr(variation, "make_variant", interleaved)
+    with pytest.raises(EngineError, match="changed"):
+        variation.create_variant(tmp_path, "caption", value="Trial caption")
+    assert project.load(tmp_path)["version"] == 4
+    assert project.load(tmp_path)["post"]["caption"] == p["post"]["caption"]
+    assert not (tmp_path / "trials.json").exists()
+
+
+@pytest.mark.parametrize("kill_after", ["project.json", "trials.json"])
+def test_interrupted_trial_recovers_project_and_log_and_releases_lock(tmp_path, kill_after):
+    import subprocess
+    import sys
+    from reelengine import variation
+    before, _ = reel(tmp_path)
+    code = r"""
+import os, sys
+from pathlib import Path
+from reelengine import project, variation
+folder = Path(sys.argv[1])
+original = project.write_json
+def interrupt(path, data, *args, **kwargs):
+    original(path, data, *args, **kwargs)
+    if Path(path) == folder / sys.argv[2]:
+        os._exit(73)
+project.write_json = interrupt
+variation.create_variant(folder, 'caption', value='Interrupted caption')
+"""
+    child = subprocess.run([sys.executable, '-c', code, str(tmp_path), kill_after], timeout=20)
+    assert child.returncode == 73
+    # Opening the project completes the durable transaction before another edit starts.
+    recovered = project.load(tmp_path)
+    trials = project.read_json(tmp_path / 'trials.json')
+    assert recovered['post']['caption'] == 'Interrupted caption'
+    assert len(trials) == 1 and trials[0]['to'] == 'Interrupted caption'
+    again = variation.create_variant(tmp_path, 'brightness', value=8)
+    assert again['project']['post']['caption'] == 'Interrupted caption'
+    assert len(project.read_json(tmp_path / 'trials.json')) == 2
+    assert project.read_json(tmp_path / trials[0]['parent_snapshot']) == before

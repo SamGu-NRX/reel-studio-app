@@ -220,3 +220,44 @@ def test_legacy_and_explicit_hard_pcm_match_pre_join_engine(tmp_path):
     _, _, hard, hard_ctx = fixture_project(tmp_path, "hard", frames=12)
     explicit = render.render_voice(hard_ctx, hard.segments, paths, tmp_path / "hard.wav")
     np.testing.assert_array_equal(read_pcm(explicit), pcm)
+
+
+@pytest.mark.parametrize('kind', ['j', 'l'])
+def test_two_seeds_change_rendered_bridge_timing_without_moving_words(tmp_path, kind):
+    """Fails if seeded offsets are reported but absent from the rendered PCM."""
+    p, words, _, _ = fixture_project(tmp_path, kind, frames=8)
+    p['cutStyle'] = {'preset': 'standard', 'seed': 0}
+    paths, _ = tones(tmp_path)
+    hard = copy.deepcopy(p)
+    hard['cut']['keep'][1].pop('join')
+    hard_tl = project.timeline(tmp_path, hard, words)
+    hard_ctx = render.make_ctx(tmp_path, hard, hard_tl, False, tmp_path, tmp_path)
+    baseline = read_pcm(render.render_voice(hard_ctx, hard_tl.segments, paths, tmp_path / 'seed_hard.wav'))[:, 0]
+    join = hard_tl.segments[1].out_start
+    regions = []
+    outputs = []
+    for seed in (0, 4):
+        p['cutStyle']['seed'] = seed
+        tl = project.timeline(tmp_path, p, words)
+        ctx = render.make_ctx(tmp_path, p, tl, False, tmp_path, tmp_path)
+        pcm = read_pcm(render.render_voice(ctx, tl.segments, paths, tmp_path / f'seed_{seed}.wav'))[:, 0]
+        changed = np.flatnonzero(abs(pcm - baseline) > .0002)
+        assert changed.size
+        regions.append((changed[0] / SR, changed[-1] / SR))
+        reported = ctx.variation['jlOffsets'][0]['frames'] / 30
+        measured = join - regions[-1][0] if kind == 'j' else regions[-1][1] - join
+        assert measured == pytest.approx(reported, abs=.007)
+        outputs.append(pcm)
+        assert len(pcm) == len(baseline)
+        assert tl.words_out == hard_tl.words_out
+        # Outside the bridge both seeds keep the exact hard-cut speech samples.
+        for wid in ('w1', 'w4'):
+            a = round((tl.word_out_time(wid) + .25) * SR)
+            np.testing.assert_array_equal(pcm[a:a + 960], baseline[a:a + 960])
+    assert not np.array_equal(*outputs)
+    edge = 0 if kind == 'j' else 1
+    assert abs(regions[0][edge] - regions[1][edge]) >= 1 / 30 - .002
+    if kind == 'j':
+        assert all(b <= join + .007 for a, b in regions)
+    else:
+        assert all(a >= join - .007 for a, b in regions)

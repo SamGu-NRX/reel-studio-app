@@ -1097,9 +1097,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
         if not preview and int(proj.get("version") or 0) != version:
             # Re-read: an edit saved during this 1-2 minute render must survive. Patch the one field
             # render owns instead of writing back the dict loaded at the start.
-            fresh = projmod.load(project_dir)
-            fresh["version"] = version          # project.version = the last FINAL version
-            projmod.save(project_dir, fresh)
+            projmod.update_version(project_dir, version)
     progress(STAGE, 100, "Your video is ready", force=True)
     return result
 
