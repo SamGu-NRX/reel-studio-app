@@ -39,7 +39,7 @@ def test_seeded_vocabulary_renders_in_sync_with_expected_duration(tmp_path, monk
     p['captions']['enabled'] = False
     song = tmp_path / 'media' / 'click.flac'
     subprocess.run([tools.ffmpeg(), '-v', 'error', '-f', 'lavfi', '-i',
-                    'aevalsrc=if(lt(mod(t\\,0.5108556833)\\,0.015)\\,0.8*sin(2*PI*1000*t)\\,0):s=48000:d=12',
+                    'aevalsrc=if(lt(mod(t\\,0.5)\\,0.015)\\,0.8*sin(2*PI*1000*t)\\,0):s=48000:d=12',
                     '-ac', '2', str(song)], check=True)
     p['music'].update({'track': 'media/click.flac', 'enabled': True, 'level': 'quiet'})
     p['sfx'] = [{'at': {'word': 'w4'}, 'sound': 'pop-soft'}]
