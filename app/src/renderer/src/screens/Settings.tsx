@@ -17,10 +17,11 @@ import { Disclosure } from '../components/provider-row'
 import { findSettings, SECTIONS, SETTING_IDS, SETTINGS, type SectionId, type SettingId } from '../components/settings-index'
 import { SearchHits, SettingRow, Switch } from '../components/settings-rows'
 import '../components/settings.css'
+import { StockKeys } from '../components/stock-keys'
 
 /** Where the older section names (nav.ts) land now. */
 const SECTION_OF: Record<SettingsSection, SectionId> = { ai: 'editor', listen: 'storage', where: 'storage', notify: 'notifications', privacy: 'privacy', about: 'about' }
-const ADVANCED: SettingId[] = ['model-edits', 'model-checks', 'model-titles', 'own-server', 'api-key']
+const ADVANCED: SettingId[] = ['model-edits', 'model-checks', 'model-titles', 'own-server', 'api-key', 'stock-keys']
 const REPO_FILE = (f: string): string => `https://github.com/${RELEASES_REPO}/blob/main/${f}`
 
 export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i: AppInfo) => void; go?: Go; section?: SettingsSection }) {
@@ -154,6 +155,7 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
       <Models info={info} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
       <Connections onConnected={setActive} />
       <AnthropicKey active={active} onConnected={setActive} />
+      <StockKeys />
     </>
   )
 
@@ -224,7 +226,7 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
               {hits ? (
                 ADVANCED.some(shown) && advanced
               ) : (
-                <Disclosure label="Advanced" hint="Models by role, your own AI server, an API key" open={advancedOpen} onToggle={() => setAdvancedOpen((o) => !o)} testid="settings-advanced">
+                <Disclosure label="Advanced" hint="Models by role, your own AI server, API keys" open={advancedOpen} onToggle={() => setAdvancedOpen((o) => !o)} testid="settings-advanced">
                   {advanced}
                 </Disclosure>
               )}

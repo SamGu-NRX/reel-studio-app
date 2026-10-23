@@ -23,6 +23,7 @@ export const SETTINGS = {
   'model-titles': { section: 'editor', label: 'Writes titles', synonyms: [...MODEL_WORDS, 'writer', 'titles', 'summaries', 'small model', 'fast model'] },
   'own-server': { section: 'editor', label: 'Your own AI server', synonyms: ['server', 'local', 'self-hosted', 'Ollama', 'LM Studio', 'OpenAI-compatible', 'Anthropic-compatible', 'endpoint', 'base URL', 'proxy', 'custom', 'advanced'] },
   'api-key': { section: 'editor', label: 'Anthropic API key', synonyms: ['key', 'API', 'token', 'console', 'billing', 'pay as you go', 'advanced'] },
+  'stock-keys': { section: 'editor', label: 'Stock photos and footage', synonyms: ['stock', 'Pexels', 'Pixabay', 'Openverse', 'photos', 'footage', 'b-roll', 'pictures', 'key', 'API', 'advanced'] },
   instagram: { section: 'posting', label: 'Instagram', synonyms: ['post', 'posting', 'publish', 'upload', 'social', 'platforms', 'TikTok', 'YouTube', 'Shorts'] },
   'library-folder': { section: 'storage', label: 'Library folder', synonyms: ['folder', 'location', 'where', 'storage', 'save', 'saved', 'path', 'directory', 'Movies', 'Documents', 'Finder', 'Explorer', 'disk', 'files', 'move'] },
   'listening-model': { section: 'storage', label: 'Listening model', synonyms: ['subtitles', 'captions', 'transcript', 'transcription', 'speech', 'speech to text', 'Whisper', 'WhisperX', 'words', 'voice', 'download', 'offline'] },

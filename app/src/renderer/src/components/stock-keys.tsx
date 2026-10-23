@@ -1,57 +1,124 @@
+// Settings › Editor › Advanced: free API keys that let the AI editor search Pexels and Pixabay for stock photos
+// and footage (stock-search). The AI package keeps each key in safe storage; the page only sends it once.
+// Openverse image search needs no key. Drawn like the Anthropic key row beside it.
 import { useEffect, useState } from 'react'
 import { reel, userMessage } from '../api'
+import { Icon } from './icons'
+import { ProviderRow } from './provider-row'
+import { Spinner } from './ui'
 
 const PROVIDERS = [
-  { id: 'pexels', label: 'Pexels', url: 'https://www.pexels.com/api/' },
-  { id: 'pixabay', label: 'Pixabay', url: 'https://pixabay.com/api/docs/' }
+  { id: 'pexels', name: 'Pexels', url: 'https://www.pexels.com/api/' },
+  { id: 'pixabay', name: 'Pixabay', url: 'https://pixabay.com/api/docs/' }
 ] as const
+type StockId = (typeof PROVIDERS)[number]['id']
 
 export function StockKeys() {
-  const [connected, setConnected] = useState<Set<string> | null>(null)
-  const [error, setError] = useState('')
+  const [saved, setSaved] = useState<Set<StockId> | null>(null)
+  const [error, setError] = useState<string | null>(null)
   useEffect(() => {
-    reel.ai.stockProviders().then(rows => setConnected(new Set(rows.filter(r => r.connected).map(r => r.id)))).catch(e => setError(userMessage(e)))
+    reel.ai
+      .stockProviders()
+      .then((rows) => setSaved(new Set(rows.filter((r) => r.connected && r.id !== 'openverse').map((r) => r.id as StockId))))
+      .catch((e) => setError(userMessage(e)))
   }, [])
-  const refresh = (id: string, on: boolean) => setConnected(previous => {
-    const next = new Set(previous)
-    if (on) next.add(id)
-    else next.delete(id)
-    return next
-  })
-  return <section className="panel">
-    <h2>Stock photos and footage</h2>
-    <p className="muted" style={{ margin: '6px 0 14px' }}>Add free API keys to let your AI editor find stock media. Keys are stored securely on this computer. Openverse image search works without a key.</p>
-    {error && <p role="alert">{error}</p>}
-    {PROVIDERS.map(provider => <StockKey key={provider.id} provider={provider} connected={connected?.has(provider.id) ?? false} ready={connected !== null} onSaved={refresh} />)}
-    <p className="muted-sm">Photos and videos provided by <a href="https://www.pexels.com" target="_blank" rel="noreferrer">Pexels</a> and <a href="https://pixabay.com" target="_blank" rel="noreferrer">Pixabay</a>. Image search also uses <a href="https://openverse.org" target="_blank" rel="noreferrer">Openverse</a>. Required credits are added to your post caption.</p>
-  </section>
+  const mark = (id: StockId, on: boolean) =>
+    setSaved((was) => {
+      const next = new Set(was)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  return (
+    <>
+      {PROVIDERS.map((p) => (
+        <StockKey key={p.id} provider={p} saved={saved?.has(p.id) ?? false} ready={saved !== null} loadError={error} onSaved={mark} />
+      ))}
+    </>
+  )
 }
 
-function StockKey({ provider, connected, ready, onSaved }: {
-  provider: typeof PROVIDERS[number]; connected: boolean; ready: boolean; onSaved: (id: string, on: boolean) => void
+function StockKey({ provider, saved, ready, loadError, onSaved }: {
+  provider: (typeof PROVIDERS)[number]
+  saved: boolean
+  ready: boolean
+  loadError: string | null
+  onSaved: (id: StockId, on: boolean) => void
 }) {
+  const [open, setOpen] = useState(false)
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
   const save = async (value: string | null) => {
-    setBusy(true); setError(''); setMessage('')
+    if (busy || (value !== null && !value.trim())) return
+    setBusy(true)
+    setError(null)
     try {
-      await reel.ai.setStockKey(provider.id, value)
-      setKey(''); onSaved(provider.id, !!value)
-      setMessage(value ? 'Key saved. It will be checked when you search.' : 'Key removed.')
-    } catch (e) { setError(userMessage(e)) }
-    finally { setBusy(false) }
+      await reel.ai.setStockKey(provider.id, value === null ? null : value.trim())
+      setKey('')
+      setOpen(false)
+      onSaved(provider.id, value !== null)
+    } catch (e) {
+      setError(userMessage(e))
+    } finally {
+      setBusy(false)
+    }
   }
-  return <form style={{ marginBottom: 18 }} onSubmit={e => { e.preventDefault(); if (key.trim()) void save(key.trim()) }}>
-    <label htmlFor={`stock-${provider.id}`}>{provider.label} API key</label>
-    <p id={`stock-help-${provider.id}`} className="muted-sm" style={{ margin: '4px 0 8px' }}>{connected ? 'A key is saved. Paste a new key to replace it.' : 'No key saved. This provider is skipped.'} <a href={provider.url} target="_blank" rel="noreferrer">Get a free {provider.label} key</a></p>
-    <div className="row" style={{ flexWrap: 'wrap' }}>
-      <input id={`stock-${provider.id}`} className="input" type="password" value={key} onChange={e => setKey(e.target.value)} autoComplete="off" spellCheck={false} aria-describedby={`stock-help-${provider.id}`} disabled={busy || !ready} style={{ flex: '1 1 220px', minWidth: 0 }} />
-      <button className="btn" type="submit" disabled={busy || !ready || !key.trim()}>{busy ? 'Saving…' : 'Save key'}</button>
-      {connected && <button className="btn ghost" type="button" disabled={busy} onClick={() => void save(null)}>Remove key</button>}
-    </div>
-    <p role="status" className="muted-sm">{message}</p>
-    {error && <p role="alert">{error}</p>}
-  </form>
+
+  const problem = error ?? loadError
+  return (
+    <ProviderRow
+      id={provider.id}
+      setting="stock-keys"
+      name={`${provider.name} stock photos and footage`}
+      mark={<Icon name="key" size={20} />}
+      tone={problem ? 'error' : saved ? 'ok' : 'plain'}
+      status={problem ?? (saved ? 'Key saved. Your editor can search it.' : 'No key, so your editor skips it. Openverse pictures need none.')}
+      action={
+        !ready || open ? null : saved ? (
+          <button className="btn small ghost" disabled={busy} onClick={() => void save(null)} data-testid={`stock-remove-${provider.id}`}>
+            {busy && <Spinner />} Remove key
+          </button>
+        ) : (
+          <button className="btn small" onClick={() => setOpen(true)} data-testid={`stock-add-${provider.id}`}>
+            Add key
+          </button>
+        )
+      }
+    >
+      {open && (
+        <div className="pv-more">
+          <div className="row">
+            <input
+              className="input"
+              type="password"
+              autoFocus
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={`Paste your ${provider.name} API key`}
+              aria-label={`${provider.name} API key`}
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void save(key)
+                if (e.key === 'Escape') setOpen(false)
+              }}
+              data-testid={`stock-key-${provider.id}`}
+            />
+            <button className="btn small" onClick={() => void save(key)} disabled={!key.trim() || busy} data-testid={`stock-save-${provider.id}`}>
+              {busy && <Spinner />} Save key
+            </button>
+          </div>
+          <p className="muted-sm">
+            Free from{' '}
+            <a href={provider.url} target="_blank" rel="noreferrer">
+              {provider.name}
+            </a>
+            . Credits the photos need are added to your post caption.
+          </p>
+        </div>
+      )}
+    </ProviderRow>
+  )
 }
