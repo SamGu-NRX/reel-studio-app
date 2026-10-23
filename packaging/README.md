@@ -13,6 +13,7 @@ Proven on Windows x64 and macOS arm64 by `spike/`.
 | `make-config.js` | Fills the template's `${env.RS_*}` with absolute paths -> `.build/electron-builder.resolved.yml`. |
 | `after-pack.js` | electron-builder hook: pre-compiles Python bytecode inside the packed app before signing. |
 | `build-win.ps1` / `build-mac.sh` | One command each: fetch runtime, build the app JS, package. `-Spike` / `--spike` packages the spike instead of `app/`. |
+| `check-win-unpacked.ps1` | Fails if `release\win-unpacked\resources` holds a `.venv` (the README's engine dev venv). `build-win.ps1` runs it after packaging. |
 | `test-win-install.ps1` | Silent-installs a built installer into a folder with spaces, runs `--self-test`, prints every check, uninstalls. |
 | `test-mac-install.sh` | Copies the app out of a `.dmg` into a folder with spaces, fails unless codesign, Gatekeeper (`spctl`) and the stapled ticket pass (`--unsigned` reports them for a local build), then runs `--self-test` with a time limit. The app (or the spike) uses a test profile next to the copy, kept between runs; `--fresh` empties it, so the spike downloads its speech model again. The app's `--self-test` (`app/src/main/self-test.ts`) runs the engine's `doctor`, from a throw-away profile when none is given, and opens no window. |
 | `sign-mac.sh` | Developer ID sign (inside-out) + notarize + staple + dmg. Run it in a GUI session. Guide: `docs/signing-mac.md`. |
