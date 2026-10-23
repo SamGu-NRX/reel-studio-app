@@ -41,6 +41,23 @@ async function keepDamagedCopy(file: string): Promise<string> {
   }
 }
 
+/** A rule's words as the real store keeps them (cleanRuleText in ai/src/style.ts): one sentence, capitalised,
+ * ending in a full stop. */
+function cleanRule(text: string): string {
+  let clean = text.replace(/\s*—\s*/g, ', ').replace(/\s+/g, ' ').trim()
+  if (!clean) throw { code: 'EMPTY', userMessage: 'Type the rule first, or press Remove.' }
+  if (!/[.!?]$/.test(clean)) clean += '.'
+  return clean[0].toUpperCase() + clean.slice(1)
+}
+
+/** Rules with these equal are the same rule (normalize in ai/src/style.ts). */
+const sameRule = (s: string): string =>
+  s
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N} ]+/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
 /** My style.json: the rules, plus whatever else the real package stores there (kept on every write). */
 type StyleData = { rules: StyleRule[]; damaged?: string; [field: string]: unknown }
 
@@ -74,6 +91,21 @@ export const createMockAI: CreateAI = ({ host }) => {
     await fs.mkdir(host.reelStudioRoot(), { recursive: true })
     await writeJson(styleFile(), { ...s, rules })
   }
+  /** As the real package's StyleStore.add: the same words again turn a paused rule back on instead of adding a copy. */
+  const addRule = (text: string): Promise<{ added: boolean; rule: StyleRule }> =>
+    withStyle(async (s) => {
+      const dup = s.rules.find((r) => sameRule(r.text) === sameRule(text))
+      if (dup) {
+        if (dup.paused) {
+          delete dup.paused
+          await saveRules(s, s.rules)
+        }
+        return { added: false, rule: dup }
+      }
+      const rule = { id: randomUUID(), text, createdAt: new Date().toISOString() }
+      await saveRules(s, [...s.rules, rule])
+      return { added: true, rule }
+    })
 
   async function readProject(dir: string): Promise<any> {
     return JSON.parse(await fs.readFile(join(dir, 'project.json'), 'utf8'))
@@ -262,9 +294,18 @@ export const createMockAI: CreateAI = ({ host }) => {
       return withStyle(async (s) => typeof s.damaged === 'string' && existsSync(join(host.reelStudioRoot(), basename(s.damaged)))).catch(() => false)
     },
     async addStyleRule(text) {
-      const rule = { id: randomUUID(), text, createdAt: new Date().toISOString() }
-      await withStyle((s) => saveRules(s, [...s.rules, rule]))
-      return rule
+      return (await addRule(text)).rule
+    },
+    async updateStyleRule(id, patch) {
+      return withStyle(async (s) => {
+        const rule = s.rules.find((r) => r.id === id)
+        if (!rule) throw { code: 'NOT_FOUND', userMessage: 'That rule is not in My style any more.' }
+        if (patch.text !== undefined) rule.text = cleanRule(patch.text)
+        if (patch.paused === true) rule.paused = true
+        if (patch.paused === false) delete rule.paused
+        await saveRules(s, s.rules)
+        return rule
+      })
     },
     async removeStyleRule(id) {
       await withStyle((s) => saveRules(s, s.rules.filter((r) => r.id !== id)))
