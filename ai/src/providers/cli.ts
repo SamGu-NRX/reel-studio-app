@@ -230,7 +230,11 @@ function workDir(): string {
   return d;
 }
 
-export interface CliOptions { model?: string; bin?: string; /** args placed before the CLI's own (e.g. a script path) */ binArgs?: string[]; timeoutMs?: number; cwd?: string; extraArgs?: string[] }
+export interface CliOptions {
+  model?: string; bin?: string; /** args placed before the CLI's own (e.g. a script path) */ binArgs?: string[]; timeoutMs?: number; cwd?: string; extraArgs?: string[];
+  /** the CLI's environment; default childEnv() (no ANTHROPIC_*). Only the dev CLI's --claude-proxy sets it. */
+  env?: NodeJS.ProcessEnv;
+}
 
 function userLine(text: string, images: { label: string; img: ImagePart }[]): string {
   const content: any[] = [{ type: 'text', text }];
@@ -373,7 +377,7 @@ export class ClaudeCliProvider implements ModelProvider {
   }
 
   private startSession(key: string): LiveSession {
-    const child = spawn(this.o.bin ?? 'claude', this.args(), { cwd: this.o.cwd ?? workDir(), env: childEnv(), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(this.o.bin ?? 'claude', this.args(), { cwd: this.o.cwd ?? workDir(), env: this.o.env ?? childEnv(), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     const s: LiveSession = { child, key, next: 0, buf: '', closed: false, waiter: null, idle: null };
     let errTail = '';
     child.stderr.setEncoding('utf8').on('data', (d: string) => { errTail = (errTail + d).slice(-800); });
@@ -457,7 +461,7 @@ export class ClaudeCliProvider implements ModelProvider {
         trace(j);
         watch.line(j);
       };
-      r = await runProcess(this.o.bin ?? 'claude', args, line, { cwd: this.o.cwd ?? workDir(), signal: stop.signal, timeoutMs: this.o.timeoutMs ?? 600_000, onLine });
+      r = await runProcess(this.o.bin ?? 'claude', args, line, { cwd: this.o.cwd ?? workDir(), signal: stop.signal, timeoutMs: this.o.timeoutMs ?? 600_000, onLine, env: this.o.env });
     } catch (e: any) {
       if (watch.runaway) throw runawayError(watch.text);
       if (e instanceof AIError) throw e;

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // reelstudio-ai CLI (dev). Commands:
 //   pick-takes  --provider claude-cli|codex-cli|claude|replay --model M --in transcript.json --out cut.json [--record f.json]
-//   first-edit  --project DIR --provider P [--model M] [--engine-cwd DIR] [--root DIR] [--record f.json] [--draft-only]
+//   first-edit  --project DIR --provider P [--model M] [--engine-cwd DIR] [--root DIR] [--record f.json] [--draft-only] [--claude-proxy] [--session]
 //   apply-note  --project DIR --note "..." --provider P [...]
 //   write-script --idea "..." --provider P [...]
 import * as fs from 'node:fs';
@@ -14,7 +14,7 @@ import { pickTakes } from './editor';
 import { PythonEngineHost } from './engineHost';
 import { createAI } from './index';
 import { writeFileAtomic } from './project';
-import { devSettingsDir as defaultSettingsDir } from './safety';
+import { childEnv, devSettingsDir as defaultSettingsDir } from './safety';
 
 function parseArgs(argv: string[]): { cmd: string; flags: Record<string, string | true> } {
   const [cmd, ...rest] = argv;
@@ -29,12 +29,23 @@ function parseArgs(argv: string[]): { cmd: string; flags: Record<string, string 
   return { cmd: cmd ?? 'help', flags };
 }
 
+/** --claude-proxy: `claude` reaches a local Anthropic-compatible proxy through ANTHROPIC_BASE_URL and
+ * ANTHROPIC_AUTH_TOKEN (and its model aliases). ANTHROPIC_API_KEY never passes: the CLI would bill it instead. */
+function proxyEnv(): NodeJS.ProcessEnv {
+  const pass = /^ANTHROPIC_(BASE_URL|AUTH_TOKEN|DEFAULT_[A-Z]+_MODEL)$/;
+  const env = childEnv();
+  for (const [k, v] of Object.entries(process.env)) if (pass.test(k)) env[k] = v;
+  if (!env.ANTHROPIC_BASE_URL || !env.ANTHROPIC_AUTH_TOKEN) throw new Error('--claude-proxy needs ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN');
+  return env;
+}
+
 function makeProvider(flags: Record<string, string | true>, task: string): ModelProvider {
   const id = String(flags.provider ?? 'claude-cli');
   const model = typeof flags.model === 'string' ? flags.model : undefined;
   let p: ModelProvider;
   switch (id) {
-    case 'claude-cli': p = new ClaudeCliProvider({ model }); break;
+    // --session keeps one claude process for the whole run, as the app does (index.ts)
+    case 'claude-cli': p = new ClaudeCliProvider({ model, ...(flags.session ? { session: true } : {}), ...(flags['claude-proxy'] ? { env: proxyEnv() } : {}) }); break;
     case 'codex-cli': p = new CodexCliProvider({ model }); break;
     case 'claude': {
       const key = process.env.ANTHROPIC_API_KEY;
@@ -122,6 +133,8 @@ async function main() {
   process.stdout.write(`reelstudio-ai <command>
   pick-takes   --provider claude-cli|codex-cli|claude|replay [--model M] --in transcript.json --out cut.json [--record session.json]
   first-edit   --project DIR --provider P [--model M] [--engine-cwd DIR] [--root DIR] [--record session.json] [--draft-only]
+               [--claude-proxy]  claude-cli talks to ANTHROPIC_BASE_URL with ANTHROPIC_AUTH_TOKEN (never ANTHROPIC_API_KEY)
+               [--session]       claude-cli keeps one process for the whole edit, as the app does
   apply-note   --project DIR --note TEXT --provider P [...]
   write-script --idea TEXT --provider P [...]
   chatgpt-signin  [--settings DIR] --insecure-plaintext

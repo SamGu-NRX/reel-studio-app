@@ -14,6 +14,15 @@ export interface Source {
   [k: string]: unknown;
 }
 export interface WordAnchor { from: string; to: string }
+/** A cut.keep entry in source seconds, played exactly as given (no pause capping). For footage whose edit was
+ * chosen elsewhere, such as a sport clip, where capping the pauses between commentary lines cuts out the
+ * action. Mirrors engine/reelengine/cut.py. */
+export interface SecondsRange { source: string; start: number; end: number }
+export type KeepRange = WordAnchor | SecondsRange;
+export const isSecondsRange = (r: unknown): r is SecondsRange =>
+  !!r && typeof r === 'object' && typeof (r as any).start === 'number' && typeof (r as any).end === 'number';
+/** True when every kept range is in seconds: the cut is fixed and needs no speech (engine project.seconds_cut). */
+export const isSecondsCut = (keep: readonly KeepRange[]): boolean => keep.length > 0 && keep.every(isSecondsRange);
 export interface Word { id: string; source: string; s: number; e: number; w: string; [k: string]: unknown }
 export interface Transcript { words: Word[]; language?: string; [k: string]: unknown }
 
@@ -64,13 +73,44 @@ export interface NoteEntry {
   styleSuggestions?: string[];
 }
 
+/** A player the brief names. `image` is a Library/Images ref of their real headshot, when there is one. */
+export interface BriefPlayer { name: string; team: string; role?: string; number?: number; image?: string }
+/**
+ * What a video shows when it is not a talking head: here a moment from a football match. Optional; when
+ * present the first edit uses the match prompts (firstEditMatch.md, systemMatch.md), the cut stays as given,
+ * and no web pictures are searched or fetched: the only pictures are the brief's own images.
+ */
+export interface MatchBrief {
+  kind: 'match';
+  /** "Manchester United 1-1 Tottenham Hotspur, Premier League" */
+  match: string;
+  /** the team the account posts for, such as "Tottenham Hotspur" */
+  team: string;
+  opponent?: string;
+  /** what happens, in the producer's words */
+  moment: string;
+  /** "88'", "45+2'" */
+  minute?: string;
+  /** the score after the moment, such as "1-1" */
+  score?: string;
+  players: BriefPlayer[];
+  /** what a video model saw in the footage */
+  description?: string;
+  /** the title and post caption the producer planned; the edit may tighten them */
+  title?: string;
+  caption?: string;
+  hashtags?: string[];
+  /** any other facts the edit may state */
+  facts?: string[];
+}
+
 export interface Project {
   schemaVersion: 1;
   id: string; title: string; slug: string; createdAt: string; updatedAt: string; version: number;
   format: Format;
   sources: Source[];
   transcript: { file: string; language?: string };
-  cut: { keep: WordAnchor[]; gapCap: number; minSaving?: number; [k: string]: unknown };
+  cut: { keep: KeepRange[]; gapCap: number; minSaving?: number; [k: string]: unknown };
   captions: Captions;
   music: Music;
   broll: Broll[];
@@ -80,6 +120,7 @@ export interface Project {
   cover: Cover;
   post: Post;
   notes: NoteEntry[];
+  brief?: MatchBrief;
   [k: string]: unknown;
 }
 
@@ -168,7 +209,10 @@ export function validateProject(p: unknown, transcript?: Transcript): string[] {
       const problem = anchorProblem(idx, a);
       if (problem) out.push(`${where}: ${problem}`);
     };
-    q.cut.keep.forEach((a: any, i: number) => check(a, `cut.keep[${i}]`));
+    q.cut.keep.forEach((a: any, i: number) => {
+      if (!isSecondsRange(a)) return check(a, `cut.keep[${i}]`);
+      if (!isStr((a as any).source) || !(a.end > a.start) || a.start < 0) out.push(`cut.keep[${i}]: a seconds range needs source, start >= 0 and end > start`);
+    });
     q.broll.forEach((b: any, i: number) => check(b.anchor, `broll[${i}] (${b.id})`));
     q.zooms.forEach((z: any, i: number) => check(z.anchor, `zooms[${i}]`));
     (q.music?.automation ?? []).forEach((m: any, i: number) => check({ from: m.fromWord, to: m.toWord }, `music.automation[${i}]`));
@@ -332,13 +376,23 @@ export function anchorText(t: Transcript, a: WordAnchor): string {
   return anchorWords(t, a).map((w) => w.w.trim()).join(' ');
 }
 
-/** Kept words in output order. */
-export function keptWords(t: Transcript, keep: WordAnchor[]): Word[] {
-  return keep.flatMap((a) => anchorWords(t, a));
+/** Words a seconds range plays: those of its source whose midpoint lies in [start, end) (engine cut.py). */
+export function secondsWords(t: Transcript, r: SecondsRange): Word[] {
+  return t.words.filter((w) => w.source === r.source && (w.s + w.e) / 2 >= r.start && (w.s + w.e) / 2 < r.end);
 }
 
-export function isKept(t: Transcript, keep: WordAnchor[], wordId: string): boolean {
-  return keep.some((a) => anchorWords(t, a).some((w) => w.id === wordId));
+/** Words a kept range plays, in transcript order. */
+export function rangeWords(t: Transcript, r: KeepRange): Word[] {
+  return isSecondsRange(r) ? secondsWords(t, r) : anchorWords(t, r);
+}
+
+/** Kept words in output order. */
+export function keptWords(t: Transcript, keep: KeepRange[]): Word[] {
+  return keep.flatMap((a) => rangeWords(t, a));
+}
+
+export function isKept(t: Transcript, keep: KeepRange[], wordId: string): boolean {
+  return keep.some((a) => rangeWords(t, a).some((w) => w.id === wordId));
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}' ]+/gu, '').trim();
@@ -404,7 +458,7 @@ export function captionCorrectionProblem(kept: readonly Word[], corrections: Cap
 }
 
 /** Finds a phrase in the transcript (kept words first). Returns the inclusive anchor or null. */
-export function findPhrase(t: Transcript, phrase: string, keep?: WordAnchor[]): WordAnchor | null {
+export function findPhrase(t: Transcript, phrase: string, keep?: KeepRange[]): WordAnchor | null {
   const target = norm(phrase).split(/\s+/).filter(Boolean);
   if (!target.length) return null;
   const search = (words: Word[]) => {
@@ -420,14 +474,27 @@ export function findPhrase(t: Transcript, phrase: string, keep?: WordAnchor[]): 
 
 /**
  * Approximate output time of every kept word (seconds), using the same rule as the engine:
- * concatenate kept ranges, inter-word gaps capped at gapCap. The engine is authoritative;
- * this is used for planning (look_at_frames times, summaries) only.
+ * concatenate kept ranges, inter-word gaps capped at gapCap; a seconds range plays its whole span.
+ * The engine is authoritative; this is used for planning (look_at_frames times, summaries) only.
  */
-export function approxOutputTimes(t: Transcript, keep: WordAnchor[], gapCap: number): Map<string, { s: number; e: number }> {
+export function approxOutputTimes(t: Transcript, keep: KeepRange[], gapCap: number): Map<string, { s: number; e: number }> {
+  return approxTimeline(t, keep, gapCap).times;
+}
+
+function approxTimeline(t: Transcript, keep: KeepRange[], gapCap: number): { times: Map<string, { s: number; e: number }>; end: number } {
   const out = new Map<string, { s: number; e: number }>();
   let clock = 0;
   let prev: Word | null = null;
   for (const a of keep) {
+    if (isSecondsRange(a)) {
+      for (const w of secondsWords(t, a)) {
+        const s = clock + Math.max(0, w.s - a.start);
+        if (!out.has(w.id)) out.set(w.id, { s: round(s), e: round(Math.min(clock + (a.end - a.start), Math.max(s + 0.02, clock + w.e - a.start))) });
+      }
+      clock += a.end - a.start;
+      prev = null;
+      continue;
+    }
     const words = anchorWords(t, a);
     words.forEach((w, k) => {
       const contiguous = k > 0 && prev && prev.source === w.source;
@@ -439,13 +506,11 @@ export function approxOutputTimes(t: Transcript, keep: WordAnchor[], gapCap: num
       prev = w;
     });
   }
-  return out;
+  return { times: out, end: clock };
 }
 
-export function approxDuration(t: Transcript, keep: WordAnchor[], gapCap: number): number {
-  let d = 0;
-  for (const v of approxOutputTimes(t, keep, gapCap).values()) d = Math.max(d, v.e);
-  return round(d);
+export function approxDuration(t: Transcript, keep: KeepRange[], gapCap: number): number {
+  return round(approxTimeline(t, keep, gapCap).end);
 }
 
 const round = (x: number) => Math.round(x * 1000) / 1000;

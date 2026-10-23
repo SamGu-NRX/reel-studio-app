@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-export type PromptName = 'system' | 'firstEdit' | 'applyNote' | 'writeScript' | 'pickTakes' | 'review' | 'proofread';
+export type PromptName = 'system' | 'firstEdit' | 'applyNote' | 'writeScript' | 'pickTakes' | 'review' | 'proofread' | 'systemMatch' | 'firstEditMatch';
 
 export function defaultPromptsDir(): string {
   const candidates = [
