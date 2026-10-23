@@ -4,7 +4,7 @@ import { AgentEvent, AgentResult, AIError, EngineHost, ImagePart, ModelProvider,
 import { effectiveTokens, runAgent, RunAgentResult } from './agent';
 import type { LookupFn } from './safety';
 import { Prompts } from './prompts';
-import { StyleStore } from './style';
+import { StyleStore, StyleProposal, captionCaseProposal } from './style';
 import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProofread, doRender, unsureWords, executeTool, load, newToolState, resolveAsset, cleanSummary, renderEvent, operationStatus } from './tools';
 import { planFastNote } from './fastnote';
 import { LEDGER } from './assets';
@@ -271,8 +271,23 @@ async function firstLook(deps: EditorDeps, ctx: ToolContext, onEvent: (e: AgentE
   } catch { /* an older engine, or a failed preview: the AI edit goes on */ }
 }
 
+/** A new video starts from the person's typed My style rules. They go through the caption tool like any AI
+ * call, before the AI edits, so the AI (and later notes) can still change them. */
+async function applyMyStyle(deps: EditorDeps, projectDir: string): Promise<boolean> {
+  if (await deps.style.captionCase() !== 'lower') return false;
+  return !(await executeTool(newCtx(deps, projectDir, null, () => undefined), 'set_caption_style', { case: 'lower' })).isError;
+}
+
 export async function firstEdit(deps: EditorDeps, provider: ModelProvider | null, projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<EditResult> {
   await ensureAnalyzed(deps, projectDir, onEvent, signal);
+  const applied = await applyMyStyle(deps, projectDir);
+  const r = await editNewVideo(deps, provider, projectDir, onEvent, signal);
+  // the AI may still pick another case for this video; only say so when the video kept it
+  const kept = applied && (await loadProject(projectDir)).captions.style.case === 'lower';
+  return kept ? { ...r, summary: `${r.summary} I used lowercase captions from your My style.` } : r;
+}
+
+async function editNewVideo(deps: EditorDeps, provider: ModelProvider | null, projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<EditResult> {
   if (!provider) return deterministicEdit(deps, projectDir, onEvent, signal);
   const ctx = newCtx(deps, projectDir, provider, onEvent, signal, 3);
   const { p } = await load(ctx);
@@ -489,6 +504,8 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     return { ...newCtx(deps, projectDir, provider, onEvent, signal, 2), userNote: note, note: { id, file, dir }, jobId: opts.jobId };
   };
   const label = noteLabel(note, attached);
+  let committed: EditResult;
+  let started: Project;
   try {
     let ctx = await begin();
     const { p: p0 } = await load(ctx);
@@ -542,15 +559,16 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     // this note's files, plus files attached to an earlier note that THIS note put in the video ("when I say X")
     const placedNow = await placedAssets(projectDir, await loadProject(projectDir, ctx.note!.file));
     const recorded = [...refs, ...earlier.map((a) => a.asset).filter((r) => placedNow.has(r) && !refs.includes(r))];
-    const saved = await saveNote(deps, ctx, base, baseVersion, { text: note.trim(), label, summary, attachments: recorded }, opts.saveStyleRules !== false);
-    if (review && saved.version !== undefined) {
+    const result = await saveNote(deps, ctx, base, baseVersion, { text: note.trim(), label, summary, attachments: recorded }, opts.saveStyleRules !== false);
+    if (review && result.version !== undefined) {
       try {
-        await saveCheck(projectDir, saved.version, review.record);
+        await saveCheck(projectDir, result.version, review.record);
       } catch (e) {
-        console.warn(`Could not save check.json for v${saved.version}; keeping the committed note.`, e);
+        console.warn(`Could not save check.json for v${result.version}; keeping the committed note.`, e);
       }
     }
-    return { ...saved, ...(review ? { check: review.record } : {}) };
+    committed = { ...result, ...(review ? { check: review.record } : {}) };
+    started = p0;
   } catch (e) {
     if (!engineStuck(e)) {
       await restoreCredits(projectDir, creditsBefore);
@@ -562,6 +580,20 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     // version, never shown, and the app's job lane clears it (app store.ts cleanPartialVersions)
     await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
+  // read from the saved project; a failure here only skips the question, never the saved note
+  const version = committed.version;
+  const styleProposal = version === undefined ? null
+    : await loadProject(projectDir).then((saved) => rememberCaptionCase(deps, started, saved, version)).catch(() => null);
+  return styleProposal ? { ...committed, styleProposal } : committed;
+}
+
+/** A note that turned the captions lowercase, now committed in `version`: ask to keep that for new videos.
+ * Read from the saved project, so a case the AI set and then changed back asks nothing, and the question's
+ * words are fixed here, never taken from the note or the AI. */
+async function rememberCaptionCase(deps: EditorDeps, before: Project, after: Project, version: number): Promise<StyleProposal | null> {
+  if (after.captions.style.case !== 'lower' || before.captions.style.case === 'lower') return null;
+  if (await deps.style.hasCaptionCase()) return null;
+  return captionCaseProposal({ project: after.id, title: after.title, version });
 }
 
 const changedElsewhere = (): AIError =>

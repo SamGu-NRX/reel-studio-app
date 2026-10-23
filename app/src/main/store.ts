@@ -237,7 +237,8 @@ export async function addChat(
   actions?: ChatMessage['actions'],
   suggestion?: string,
   attachments?: ChatMessage['attachments'],
-  moment?: ChatMessage['moment']
+  moment?: ChatMessage['moment'],
+  proposal?: ChatMessage['proposal']
 ): Promise<string> {
   const id = randomUUID()
   await updateAppState(slug, (s) => {
@@ -246,7 +247,7 @@ export async function addChat(
       ...stamp({
         from, text, version,
         ...(actions?.length ? { actions } : {}), ...(suggestion ? { suggestion } : {}), ...(attachments?.length ? { attachments } : {}),
-        ...(moment ? { moment } : {})
+        ...(moment ? { moment } : {}), ...(proposal ? { proposal } : {})
       }),
       id
     })

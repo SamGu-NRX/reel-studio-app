@@ -1,21 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatAction, ChecklistItem, ExportResult, ProjectDetail, ProviderInfo, VersionInfo } from '../../../shared/api'
+import type { ChatAction, ChecklistItem, ExportResult, ProjectDetail, ProviderInfo } from '../../../shared/api'
 import { ACTION_LABELS } from '../../../shared/notes'
-import { versionTitle, versionTooltip } from '../../../shared/describe'
 import { clock } from '../../../shared/progress'
 import { EMPTY_LIVE, liveFromDetail, reduceLive, timeLeftWords, type LiveState } from '../../../shared/live'
-import { errorCode, reel, userMessage } from '../api'
+import { reel, userMessage } from '../api'
 import type { Go } from '../nav'
 import { Check, Confirm, FOLDER_APP, Modal, MoreMenu, Progress, Spinner, Thinking } from '../components/ui'
 import { SendToPhone } from '../components/SendToPhone'
-import { PlatformExportDialog } from '../components/PlatformExportDialog'
 import { Icon } from '../components/icons'
-import { PhonePlayer } from '../components/Player'
-import type { SubtitleLook } from '../../../shared/caption-presets'
+import { PhonePlayer, type SubtitleLook } from '../components/Player'
 import { EXPORT_EVENT, NOTE_DROP_DONE, useNotify } from '../App'
 import { ShowMeHow, type Tab } from './ShowMeHow'
 import { AttachmentChips, AttachmentThumb, useNoteAttachments } from '../components/NoteAttachments'
-import { NoteQueue } from '../components/NoteQueue'
 
 const ACTION_TAB: Partial<Record<ChatAction, Tab>> = {
   'open-cut': 'cut',
@@ -51,7 +47,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const [job, setJob] = useState<LiveState | null>(null)
   const [drawer, setDrawer] = useState<Tab | null>(null)
   const [exporting, setExporting] = useState<'busy' | ExportResult | null>(null)
-  const [platformPicker, setPlatformPicker] = useState(false)
   const [phoneFirst, setPhoneFirst] = useState(false) // export straight into "Send to my phone"
   const [postDraft, setPostDraft] = useState<string | null>(null)
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
@@ -64,7 +59,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   // Live subtitle preview from the drawer's Subtitles tab.
   const [preview, setPreview] = useState<{ look: SubtitleLook; text: string; at: number } | null>(null)
   const chatEnd = useRef<HTMLDivElement>(null)
-  const lastJob = useRef<string | null>(null)
+  const [answerError, setAnswerError] = useState<{ id: string; text: string } | null>(null)
   // pictures, GIFs and clips on the note being written (components/NoteAttachments.tsx)
   const att = useNoteAttachments(slug, notify)
   const [noteDrop, setNoteDrop] = useState(false)
@@ -73,13 +68,9 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const load = useCallback(
     async (selectLatest = false) => {
       try {
-        const startedBefore = lastJob.current
         const next = await reel.projects.get(slug)
         setD(next)
         if (next.job) setJob((cur) => (cur?.jobId === next.job!.id ? cur : liveFromDetail(next.job!)))
-        // Nothing runs: a progress row left from a job that has ended goes (it also keeps Export waiting).
-        // A job that started while this answer was on its way is newer than the answer, and stays.
-        else if (lastJob.current === startedBefore) setJob(null)
         const latest = next.versions[next.versions.length - 1]?.n ?? null
         setSelected((cur) => (selectLatest || cur === null || !next.versions.some((v) => v.n === cur) ? latest : cur))
       } catch (e) {
@@ -93,14 +84,8 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   useEffect(() => {
     void load(true)
     reel.ai.active().then(setProvider).catch(() => {})
-    const offQueue = reel.queue.onChange((s) => s === slug && void load())
-    const offJobs = reel.jobs.onEvent((e) => {
+    return reel.jobs.onEvent((e) => {
       if (e.slug !== slug) return
-      // a waiting note just started: its words move from the queue into the chat
-      if (e.type === 'status' && lastJob.current !== e.jobId) {
-        lastJob.current = e.jobId
-        void load()
-      }
       if (e.type === 'status' || e.type === 'reply' || e.type === 'tool') setJob((cur) => reduceLive(cur ?? EMPTY_LIVE, e))
       // a quick preview of the change: play it in the phone until the full-quality version is done
       else if (e.type === 'render' && e.draft) {
@@ -109,13 +94,9 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
       }
       else if (e.type === 'done' || e.type === 'error' || e.type === 'cancelled') {
         setJob(null)
-        void load(e.type === 'done' && e.version !== undefined)
+        void load(e.type === 'done')
       }
     })
-    return () => {
-      offQueue()
-      offJobs()
-    }
   }, [slug, load])
 
   // Scroll only the chat box to its last message. scrollIntoView would also scroll the page and
@@ -146,25 +127,24 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
       setExporting(await reel.projects.exportVersion(slug, version.n))
     } catch (e) {
       setExporting(null)
-      // The creator pressed Stop while the full-quality video was being made: nothing went wrong.
-      if (errorCode(e) !== 'CANCELLED') notify(userMessage(e), 'error')
+      notify(userMessage(e), 'error')
     }
   }, [version, job, exporting, slug, notify])
 
   // Cmd/Ctrl+E and File > Export.
   useEffect(() => {
-    const fn = () => { if (!platformPicker) void doExport() }
+    const fn = () => void doExport()
     window.addEventListener(EXPORT_EVENT, fn)
     return () => window.removeEventListener(EXPORT_EVENT, fn)
-  }, [doExport, platformPicker])
+  }, [doExport])
 
   if (!d) return <div className="page"><Spinner /></div>
 
-  const nameOf = (v: VersionInfo): string => v.wording?.title ?? (v.facts ? versionTitle(v.facts, d.words) : '')
-  const named = d.versions.some((v) => nameOf(v))
-
   const aiOff = !provider || !provider.connected || provider.id === 'none'
   const connect = () => go({ name: 'connect', back: { name: 'reel', slug } })
+  // What each version changed, from the chat ("Version 3: bigger yellow subtitles."), for the button tooltips.
+  const versionNote = new Map<number, string>()
+  for (const m of d.chat) if (m.from === 'editor' && m.version) versionNote.set(m.version, m.text)
 
   const send = async () => {
     const text = note.trim()
@@ -173,7 +153,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     setNote('')
     att.clear()
     try {
-      const r = await reel.projects.note(slug, text, files.length ? files.map((f) => f.asset) : undefined, version?.n)
+      const r = await reel.projects.note(slug, text, files.length ? files.map((f) => f.asset) : undefined)
       // null = no AI editor: the note and a plain answer are in the chat, nothing is running.
       if (r.jobId) setJob((cur) => (cur?.jobId === r.jobId ? cur : { ...EMPTY_LIVE, jobId: r.jobId, message: 'Reading your note' }))
       await load()
@@ -183,7 +163,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
       notify(userMessage(e), 'error')
     }
   }
-  const canSend = (!!note.trim() || att.chips.length > 0) && !att.busy
+  const canSend = (!!note.trim() || att.chips.length > 0) && !job && !att.busy
   // Files dropped on the note box are attached to the note. The window-wide drop (App.tsx: a video makes
   // a new reel) must not see them, so the drop stops here; App clears its overlay on NOTE_DROP_DONE.
   const noteDropProps = {
@@ -197,7 +177,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     onDragOver: (e: React.DragEvent) => {
       if (!Array.from(e.dataTransfer.types).includes('Files')) return
       e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
+      e.dataTransfer.dropEffect = job ? 'none' : 'copy'
     },
     onDragLeave: () => {
       noteDropDepth.current = Math.max(0, noteDropDepth.current - 1)
@@ -209,6 +189,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
       noteDropDepth.current = 0
       setNoteDrop(false)
       window.dispatchEvent(new Event(NOTE_DROP_DONE))
+      if (job) return
       att.onDropFiles(e.dataTransfer)
     }
   }
@@ -269,8 +250,13 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     if (a === 'remember-yes' || a === 'remember-no') {
       reel.style
         .answer(slug, messageId, a === 'remember-yes')
-        .then(() => load())
-        .catch((e) => notify(userMessage(e), 'error'))
+        .then(async () => {
+          setAnswerError(null)
+          await load()
+          // the buttons are gone: keep focus on the answered question, not lost to the page
+          document.getElementById(`msg-${messageId}`)?.focus()
+        })
+        .catch((e) => setAnswerError({ id: messageId, text: userMessage(e) }))
     } else if (a === 'connect') connect()
     else setDrawer(ACTION_TAB[a] ?? 'cut')
   }
@@ -371,19 +357,12 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                   aria-checked={v.n === version?.n}
                   className={`chip${v.n === version?.n ? ' active' : ''}`}
                   onClick={() => setSelected(v.n)}
-                  title={versionTooltip(v, d.chat, d.words)}
-                  aria-label={nameOf(v) ? `Version ${v.n}, ${nameOf(v)}` : undefined}
+                  title={versionNote.get(v.n)}
                 >
                   {v.n === 0 ? 'Preview' : `Version ${v.n}`}
                 </button>
               ))}
             </div>
-          )}
-          {named && (
-            // aria-hidden: each chip's label already names its version
-            <p className="version-title" aria-hidden data-testid="version-title">
-              {version ? nameOf(version) : ''}
-            </p>
           )}
           {job && (
             // Right above the greyed buttons, so the reason is next to what it explains (grandma3 #10).
@@ -391,20 +370,9 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               <Spinner /> Wait for this version to finish
             </p>
           )}
-          <div className="split-btn export-btn">
-            <button className="btn primary big" onClick={() => void doExport()} disabled={!version || !!job} data-testid="export" title={job ? 'Wait for this version to finish' : undefined}>
-              <Icon name="upload" /> {exportLabel}
-            </button>
-            <MoreMenu
-              label="More ways to export"
-              icon="chevron-down"
-              triggerClassName="btn primary big"
-              testid="export-more"
-              disabled={!version || !!job}
-              up
-              items={[{ label: 'Other platforms…', run: () => setPlatformPicker(true), testid: 'export-platforms' }]}
-            />
-          </div>
+          <button className="btn primary big export-btn" onClick={() => void doExport()} disabled={!version || !!job} data-testid="export" title={job ? 'Wait for this version to finish' : undefined}>
+            <Icon name="upload" /> {exportLabel}
+          </button>
           <button className="btn export-btn" onClick={() => void doExport(true)} disabled={!version || !!job} data-testid="send-to-phone-reel" title={job ? 'Wait for this version to finish' : undefined}>
             <Icon name="send" /> Send to my phone
           </button>
@@ -546,7 +514,13 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                 <p className="muted-sm">Watch your reel, then tell me what to change. For example: "music too loud at the start".</p>
               )}
               {d.chat.map((m) => (
-                <div key={m.id} className={`bubble ${m.from}`} data-testid={`bubble-${m.from}`}>
+                <div
+                  key={m.id}
+                  id={`msg-${m.id}`}
+                  tabIndex={m.suggestion || m.proposal ? -1 : undefined}
+                  className={`bubble ${m.from}`}
+                  data-testid={`bubble-${m.from}`}
+                >
                   {m.attachments?.length ? (
                     <div className="bubble-attachments" data-testid="bubble-attachments">
                       {m.attachments.map((a) => (
@@ -555,6 +529,16 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                     </div>
                   ) : null}
                   {m.text}
+                  {m.proposal && (
+                    <span className="bubble-meta" data-testid="remember-scope">
+                      For new videos. From version {m.proposal.source.version} of this video.
+                    </span>
+                  )}
+                  {answerError?.id === m.id && m.actions?.length ? (
+                    <span className="bubble-meta error" role="alert" data-testid="remember-error">
+                      {answerError.text}
+                    </span>
+                  ) : null}
                   {m.from === 'editor' && m.actions?.length ? (
                     <div className="bubble-actions">
                       {m.actions.map((a) => (
@@ -565,7 +549,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                           disabled={!!job && a !== 'connect'}
                           data-testid={`action-${a}`}
                         >
-                          {ACTION_LABELS[a]}
+                          {a === 'remember-yes' && answerError?.id === m.id ? 'Try again' : ACTION_LABELS[a]}
                         </button>
                       ))}
                     </div>
@@ -587,14 +571,13 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                   {job.thinking ? <Thinking /> : <Spinner />} <span>{job.message}</span>
                   <span className="spacer" />
                   <span className="muted-sm" data-testid="note-time-left">{timeLeftWords(job) ?? ''}</span>
-                  <button className="link" onClick={() => job.jobId && reel.jobs.cancel(job.jobId, slug)} style={{ padding: 0, marginLeft: 12 }}>
+                  <button className="link" onClick={() => job.jobId && reel.jobs.cancel(job.jobId)} style={{ padding: 0, marginLeft: 12 }}>
                     Stop
                   </button>
                 </div>
                 <Progress pct={job.overall} label={job.message} />
               </div>
             )}
-            <NoteQueue slug={slug} queue={d.queue} held={d.queueHeld} head={d.versions[d.versions.length - 1]?.n ?? 0} onError={(m) => notify(m, 'error')} />
             <div className={`note-drop${noteDrop ? ' over' : ''}`} {...noteDropProps} data-testid="note-drop">
             {noteDrop && <div className="note-drop-hint">Drop to attach it to your note</div>}
             <AttachmentChips chips={att.chips} busy={att.busy} onRemove={(a) => void att.remove(a)} />
@@ -602,6 +585,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               <button
                 className="btn attach-btn"
                 onClick={att.choose}
+                disabled={!!job}
                 aria-label="Attach a picture or a clip"
                 title="Attach a picture or a clip"
                 data-testid="note-attach"
@@ -612,7 +596,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               <textarea
                 className="input composer-input"
                 rows={1}
-                placeholder={aiOff ? 'Connect an AI editor to change things by typing' : job ? 'Add another note. It runs after this one.' : 'Tell your editor what to change…'}
+                placeholder={aiOff ? 'Connect an AI editor to change things by typing' : 'Tell your editor what to change…'}
                 aria-label="Note for your editor"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
@@ -623,6 +607,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                     void send()
                   }
                 }}
+                disabled={!!job}
                 data-testid="note-input"
               />
               {aiOff && !note.trim() && (
@@ -671,7 +656,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
         />
       )}
 
-      {platformPicker && version && <PlatformExportDialog slug={slug} version={version} versions={d.versions} fps={d.project.format?.fps ?? 30} post={d.project.post} jobId={job?.jobId || undefined} status={job?.message} onClose={() => setPlatformPicker(false)} />}
       {exporting && <ExportDialog result={exporting} phoneFirst={phoneFirst} onClose={() => setExporting(null)} onSaveCaption={(t) => savePost(t, true)} />}
     </div>
   )
