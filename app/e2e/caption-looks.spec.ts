@@ -3,7 +3,7 @@
 //
 // Run: npx playwright test e2e/caption-looks.spec.ts (after npm run build). Same env as smoke.spec.ts.
 import { test, expect } from '@playwright/test'
-import { launch, makeMedia, passFirstRun, shot } from './helpers'
+import { launch, makeMedia, makeReel, passFirstRun, shot } from './helpers'
 
 test('caption looks: size through look switches, Karaoke rows, colours that match no option', async () => {
   test.setTimeout(10 * 60_000)
@@ -11,28 +11,10 @@ test('caption looks: size through look switches, Karaoke rows, colours that matc
   const { app, page } = await launch()
   try {
     await passFirstRun(page)
-    await page.getByTestId('new-video').click()
-    await page.getByTestId('file-input').setInputFiles([media.video])
-    await expect(page.getByTestId('player')).toBeVisible({ timeout: 5 * 60_000 })
+    await makeReel(page, media.video)
 
-    await page.getByTestId('edit-myself').click()
-    await page.getByTestId('tab-captions').click()
-    await page.getByTestId('cap-size-big').click()
-    await page.getByTestId('cap-look-bold-pop').click()
-    await expect(page.getByTestId('cap-size-big')).toHaveAttribute('aria-checked', 'true')
-    await page.getByTestId('cap-look-minimal').click()
-    await expect(page.getByTestId('cap-look-minimal')).toHaveAttribute('aria-checked', 'true')
-    await expect(page.getByTestId('cap-size-big')).toHaveAttribute('aria-checked', 'true')
-
-    await page.getByTestId('cap-size-medium').click()
-    await page.getByTestId('cap-look-karaoke').click()
-    await expect(page.getByTestId('cap-color-white')).toHaveAttribute('aria-checked', 'true')
-    await expect(page.getByTestId('cap-highlight-yellow')).toHaveAttribute('aria-checked', 'true')
-    await shot(page, 'looks-karaoke-rows')
-    await page.keyboard.press('Escape')
-    await expect(page.getByTestId('drawer')).toHaveCount(0)
-
-    // A reel the AI editor gave red captions and a green spoken word (#34C759, not the row's #30D158).
+    // A reel the AI editor gave red captions and a green spoken word (#34C759, not the row's #30D158). First, since
+    // Edit it myself keeps its changes when it closes and would show those instead.
     const detail = await page.evaluate(async () => {
       const [p] = await window.reel.projects.list()
       return window.reel.projects.get(p.slug)
@@ -57,6 +39,20 @@ test('caption looks: size through look switches, Karaoke rows, colours that matc
     await page.keyboard.press('Tab')
     await expect(page.getByTestId('cap-highlight-yellow')).toBeFocused()
     await shot(page, 'looks-unmatched-colours')
+
+    // a Size the person picked survives every look; Karaoke shows both colour rows
+    await page.getByTestId('cap-size-big').click()
+    await page.getByTestId('cap-look-bold-pop').click()
+    await expect(page.getByTestId('cap-size-big')).toHaveAttribute('aria-checked', 'true')
+    await page.getByTestId('cap-look-minimal').click()
+    await expect(page.getByTestId('cap-look-minimal')).toHaveAttribute('aria-checked', 'true')
+    await expect(page.getByTestId('cap-size-big')).toHaveAttribute('aria-checked', 'true')
+
+    await page.getByTestId('cap-size-medium').click()
+    await page.getByTestId('cap-look-karaoke').click()
+    await expect(page.getByTestId('cap-color-white')).toHaveAttribute('aria-checked', 'true')
+    await expect(page.getByTestId('cap-highlight-yellow')).toHaveAttribute('aria-checked', 'true')
+    await shot(page, 'looks-karaoke-rows')
   } finally {
     await app.close()
   }

@@ -27,7 +27,9 @@ export function arrowPick(e: React.KeyboardEvent<HTMLElement>, keys: string[], v
   const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
   if (!step) return
   e.preventDefault()
-  const next = keys[(keys.indexOf(value ?? keys[0]) + step + keys.length) % keys.length]
+  // with nothing checked (a colour the AI picked that is neither option), arrows start from the first, as Tab does
+  const from = value !== null && keys.includes(value) ? value : keys[0]
+  const next = keys[(keys.indexOf(from) + step + keys.length) % keys.length]
   onPick(next)
   e.currentTarget.querySelector<HTMLElement>(`[data-key="${next}"]`)?.focus()
 }
