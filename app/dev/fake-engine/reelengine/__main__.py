@@ -451,6 +451,91 @@ def cmd_attach(args: list[str]) -> dict:
     return rec
 
 
+def _fcpx_secs(v: str | None) -> float:
+    """FCPXML time: "1001/30000s", "12s" or "0s"."""
+    v = (v or "0s").rstrip("s")
+    if "/" in v:
+        a, b = v.split("/")
+        return float(a) / float(b)
+    return float(v or 0)
+
+
+def _item(kind: str, name: str, start: float, dur: float, media: dict) -> dict:
+    return {"type": kind, "name": name, "media": media,
+            "trackRange": {"start": {"value": start * 100, "rate": 100}, "duration": {"value": dur * 100, "rate": 100}}}
+
+
+def cmd_import_reference(args: list[str]) -> dict:
+    """The real command's record shape (reelengine/reference_import.py) for simple exports, without OpenTimelineIO:
+    Final Cut's spine and connected clips, Premiere's tracks of clip, generator and transition items."""
+    import xml.etree.ElementTree as ET
+    path = Path(args[0])
+    try:
+        root = ET.parse(path / "Info.fcpxml" if path.is_dir() else path).getroot()
+    except (OSError, ET.ParseError) as e:
+        raise Fail("BAD_XML", "This file isn't a readable edit export. Export it again from your editor and try once more.", repr(e))
+    timelines = []
+    if root.tag == "fcpxml":
+        adapter = "fcpx_xml"
+        assets = {a.get("id"): a for a in root.iter("asset")}
+        for project in root.iter("project"):
+            lanes: dict[str, list] = {}
+            spine = project.find("./sequence/spine")
+            for clip in list(spine if spine is not None else []):
+                at, dur = _fcpx_secs(clip.get("offset")), _fcpx_secs(clip.get("duration"))
+                if clip.tag == "transition":
+                    lanes.setdefault("0", []).append({"type": "transition", "name": clip.get("name")})
+                    continue
+                src = assets.get(clip.get("ref"), clip).find("media-rep")
+                media = ({"kind": "generator", "generator": "Text", "name": clip.get("name")} if clip.tag == "title"
+                         else {"kind": "file", "url": src.get("src") if src is not None else None, "name": clip.get("name")})
+                lanes.setdefault("0", []).append(_item("clip", clip.get("name"), at, dur, media))
+                start = _fcpx_secs(clip.get("start"))
+                for child in clip:
+                    if child.get("lane") is None:
+                        continue
+                    cat = at + _fcpx_secs(child.get("offset")) - start
+                    csrc = assets.get(child.get("ref"), child).find("media-rep")
+                    cmedia = ({"kind": "generator", "generator": "Text", "name": child.get("name")} if child.tag == "title"
+                              else {"kind": "file", "url": csrc.get("src") if csrc is not None else None, "name": child.get("name")})
+                    lanes.setdefault(child.get("lane"), []).append(_item("clip", child.get("name"), cat, _fcpx_secs(child.get("duration")), cmedia))
+            tracks = [{"name": k, "kind": "Audio" if int(k) < 0 else "Video", "items": v} for k, v in sorted(lanes.items(), key=lambda kv: int(kv[0]))]
+            timelines.append({"name": project.get("name"), "tracks": tracks})
+    elif root.tag == "xmeml":
+        adapter = "fcp_xml"
+        for seq in root.iter("sequence"):
+            if seq.find("media") is None:
+                continue
+            rate = float(seq.findtext("./rate/timebase") or 25)
+            urls = {f.get("id"): f.findtext("pathurl") for f in seq.iter("file") if f.findtext("pathurl")}
+            tracks = []
+            for kind in ("video", "audio"):
+                for track in seq.findall(f"./media/{kind}/track"):
+                    items = []
+                    cursor = 0.0
+                    for it in track:
+                        if it.tag == "transitionitem":
+                            items.append({"type": "transition", "name": it.findtext("./effect/name")})
+                        elif it.tag in ("clipitem", "generatoritem"):
+                            a, b = float(it.findtext("start") or 0), float(it.findtext("end") or 0)
+                            length = float(it.findtext("out") or 0) - float(it.findtext("in") or 0)
+                            a = cursor if a < 0 else a
+                            b = a + length if b < 0 else b
+                            cursor = b
+                            f = it.find("file")
+                            media = ({"kind": "generator", "generator": it.findtext("./effect/name"), "name": it.findtext("name")}
+                                     if it.tag == "generatoritem" else {"kind": "file", "url": urls.get(f.get("id")) if f is not None else None, "name": it.findtext("name")})
+                            items.append(_item("clip", it.findtext("name"), a / rate, max(0.0, b - a) / rate, media))
+                    tracks.append({"name": str(len(tracks)), "kind": kind.capitalize(), "items": items})
+            timelines.append({"name": seq.findtext("name"), "tracks": tracks})
+            break
+    else:
+        raise Fail("BAD_INPUT", "Choose a Final Cut Pro (.fcpxml or .fcpxmld) or Premiere (.xml) export.")
+    if not timelines:
+        raise Fail("NO_TIMELINE", "This export has no timeline in it. In your editor, export the project or sequence itself, not just its clips, and try again.")
+    return {"source": {"path": str(path), "adapter": adapter}, "mediaRefs": [], "timelines": timelines, "losses": [], "rawMetadata": []}
+
+
 def cmd_doctor(_args: list[str]) -> dict:
     return {"engine": "fake", "ffmpeg": shutil.which(FFMPEG) or FFMPEG, "ok": True}
 
@@ -460,7 +545,7 @@ COMMANDS = {
     "analyze": cmd_analyze, "autocut": cmd_autocut, "render": cmd_render, "doctor": cmd_doctor,
     "download-model": cmd_download_model, "speech-check": cmd_speech_check, "attach": cmd_attach,
     "cover-candidates": cmd_cover_candidates, "export-cover": cmd_export_cover, "export-probe": cmd_export_probe,
-    "export-media": cmd_export_media,
+    "export-media": cmd_export_media, "import-reference": cmd_import_reference,
 }
 
 

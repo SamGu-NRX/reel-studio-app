@@ -112,9 +112,12 @@ export interface AI {
   wholeReelSetting(projectDir: string, note: string): Promise<boolean>
   writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult>
   styleRules(): Promise<StyleRule[]>
-  removeStyleRule(id: string): Promise<void>
-  /** Saves one My style rule (after the user said Yes). Optional: older packages lack it. */
-  addStyleRule?(text: string): Promise<{ id: string; text: string; createdAt: string }>
+  /** The removed rule and where it was, for Undo; null when it was already gone. */
+  removeStyleRule(id: string): Promise<{ rule: StyleRule; index: number } | null>
+  /** Saves one My style rule (after the user said Yes, typed in My style, or learned from an export). Optional: older packages lack it. */
+  addStyleRule?(text: string, from?: Pick<StyleRule, 'source' | 'imported'>): Promise<StyleRule>
+  /** Undo of removeStyleRule. */
+  restoreStyleRule?(rule: StyleRule, index: number): Promise<void>
   /** Saves a typed rule the user said Yes to. `exists`: already in My style; `forgotten`: they removed it since. */
   approveStyleProposal?(p: StyleProposal): Promise<{ status: 'saved' | 'exists' | 'forgotten' }>
   declineStyleProposal?(p: StyleProposal): Promise<void>

@@ -1,0 +1,116 @@
+/* Library, My style and Insights (screens/Library.tsx, MyStyle.tsx, Insights.tsx): rows and grids on the canvas,
+   no cards around sections, no icon tiles (ux-foundation-b.md section 9). Media keeps the 14 px radius. */
+
+/* ---- Library ---- */
+.page.lib-page { margin: 0; padding-top: 4px; }
+.lib-tabs { display: flex; gap: 22px; box-shadow: inset 0 -1px 0 var(--line); }
+.lib-tab {
+  height: 40px; padding: 0; border: 0; background: none; font: inherit; font-size: var(--fs-base); font-weight: 560; color: var(--ink-2);
+  cursor: pointer; white-space: nowrap; box-shadow: inset 0 -2px 0 transparent; transition: color 120ms ease;
+}
+.lib-tab .n { margin-left: 6px; font-weight: 500; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.lib-tab[aria-selected="true"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--ink); }
+@media (hover: hover) and (pointer: fine) { .lib-tab[aria-selected="false"]:hover { color: var(--ink); } }
+
+.lib-sub { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); }
+
+.lib-result {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-2);
+  transition: opacity 180ms cubic-bezier(.2, .8, .2, 1);
+  @starting-style { opacity: 0; }
+}
+.lib-result > svg { color: var(--green-ink); flex: none; }
+.lib-result.error { color: var(--pencil); }
+.lib-result .icon-btn { width: 24px; height: 24px; }
+
+.lib-group + .lib-group { margin-top: var(--space-s); }
+.lib-group > h2 { margin-bottom: 8px; font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 620; }
+.lib-group > h2 .n { margin-left: 4px; font-weight: 500; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.lib-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 20px 14px; }
+.lib-pics { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+.lib-clips { grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); }
+.lib-item { display: grid; gap: 2px; min-width: 0; align-content: start; }
+.lib-item > b, .lib-item > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-item > b { font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 560; }
+.lib-item > span { font-size: var(--fs-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+.lib-thumb {
+  display: block; width: 100%; aspect-ratio: 1; margin-bottom: 6px; object-fit: cover; border-radius: var(--r-lg); background: var(--sunk);
+  outline: 1px solid rgba(22, 30, 26, .06); outline-offset: -1px;
+}
+.lib-sheet { aspect-ratio: 540 / 240; }
+.lib-sheet.none { display: grid; place-items: center; font-size: var(--fs-xs); color: var(--ink-3); }
+
+.lib-rows { list-style: none; margin: 0; padding: 0; box-shadow: inset 0 -1px 0 var(--line); }
+.lib-row {
+  display: grid; grid-template-columns: 28px minmax(140px, 260px) minmax(0, 1fr) 52px; gap: 14px; align-items: center;
+  min-height: 48px; padding: 6px 0; box-shadow: inset 0 1px 0 var(--line);
+}
+.lib-row-t { display: grid; gap: 1px; min-width: 0; }
+.lib-row-t > b, .lib-row-t > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-row-t > b { font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 560; }
+.lib-row-t > span { font-size: var(--fs-xs); line-height: var(--lh-xs); color: var(--ink-3); }
+.lib-row.on .lib-play { color: var(--ink); background: var(--wash); }
+.lib-dur { text-align: right; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.lib-wave { position: relative; display: block; height: 28px; min-width: 0; }
+.lib-wave svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: var(--ink-4); }
+/* the played part: the same bars in ink, uncovered from the left as the one audio element plays */
+.lib-wave svg.played { fill: var(--ink); clip-path: inset(0 var(--played, 100%) 0 0); }
+.lib-row:not(.on) .lib-wave svg.played { display: none; }
+.lib-wave.pending { background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat; }
+.lib-wave.none { display: flex; align-items: center; font-size: var(--fs-xs); color: var(--ink-3); }
+
+.lib-empty { display: grid; justify-items: center; align-content: center; gap: 6px; min-height: 360px; text-align: center; }
+.lib-empty h2 { font-size: var(--fs-subhead); line-height: var(--lh-subhead); font-weight: 620; }
+.lib-empty p { max-width: 40ch; color: var(--ink-2); }
+
+/* ---- My style ---- */
+.page.style-page { max-width: 760px; margin: 0; padding-top: 4px; }
+.style-intro { margin: 12px 0 16px; color: var(--ink-2); }
+.style-rows { list-style: none; margin: 0; padding: 0; box-shadow: inset 0 -1px 0 var(--line); }
+.style-row { display: flex; align-items: center; gap: 16px; min-height: 56px; padding: 10px 0; box-shadow: inset 0 1px 0 var(--line); }
+/* a rule: its actions sit beside the rule, and the line under it takes the full width */
+.style-row:not(.removed) { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; row-gap: 2px; align-items: center; }
+.style-row:not(.removed) > .style-t { display: contents; }
+.style-row:not(.removed) > .style-t > span { grid-row: 2; grid-column: 1 / -1; }
+.style-row:not(.removed) > .style-acts { grid-row: 1; grid-column: 2; }
+.style-t { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.style-t > b { font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 560; overflow-wrap: anywhere; }
+.style-t > b.paused { color: var(--ink-3); }
+.style-t > span { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); overflow-wrap: anywhere; }
+.style-t q { color: var(--ink-2); }
+.style-acts { flex: none; display: flex; align-items: center; gap: 2px; }
+/* with a mouse, a rule's actions show on the row you point at or reach; on a touch screen they always show */
+@media (hover: hover) and (pointer: fine) {
+  .style-row .style-acts { opacity: 0; transition: opacity 120ms ease; }
+  .style-row:hover .style-acts, .style-row:focus-within .style-acts { opacity: 1; }
+}
+.style-row.removed { color: var(--ink-3); transition: opacity 180ms cubic-bezier(.2, .8, .2, 1); @starting-style { opacity: 0; } }
+.style-row.removed .style-t > span { color: var(--ink-3); font-size: var(--fs-base); line-height: var(--lh-base); }
+.style-form { display: flex; align-items: center; gap: 8px; padding: 10px 0; box-shadow: inset 0 1px 0 var(--line); }
+.style-form .input { flex: 1; min-width: 0; }
+.style-empty { display: grid; justify-items: center; align-content: center; gap: 6px; min-height: 320px; text-align: center; }
+.style-empty h2 { font-size: var(--fs-subhead); line-height: var(--lh-subhead); font-weight: 620; }
+.style-empty p { max-width: 44ch; color: var(--ink-2); }
+.style-note { margin: 0 0 12px; font-size: var(--fs-base); color: var(--pencil); }
+
+/* What "Learn from my past edits" read, before anything is saved: one sheet you keep or cancel as a whole. */
+.lesson {
+  margin: 4px 0 var(--space-s); padding: 16px 20px 18px; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--e1);
+  transition: opacity 200ms cubic-bezier(.2, .8, .2, 1), transform 200ms cubic-bezier(.2, .8, .2, 1);
+  @starting-style { opacity: 0; transform: translateY(6px); }
+}
+@media (prefers-reduced-motion: reduce) { .lesson { @starting-style { transform: none; } } }
+.lesson-h { display: grid; gap: 2px; margin-bottom: 10px; }
+.lesson-h > b { font-size: var(--fs-section); line-height: var(--lh-section); font-weight: 620; overflow-wrap: anywhere; }
+.lesson-h > span { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); }
+.lesson-rules { list-style: none; margin: 0; padding: 0; }
+.lesson-rule { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; box-shadow: inset 0 1px 0 var(--line); cursor: pointer; }
+.lesson-rule input { width: 16px; height: 16px; margin: 2px 0 0; flex: none; }
+.lesson-rule .style-t > b { font-size: var(--fs-md); }
+.lesson-skip { margin-top: 10px; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); }
+.lesson-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+
+/* ---- Insights ---- */
+.insights-empty { max-width: 56ch; padding-top: var(--space-s); font-size: var(--fs-md); line-height: var(--lh-md); color: var(--ink-2); }

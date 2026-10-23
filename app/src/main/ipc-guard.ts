@@ -55,7 +55,9 @@ export function validateIpcArgs(channel: string, args: unknown[]): void {
     case 'notes:attachData': ok = object(second) && text(second.name) && text(second.mime) && second.bytes instanceof Uint8Array; break
     case 'notes:removeAttachment': ok = text(second); break
     case 'library:choose': ok = first === 'music' || first === 'images'; break
-    case 'jobs:cancel': case 'style:remove': case 'style:update': ok = text(first) && first.length > 0; break
+    case 'jobs:cancel': case 'style:remove': case 'style:update': case 'style:restore': case 'style:add': ok = text(first) && first.length > 0; break
+    case 'style:keepLearned': ok = Array.isArray(first) && first.every((r) => object(r) && text(r.text) && text(r.evidence)) && text(second); break
+    case 'library:preview': ok = path(first); break
     case 'style:answer': ok = text(second) && typeof third === 'boolean'; break
     case 'dev:renderTestAnimation': ok = path(first) && (second === undefined || typeof second === 'boolean') &&
       (third === undefined || text(third)) && (args[3] === undefined || object(args[3])); break
