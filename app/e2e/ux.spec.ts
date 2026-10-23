@@ -100,7 +100,7 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   // a manual change says what it is (grandma 2: "Adding pictures" for a colour change) and shows a quick preview first
   await expect(page.getByTestId('note-progress')).toContainText(/Making your changes|Making Version 2/)
   await expect(page.getByTestId('change-preview')).toBeVisible({ timeout: 60_000 })
-  await expect(page.getByTestId('export')).toBeDisabled() // and Export waits for it
+  await expect(page.getByTestId('share')).toBeDisabled() // and Share waits for it
   await shot(page, 'ux-09-new-version-working')
   await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 })
   const style = projectJson().captions.style
@@ -138,20 +138,18 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   expect(broll[0].asset).toBe('Library/Images/logo.png')
   await shot(page, 'ux-11-reel-after-edits')
 
-  // ---- 7. export: the file name, Show in Explorer/Finder with visible feedback ----
-  await expect(page.getByTestId('export')).toBeEnabled({ timeout: 10 * 60_000 })
-  await page.getByTestId('export').click()
-  await expect(page.getByText('Saved to your computer')).toBeVisible({ timeout: 10 * 60_000 })
-  await expect(page.getByTestId('export-name')).toContainText(' - Version 4.mp4')
+  // ---- 7. Share: Show in Explorer/Finder saves the file and names it ----
+  await expect(page.getByTestId('share')).toBeEnabled({ timeout: 10 * 60_000 })
+  await page.getByTestId('share').click()
   const where = process.platform === 'darwin' ? 'Show in Finder' : 'Show in Explorer'
-  await expect(page.getByTestId('show-in-folder')).toHaveText(where)
-  await page.getByTestId('show-in-folder').click()
-  await expect(page.getByTestId('opened')).toBeVisible()
-  await shot(page, 'ux-12-export')
+  await expect(page.getByTestId('share-finder')).toContainText(where)
+  await page.getByTestId('share-finder').click()
+  await expect(page.getByTestId('share-pop')).toContainText(' - Version 4.mp4', { timeout: 10 * 60_000 })
+  await shot(page, 'ux-12-share')
   const exported = readdirSync(join(ROOT, 'Library', 'Exports'))
   expect(exported.some((f) => f.endsWith(' - Version 4.mp4'))).toBe(true)
   expect(exported.some((f) => /\(\d\)/.test(f))).toBe(false)
-  await page.getByText('Done', { exact: true }).click()
+  await page.keyboard.press('Escape')
 
   // ---- 8. Library: no Finished videos bin; reels live on Reels ----
   await page.getByTestId('nav-library').click()

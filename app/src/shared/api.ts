@@ -664,7 +664,10 @@ export interface ReelApi {
   }
   cloud: {
     drives(): Promise<CloudDrive[]>
-    save(video: string, folder: string): Promise<string>
+    /** `id` names this save for `cancel` and `onProgress`. A cancelled save rejects with code CANCELLED and leaves no file. */
+    save(video: string, folder: string, id: string): Promise<string>
+    cancel(id: string): Promise<void>
+    onProgress(cb: (p: { id: string; pct: number }) => void): () => void
   }
   phone: {
     /** Start (or restart, e.g. on another network) the link for one exported video. */

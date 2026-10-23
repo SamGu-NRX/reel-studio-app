@@ -98,7 +98,6 @@ a { color: inherit; }
    The window has no system title bar. The row across the top is the drag handle; on macOS the traffic lights sit
    in it over the sidebar, on Windows the system draws its buttons on the right (components/shell.css lays it out). */
 .titlebar { position: fixed; top: 0; left: 0; right: 0; height: var(--titlebar); -webkit-app-region: drag; pointer-events: none; }
-.platform-darwin .titlebar, .platform-win32 .titlebar { pointer-events: auto; }
 .first-shell { height: 100%; }
 
 /* The sidebar's update row (UpdateButton.tsx): a row like the nav, not a box. */
@@ -422,8 +421,6 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
 @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes slide-out { to { transform: translateX(24px); opacity: 0; } }
 .drawer-head { padding: calc(var(--titlebar) + 4px) 22px 10px 26px; display: flex; align-items: flex-start; gap: 12px; }
-.platform-win32 .drawer-head { padding-right: 150px; }
-.platform-win32 .drawer-head .icon-btn { position: absolute; right: 18px; top: calc(var(--titlebar) + 6px); }
 .tabs { display: flex; gap: 2px; padding: 0 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .tab { border: 0; background: none; font: inherit; font-size: var(--fs-base); padding: 0 9px; height: 36px; cursor: pointer; color: var(--ink-2); box-shadow: inset 0 -2px 0 transparent; font-weight: 580; }
 .tab:hover { color: var(--ink); }
@@ -530,33 +527,6 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
 /* The dialog and the ⋯ menu settle in from just smaller, instead of appearing in one frame. */
 @keyframes pop-in { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
 .modal.wide { width: min(580px, 92vw); }
-.export-head { display: flex; gap: 18px; align-items: flex-start; }
-.platform-options { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
-.platform-options legend { font-weight: 600; margin-bottom: 8px; }
-.platform-option { display: flex; flex: none; align-items: flex-start; gap: 10px; padding: 10px 0; min-height: 44px; cursor: pointer; }
-.platform-option input { margin-top: 5px; flex: none; }
-.platform-option span { min-width: 0; }
-.platform-option small { display: block; color: var(--ink-3); font-size: var(--fs-sm); margin-top: 3px; }
-.platform-cover { display: flex; gap: 16px; align-items: center; }
-.platform-cover video { width: 90px; height: 160px; object-fit: contain; background: #000; border-radius: var(--r-sm); flex: none; }
-.platform-errors { color: var(--pencil); font-size: var(--fs-md); }
-.platform-try { border: 0; margin: 0; padding: 0 0 0 26px; display: flex; flex-direction: column; gap: 12px; transition: opacity .18s var(--ease-out), transform .18s var(--ease-out); }
-@starting-style { .platform-try { opacity: 0; transform: translateY(-6px); } }
-.platform-try legend { float: left; font-weight: 600; padding: 0; }
-.platform-try .chips { justify-content: flex-start; max-width: none; }
-.platform-export { display: contents; }
-.platform-actions { justify-content: flex-end; position: sticky; bottom: calc(-1 * var(--space-s)); margin: 0 calc(-1 * var(--space-s)) calc(-1 * var(--space-s)); padding: 14px var(--space-s) var(--space-s); background: var(--surface); border-top: 1px solid var(--line); }
-.platform-counts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-variant-numeric: tabular-nums; }
-.platform-counts .over { color: var(--pencil); font-weight: 600; }
-.platform-results { display: flex; flex-direction: column; gap: 20px; }
-.platform-result { display: flex; flex-direction: column; gap: 8px; }
-.platform-result .selectable { overflow-wrap: anywhere; }
-.file-pill { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; overflow-wrap: anywhere; user-select: text; }
-.post-how { display: flex; align-items: center; gap: 14px; padding-top: 16px; box-shadow: inset 0 1px 0 var(--line); }
-.post-how > .stack { flex: 0 1 auto; min-width: 0; max-width: 60%; }
-.cloud-save { min-width: 0; }
-.cloud-save .btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.post-how p { flex: 1; color: var(--ink-2); }
 .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); z-index: 50; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 12px; box-shadow: var(--e3); display: flex; gap: 10px; align-items: center; max-width: min(640px, 80vw); animation: toast-in .2s var(--ease-out); }
 .toast:not(.error) { pointer-events: none; } /* nothing to press on it; a click goes to the button it covers */
 .toast.error { background: #7d2618; padding-right: 8px; }
@@ -629,7 +599,6 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
   .update-pill:active { transform: none; }
   /* Full screen just appears and goes. */
   .fs, .fs-frame { transition: none; }
-  .platform-try { transform: none; transition: opacity .18s var(--ease-out) !important; }
 }
 @keyframes fade-out { to { opacity: 0; } }
 @keyframes breathe-soft { 0%, 100% { opacity: .2; } 50% { opacity: .85; } }

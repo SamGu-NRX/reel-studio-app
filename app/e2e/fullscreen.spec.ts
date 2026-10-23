@@ -66,7 +66,7 @@ test('full screen reel: open, hand-off both ways, Space, Esc, Exit button, small
   const { app, page } = await launch({}, { realViewport: true })
   await passFirstRun(page)
   await makeReel(page, m.video, 10 * 60_000)
-  await expect(page.getByTestId('export')).toBeEnabled({ timeout: 10 * 60_000 })
+  await expect(page.getByTestId('share')).toBeEnabled({ timeout: 10 * 60_000 })
 
   // The reel arrives playing with the sound off; put it 4 seconds in.
   const player = page.getByTestId('player')
@@ -138,18 +138,19 @@ test('full screen reel: open, hand-off both ways, Space, Esc, Exit button, small
   expect((await media(page, 'player')).paused).toBe(false)
   await player.evaluate((v: HTMLVideoElement) => v.pause())
 
-  // ---- Cmd+E / File > Export while watching: the view closes and the export dialog shows at once,
+  // ---- Cmd+E / File > Share while watching: the view closes and Share opens at once,
   // as it does without the view ----
   await open(page)
   await expect.poll(() => winFull(app), { timeout: 10_000 }).toBe(true)
   await page.evaluate(() => window.dispatchEvent(new Event('reel:export')))
   await expect(page.getByTestId('fullscreen')).toHaveCount(0)
-  await expect(page.getByTestId('export-dialog')).toBeVisible()
+  await expect(page.getByTestId('share-pop')).toBeVisible()
   expect(await page.evaluate(() => document.getElementById('root')!.inert)).toBe(false)
   await expect.poll(() => settledFull(app), { timeout: 15_000 }).toBe(false)
-  await expect(page.getByTestId('export-saved')).toBeVisible({ timeout: 120_000 })
+  await page.getByTestId('share-instagram').click()
+  await expect(page.getByTestId('share-pop')).toContainText('Ready for Instagram', { timeout: 120_000 })
   await page.keyboard.press('Escape')
-  await expect(page.getByTestId('export-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('share-pop')).toBeHidden()
 
   // ---- the smallest window the app allows (1100 x 720): the view still fills the screen at 9:16 ----
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1100, 720))

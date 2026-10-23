@@ -242,14 +242,15 @@ TAKES.forEach((take, i) => {
       }
 
       const t2 = Date.now()
-      await page.getByTestId('export').click()
-      await expect(page.getByText('Saved to your computer')).toBeVisible({ timeout: 30 * 60_000 })
+      await page.getByTestId('share').click()
+      if (process.env.REELSTUDIO_E2E_PHONE === '1') await page.getByTestId('share-caption').fill('Reel Studio installed-app test')
+      await page.getByTestId('share-instagram').click()
+      await expect(page.getByTestId('share-pop')).toContainText('Ready for Instagram', { timeout: 30 * 60_000 })
       timings.exportSec = Math.round((Date.now() - t2) / 1000)
-      result.exportDialog = await page.getByTestId('export-dialog').innerText().catch(() => '')
+      result.exportDialog = await page.getByTestId('share-pop').innerText().catch(() => '')
       await snap(page, `${i}-04-exported`)
       if (process.env.REELSTUDIO_E2E_PHONE === '1') {
-        await page.getByTestId('export-caption').fill('Reel Studio installed-app test').catch(() => {})
-        await page.getByTestId('send-to-phone').click()
+        await page.getByTestId('share-phone').click()
         const qr = page.getByTestId('phone-qr')
         await expect(qr).toBeVisible()
         const url = (await qr.getAttribute('data-url'))!
@@ -272,11 +273,9 @@ TAKES.forEach((take, i) => {
         expect(head.subarray(4, 8).toString('latin1')).toBe('ftyp')
         await expect(page.getByTestId('phone-sent')).toHaveText('Sent! Check your phone.')
         await snap(page, `${i}-06-phone-sent`)
-        await page.keyboard.press('Escape')
-        await expect(page.getByTestId('export-dialog')).toHaveCount(0)
-      } else {
-        await page.getByRole('button', { name: 'Done' }).click()
       }
+      await page.keyboard.press('Escape')
+      await expect(page.getByTestId('share-pop')).toBeHidden()
 
       const exportFile = newest(join(ROOT, 'Library', 'Exports'), (f) => f.endsWith('.mp4'))
       const project = newest(join(ROOT, 'Projects'), (f) => existsSync(join(ROOT, 'Projects', f, 'project.json')))

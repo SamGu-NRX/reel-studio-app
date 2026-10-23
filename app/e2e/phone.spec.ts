@@ -1,6 +1,6 @@
-// "Send to my phone", end to end: export, open the panel, read the link from the rendered QR code,
+// "Send to my phone", end to end: Share › Send to my phone, read the link from the rendered QR code,
 // fetch it with Node the way a phone would (the page, then the video with a Range header), and see the
-// desktop flip to "Sent!". Then the Reel-screen button, and the fallbacks when no phone shows up.
+// desktop flip to "Sent!". Then a second time, and the fallbacks when no phone shows up.
 //
 // The link listens on 127.0.0.1 here (REELSTUDIO_PHONE_HOST, test builds only), so no firewall prompt
 // appears on the machine running the tests. The address choice itself is unit-tested (test/phone-share.test.ts).
@@ -54,15 +54,14 @@ test('send to my phone: QR link, phone fetch, Sent!, fallbacks', async () => {
   })
   await passFirstRun(page)
   await makeReel(page, media.video, 10 * 60_000)
-  await expect(page.getByTestId('export')).toBeEnabled({ timeout: 10 * 60_000 })
+  await expect(page.getByTestId('share')).toBeEnabled({ timeout: 10 * 60_000 })
 
-  // ---- export, then the big button ----
-  await page.getByTestId('export').click()
-  await expect(page.getByText('Saved to your computer')).toBeVisible({ timeout: 120_000 })
-  await expect(page.getByTestId('export-dialog')).not.toContainText('Phone Link')
-  await page.getByTestId('export-caption').fill('Three things I wish I knew')
-  await page.screenshot({ path: join(SHOTS, 'phone-01-export-dialog.png') })
-  await page.getByTestId('send-to-phone').click()
+  // ---- Share, the caption, then Send to my phone ----
+  await page.getByTestId('share').click()
+  await expect(page.getByTestId('share-pop')).not.toContainText('Phone Link')
+  await page.getByTestId('share-caption').fill('Three things I wish I knew')
+  await page.screenshot({ path: join(SHOTS, 'phone-01-share.png') })
+  await page.getByTestId('share-phone').click()
   await expect(page.getByTestId('phone-lead')).toHaveText(
     "Point your phone's camera at this code. Your video opens on your phone; tap Share, then Save Video (or open Instagram)."
   )
@@ -105,13 +104,15 @@ test('send to my phone: QR link, phone fetch, Sent!, fallbacks', async () => {
   await phone.screenshot({ path: join(SHOTS, 'phone-04-phone-page.png'), fullPage: true })
   await phone.close()
 
-  // ---- closing the panel closes the link ----
+  // ---- closing Share closes the link ----
   await page.keyboard.press('Escape')
-  await expect(page.getByTestId('export-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('share-pop')).toBeHidden()
   await expect.poll(() => fetch(url).then((r) => r.status, () => 'closed')).toBe('closed')
 
-  // ---- the Reel-screen button exports straight into the panel; no phone visit -> fallbacks ----
-  await page.getByTestId('send-to-phone-reel').click()
+  // ---- again, from the top of the list (used last); no phone visit -> fallbacks ----
+  await page.getByTestId('share').click()
+  await expect(page.locator('.sp-go').first()).toHaveAttribute('data-testid', 'share-phone')
+  await page.getByTestId('share-phone').click()
   const url2 = await qrUrl(page)
   expect(url2).not.toBe(url) // a fresh one-time link
   await expect(page.getByTestId('phone-fallbacks')).toBeVisible({ timeout: 20_000 })
@@ -125,7 +126,7 @@ test('send to my phone: QR link, phone fetch, Sent!, fallbacks', async () => {
   await page.screenshot({ path: join(SHOTS, 'phone-05-panel-help.png') })
   await page.getByTestId('phone-fallbacks').screenshot({ path: join(SHOTS, 'phone-06-fallbacks.png') })
   await page.getByTestId('phone-back').click()
-  await expect(page.getByText('Saved to your computer')).toBeVisible()
+  await expect(page.getByTestId('share-phone')).toBeVisible()
   await expect.poll(() => fetch(url2).then((r) => r.status, () => 'closed')).toBe('closed')
 
   await app.close()

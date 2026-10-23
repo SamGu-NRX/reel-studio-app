@@ -52,16 +52,31 @@ it('fails if saving again or concurrently overwrites a reel', async () => {
   for (const result of results) expect(await fs.readFile(result, 'utf8')).toBe('new video')
 })
 
-it('fails if an interrupted copy exposes a partial reel or leaves its temporary file', async () => {
+it('fails if a copy cancelled halfway exposes a partial reel or leaves its temporary file', async () => {
   const dir = await temp()
   const source = join(dir, 'Family reel.mp4')
   const cloud = join(dir, 'drive')
-  await fs.writeFile(source, 'complete video')
-  vi.spyOn(fs, 'copyFile').mockImplementationOnce(async (_source, target) => {
-    await fs.writeFile(target, 'partial')
-    throw Object.assign(new Error('disk full'), { code: 'ENOSPC' })
+  await fs.writeFile(source, Buffer.alloc(4_000_000, 7))
+  const stop = new AbortController()
+  const seen: number[] = []
+  const copy = copyToCloudDrive(source, cloud, {
+    signal: stop.signal,
+    onProgress: (pct) => {
+      seen.push(pct)
+      if (pct > 0) stop.abort()
+    }
   })
-  await expect(copyToCloudDrive(source, cloud)).rejects.toThrow('disk full')
+  await expect(copy).rejects.toThrow(/abort/i)
+  expect(seen.at(-1)).toBeLessThan(100)
   expect(await fs.readdir(join(cloud, 'Reel Studio'))).toEqual([])
-  expect(await fs.readFile(source, 'utf8')).toBe('complete video')
+})
+
+it('fails if a finished copy does not report 100 percent last', async () => {
+  const dir = await temp()
+  const source = join(dir, 'Family reel.mp4')
+  await fs.writeFile(source, Buffer.alloc(300_000, 1))
+  const seen: number[] = []
+  await copyToCloudDrive(source, join(dir, 'drive'), { onProgress: (pct) => seen.push(pct) })
+  expect(seen.at(-1)).toBe(100)
+  expect(seen).toEqual([...seen].sort((a, b) => a - b))
 })

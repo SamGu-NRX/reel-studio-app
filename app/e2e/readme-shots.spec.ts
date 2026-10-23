@@ -132,9 +132,10 @@ test('shoot: Reel, drawer, export, home', async () => {
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('drawer')).toHaveCount(0)
 
-  // export
-  await page.getByTestId('export').click()
-  await expect(page.getByText('Saved to your computer')).toBeVisible({ timeout: 10 * 60_000 })
+  // share
+  await page.getByTestId('share').click()
+  await page.getByTestId('share-instagram').click()
+  await expect(page.getByTestId('share-pop')).toContainText('Ready for Instagram', { timeout: 10 * 60_000 })
   await snap(page, 'export')
   await app.close()
 })

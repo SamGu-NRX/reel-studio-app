@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatAction, ExportResult, NoteMoment, PlacedWord, ProjectDetail, ProviderInfo } from '../../../shared/api'
+import type { ChatAction, NoteMoment, PlacedWord, ProjectDetail, ProviderInfo } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
 import { EMPTY_LIVE, liveFromDetail, reduceLive, type LiveState } from '../../../shared/live'
 import { NO_TIMELINE, noSpeech, noteMarks, noteMoment, sourceAt, wordsAt, wordsBetween, type RenderSegment } from '../../../shared/moments'
@@ -7,10 +7,7 @@ import { notesLog, type LogEntry } from '../../../shared/notes-log'
 import type { Step } from '../../../shared/steps'
 import { reel, userMessage } from '../api'
 import type { Go } from '../nav'
-import { Confirm, FOLDER_APP, Modal, PickFiles, Spinner, useFileDrop } from '../components/ui'
-import { SendToPhone } from '../components/SendToPhone'
-import { CloudSave } from '../components/CloudSave'
-import { PlatformExportDialog } from '../components/PlatformExportDialog'
+import { Confirm, PickFiles, Spinner, useFileDrop } from '../components/ui'
 import { Icon } from '../components/icons'
 import { PhonePlayer } from '../components/Player'
 import type { SubtitleLook } from '../../../shared/caption-presets'
@@ -40,7 +37,6 @@ const ACTION_TAB: Partial<Record<ChatAction, Tab>> = {
   'open-editor': 'cut'
 }
 
-const INSTAGRAM_URL = 'https://www.instagram.com/'
 const NOTIFY_ASKED = 'rs.notify-asked'
 const fileName = (p: string): string => p.split(/[\\/]/).pop() ?? p
 const pinsKey = (slug: string): string => `rs.pins.${slug}`
@@ -88,9 +84,6 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   // the waiting hand edit Edit it myself is changing (its Edit in the log), or null for a new one
   const [handId, setHandId] = useState<string | null>(null)
   const [stage, setStage] = useState<HTMLElement | null>(null)
-  const [exporting, setExporting] = useState<'busy' | ExportResult | null>(null)
-  const [platformPicker, setPlatformPicker] = useState(false)
-  const [phoneFirst, setPhoneFirst] = useState(false)
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
   const [providerChecked, setProviderChecked] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -147,8 +140,6 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     setHeldN(0)
   }, [providerChecked, att.onDropFiles])
   const versionRows = useVersionRows(slug)
-  // one export per version: a cloud save after Export reuses the file
-  const exports = useRef(new Map<number, ExportResult>())
   const lastJob = useRef<string | null>(null)
   const nowStep = useRef(-1)
   // read in the job listener, which is set up once
@@ -307,36 +298,6 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
 
   const latestN = d?.versions[d.versions.length - 1]?.n
   const older = version && version.n !== latestN ? version : null
-
-  const exportFile = useCallback(async (): Promise<ExportResult> => {
-    if (!version) throw { userMessage: 'Wait for Version 1.' }
-    const had = exports.current.get(version.n)
-    if (had) return had
-    const r = await reel.projects.exportVersion(slug, version.n)
-    exports.current.set(version.n, r)
-    return r
-  }, [slug, version])
-
-  const doExport = useCallback(
-    async (toPhone = false) => {
-      if (!version || job || exporting) return
-      setPhoneFirst(toPhone)
-      setExporting('busy')
-      try {
-        setExporting(await exportFile())
-      } catch (e) {
-        setExporting(null)
-        notify(userMessage(e), 'error')
-      }
-    },
-    [version, job, exporting, exportFile, notify]
-  )
-
-  useEffect(() => {
-    const fn = () => { if (!platformPicker) void doExport() }
-    window.addEventListener(EXPORT_EVENT, fn)
-    return () => window.removeEventListener(EXPORT_EVENT, fn)
-  }, [doExport, platformPicker])
 
   const aiOff = providerChecked && (!provider || !provider.connected || provider.id === 'none')
   const canPoint = !!version && !aiOff && !compare && !drawer
@@ -515,7 +476,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     const caption = text.trim()
     if (caption === (d.project.post?.caption ?? '').trim()) return true
     try {
-      await reel.projects.update(slug, { post: { hashtags: [], keywords: [], ...(d.project.post ?? {}), caption } })
+      await reel.projects.update(slug, { post: { keywords: [], ...(d.project.post ?? {}), caption, hashtags: [] } })
       await load()
       return true
     } catch (e) {
@@ -546,7 +507,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
         })
         .catch((e) => setAnswerError({ id: messageId, text: userMessage(e) }))
     } else if (a === 'connect') connect()
-    else if (a === 'open-post') void doExport()
+    else if (a === 'open-post') window.dispatchEvent(new Event(EXPORT_EVENT))
     else openDrawer(ACTION_TAB[a] ?? 'cut')
   }
   // "Edit it myself" changes the newest version: with an older one on screen, show the newest first.
@@ -628,13 +589,13 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       )}
       {hasVersions && (
         <Outs
-          label="Share"
+          slug={slug}
+          version={version}
+          versions={d.versions}
+          post={d.project.post}
           disabled={!version || !!job}
-          why={job ? 'Wait for this version to finish' : undefined}
-          onExport={() => void doExport()}
-          onPhone={() => void doExport(true)}
-          onPlatforms={() => setPlatformPicker(true)}
-          exportFile={exportFile}
+          why={job ? 'Wait for this version to finish.' : undefined}
+          onSaveCaption={savePost}
         />
       )}
       <span className="rt-more">
@@ -927,8 +888,6 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
         />
       )}
 
-      {platformPicker && version && <PlatformExportDialog slug={slug} version={version} versions={d.versions} fps={d.project.format?.fps ?? 30} post={d.project.post} jobId={job?.jobId || undefined} status={job?.message} onClose={() => setPlatformPicker(false)} />}
-      {exporting && <ExportDialog result={exporting} phoneFirst={phoneFirst} onClose={() => setExporting(null)} onSaveCaption={(t) => savePost(t)} />}
     </div>
   )
 }
@@ -1035,133 +994,5 @@ function PlannedStage({ title, onFiles }: { title: string; onFiles: (paths: stri
         </div>
       </div>
     </div>
-  )
-}
-
-/**
- * After Export: the file is on the computer, Instagram is on the phone. Everything needed to post
- * is in this one box: where the file is, the post caption (edit and copy it here), and how to get
- * the video to Instagram. Never "go back and export again" for text that is not in the video.
- */
-function ExportDialog({
-  result,
-  phoneFirst,
-  onClose,
-  onSaveCaption
-}: {
-  result: 'busy' | ExportResult
-  phoneFirst?: boolean
-  onClose: () => void
-  onSaveCaption: (t: string) => Promise<boolean>
-}) {
-  const [opened, setOpened] = useState(false)
-  const [phone, setPhone] = useState(!!phoneFirst)
-  const [caption, setCaption] = useState(result === 'busy' ? '' : result.caption)
-  const [copied, setCopied] = useState(false)
-  useEffect(() => {
-    if (result !== 'busy') setCaption(result.caption)
-  }, [result])
-
-  if (result === 'busy')
-    return (
-      <Modal testid="export-dialog">
-        <h2>Getting it ready for Instagram</h2>
-        <div className="row">
-          <Spinner /> <span className="muted">This takes a moment.</span>
-        </div>
-      </Modal>
-    )
-
-  // "Send to my phone" (components/SendToPhone.tsx): a QR code that opens this video on the phone.
-  if (phone)
-    return (
-      <Modal onClose={onClose} wide testid="export-dialog">
-        <SendToPhone video={result.video} caption={caption} onBack={() => setPhone(false)} />
-      </Modal>
-    )
-
-  return (
-    <Modal onClose={onClose} wide testid="export-dialog">
-      <div className="export-head">
-        {result.cover && <img className="cover-img" style={{ width: 84 }} src={`reel-media://f/${encodeURIComponent(result.cover)}`} alt="" />}
-        <div className="stack" style={{ gap: 6, minWidth: 0 }}>
-          {/* says plainly that it is saved, and where (grandma3 #8, #17) */}
-          <h2 data-testid="export-saved">Saved to your computer</h2>
-          <p className="muted-sm">Ready to post. Find it any time in Library › Finished videos:</p>
-          <p className="file-pill" data-testid="export-name" title={result.video}>
-            <Icon name="video" size={16} /> {fileName(result.video)}
-          </p>
-          <div className="row">
-            <button
-              className="btn small"
-              onClick={async () => {
-                await reel.app.openFolder(result.video)
-                setOpened(true)
-              }}
-              data-testid="show-in-folder"
-            >
-              <Icon name="folder" size={16} /> Show in {FOLDER_APP}
-            </button>
-          </div>
-          {opened && (
-            <p className="muted-sm" data-testid="opened">
-              I opened {FOLDER_APP} with your video selected.
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="stack" style={{ gap: 8 }}>
-        <label className="field-label" htmlFor="export-caption">
-          Post caption <span className="muted-sm">(you paste this into Instagram)</span>
-        </label>
-        <textarea
-          id="export-caption"
-          className="textarea"
-          style={{ minHeight: 84 }}
-          value={caption}
-          placeholder="Write a line or two about your video. You can also leave it empty."
-          onChange={(e) => {
-            setCaption(e.target.value)
-            setCopied(false)
-          }}
-          onBlur={() => void onSaveCaption(caption)}
-          data-testid="export-caption"
-        />
-        <div className="row">
-          <button
-            className="btn small"
-            disabled={!caption.trim()}
-            data-testid="copy-caption"
-            onClick={async () => {
-              await reel.app.copyText(caption)
-              void onSaveCaption(caption)
-              setCopied(true) // the button says "Copied"; no toast on top of the dialog
-            }}
-          >
-            <Icon name={copied ? 'check' : 'copy'} size={16} /> {copied ? 'Copied' : 'Copy caption'}
-          </button>
-        </div>
-      </div>
-
-      <div className="post-how">
-        <p>Instagram is on your phone? Send the video there in one step. Or upload it at instagram.com.</p>
-        <div className="stack" style={{ gap: 8 }}>
-          <button className="btn primary big" onClick={() => setPhone(true)} data-testid="send-to-phone">
-            <Icon name="send" size={16} /> Send to my phone
-          </button>
-          <CloudSave video={result.video} />
-          <a className="btn small" href={INSTAGRAM_URL} target="_blank" rel="noreferrer" data-testid="open-instagram">
-            <Icon name="instagram" size={16} /> Open Instagram
-          </a>
-        </div>
-      </div>
-
-      <div className="row" style={{ justifyContent: 'flex-end' }}>
-        <button className="btn ghost" onClick={onClose} data-autofocus>
-          Done
-        </button>
-      </div>
-    </Modal>
   )
 }

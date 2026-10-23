@@ -407,17 +407,18 @@ TAKES.forEach((take, i) => {
 
       // ---- Export ----
       const t2 = Date.now()
-      await page.getByTestId('export').click()
-      await expect(page.getByText('Saved to your computer')).toBeVisible({ timeout: 30 * 60_000 })
+      await page.getByTestId('share').click()
+      await page.getByTestId('share-instagram').click()
+      await expect(page.getByTestId('share-pop')).toContainText('Ready for Instagram', { timeout: 30 * 60_000 })
       timings.exportSec = Math.round((Date.now() - t2) / 1000)
-      const dialog = await page.getByTestId('export-dialog').innerText()
+      const dialog = await page.getByTestId('share-pop').innerText()
       result.exportDialog = dialog
       expect(dialog).toContain('Show in Finder')
       expect(dialog).not.toMatch(/Explorer|taskbar|Phone Link/)
       await snap(page, `${TAG}-${i}-06-exported`)
 
       // ---- Send to my phone: the real LAN link, fetched from this Mac like a phone would ----
-      await page.getByTestId('send-to-phone').click()
+      await page.getByTestId('share-phone').click()
       const qr = page.getByTestId('phone-qr')
       await expect(qr).toBeVisible()
       const url = (await qr.getAttribute('data-url'))!
