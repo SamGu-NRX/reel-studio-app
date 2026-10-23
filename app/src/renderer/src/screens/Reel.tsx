@@ -84,6 +84,11 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   // what a note's job has said it was doing, in order, for Steps
   const [steps, setSteps] = useState<string[]>([])
   const [drawer, setDrawer] = useState<Tab | null>(null)
+  // Edit it myself, expanded to the whole window: the preview large, the tabs beside it, the timeline across the bottom
+  const [expanded, setExpanded] = useState(false)
+  useEffect(() => {
+    if (!drawer) setExpanded(false)
+  }, [drawer])
   // while Edit it myself is open: what the timeline draws for its Sound tab, and the sound picked there or on it
   const [audio, setAudio] = useState<TimelineAudio | null>(null)
   const [sound, setSound] = useState<string | null>(null)
@@ -751,7 +756,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   return (
     <div className="reel-page" data-slug={slug}>
       <TitleBarSlot title={title} actions={actions} />
-      <div className="reel-b">
+      <div className={`reel-b${expanded && drawer ? ' edit-full' : ''}`} data-testid="reel-body">
         <section className="stage" aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
           {planned ? (
             <PlannedStage title={d.title} onFiles={(p) => void addVideo(p)} />
@@ -821,6 +826,11 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     onPlay={(n) => !drawer && watch(n)}
                   />
                   <TransportRow transport={transport} playhead={playhead}>
+                    {drawer && (
+                      <Button kind="secondary" size="small" aria-pressed={expanded} onClick={() => setExpanded((x) => !x)} title={expanded ? 'Back to the side panel' : 'Edit across the whole window'} data-testid="edit-expand">
+                        <Icon name={expanded ? 'zoom-out' : 'maximize'} size={14} stroke={2} /> {expanded ? 'Collapse' : 'Expand'}
+                      </Button>
+                    )}
                     {wide ? (
                       <Button kind="secondary" size="small" onClick={fullscreen} aria-keyshortcuts="F" title="Full screen (F). Esc leaves." data-testid="fullscreen">
                         <Icon name="maximize" size={14} stroke={2} /> Full screen

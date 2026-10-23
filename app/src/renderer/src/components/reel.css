@@ -376,3 +376,20 @@ html.kb :is(.acc > div, .stripwrap > div, .steps > div, .tchip, .spot, .draghand
   .helper .hb i { animation: none; width: 100%; opacity: .5; }
   @keyframes line-in { from { opacity: 0; } }
 }
+
+/* ---- Edit it myself, expanded (demo build): the whole window under the title bar, laid out like an editing app.
+   The stage's parts join the grid (display: contents): the preview top left, the tabs top right, then the timeline
+   and the transport across the full width on their own band. ---- */
+.reel-b.edit-full {
+  position: fixed; inset: var(--titlebar) 0 0 0; z-index: 20; background: var(--paper);
+  grid-template-columns: minmax(0, 1fr) clamp(380px, 30vw, 440px); grid-template-rows: minmax(0, 1fr) auto auto;
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+@starting-style { .reel-b.edit-full { opacity: 0; transform: scale(.985); } }
+@media (prefers-reduced-motion: reduce) { @starting-style { .reel-b.edit-full { transform: none; } } }
+.reel-b.edit-full::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 110px; background: var(--paper-2); box-shadow: inset 0 1px 0 var(--line); z-index: -1; }
+.reel-b.edit-full > .stage { display: contents; }
+.reel-b.edit-full .stage-v { grid-column: 1; grid-row: 1; padding: 12px var(--gutter) 20px; }
+.reel-b.edit-full > .ncol { grid-column: 2; grid-row: 1; padding-top: 12px; }
+.reel-b.edit-full .tl { grid-column: 1 / -1; grid-row: 2; margin: 22px var(--gutter) 0; }
+.reel-b.edit-full .transport { grid-column: 1 / -1; grid-row: 3; margin: 6px var(--gutter) 12px; }
