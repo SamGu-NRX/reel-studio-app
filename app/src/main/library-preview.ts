@@ -10,6 +10,9 @@ import { binForFolder, isVideo, AUDIO_EXT } from './library'
 import { mediaUrl } from './media-url'
 import { ffmpegPath, ffprobePath, libraryPreviewDir, sfxPackDir } from './paths'
 
+// A Library file is untrusted input: only local files and the media demuxers, so a playlist (an HLS or concat
+// file renamed .mp4) can't make ffmpeg open other files or the network. The same list as engine asset_preview.py.
+const INPUT = ['-protocol_whitelist', 'file', '-format_whitelist', 'mov,matroska,webm,avi,wav,mp3,flac,ogg,aac']
 const PEAKS = 120
 const RATE = 2000
 const TILE = { w: 135, h: 240 }
@@ -34,20 +37,20 @@ export function peaksOf(samples: Float32Array, n = PEAKS): number[] {
 }
 
 async function audioPreview(file: string): Promise<LibraryPreview> {
-  const raw = await run(ffmpegPath(), ['-nostdin', '-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', String(RATE), '-f', 'f32le', '-'])
+  const raw = await run(ffmpegPath(), ['-nostdin', '-v', 'error', ...INPUT, '-i', file, '-vn', '-ac', '1', '-ar', String(RATE), '-f', 'f32le', '-'])
   const samples = new Float32Array(raw.buffer, raw.byteOffset, Math.floor(raw.byteLength / 4))
   return { durationSec: samples.length / RATE, peaks: peaksOf(samples) }
 }
 
 async function videoPreview(file: string, sheet: string): Promise<LibraryPreview> {
-  const probe = await run(ffprobePath(), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file])
+  const probe = await run(ffprobePath(), ['-v', 'error', ...INPUT, '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file])
   const durationSec = Number(probe.toString().trim())
   if (!Number.isFinite(durationSec) || durationSec <= 0) throw new Error(`no duration for ${file}`)
   const at = [0.08, 0.36, 0.64, 0.92].map((f) => (durationSec * f).toFixed(3))
   const fit = `scale=${TILE.w}:${TILE.h}:force_original_aspect_ratio=increase,crop=${TILE.w}:${TILE.h},setsar=1`
   await run(ffmpegPath(), [
     '-nostdin', '-v', 'error', '-y',
-    ...at.flatMap((t) => ['-ss', t, '-i', file]),
+    ...at.flatMap((t) => [...INPUT, '-ss', t, '-i', file]),
     '-filter_complex', `${at.map((_, i) => `[${i}:v:0]${fit}[t${i}]`).join(';')};${at.map((_, i) => `[t${i}]`).join('')}hstack=inputs=4`,
     '-frames:v', '1', '-q:v', '4', sheet
   ])
