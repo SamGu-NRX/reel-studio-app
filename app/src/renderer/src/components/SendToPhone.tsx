@@ -67,7 +67,7 @@ function Qr({ url }: { url: string }) {
 
 const mb = (n: number): string => `${Math.max(1, Math.round(n / 1_000_000))} MB`
 
-export function SendToPhone({ video, caption, onBack }: { video: string; caption: string; onBack: () => void }) {
+export function SendToPhone({ video, caption, onBack, onSent }: { video: string; caption: string; onBack: () => void; onSent?: () => void }) {
   const [share, setShare] = useState<PhoneShare | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
@@ -77,6 +77,8 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
   const [address, setAddress] = useState<string | undefined>(undefined)
   const [attempt, setAttempt] = useState(0)
   const sentRef = useRef(false)
+  const onSentRef = useRef(onSent)
+  onSentRef.current = onSent
   const mounted = useRef(true)
 
   // Open the link (again, on another network or after it ran out); always close it when the panel goes.
@@ -112,6 +114,7 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
     () =>
       reel.phone.onEvent((e) => {
         if (e.kind === 'page' || e.kind === 'video') {
+          if (!sentRef.current) onSentRef.current?.()
           sentRef.current = true
           setSent(true)
         } else if (e.kind === 'stopped' && e.reason === 'timeout') setStopped(true)
@@ -146,14 +149,14 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
         </button>
       </div>
     ),
-    cloud: <CloudSave video={video} fallback />,
+    cloud: <CloudSave video={video} />,
     email: (
       <div className="phone-way">
         <Glyph name="mail" />
         <div>
           <b>Email it to yourself</b>
           <p className="muted-sm">
-            I'll start an email and open {FOLDER_APP} with your video. Drag the video into the email, send it to yourself, then open it on your phone.
+            Reel Studio starts an email and opens {FOLDER_APP} with your video. Drag the video into the email, send it to yourself, then open it on your phone.
             {share && (big ? ` Your video is ${mb(share.size)}, which is probably too big for email (most allow about 20 MB). Use iCloud Drive or Google Drive instead.` : ` Your video is ${mb(share.size)}.`)}
           </p>
           {emailed && (
