@@ -3,6 +3,7 @@
 // the root this run uses.
 import { basename } from 'node:path'
 import type { createPidRegistry } from './orphans'
+import { clearStaleLocks } from './owner'
 import { setRootOverride } from './paths'
 import { loadSettings, type Settings } from './settings'
 import { ensureRoot, recoverInterrupted } from './store'
@@ -29,6 +30,7 @@ export async function settleLastRun(
     keepClosed(slug)
   }
   if (!touchRoot) return settings
+  await clearStaleLocks(stillRunning).catch((e) => log(`[locks] ${String(e)}`))
   const recovered = await recoverInterrupted(closed).catch((e) => {
     log(`[recover] ${String(e)}`)
     return []

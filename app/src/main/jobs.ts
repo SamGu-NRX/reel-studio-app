@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import type { JobEvent, JobKind, JobUpdate, Phase, VersionMade } from '../shared/api'
 import { addChat, cleanPartialVersions, listVersions, projectDir, recordVersionMade, settleNote, updateAppState } from './store'
+import { claimProject, type ProjectOwner } from './owner'
 import { toUserError } from './engine'
 import { learn, ProgressTracker, type SpeedHistory, parseHistory, type ProgressKind } from './progress'
 import type { WorkGate } from './work-gate'
@@ -24,11 +25,13 @@ export interface ProgressDeps {
 export type ToVideo = (slug: string, e: Extract<JobUpdate, { type: 'render' }>) => Promise<string | null>
 /**
  * `outcome`: for a note, whether it changed the video (absent = it did). `made`: what this job changed, recorded for
- * `version` only if the job's own final render made it (see start).
+ * `version` only if the job's own final render made it (see start). `job.owner`: the token that owns the project while
+ * the job runs; every engine command and edit it starts joins with it (`--owner`, ai owner.ts).
  */
 export type JobFn = (
   emit: Emit,
-  signal: AbortSignal
+  signal: AbortSignal,
+  job: { owner: string | null }
 ) => Promise<{ summary: string; version?: number; quiet?: boolean; outcome?: 'done' | 'failed'; made?: Pick<VersionMade, 'by' | 'summary'> }>
 
 interface Running {
@@ -56,6 +59,8 @@ export function createJobManager(
 ) {
   const jobs = new Map<string, Running>()
 
+  /** Projects a manual edit is writing right now: no job may start on them meanwhile. */
+  const held = new Set<string>()
   /** Projects an engine process may still be writing to after its job ended (ENGINE_STUCK): nothing
    * runs on them and they stay closed until Reel Studio restarts and its leftovers are reaped. */
   const stuck = new Map<string, { code: string; userMessage: string }>()
@@ -64,14 +69,15 @@ export function createJobManager(
   function refuseIfBusy(slug: string): void {
     const s = stuck.get(slug)
     if (s) throw s
-    if (forSlug(slug)) throw BUSY
+    if (forSlug(slug) || held.has(slug)) throw BUSY
   }
 
   function forSlug(slug: string): Running | undefined {
     return [...jobs.values()].find((j) => j.slug === slug)
   }
 
-  /** Nothing else may write to the project: a job runs on it, or it is kept closed. */
+  /** Nothing else may write to the project: a job runs on it, or it is kept closed. A manual edit
+   * (`hold`) does not count: it is quick, and only refuses jobs and other edits meanwhile. */
   function isClosed(slug: string): boolean {
     return stuck.has(slug) || !!forSlug(slug)
   }
@@ -90,6 +96,7 @@ export function createJobManager(
     const pending: Promise<void>[] = []
     let progressKind: ProgressKind = kind
     let tracker = new ProgressTracker(progressKind, 0, history)
+    let owner: ProjectOwner | null = null
     let phase: Phase | undefined
     // `thinking` is state, not a one-off: the once-a-second repeats keep saying it until the AI answers
     const status = (): void => {
@@ -112,6 +119,7 @@ export function createJobManager(
       try {
         // Inside the try: if even this fails, the user gets an error instead of a job that never ends.
         if (slug) {
+          owner = await claimProject(projectDir(slug))
           await updateAppState(slug, (s) => {
             s.job = { id, kind, startedAt: new Date().toISOString(), note: opts.note }
             s.lastError = null
@@ -160,7 +168,7 @@ export function createJobManager(
             pending.push(video.then((v) => send({ jobId: id, slug, type: 'render', version: r.version, draft: r.draft, firstLook: !!r.firstLook, video: v })))
           } else if (e.type === 'reply') send({ jobId: id, slug, type: 'reply', text: e.text })
           else send({ jobId: id, slug, type: 'heard', words: e.words })
-        }, abort.signal)
+        }, abort.signal, { owner: owner?.token ?? null })
         await Promise.all(pending) // a render's event before `done`, never after
         if (progress && mediaSec > 0) {
           // what each phase really took on this computer: the next estimate starts from it
@@ -185,8 +193,9 @@ export function createJobManager(
         const cancelled = err.code === 'CANCELLED' || abort.signal.aborted
         if (!cancelled) log(`[job ${kind}] ${err.code}: ${err.message ?? ''}`)
         if (slug && err.code === 'ENGINE_STUCK') stuck.set(slug, { code: err.code, userMessage: err.userMessage })
-        // With a stuck engine nothing is cleaned up: it may still be writing.
-        if (slug && !stuck.has(slug)) {
+        // Without the project this job wrote nothing. With a stuck engine nothing is cleaned up or let
+        // go: it may still be writing.
+        if (slug && owner && !stuck.has(slug)) {
           await cleanPartialVersions(projectDir(slug)).catch(() => [])
           await updateAppState(slug, (s) => {
             s.job = null
@@ -199,11 +208,29 @@ export function createJobManager(
         send(cancelled ? { jobId: id, slug, type: 'cancelled' } : { jobId: id, slug, type: 'error', code: err.code, userMessage: err.userMessage })
       } finally {
         clearInterval(tick)
+        if (!(slug && stuck.has(slug))) await owner?.release().catch((e) => log(`[job ${kind}] could not let go of the project: ${String(e)}`))
         jobs.delete(id)
         leaveGate?.()
       }
     })()
     return id
+  }
+
+  /** Runs a quick change to a project (a manual edit) as its only writer: refused while a job runs
+   * on it, and no job can start on it until `fn` is done. */
+  async function hold<T>(slug: string, fn: () => Promise<T>): Promise<T> {
+    refuseIfBusy(slug)
+    held.add(slug)
+    try {
+      const owner = await claimProject(projectDir(slug))
+      try {
+        return await fn()
+      } finally {
+        await owner.release()
+      }
+    } finally {
+      held.delete(slug)
+    }
   }
 
   /** A project something of a previous run still writes to (orphans.ts reap): closed until it stops. */
@@ -213,7 +240,9 @@ export function createJobManager(
 
   return {
     start,
-    /** Throws while a job runs on the project or it is kept closed: a manual edit must wait. */
+    hold,
+    /** Throws while a job runs on the project, a manual edit holds it, or it is kept closed: a note or
+     * deleting the video must wait. */
     refuseIfBusy,
     isClosed,
     keepClosed,
