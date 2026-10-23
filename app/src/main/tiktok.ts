@@ -86,24 +86,32 @@ export class TikTokService {
   private async credentials(): Promise<TikTokCredentials> {
     const config = await this.config()
     const c = await this.tokens.load()
-    if (!c || c.clientKey !== config.tiktokClientKey || c.brokerUrl !== config.tiktokBrokerUrl)
+    if (!c || !c.installToken || c.clientKey !== config.tiktokClientKey || c.brokerUrl !== config.tiktokBrokerUrl)
       return fail('TT_TOKEN', 'Connect TikTok again in Settings.')
     return c
   }
-  private parseToken(data: Record<string, unknown>, config: { tiktokClientKey: string; tiktokBrokerUrl: string }, displayName: string): TikTokCredentials {
+  private parseToken(data: Record<string, unknown>, config: { tiktokClientKey: string; tiktokBrokerUrl: string }, displayName: string, installToken: unknown): TikTokCredentials {
     if (String(data.token_type).toLowerCase() !== 'bearer') return invalid()
     const scopes = text(data.scope).split(',')
     if (!scopes.includes('user.info.basic')) throw apiError('scope_not_authorized')
     return { accessToken: text(data.access_token), refreshToken: text(data.refresh_token), expiresAt: this.now() + positive(data.expires_in) * 1000,
       refreshExpiresAt: this.now() + positive(data.refresh_expires_in) * 1000, accountId: text(data.open_id), displayName, scopes,
-      clientKey: config.tiktokClientKey, brokerUrl: config.tiktokBrokerUrl }
+      clientKey: config.tiktokClientKey, brokerUrl: config.tiktokBrokerUrl, installToken: text(installToken) }
+  }
+  private async broker(c: TikTokCredentials, path: '/api/tiktok/oauth/token' | '/api/install/revoke', body: unknown, signal: AbortSignal): Promise<Record<string, unknown>> {
+    const config = await this.config()
+    if (!c.installToken || c.brokerUrl !== config.tiktokBrokerUrl || c.clientKey !== config.tiktokClientKey)
+      return fail('TT_TOKEN', 'Connect TikTok again in Settings.')
+    return request(this.o.fetch, `${config.tiktokBrokerUrl}${path}`, {
+      ...jsonPost(body), headers: { 'content-type': 'application/json', 'X-Reel-Install-Token': c.installToken }
+    }, signal, false)
   }
   private async refresh(c: TikTokCredentials, signal: AbortSignal): Promise<TikTokCredentials> {
     if (c.refreshExpiresAt <= this.now()) throw apiError('invalid_grant')
-    const data = await request(this.o.fetch, `${c.brokerUrl}/api/tiktok/oauth/token`, jsonPost({
+    const data = await this.broker(c, '/api/tiktok/oauth/token', {
       client_key: c.clientKey, grant_type: 'refresh_token', refresh_token: c.refreshToken
-    }), signal, false)
-    const next = this.parseToken(data, { tiktokClientKey: c.clientKey, tiktokBrokerUrl: c.brokerUrl }, c.displayName)
+    }, signal)
+    const next = this.parseToken(data, { tiktokClientKey: c.clientKey, tiktokBrokerUrl: c.brokerUrl }, c.displayName, c.installToken)
     if (next.accountId !== c.accountId) return fail('TT_ACCOUNT', 'TikTok returned another account. Connect again in Settings.')
     signal.throwIfAborted()
     await this.tokens.save(next)
@@ -150,7 +158,7 @@ export class TikTokService {
         const data = await request(this.o.fetch, `${config.tiktokBrokerUrl}/api/tiktok/oauth/token`, jsonPost({
           client_key: config.tiktokClientKey, grant_type: 'authorization_code', code, redirect_uri: listener.redirectUri, code_verifier: verifier
         }), signal, false)
-        let credentials = this.parseToken(data, config, 'TikTok creator')
+        let credentials = this.parseToken(data, config, 'TikTok creator', data.install_token)
         if (!['video.list', 'video.upload'].every((s) => credentials.scopes.includes(s))) throw apiError('scope_not_authorized')
         const profile = object((await request(this.o.fetch, `${TIKTOK_API}/user/info/?fields=open_id,display_name`, {
           method: 'GET', headers: { authorization: `Bearer ${credentials.accessToken}` }
@@ -174,7 +182,12 @@ export class TikTokService {
   stop(): void { this.cancelConnect(); this.connection.abort() }
   async disconnect(): Promise<void> {
     this.stop(); this.connection = new AbortController()
-    const result = this.queue.then(() => this.tokens.clear(), () => this.tokens.clear())
+    const clear = async () => {
+      const saved = await this.tokens.load()
+      if (saved?.installToken) await this.broker(saved, '/api/install/revoke', {}, new AbortController().signal)
+      await this.tokens.clear()
+    }
+    const result = this.queue.then(clear, clear)
     this.queue = result.catch(() => undefined)
     return result
   }

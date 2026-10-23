@@ -17,7 +17,7 @@ import { createTikTokBroker } from '../src/server/tiktok-broker'
 import type { TikTokPublishInput, TikTokSettings } from '../src/shared/tiktok'
 
 const NOW = Date.UTC(2026, 9, 23), API = 'https://open.tiktokapis.com/v2', BROKER = 'https://broker.example'
-const TOKEN = 'fabricated-access', REFRESH = 'fabricated-refresh'
+const TOKEN = 'fabricated-access', REFRESH = 'fabricated-refresh', INSTALL = 'fabricated-tiktok-install'
 const SCOPES = ['user.info.basic', 'video.list', 'video.upload', 'video.publish']
 const UPLOAD = 'https://open-upload.tiktokapis.com/video/?upload_id=fixture&upload_token=fabricated'
 const INPUT: TikTokPublishInput = { slug: 'fixture', version: 1, caption: 'Fixture #video', mode: 'direct-or-inbox', consent: true,
@@ -26,7 +26,7 @@ const INPUT: TikTokPublishInput = { slug: 'fixture', version: 1, caption: 'Fixtu
 const CREATOR = { creator_nickname: 'Fixture creator', privacy_level_options: ['PUBLIC_TO_EVERYONE', 'SELF_ONLY'],
   comment_disabled: true, duet_disabled: false, stitch_disabled: true, max_video_post_duration_sec: 60 }
 const token = (extra = {}) => ({ access_token: TOKEN, refresh_token: REFRESH, token_type: 'Bearer', expires_in: 86400,
-  refresh_expires_in: 31536000, open_id: 'fixture-open-id', scope: SCOPES.join(','), ...extra })
+  refresh_expires_in: 31536000, install_token: INSTALL, open_id: 'fixture-open-id', scope: SCOPES.join(','), ...extra })
 interface Step {
   path: string
   method?: string
@@ -73,24 +73,26 @@ async function world(opts: { dev?: boolean; enabled?: boolean; audited?: boolean
       expect(url).toBe(step.path.startsWith('https://') ? step.path : `${API}/${step.path}`)
       expect(init.method ?? 'GET').toBe(step.method ?? 'POST')
       expect(init.redirect).toBe('error')
+      expect(url).not.toContain(INSTALL)
+      if (new URL(url).origin !== BROKER) expect(new Headers(init.headers).has('x-reel-install-token')).toBe(false)
       await step.inspect?.(init)
     } catch (e) { fixtureErrors.push(e); throw e }
     if (!step) throw new Error('Unexpected HTTP')
     if (step.respond) return step.respond(init)
     if (url === UPLOAD) return new Response(null, { status: step.status ?? 201 })
+    if (url.startsWith(BROKER)) return Response.json(step.body ?? {}, { status: step.status ?? 200 })
     return Response.json(step.raw ? step.body : { data: step.body ?? {}, error: { code: 'ok', message: '' } }, { status: step.status ?? 200 })
   }
   let browser = async (_url: string): Promise<void> => { throw new Error('Unexpected browser') }
-  const broker = createTikTokBroker({ clientKey: 'fixture-key', clientSecret: 'fabricated-server-secret', fetch: fetchFixture })
   const service = new TikTokService({ dev: opts.dev ?? true, settings: async () => settings, settingsDir: join(dir, 'settings'),
     projectsDir: () => join(dir, 'projects'), secrets, now: () => now,
-    fetch: (url, init) => url === `${BROKER}/api/tiktok/oauth/token` ? broker(new Request(url, init)) : fetchFixture(url, init),
+    fetch: fetchFixture,
     openExternal: (url) => browser(url) })
   cleanup.push({ service, dir })
   const store = new TikTokTokenStore(join(dir, 'settings'), secrets)
   const seed = (extra = {}) => store.save({ accessToken: TOKEN, refreshToken: REFRESH, expiresAt: NOW + 86400000,
     refreshExpiresAt: NOW + 31536000000, accountId: 'fixture-open-id', displayName: 'Fixture creator', scopes: SCOPES,
-    clientKey: 'fixture-key', brokerUrl: BROKER, ...extra })
+    clientKey: 'fixture-key', brokerUrl: BROKER, installToken: INSTALL, ...extra })
   const creator = (body: unknown = CREATOR) => steps.push({ path: 'post/publish/creator_info/query/', body })
   const init = (inbox = false, inspect?: Step['inspect']) => steps.push({ path: inbox ? 'post/publish/inbox/video/init/' : 'post/publish/video/init/',
     body: { publish_id: 'fixture-publish', upload_url: UPLOAD }, inspect })
@@ -118,12 +120,14 @@ async function world(opts: { dev?: boolean; enabled?: boolean; audited?: boolean
       expect((await fetch(callback)).status).toBe(200)
     }
     if (declined) return
-    steps.push({ path: 'oauth/token/', raw: true, body: token({ scope }), inspect: (init) => {
-      const form = new URLSearchParams(String(init.body))
-      expect(form.get('client_secret')).toBe('fabricated-server-secret'); expect(form.get('redirect_uri')).toBe(redirect)
-      expect(form.get('grant_type')).toBe('authorization_code')
-      expect(form.get('code')).toBe('fabricated/code+with=percent%')
-      expect(createHash('sha256').update(form.get('code_verifier') ?? '').digest('hex')).toBe(challenge)
+    steps.push({ path: `${BROKER}/api/tiktok/oauth/token`, raw: true, body: token({ scope, install_token: INSTALL }), inspect: (init) => {
+      const body = JSON.parse(String(init.body))
+      expect(body).not.toHaveProperty('client_secret')
+      expect(body.client_key).toBe('fixture-key'); expect(body.redirect_uri).toBe(redirect)
+      expect(body.grant_type).toBe('authorization_code')
+      expect(body.code).toBe('fabricated/code+with=percent%')
+      expect(new Headers(init.headers).has('x-reel-install-token')).toBe(false)
+      expect(createHash('sha256').update(body.code_verifier).digest('hex')).toBe(challenge)
       expect(challenge).toMatch(/^[a-f0-9]{64}$/)
     } })
     if (['user.info.basic', 'video.list', 'video.upload'].every((s) => scope.split(',').includes(s)))
@@ -141,8 +145,38 @@ describe('TikTok fixture HTTP', () => {
     expect(result).toMatchObject({ connected: true, accountId: 'fixture-open-id', scopes: SCOPES.slice(0, 3) })
     const bytes = await fs.readFile(join(w.dir, 'settings', 'tiktok-credentials.bin'))
     expect(bytes.includes(Buffer.from(TOKEN))).toBe(false); expect(bytes.includes(Buffer.from(REFRESH))).toBe(false)
-    expect(await w.store.load()).toMatchObject({ accessToken: TOKEN, refreshToken: REFRESH })
-    expect(result).not.toHaveProperty('accessToken'); expect(await w.service.session()).toEqual(result); w.done()
+    expect(bytes.includes(Buffer.from(INSTALL))).toBe(false)
+    expect(await w.store.load()).toMatchObject({ accessToken: TOKEN, refreshToken: REFRESH, installToken: INSTALL })
+    expect(result).toEqual({ connected: true, accountId: 'fixture-open-id', displayName: 'Fixture creator', expiresAt: NOW + 86400000, scopes: SCOPES.slice(0, 3) })
+    expect(await w.service.session()).toEqual(result); w.done()
+  })
+  it.each(['network', 'server'])('reports %s revoke failure and retains the encrypted install token', async (failure) => {
+    const w = await world(); await w.seed()
+    const before = await fs.readFile(join(w.dir, 'settings', 'tiktok-credentials.bin'))
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, raw: true, status: 503, body: {},
+      ...(failure === 'network' ? { respond: async () => { throw new Error('fabricated connection loss') } } : {}) })
+    await expect(w.service.disconnect()).rejects.toMatchObject({ code: failure === 'network' ? 'TT_NETWORK' : 'TT_API' })
+    expect(await fs.readFile(join(w.dir, 'settings', 'tiktok-credentials.bin'))).toEqual(before)
+    expect(await w.store.load()).toMatchObject({ installToken: INSTALL })
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, raw: true, body: {}, inspect: async (init) => {
+      expect(new Headers(init.headers).get('x-reel-install-token')).toBe(INSTALL)
+      expect(new Headers(init.headers).has('authorization')).toBe(false)
+      expect(await w.store.load()).toMatchObject({ installToken: INSTALL })
+    } })
+    await w.service.disconnect()
+    expect(await w.store.load()).toBeNull(); w.done()
+  })
+  it('refuses to send a saved install token to a broker other than the configured origin', async () => {
+    const w = await world(); await w.seed({ brokerUrl: 'https://other.example' })
+    await expect(w.service.disconnect()).rejects.toMatchObject({ code: 'TT_TOKEN' })
+    expect(await w.store.load()).toMatchObject({ installToken: INSTALL })
+    expect(w.calls).toEqual([]); w.done()
+  })
+  it('treats a saved connection without an install token as disconnected', async () => {
+    const w = await world(); await w.seed({ installToken: undefined })
+    expect(await w.service.session()).toEqual({ connected: false })
+    await expect(w.service.creator()).rejects.toMatchObject({ code: 'TT_TOKEN' })
+    expect(w.calls).toEqual([]); w.done()
   })
   it('maps declined consent and refuses a connection missing stats permission', async () => {
     const w = await world(); w.oauth('', true)
@@ -216,19 +250,20 @@ describe('TikTok fixture HTTP', () => {
   })
   it('refreshes an expired access token through the broker and persists the rotated refresh token', async () => {
     const w = await world(); await w.seed({ expiresAt: NOW - 1 })
-    w.steps.push({ path: 'oauth/token/', raw: true, body: token({ access_token: 'fabricated-next', refresh_token: 'fabricated-rotated' }), inspect: (init) => {
-      const form = new URLSearchParams(String(init.body)); expect(form.get('refresh_token')).toBe(REFRESH)
-      expect(form.get('client_secret')).toBe('fabricated-server-secret'); expect(form.get('grant_type')).toBe('refresh_token')
+    w.steps.push({ path: `${BROKER}/api/tiktok/oauth/token`, raw: true, body: token({ access_token: 'fabricated-next', refresh_token: 'fabricated-rotated' }), inspect: (init) => {
+      expect(JSON.parse(String(init.body))).toEqual({ client_key: 'fixture-key', grant_type: 'refresh_token', refresh_token: REFRESH })
+      expect(new Headers(init.headers).get('x-reel-install-token')).toBe(INSTALL)
+      expect(new Headers(init.headers).has('authorization')).toBe(false)
     } })
     w.steps.push({ path: 'post/publish/creator_info/query/', body: CREATOR, inspect: (init) => {
       expect(new Headers(init.headers).get('authorization')).toBe('Bearer fabricated-next')
     } })
-    await w.service.creator(); expect(await w.store.load()).toMatchObject({ accessToken: 'fabricated-next', refreshToken: 'fabricated-rotated' }); w.done()
+    await w.service.creator(); expect(await w.store.load()).toMatchObject({ accessToken: 'fabricated-next', refreshToken: 'fabricated-rotated', installToken: INSTALL }); w.done()
   })
   it('refreshes once after a definite invalid-token rejection', async () => {
     const w = await world(); await w.seed()
     w.steps.push({ path: 'post/publish/creator_info/query/', status: 401, raw: true, body: { error: { code: 'access_token_invalid' } } })
-    w.steps.push({ path: 'oauth/token/', raw: true, body: token({ access_token: 'fabricated-renewed' }) }); w.creator()
+    w.steps.push({ path: `${BROKER}/api/tiktok/oauth/token`, raw: true, body: token({ access_token: 'fabricated-renewed' }) }); w.creator()
     expect((await w.service.creator()).displayName).toBe('Fixture creator'); w.done()
   })
   it('asks to reconnect after refresh expiry without sending an expired token', async () => {
@@ -327,11 +362,13 @@ describe('TikTok fixture HTTP', () => {
   it('disconnect cancels refresh and prevents credentials returning later', async () => {
     const w = await world(); await w.seed({ expiresAt: NOW - 1 })
     let started!: () => void; const began = new Promise<void>((resolve) => { started = resolve })
-    w.steps.push({ path: 'oauth/token/', respond: (init) => new Promise((_resolve, reject) => {
+    w.steps.push({ path: `${BROKER}/api/tiktok/oauth/token`, respond: (init) => new Promise((_resolve, reject) => {
       started(); init.signal?.addEventListener('abort', () => reject(new Error('fixture aborted')), { once: true })
     }) })
     const pending = expect(w.service.creator()).rejects.toMatchObject({ code: 'TT_CANCELLED' })
-    await began; await w.service.disconnect(); await pending
+    await began
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, raw: true, body: {} })
+    await w.service.disconnect(); await pending
     expect(await w.store.load()).toBeNull(); w.done()
   })
   it('preserves corrupt outcomes and refuses stats from a different project version', async () => {
@@ -357,6 +394,7 @@ describe('TikTok fixture HTTP', () => {
     registerTikTokIpc({ handle, dev: true, service: w.service, saveSettings: async (s) => { configured = s } })
     expect(await handlers.get('tiktok:publish')?.(INPUT)).toMatchObject({ state: 'published' })
     w.stats(); expect(await handlers.get('tiktok:insights')?.('fixture', 1, '789')).toMatchObject({ metrics: { plays: 100 } })
+    w.steps.push({ path: `${BROKER}/api/install/revoke`, raw: true, body: {} })
     await handlers.get('tiktok:configure')?.({ ...w.settings, tiktokEnabled: false }); expect(configured).toMatchObject({ tiktokEnabled: false })
     registerTikTokIpc({ handle, dev: false, service: w.service, saveSettings: async () => { throw new Error('must not save') } })
     await expect(handlers.get('tiktok:configure')?.({})).rejects.toMatchObject({ code: 'TT_DISABLED' }); w.done()

@@ -18,6 +18,8 @@ export interface TikTokCredentials {
   scopes: string[]
   clientKey: string
   brokerUrl: string
+  // Legacy credential files have no broker credential and must reconnect.
+  installToken?: string
 }
 export function strings(value: unknown): string[] {
   if (!Array.isArray(value)) return invalid()
@@ -50,7 +52,8 @@ export class TikTokTokenStore {
       const c = object(JSON.parse(this.secrets.decryptString(bytes)))
       return { accessToken: text(c.accessToken), refreshToken: text(c.refreshToken), expiresAt: positive(c.expiresAt),
         refreshExpiresAt: positive(c.refreshExpiresAt), accountId: text(c.accountId), displayName: text(c.displayName),
-        scopes: strings(c.scopes), clientKey: text(c.clientKey), brokerUrl: text(c.brokerUrl) }
+        scopes: strings(c.scopes), clientKey: text(c.clientKey), brokerUrl: text(c.brokerUrl),
+        ...(c.installToken === undefined ? {} : { installToken: text(c.installToken) }) }
     } catch { return localError() }
   }
   async save(c: TikTokCredentials): Promise<void> {
