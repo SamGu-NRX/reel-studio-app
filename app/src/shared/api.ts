@@ -1,4 +1,6 @@
+// TikTok API v2: https://developers.tiktok.com/doc/login-kit-desktop/
 // Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
+import type { TikTokApi } from './tiktok'
 import type { InstagramApi } from './instagram'
 // Types shared by the main process, the preload bridge and the renderer.
 // Keep this file free of Node and DOM imports.
@@ -304,6 +306,7 @@ export interface UserError {
 }
 
 export interface ReelApi {
+  tiktok: TikTokApi
   instagram: InstagramApi
   app: {
     info(): Promise<AppInfo>

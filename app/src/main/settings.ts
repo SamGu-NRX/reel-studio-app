@@ -1,13 +1,15 @@
+// TikTok API v2: https://developers.tiktok.com/doc/login-kit-desktop/
 // Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
 // App settings (not user content): first-run flag and storage location.
 import { promises as fs } from 'node:fs'
 import { dirname } from 'node:path'
 import { settingsFile } from './paths'
 import { writeJson } from './store'
+import type { TikTokSettings } from '../shared/tiktok'
 import type { InstagramSettings } from '../shared/instagram'
 import { UPDATE_DEFAULTS, type UpdateState } from './update-check'
 
-export interface Settings extends UpdateState, InstagramSettings {
+export interface Settings extends UpdateState, InstagramSettings, TikTokSettings {
   firstRunDone: boolean
   root: string | null
   /** Written by the 0.1.0/0.1.1 local-Claude-Code builds (a one-time automatic AI pick); read once by ai-carryover.ts. */
@@ -19,7 +21,9 @@ export interface Settings extends UpdateState, InstagramSettings {
 const DEFAULTS: Settings = {
   firstRunDone: false, root: null, aiAutoPicked: false, aiCarriedOver: false, ...UPDATE_DEFAULTS,
   // Connection and publishing stay opt-in until the broker and Meta app have been configured.
-  instagramEnabled: false, instagramAppId: null, instagramBrokerUrl: null, instagramUploadOrigins: []
+  instagramEnabled: false, instagramAppId: null, instagramBrokerUrl: null, instagramUploadOrigins: [],
+  // Posting requires explicit developer configuration and approval of the requested scopes.
+  tiktokEnabled: false, tiktokClientKey: null, tiktokBrokerUrl: null, tiktokAudited: false, tiktokDirectPost: false
 }
 
 export async function loadSettings(): Promise<Settings> {

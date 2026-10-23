@@ -1,3 +1,4 @@
+// TikTok API v2: https://developers.tiktok.com/doc/login-kit-desktop/
 // Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, safeStorage, shell, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, promises as fs, appendFileSync, mkdirSync, realpathSync } from 'node:fs'
@@ -45,6 +46,8 @@ import { closeAnimationRenderer, renderAnimation, TEST_TEMPLATE } from './animat
 import { captureWebsite } from './capture'
 import { createModelManager } from './models'
 import { loadSettings, saveSettings } from './settings'
+import { TikTokService } from './tiktok'
+import { registerTikTokIpc } from './tiktok-ipc'
 import { InstagramService } from './instagram'
 import { registerInstagramIpc } from './instagram-ipc'
 import { InstagramError } from './instagram-http'
@@ -331,6 +334,12 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
 
 // ---- IPC ----------------------------------------------------------------------------------------
 function registerIpc(): void {
+  const tiktok = new TikTokService({
+    dev: DEV_PROVIDERS && !TEST, settings: loadSettings, settingsDir: settingsDir(), projectsDir,
+    secrets: safeStorage, fetch: (url, init) => fetch(url, init), openExternal: (url) => shell.openExternal(url)
+  })
+  registerTikTokIpc({ handle, service: tiktok, dev: DEV_PROVIDERS && !TEST, saveSettings })
+  app.on('before-quit', () => { tiktok.stop() })
   const instagram = new InstagramService({
     dev: DEV_PROVIDERS && !TEST,
     settings: loadSettings,

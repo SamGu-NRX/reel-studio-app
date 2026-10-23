@@ -1,9 +1,9 @@
+// TikTok API v2: https://developers.tiktok.com/doc/tiktok-api-v2-video-query/
 // Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
 // safeStorage (Electron 44): https://www.electronjs.org/docs/latest/api/safe-storage
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
-import { renameWithRetry } from './store'
+import { atomicSocialFile, withSocialFile } from './social-store'
 import { id, InstagramError, object, positive, text } from './instagram-http'
 import type { InstagramOutcome, InstagramPost } from '../shared/instagram'
 
@@ -42,16 +42,6 @@ export async function readObject(file: string): Promise<Record<string, unknown> 
   try { return object(JSON.parse(raw)) } catch { return localDataError() }
 }
 
-export async function atomicInstagramFile(file: string, contents: string | Buffer): Promise<void> {
-  const temp = `${file}.${randomUUID()}.tmp`
-  try {
-    await fs.writeFile(temp, contents, { mode: 0o600, flag: 'wx' })
-    await renameWithRetry(temp, file)
-  } finally {
-    await fs.rm(temp, { force: true })
-  }
-}
-
 export class InstagramTokenStore {
   constructor(private readonly dir: string, private readonly secrets: InstagramSecretStore) {}
   private file(): string { return join(this.dir, 'instagram-credentials.bin') }
@@ -78,7 +68,7 @@ export class InstagramTokenStore {
     this.secure()
     const encrypted = this.secrets.encryptString(JSON.stringify(c))
     await fs.mkdir(this.dir, { recursive: true })
-    await atomicInstagramFile(this.file(), encrypted)
+    await atomicSocialFile(this.file(), encrypted)
   }
   async clear(): Promise<void> { await fs.rm(this.file(), { force: true }) }
   assertSecure(): void { this.secure() }
@@ -117,15 +107,17 @@ export async function saveReceipt(dir: string, version: number, value: PublishRe
   const saved = await readObject(file)
   if (saved && saved.schemaVersion !== 1) return localDataError()
   const versions = saved ? object(saved.versions) : {}
-  await atomicInstagramFile(file, JSON.stringify({ schemaVersion: 1, versions: { ...versions, [`v${version}`]: value } }, null, 2) + '\n')
+  await atomicSocialFile(file, JSON.stringify({ schemaVersion: 1, versions: { ...versions, [`v${version}`]: value } }, null, 2) + '\n')
 }
 
 export async function saveOutcome(dir: string, value: InstagramOutcome): Promise<void> {
   const file = join(dir, 'outcomes.json')
-  const saved = await readObject(file)
-  if (saved && saved.schemaVersion !== 1) return localDataError()
-  const versions = saved ? object(saved.versions) : {}
-  const key = `v${value.version}`
-  const posts = versions[key] === undefined ? {} : object(versions[key])
-  await atomicInstagramFile(file, JSON.stringify({ ...saved, schemaVersion: 1, versions: { ...versions, [key]: { ...posts, [value.postId]: value } } }, null, 2) + '\n')
+  return withSocialFile(file, async () => {
+    const saved = await readObject(file)
+    if (saved && saved.schemaVersion !== 1) return localDataError()
+    const versions = saved ? object(saved.versions) : {}
+    const key = `v${value.version}`
+    const posts = versions[key] === undefined ? {} : object(versions[key])
+    await atomicSocialFile(file, JSON.stringify({ ...saved, schemaVersion: 1, versions: { ...versions, [key]: { ...posts, [value.postId]: value } } }, null, 2) + '\n')
+  })
 }
