@@ -6,6 +6,7 @@ import { nativeImage, protocol, type WebContents } from 'electron'
 import { handleMediaProtocol } from '../src/main/media'
 import { mediaUrl } from '../src/main/media-url'
 import { startDragOut } from '../src/main/window'
+import { setupPaths } from './helpers'
 
 vi.mock('electron', () => ({
   nativeImage: {
@@ -93,6 +94,8 @@ describe('media protocol path checks', () => {
   })
 
   it('refuses a sibling folder whose name starts with the allowed root name', async () => {
+    // a file outside the roots is checked against the Library's linked bins (#32's isLinkedMedia), which needs the paths
+    setupPaths()
     const root = join(tempDir(), 'Reel Studio')
     const sibling = `${root}Evil`
     const file = join(sibling, 'clip.mp4')

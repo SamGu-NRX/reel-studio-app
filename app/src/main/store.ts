@@ -24,7 +24,6 @@ import type {
   QueuedNote
 } from '../shared/api'
 import { mediaUrl } from './media-url'
-import { libraryMediaUrl } from './library'
 import { replyChat, styleConsent, type ChatLine } from './style-consent'
 import { keptIds } from '../shared/cut'
 import { readCaptionLines } from '../shared/subtitle-lines'
@@ -794,7 +793,7 @@ export async function detail(slug: string): Promise<ProjectDetail> {
     }
     if (!/\.(png|jpe?g|webp|gif)$/i.test(a)) continue
     const p = a.startsWith('Library/') || isAbsolute(a) ? resolveRootPath(a) : join(dir, ...a.split('/'))
-    if (existsSync(p)) brollThumbs[b.id] = await libraryMediaUrl(p)
+    if (existsSync(p)) brollThumbs[b.id] = mediaUrl(p)
   }
   const brollCredits = await creditsFor(dir, project.broll ?? [])
   // The raw footage, for "hold for Original" and the Working screen's first frame.
