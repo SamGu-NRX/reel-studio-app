@@ -32,8 +32,6 @@ export async function settleLastRun(
     log(`[start] ${slug}: an engine process from the last run is still running; the video stays closed`)
     keepClosed(slug)
   }
-  if (!touchRoot) return settings
-  await clearStaleLocks(stillRunning).catch((e) => log(`[locks] ${String(e)}`))
   for (const dir of stillRunning) {
     void registry.drained(dir)?.then(async () => {
       await rm(join(dir, OWNER_LOCK), { force: true }).catch(() => undefined)
@@ -41,6 +39,8 @@ export async function settleLastRun(
       reopen(basename(dir))
     })
   }
+  if (!touchRoot) return settings
+  await clearStaleLocks(stillRunning).catch((e) => log(`[locks] ${String(e)}`))
   const recovered = await recoverInterrupted(closed).catch((e) => {
     log(`[recover] ${String(e)}`)
     return []

@@ -261,10 +261,12 @@ describe('job manager (main): the contract on the wire', () => {
     const done = jobs.get(id)!.done
     await renderStarted
     jobs.cancel(id)
+    // the copy finishes well after Stop: the job waits for it before it ends, and never shows it
+    setTimeout(resolveVideo, 20)
     await done
-    resolveVideo()
     await new Promise((r) => setTimeout(r, 0))
     expect(events.at(-1)?.type).toBe('cancelled')
+    expect(events.some((e) => e.type === 'render')).toBe(false)
   })
 
   it('fails if a render still reporting after Stop puts its step back over the stopped note', async () => {

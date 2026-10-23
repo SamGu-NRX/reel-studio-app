@@ -14,6 +14,13 @@ import { projectDir } from '../src/main/store'
 import { APP_DIR, PYTHON, setupPaths } from './helpers'
 
 describe('the start after a crash', () => {
+  it('a first run does not make the Reel Studio folder, which first run explains before macOS asks (permissions.ts)', async () => {
+    const { root } = setupPaths()
+    mkdirSync(settingsDir(), { recursive: true })
+    await settleLastRun(createPidRegistry(settingsDir()), () => undefined, () => undefined)
+    expect(existsSync(root)).toBe(false)
+  })
+
   it('with a storage folder chosen in Settings and an engine list it cannot read, keeps that folder\'s video closed while an engine still works in it', async () => {
     const { home } = setupPaths()
     const chosen = join(home, '..', 'Elsewhere', 'Reel Studio')

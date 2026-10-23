@@ -264,9 +264,11 @@ def write_captions(proj: Path, data: dict) -> None:
     (one speech run), the one-word fixes applied (a word fixed to nothing keeps its place as ""), then the
     subtitle editor's split and join applied as the engine does (captions.edit_lines)."""
     cap = data.get("captions") or {}
-    if cap.get("enabled") is False:
+    transcript = proj / "work" / "transcript.json"
+    # a project rendered before it was transcribed (tests that render straight after init) has no lines
+    if cap.get("enabled") is False or not transcript.exists():
         return
-    words = json.loads((proj / "work" / "transcript.json").read_text("utf-8"))["words"]
+    words = json.loads(transcript.read_text("utf-8"))["words"]
     index = {w["id"]: i for i, w in enumerate(words)}
     fixes = {c["at"]: c["to"] for c in cap.get("corrections") or [] if c.get("at")}
     tokens = [{"w": fixes.get(w["id"], w["w"]), "ids": [w["id"]]}

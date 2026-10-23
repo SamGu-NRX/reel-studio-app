@@ -175,6 +175,8 @@ export function createJobManager(
         const finals = new Set<number>()
         // false once `fn` has settled: a stopped engine's late lines must not reach the screen
         let reporting = true
+        // Stop pressed while the job waited for the gate or its project: its work never starts
+        if (abort.signal.aborted) throw { code: 'CANCELLED', userMessage: 'Stopped.' }
         const res = await fn((e) => {
           // A stopped engine can still report progress after its job has ended; the job's result wins.
           if (!reporting) return
