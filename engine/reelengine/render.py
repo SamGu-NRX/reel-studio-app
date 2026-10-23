@@ -465,7 +465,7 @@ def _snap_chain(zi: int, z: ZoomSpan, k0: int, k1: int, crop: tuple, scale_chain
     reach = max(math.hypot(cx - fx, cy - fy) for cx in (0, out_w) for cy in (0, out_h))
 
     def scale(k, u):    # the zoom's scale u of the way through frame k's shutter
-        return 1 + (s_end - 1) * progress(z, k / fps + t_shift + u * SHUTTER / fps)
+        return 1 + (s_end - 1) * progress(z, k / fps + t_shift + u * SHUTTER / fps, fps)
 
     def shutter(k):     # (doublings, smallest tap's scale, scale ratio between taps); None = held
         a, b = scale(k, 0), scale(k, 1)
@@ -518,6 +518,27 @@ def _snap_chain(zi: int, z: ZoomSpan, k0: int, k1: int, crop: tuple, scale_chain
     pad = f",tpad=start={k0}" if k0 > 0 else ""
     chains.append("".join(labels) + f"concat=n={len(runs)}:v=1:a=0,setpts=N/({fps}*TB),fps={fps}{pad}[zz{zi}]")
     return chains
+
+
+def _ramp_chain(zi: int, z: ZoomSpan, k0: int, k1: int, crop: tuple, fps: float,
+                t_shift: float, out_w: int, out_h: int, draft: bool) -> str:
+    # crop's width/height expressions are evaluated at setup. A single perspective filter evaluates
+    # the crop rectangle each frame while keeping output dimensions fixed, without per-frame splits.
+    cw, ch, x, y = crop
+    frame = f"(in-1+{k0}+{_f((t_shift-z.t0)*fps)})"
+    def ease(u):
+        return f"(1-pow(1-clip({u},0,1),4))"
+    entrance = ease(f"{frame}/{z.ramp_in}") if z.ramp_in else "1"
+    remaining = f"({frame}-{_f((z.t1-z.t0)*fps-z.ramp_out)})/{z.ramp_out}" if z.ramp_out else None
+    amount = f"min({entrance},1-{ease(remaining)})" if remaining else entrance
+    q = f"((1-1/(1+{_f(out_w/cw-1)}*{amount}))/{_f(1-cw/out_w)})"
+    left, top = f"'{x}*{q}'", f"'{y}*{q}'"
+    right, bottom = f"'{out_w}+{x+cw-out_w}*{q}'", f"'{out_h}+{y+ch-out_h}*{q}'"
+    pad = f",fps={fps},tpad=start={k0}" if k0 else ""
+    return (f"[zs{zi}]trim=start_frame={k0}:end_frame={k1},setpts=PTS-STARTPTS,"
+            f"perspective=x0={left}:y0={top}:x1={right}:y1={top}:x2={left}:y2={bottom}:"
+            f"x3={right}:y3={bottom}:sense=source:eval=frame:interpolation={'linear' if draft else 'cubic'},"
+            f"setsar=1{pad}[zz{zi}]")
 
 
 def build_video_cmd(ctx: RenderCtx, segments: list, src_meta: dict, src_paths: dict, faces: dict,
@@ -604,7 +625,10 @@ def build_video_cmd(ctx: RenderCtx, segments: list, src_meta: dict, src_paths: d
         k1 = int(math.ceil(t1 * fps - 1e-6))
         # a crop rounded to the full width or height has no fixed point to grow from
         if (z.ramp_in or z.ramp_out) and cw < out_w and ch < out_h and k1 > k0:
-            chains += _snap_chain(zi, z, k0, k1, (cw, ch, x, y), scale_chain, fps, t_shift, out_w, out_h, ctx.draft)
+            if z.blur:
+                chains += _snap_chain(zi, z, k0, k1, (cw, ch, x, y), scale_chain, fps, t_shift, out_w, out_h, ctx.draft)
+            else:
+                chains.append(_ramp_chain(zi, z, k0, k1, (cw, ch, x, y), fps, t_shift, out_w, out_h, ctx.draft))
         else:
             chains.append(f"[zs{zi}]trim=start={_f(t0)}:end={_f(t1)},setpts=PTS-STARTPTS,{scale_chain}{pad}[zz{zi}]")
         chains.append(f"[zm{zi}][zz{zi}]overlay=0:0:eof_action=pass:repeatlast=0:"

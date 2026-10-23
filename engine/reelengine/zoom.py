@@ -34,11 +34,15 @@ except ImportError:  # pragma: no cover
         scale: float
         cx: float
         cy: float
-        ramp_in: float = 0.0
-        ramp_out: float = 0.0
+        ramp_in: int = 0
+        ramp_out: int = 0
         last_word_end: float = 0.0
+        kind: str = "punch"
+        blur: bool = False
 
 DEFAULT_SCALE = 1.12
+# Preset scales are starting choices; no output-quality comparison supports them yet.
+NAMED_SCALES = {"clean": 1.10, "standard": 1.15, "hyper": 1.30, "punchline": 1.25}
 MAX_SCALE = 2.0
 TAIL = 0.05           # hold a hair past the last word so the release is not on a syllable
 EYE_BIAS = 0.12       # centre this fraction of a face-height above the face's middle
@@ -65,12 +69,14 @@ def release(u: float) -> float:
     return (1 - (1 + SPRING * u) * math.exp(-SPRING * u)) / (1 - (1 + SPRING) * math.exp(-SPRING))
 
 
-def progress(z, t: float) -> float:
+def progress(z, t: float, fps: float = 30) -> float:
     """How far zoom z is pushed in at output time t: 0 = full frame, 1 = its scale."""
-    if z.ramp_in and t < z.t0 + z.ramp_in:
-        return punch((t - z.t0) / z.ramp_in)
-    if z.ramp_out and t > z.t1 - z.ramp_out:
-        return 1.0 - release((t - z.t1 + z.ramp_out) / z.ramp_out)
+    ramp_in, ramp_out = z.ramp_in / fps, z.ramp_out / fps
+    if ramp_in and t < z.t0 + ramp_in:
+        return punch((t - z.t0) / ramp_in)
+    if ramp_out and t > z.t1 - ramp_out:
+        curve = release if z.blur else punch
+        return 1.0 - curve((t - z.t1 + ramp_out) / ramp_out)
     return 1.0
 
 
@@ -106,11 +112,17 @@ def build_zooms(ctx, with_broll: bool = True) -> list:
             continue
         last_word_end = t1
         t1 += TAIL
-        scale = min(MAX_SCALE, max(1.0, float(z.get("scale", DEFAULT_SCALE) or DEFAULT_SCALE)))
+        raw_kind = z.get("kind")
+        kind = raw_kind if raw_kind in {"punch", "snap", "drift"} else ("snap" if z.get("style") == "snap" else "punch")
+        cut_style = (ctx.project or {}).get("cutStyle")
+        preset = cut_style.get("preset") if isinstance(cut_style, dict) and isinstance(cut_style.get("preset"), str) else None
+        named_default = NAMED_SCALES.get(preset or "standard", 1.15)
+        default_scale = named_default if raw_kind in {"punch", "snap", "drift"} else DEFAULT_SCALE
+        scale = min(MAX_SCALE, max(1.0, float(z.get("scale", default_scale) or default_scale)))
         if scale <= 1.001 or t1 - t0 < 1.0 / fps:
             continue
         focus = z.get("focus")
-        snap = z.get("style") == "snap"
+        snap = kind == "snap"
         eyes = None
         if snap or not focus:
             from .broll import output_face_union
@@ -124,9 +136,12 @@ def build_zooms(ctx, with_broll: bool = True) -> list:
         if snap and face_drift(scale, cx, cy, eyes, W, H) > MAX_FACE_DRIFT * W:
             log(f"zoom {i}: its fixed point is too far from the face to snap; punching in hard")
             snap = False
-        ramps = (round(SNAP_IN * fps) / fps, round(SNAP_OUT * fps) / fps) if snap else ()
+        if kind == "drift":
+            ramps = (0, 0)  # resolved after overlap, b-roll and duration clipping
+        else:
+            ramps = (round(SNAP_IN * fps), round(SNAP_OUT * fps)) if snap else ()
         spans.append(ZoomSpan(round(t0 * fps) / fps, round(t1 * fps) / fps, scale, round(cx, 1), round(cy, 1),
-                              *ramps, last_word_end=last_word_end))
+                              *ramps, last_word_end=last_word_end, kind=kind, blur=snap))
     spans.sort(key=lambda s: s.t0)
     if with_broll and spans:
         try:
@@ -135,7 +150,7 @@ def build_zooms(ctx, with_broll: bool = True) -> list:
             for s in spans:
                 for h0, h1 in hiding:
                     if h0 < s.t1 < h1:          # release would show: hold to the b-roll's exit
-                        s.t1, s.ramp_out = h1, 0.0
+                        s.t1, s.ramp_out = h1, 0
         except Exception as e:
             log(f"zoom/broll handoff skipped: {e}")
     dur = float(getattr(ctx, "duration", 0.0) or 0.0)
@@ -143,21 +158,25 @@ def build_zooms(ctx, with_broll: bool = True) -> list:
     out = []
     for k, s in enumerate(spans):
         if k + 1 < len(spans) and s.t1 >= spans[k + 1].t0:
-            s.t1, s.ramp_out = spans[k + 1].t0, 0.0
+            s.t1, s.ramp_out = spans[k + 1].t0, 0
         if dur and s.t1 > dur:
-            s.t1, s.ramp_out = dur, 0.0
+            s.t1, s.ramp_out = dur, 0
         if out and out[-1].t1 >= s.t0:
-            s.ramp_in = 0.0
-        cut = max((c for c in cuts if s.t1 - s.ramp_out < c < s.t1), default=None) if s.ramp_out else None
+            s.ramp_in = 0
+        cut = max((c for c in cuts if s.t1 - s.ramp_out / fps < c < s.t1), default=None) if s.ramp_out else None
         if cut is not None:
             # Compare unrounded times: frame rounding can put the cut before a short last word ends.
             if cut > s.t0 and cuts[cut] >= s.last_word_end - 1e-9:
                 s.t1 = cut
-            s.ramp_out = 0.0
-        if s.ramp_in and (s.t1 - s.t0 < s.ramp_in + 1.0 / fps or any(s.t0 < c < s.t0 + s.ramp_in for c in cuts)):
-            s.ramp_in = 0.0
-        if s.ramp_out and s.t1 - s.t0 - s.ramp_in - s.ramp_out < s.ramp_in:
-            s.ramp_out = 0.0
+            s.ramp_out = 0
+        if s.ramp_in and (s.t1 - s.t0 < s.ramp_in / fps + 1.0 / fps or any(s.t0 < c < s.t0 + s.ramp_in / fps for c in cuts)):
+            s.ramp_in = 0
+        if s.ramp_out and s.t1 - s.t0 - s.ramp_in / fps - s.ramp_out / fps < s.ramp_in / fps:
+            s.ramp_out = 0
+        if s.kind == "drift":
+            # Include both endpoints so the last visible frame reaches the target scale.
+            s.ramp_in = max(0, round(s.t1 * fps) - round(s.t0 * fps) - 1)
+            s.ramp_out = 0
         if s.t1 - s.t0 >= 1.0 / fps:
             out.append(s)
     return out

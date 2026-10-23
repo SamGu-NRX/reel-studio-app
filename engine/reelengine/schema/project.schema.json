@@ -145,10 +145,11 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["anchor", "scale"],
+        "required": ["anchor"],
         "properties": {
           "anchor": { "$ref": "#/$defs/wordRange" },
           "scale": { "type": "number", "minimum": 1, "maximum": 3 },
+          "kind": { "enum": ["punch", "snap", "drift"] },
           "style": { "enum": ["snap"], "description": "snap = eased punch-in and release with motion blur; absent = hard cut" }
         }
       }

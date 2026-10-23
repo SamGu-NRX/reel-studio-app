@@ -1075,12 +1075,12 @@ const tools: ToolDef[] = [
   },
   {
     name: 'set_zoom',
-    description: 'Replace all zoom-ins. Each zoom spans one whole line, from its first word to its last; scale ~1.08-1.15. Use on punchlines and key lines, and on face-only stretches with no b-roll (about 3-6 per minute, never two back to back). Save style "snap" (a quick eased push-in with motion blur) for the one or two biggest punchlines; the rest stay hard cuts. Empty list = no zooms.',
-    parameters: S.obj({ zooms: S.arr(S.obj({ anchor: ANCHOR, scale: S.num('1.0-1.5', { minimum: 1, maximum: 1.6 }), style: S.opt(S.enum(['snap'], 'null = hard cut in and out')) })) }),
+    description: 'Replace all zoom-ins. Each zoom spans one whole line, from its first word to its last. Choose kind punch for an instant crop, snap for an eased push-in with motion blur, or drift for a slow eased scale across a long talking stretch. Scale defaults come from the project cut style; values below 1.10 read as a framing mistake. Keep zooms on key lines and face-only stretches with no b-roll, about 3-6 per minute, never two back to back. Reserve snaps for the biggest moments. style "snap" remains an alias. Empty list = no zooms.',
+    parameters: S.obj({ zooms: S.arr(S.obj({ anchor: ANCHOR, scale: S.opt(S.num('1.0-1.5', { minimum: 1, maximum: 1.6 })), kind: S.opt(S.enum(['punch', 'snap', 'drift'])), style: S.opt(S.enum(['snap'], 'legacy alias')) })) }),
     async run(ctx, args) {
       const { t } = await load(ctx);
       args.zooms.forEach((z: any, i: number) => checkAnchor(t, z.anchor, `zooms[${i}]`));
-      await mutate(ctx, 'zooms', (p) => { p.zooms = args.zooms.filter((z: any) => z.scale > 1.001).map((z: any) => ({ anchor: z.anchor, scale: z.scale, ...(z.style ? { style: z.style } : {}) })); });
+      await mutate(ctx, 'zooms', (p) => { p.zooms = args.zooms.filter((z: any) => z.scale == null || z.scale > 1.001).map((z: any) => ({ anchor: z.anchor, ...(z.scale == null ? {} : { scale: z.scale }), ...(z.kind ? { kind: z.kind } : {}), ...(z.style ? { style: z.style } : {}) })); });
       return { content: { ok: true, count: ctx.project!.zooms.length }, summary: args.zooms.length ? 'Added a few zoom-ins on the big moments' : 'Took out the zooms' };
     },
   },

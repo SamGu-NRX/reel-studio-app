@@ -63,7 +63,8 @@ class ZoomSpan:
     """Punch-in on the cut video between t0 and t1 (output seconds).
 
     scale > 1 zooms in; (cx, cy) is the zoom centre in output pixels. A snap zoom eases in over
-    its first ramp_in seconds and back out over its last ramp_out; 0 is a hard cut.
+    its first ramp_in frames and back out over its last ramp_out; 0 is a hard cut.
+    Unblurred ramps use ease-out in both directions; blur keeps the snap shutter and release.
     """
 
     t0: float
@@ -71,9 +72,11 @@ class ZoomSpan:
     scale: float
     cx: float
     cy: float
-    ramp_in: float = 0.0
-    ramp_out: float = 0.0
+    ramp_in: int = 0
+    ramp_out: int = 0
     last_word_end: float = 0.0  # unrounded output time, before the tail and frame rounding
+    kind: str = "punch"
+    blur: bool = False
 
 
 @dataclass
