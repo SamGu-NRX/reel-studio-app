@@ -75,40 +75,43 @@ export async function openSettings(page: Page): Promise<void> {
 }
 
 /** Other systems skip the "Your Mac" stage. */
+/** Welcome, then the sample: skips the demo and moves to the next step. */
+export async function passSample(page: Page): Promise<void> {
+  await page.getByTestId('get-started').click()
+  await page.getByTestId('demo-skip').click()
+  await page.getByTestId('demo-next').click()
+}
+
+/** The Mac's questions, one card at a time (macOS only): allows the folder, skips notifications. */
 export async function passMacStage(page: Page): Promise<void> {
   const mac = page.getByTestId('stage-mac')
-  await expect(mac.or(page.getByTestId('model-heading'))).toBeVisible()
+  const ai = page.getByRole('heading', { name: 'Connect your AI editor' })
+  await expect(mac.or(ai)).toBeVisible()
   if (!(await mac.isVisible())) return
   await page.getByTestId('perm-folder-allow').click()
   await expect(page.getByTestId('perm-folder')).toHaveAttribute('data-state', 'allowed')
-  await page.getByTestId('mac-continue').click()
-  await expect(page.getByTestId('model-heading')).toBeVisible()
+  await page.getByTestId('perm-notifications-skip').click()
+  await expect(ai).toBeVisible()
 }
 
-/** Waits for the Listening stage to settle. */
-export async function listeningState(page: Page): Promise<'download' | 'here'> {
-  const download = page.getByTestId('download-model')
-  await expect(download.or(page.getByTestId('model-next'))).toBeVisible({ timeout: 30_000 })
-  return (await download.isVisible()) ? 'download' : 'here'
-}
-
-export async function passListeningStage(page: Page): Promise<void> {
-  await page.getByTestId((await listeningState(page)) === 'download' ? 'later' : 'model-next').click()
-  await expect(page.getByText('Connect your AI editor')).toBeVisible()
+/** The listening model's line in the setup panel, once it has settled. */
+export async function modelReady(page: Page): Promise<void> {
+  await expect(page.getByTestId('model-line')).toContainText('Listening model ready', { timeout: 30_000 })
 }
 
 /** Gets past the first-run screens if this is a fresh profile. */
 export async function passFirstRun(page: Page): Promise<void> {
   const welcome = page.getByTestId('get-started')
-  await expect(welcome.or(page.getByText('Your videos'))).toBeVisible()
+  const home = page.getByRole('heading', { name: 'Your videos' })
+  await expect(welcome.or(home)).toBeVisible()
   if (await welcome.isVisible()) {
-    await welcome.click()
+    await passSample(page)
     await passMacStage(page)
-    await passListeningStage(page)
+    await modelReady(page)
     await page.getByTestId('skip').click()
     await page.getByTestId('share-no').click()
   }
-  await expect(page.getByText('Your videos')).toBeVisible()
+  await expect(home).toBeVisible()
 }
 
 /**

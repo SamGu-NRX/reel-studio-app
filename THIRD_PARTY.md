@@ -211,6 +211,19 @@ cache, setup copies them instead of downloading.
 the US federal government and in the public domain. The same recording as faster-whisper's `tests/data/jfk.flac`,
 converted to 16 kHz mono WAV. The app transcribes it in the background to time the speech model on the computer.
 
+### First-run sample (bundled, CC0 1.0 and CC BY)
+
+The first run edits a short sample in front of you (`app/src/renderer/src/assets/sample/`). The person in it and
+her script are made up: the clips are a silent slideshow of the photos below with zooms and cuts, and the speech,
+pauses and subtitles are simulated from a written script. The photos are cropped and recompressed.
+
+| File | Source (Wikimedia Commons) | Author | License |
+|---|---|---|---|
+| `raw.mp4`, `simple.mp4`, `ai.mp4`, `raw-poster.jpg`, `cover.jpg`, `cand-*.jpg` | Mary Mammoliti in her kitchen studio.jpg | Anooch11 | CC0 1.0 |
+| `v_loaf.jpg` and the loaf in `ai.mp4` | Sourdough Bread Loaf.jpg | Agelaia | CC BY 4.0 |
+| `v_knead.jpg` and the hands in `ai.mp4` | Baker woman’s hands kneading bread dough.jpg | Shixart1985 | CC BY 2.0 |
+| `cut.mp3`, `ready.mp3`, `toggle.mp3` | Interface Sounds by Kenney (`drop_002`, `glass_004`, `toggle_004`), re-encoded to mono MP3 | Kenney | CC0 1.0 |
+
 ### Fonts (bundled, SIL OFL 1.1 or Apache-2.0)
 
 Every font keeps its own license text in the folder it ships in. Names and copyright lines below are read from each
