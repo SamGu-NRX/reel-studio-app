@@ -615,7 +615,7 @@ export function PhonePlayer({
           <span className="draghandle-tip" aria-hidden>Drag the video into any app</span>
         </button>
       )}
-      <div className="phone-screen" ref={screenRef} tabIndex={src ? -1 : undefined} onKeyDown={src ? onKey : undefined}>
+      <div className="phone-screen" data-lands ref={screenRef} tabIndex={src ? -1 : undefined} onKeyDown={src ? onKey : undefined}>
         {src ? (
           <>
             {[layers.leaving, layers.shown, layers.next].map((l: Layer | null) => {

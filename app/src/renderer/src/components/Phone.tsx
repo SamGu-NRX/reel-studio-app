@@ -58,7 +58,7 @@ export function Phone({ view, caption, className, children, testid }: { view: Ph
   return (
     <PhoneFill>
       <div className={`phone${className ? ` ${className}` : ''}`} data-testid="phone">
-        <div className="phone-screen" data-testid={testid}>
+        <div className="phone-screen" data-testid={testid} data-lands>
           {children}
           <InstagramChrome on={view === 'instagram'} caption={caption} />
         </div>

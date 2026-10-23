@@ -20,8 +20,9 @@ import { FirstRun } from './screens/FirstRun'
 import { Script } from './screens/Script'
 import { Connect } from './screens/Connect'
 import { createFromFiles, describeSorted } from './screens/create'
-import { DropVeil, HANDOFF_MS, HANDOFF_QUICK_MS, VIDEO_EXT, whatItIs, type Veil } from './components/Intake'
-import { byKeyboard, reducedMotion } from './components/motion'
+import { DropVeil, draggedFiles, droppedFiles, intentFor, launchFlight, type Intent, type Veil } from './components/Intake'
+import { reducedMotion } from './components/motion'
+import { markSeen } from './seen'
 
 type Notify = (text: string, kind?: 'error' | 'info') => void
 const NotifyCtx = createContext<Notify>(() => {})
@@ -34,6 +35,12 @@ export const NOTE_DROP_DONE = 'reel:note-drop-done'
 export const EXPORT_EVENT = 'reel:export'
 
 const hasFiles = (e: DragEvent): boolean => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')
+const sameIntent = (a: Intent, b: Intent): boolean =>
+  a.kind === 'note' && b.kind === 'note'
+    ? a.rect.x === b.rect.x && a.rect.y === b.rect.y && a.rect.width === b.rect.width && a.rect.height === b.rect.height
+    : a.kind === 'refuse' && b.kind === 'refuse'
+      ? a.what === b.what && a.where === b.where
+      : a.kind === b.kind
 
 export function App() {
   const [info, setInfo] = useState<AppInfo | null>(null)
@@ -94,12 +101,27 @@ export function App() {
     return () => window.removeEventListener('keydown', key)
   }, [go])
 
-  // A drop or a paste: the veil turns into a check with the file name, holds a moment, then Working takes over.
+  // A reel was on screen: what it showed then is watched, so its card stops saying New (seen.ts).
+  useEffect(() => {
+    if (screen.name !== 'reel' && screen.name !== 'working') return
+    const slug = screen.slug
+    markSeen(slug)
+    return () => markSeen(slug)
+  }, [screen])
+
+  // A drop or a paste does what the veil said it would. A dropped video's thumbnail flies into the new reel's player;
+  // a paste is a keyboard action, so it doesn't move.
   const intake = useCallback(
-    async (paths: string[], how: 'drop' | 'paste') => {
+    async (paths: string[], drop?: { file: File; x: number; y: number }) => {
       if (!paths.length) return setVeil(null)
-      if (screenRef.current.name === 'library') {
-        setVeil(null)
+      const intent = intentFor(droppedFiles(paths), screenRef.current.name, null)
+      if (intent.kind === 'refuse') {
+        setVeil({ kind: 'refused', intent })
+        window.setTimeout(() => setVeil((v) => (v?.kind === 'refused' ? null : v)), 1800)
+        return
+      }
+      setVeil(null)
+      if (intent.kind === 'library') {
         reel.library
           .add(paths)
           .then((r) => {
@@ -109,17 +131,9 @@ export function App() {
           .catch((err) => notify(userMessage(err), 'error'))
         return
       }
-      const video = paths.find((p) => VIDEO_EXT.test(p))
-      if (!video) {
-        // Reel Studio still sorts it into the Library; the veil says what it was and what happened to it
-        await createFromFiles(paths, go, notify, (detail) => setVeil({ kind: 'bad', what: whatItIs(paths[0]), detail }))
-        window.setTimeout(() => setVeil((v) => (v?.kind === 'bad' ? null : v)), 2200)
-        return
-      }
-      setVeil({ kind: 'ok', name: video, how })
-      await new Promise((r) => window.setTimeout(r, byKeyboard() || reducedMotion() ? HANDOFF_QUICK_MS : HANDOFF_MS))
-      await createFromFiles(paths, go, notify)
-      setVeil(null)
+      const flight = drop && !reducedMotion() ? launchFlight(drop.file, drop.x, drop.y) : null
+      if (await createFromFiles(paths, go, notify)) flight?.land()
+      else flight?.cancel()
     },
     [go, notify]
   )
@@ -138,7 +152,7 @@ export function App() {
     const paste = (event: ClipboardEvent) => {
       const target = event.target
       if (event.defaultPrevented || (target instanceof Element && target.closest('input, textarea, [contenteditable], [data-note-drop]'))) return
-      void reel.app.clipboardFiles().then((paths) => intake(paths, 'paste')).catch((err) => notify(userMessage(err), 'error'))
+      void reel.app.clipboardFiles().then((paths) => intake(paths)).catch((err) => notify(userMessage(err), 'error'))
     }
     window.addEventListener('paste', paste)
     return () => {
@@ -147,37 +161,29 @@ export function App() {
     }
   }, [firstRunDone, go, notify, intake])
 
-  // The whole window is a drop target (critique 3): a video makes a reel, anything on the Library
-  // screen goes into the Library. Also: a dropped file must never navigate the window to the file.
+  // The whole window is a drop target (critique 3), and says what letting go will do: make a reel, attach to the note
+  // under the pointer, add to the Library, or why it can't. Also: a dropped file must never navigate the window to the file.
   useEffect(() => {
     let depth = 0
+    const sense = (e: DragEvent) => {
+      const note = (e.target as Element | null)?.closest?.('[data-note-drop]') ?? null
+      const intent = intentFor(draggedFiles(e.dataTransfer!), screenRef.current.name, note)
+      setVeil((v) => (v?.kind === 'refused' ? v : v && sameIntent(v.intent, intent) ? v : { kind: 'over', intent }))
+    }
     const enter = (e: DragEvent) => {
       e.preventDefault()
       if (!hasFiles(e) || !firstRunDone || draggingOut()) return
       depth++
-      const where = screenRef.current.name
-      setVeil((v) =>
-        v && v.kind !== 'over'
-          ? v
-          : where === 'library'
-            ? { kind: 'over', label: 'Drop to add to your Library', sub: 'Songs, pictures and clips each go in the right place.' }
-            : where === 'reel'
-              ? { kind: 'over', label: 'Drop here to make a new reel', sub: 'Or drop it on your note to attach it.' }
-              : { kind: 'over', label: 'Drop to make a reel', sub: 'Your video stays on this computer.' }
-      )
+      setVeil((v) => (v?.kind === 'refused' ? null : v))
+      sense(e)
     }
     const over = (e: DragEvent) => {
-      // over the note box (Reel.tsx) a file attaches to the note: no veil there
-      const onNote = !!(e.target as Element | null)?.closest?.('[data-note-drop]')
-      document.documentElement.classList.toggle('over-note', onNote)
+      if (hasFiles(e) && firstRunDone && !draggingOut()) sense(e)
       if (e.defaultPrevented) return
       e.preventDefault()
       if (e.dataTransfer) e.dataTransfer.dropEffect = firstRunDone && hasFiles(e) ? 'copy' : 'none'
     }
-    const clear = () => {
-      document.documentElement.classList.remove('over-note')
-      setVeil((v) => (v?.kind === 'over' ? null : v))
-    }
+    const clear = () => setVeil((v) => (v?.kind === 'over' ? null : v))
     const noteDropDone = () => {
       depth = 0
       clear()
@@ -189,13 +195,15 @@ export function App() {
     const drop = (e: DragEvent) => {
       e.preventDefault()
       depth = 0
-      document.documentElement.classList.remove('over-note')
       if (draggingOut()) {
         ;(window as { __rsDraggingOut?: boolean }).__rsDraggingOut = false
         return clear()
       }
       if (!firstRunDone || !e.dataTransfer) return clear()
-      void intake(Array.from(e.dataTransfer.files).map((f) => reel.app.pathForFile(f)).filter(Boolean), 'drop')
+      const files = Array.from(e.dataTransfer.files)
+      const paths = files.map((f) => reel.app.pathForFile(f))
+      const video = files[droppedFiles(paths).findIndex((f) => f.kind === 'video')]
+      void intake(paths.filter(Boolean), video ? { file: video, x: e.clientX, y: e.clientY } : undefined)
     }
     window.addEventListener('dragenter', enter)
     window.addEventListener('dragover', over)
