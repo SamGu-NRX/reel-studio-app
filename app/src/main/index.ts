@@ -1,5 +1,6 @@
 // TikTok API v2: https://developers.tiktok.com/doc/login-kit-desktop/
 // Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
+import './demo-defaults'
 import { accountName } from './account'
 import { versionRows, type VersionRow } from '../shared/version-diff'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, net, powerMonitor, powerSaveBlocker, safeStorage, shell, type IpcMainInvokeEvent, Notification } from 'electron'
