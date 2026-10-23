@@ -355,6 +355,7 @@ function registerIpc(): void {
       return image.toJPEG(90)
     }
   })
+  if (DEV_PROVIDERS && !TEST) void instagram.start().catch(() => console.warn('Instagram pending install revocations could not be retried.'))
   registerInstagramIpc({ handle, service: instagram, dev: DEV_PROVIDERS && !TEST, saveSettings })
   app.on('before-quit', () => { instagram.stop() })
   handle('app:info', () => appInfo())

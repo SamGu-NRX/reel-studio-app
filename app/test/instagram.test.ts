@@ -73,9 +73,9 @@ async function world(opts: { dev?: boolean; enabled?: boolean; backend?: string;
   const steps: Step[] = []
   const calls: string[] = []
   let browser: (url: string) => Promise<void> = async () => { throw new Error('unexpected browser request') }
-  const service = new InstagramService({
+  const options = {
     dev: opts.dev ?? true, settings: async () => settings, settingsDir: join(dir, 'settings'), projectsDir: () => join(dir, 'projects'), secrets,
-    fetch: async (url, init) => {
+    fetch: async (url: string, init: RequestInit) => {
       calls.push(url)
       const step = steps.shift()
       try {
@@ -92,10 +92,11 @@ async function world(opts: { dev?: boolean; enabled?: boolean; backend?: string;
       if (step.respond) return step.respond(init)
       return new Response(JSON.stringify(step.body ?? {}), { status: step.status ?? 200, headers: { 'content-type': 'application/json' } })
     },
-    openExternal: (url) => browser(url),
-    coverJpeg: (bytes) => Buffer.from(`jpeg:${bytes.toString()}`),
+    openExternal: (url: string) => browser(url),
+    coverJpeg: (bytes: Buffer) => Buffer.from(`jpeg:${bytes.toString()}`),
     now: () => now
-  })
+  }
+  const service = new InstagramService(options)
   activeService = service
   cleanup.push({ dir, service })
   const seed = (extra = {}) => store.save({ accessToken: TOKEN, expiresAt: now + 30 * DAY, issuedAt: now - 2 * DAY, accountId: '123', username: 'fixture_creator', appId: '456', brokerUrl: BROKER, installToken: INSTALL, ...extra })
@@ -170,15 +171,108 @@ async function world(opts: { dev?: boolean; enabled?: boolean; backend?: string;
     if (SCOPES.every((s) => permissions.includes(s))) profile(account)
   }
   return { dir, project, version, store, service, steps, calls, seed, profile, stage, finished, publish, published, oauth,
+    restart: () => {
+      service.stop()
+      const next = new InstagramService(options)
+      cleanup.push({ dir, service: next })
+      return next
+    },
     cancelAtEncryption: () => { cancelDuringEncryption = true },
-    tick: (ms: number) => { now += ms }, done: () => expect(steps).toEqual([]) }
+    tick: (ms: number) => { now += ms }, done: () => expect(steps.length).toBe(0) }
 }
 
 const insightsUrl = `${GRAPH}/789/insights?metric=views%2Creach%2Clikes%2Ccomments%2Cshares%2Csaved%2Cig_reels_avg_watch_time%2Cig_reels_video_view_total_time%2Creels_skip_rate&period=lifetime`
 
 describe('Instagram fixture HTTP', () => {
+  it('revokes the previous install after saving a reconnect', async () => {
+    const w = await world(); await w.seed({ installToken: 'previous-install' }); w.oauth()
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', inspect: async (init) => {
+      expect(new Headers(init.headers).get('x-reel-install-token')).toBe('previous-install')
+      expect(await w.store.load()).toMatchObject({ installToken: INSTALL })
+    } })
+    await w.service.connect(); w.done()
+  })
+  it('persists a failed revoke privately and retries it on the next start', async () => {
+    const w = await world(); await w.seed({ installToken: 'previous-install' }); w.oauth()
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', status: 503 })
+    const result = await w.service.connect()
+    expect(await w.store.pendingRevocations()).toEqual([{ installToken: 'previous-install', appId: '456', brokerUrl: BROKER }])
+    expect(result).toEqual({ connected: true, accountId: '123', username: 'fixture_creator', expiresAt: NOW + 60 * DAY })
+    expect(await w.service.session()).toEqual(result)
+    const bytes = await fs.readFile(join(w.dir, 'settings', 'instagram-credentials.bin'))
+    for (const secret of [TOKEN, INSTALL, 'previous-install']) expect(bytes.includes(Buffer.from(secret))).toBe(false)
+    const next = w.restart()
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', inspect: (init) => expect(new Headers(init.headers).get('x-reel-install-token')).toBe('previous-install') })
+    await next.start()
+    expect(await w.store.pendingRevocations()).toEqual([])
+    expect(await next.session()).toEqual(result); w.done()
+  })
+  it('keeps a cancelled install pending without an active connection until startup gets a 401', async () => {
+    const w = await world(); w.oauth(); w.cancelAtEncryption()
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', status: 503 })
+    await expect(w.service.connect()).rejects.toMatchObject({ code: 'IG_CANCELLED' })
+    expect(await w.store.load()).toBeNull()
+    expect(await w.store.pendingRevocations()).toEqual([{ installToken: INSTALL, appId: '456', brokerUrl: BROKER }])
+    expect(await w.service.session()).toEqual({ connected: false })
+    const bytes = await fs.readFile(join(w.dir, 'settings', 'instagram-credentials.bin'))
+    expect(bytes.includes(Buffer.from(INSTALL))).toBe(false)
+    const next = w.restart()
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', status: 401 })
+    await next.start()
+    expect(await w.store.pendingRevocations()).toEqual([])
+    expect(await w.store.load()).toBeNull(); w.done()
+  })
+  it('retries pending revocations before a broker upload', async () => {
+    const w = await world(); await w.seed({ installToken: 'previous-install' }); w.oauth()
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', status: 503 })
+    await w.service.connect()
+    w.profile()
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST' })
+    w.stage(); w.finished(); w.publish()
+    await w.service.publish(INPUT)
+    expect(await w.store.pendingRevocations()).toEqual([]); w.done()
+  })
+  it('retries pending revocations on disconnect and keeps failures after local sign-out', async () => {
+    const w = await world(); await w.seed({ installToken: 'previous-install' }); w.oauth()
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', status: 503 })
+    await w.service.connect()
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', status: 503 }, { url: `${BROKER}/api/install/revoke`, method: 'POST' })
+    await w.service.disconnect()
+    expect(await w.store.load()).toBeNull()
+    expect(await w.store.pendingRevocations()).toHaveLength(1)
+    expect(await w.service.session()).toEqual({ connected: false }); w.done()
+  })
+  it('caps the encrypted pending list at the 20 newest installs', async () => {
+    const w = await world(); await w.seed()
+    const pending = Array.from({ length: 21 }, (_, i) => ({ installToken: `pending-${i}`, appId: '456', brokerUrl: BROKER }))
+    await w.store.savePending(pending)
+    expect(await w.store.pendingRevocations()).toEqual(pending.slice(1))
+    await w.store.clear()
+    expect(await w.store.load()).toBeNull()
+    expect(await w.store.pendingRevocations()).toEqual(pending.slice(1))
+    const bytes = await fs.readFile(join(w.dir, 'settings', 'instagram-credentials.bin'))
+    expect(bytes.includes(Buffer.from('pending-'))).toBe(false)
+    expect((await fs.stat(join(w.dir, 'settings', 'instagram-credentials.bin'))).mode & 0o777).toBe(0o600)
+    expect(await fs.readdir(join(w.dir, 'settings'))).toEqual(['instagram-credentials.bin'])
+  })
+  it('does not send pending install tokens to an unconfigured origin', async () => {
+    const w = await world()
+    const pending = [{ installToken: INSTALL, appId: '456', brokerUrl: 'https://other.example' }]
+    await w.store.savePending(pending)
+    await w.service.start()
+    expect(await w.store.pendingRevocations()).toEqual(pending)
+    expect(w.calls).toEqual([])
+  })
+  it('clears local credentials when the install is already invalid', async () => {
+    const w = await world(); await w.seed()
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', status: 401, body: { error: 'invalid_install' } })
+    await w.service.disconnect()
+    expect(await w.store.load()).toBeNull()
+    expect(await w.service.session()).toEqual({ connected: false }); w.done()
+  })
   it('cancelling during the token write removes that connection and rejects sign-in', async () => {
     const w = await world(); w.oauth(); w.cancelAtEncryption()
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST', inspect: (init) => expect(new Headers(init.headers).get('x-reel-install-token')).toBe(INSTALL) })
     await expect(w.service.connect()).rejects.toMatchObject({ code: 'IG_CANCELLED' })
     expect(await w.store.load()).toBeNull(); w.done()
   })
@@ -257,11 +351,13 @@ describe('Instagram fixture HTTP', () => {
   })
   it('refuses a connection missing insights permission', async () => {
     const w = await world(); w.oauth(SCOPES.slice(0, 2))
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST' })
     await expect(w.service.connect()).rejects.toMatchObject({ code: 'IG_PERMISSION' })
     expect(await w.store.load()).toBeNull(); w.done()
   })
   it('rejects a Personal account before storing a token', async () => {
     const w = await world(); w.oauth(SCOPES, { ...PROFILE, account_type: 'PERSONAL' })
+    w.steps.push({ url: `${BROKER}/api/install/revoke`, method: 'POST' })
     await expect(w.service.connect()).rejects.toMatchObject({ code: 'IG_PROFESSIONAL' })
     expect(await w.store.load()).toBeNull()
     await w.seed(); w.profile({ ...PROFILE, account_type: 'PERSONAL' })
