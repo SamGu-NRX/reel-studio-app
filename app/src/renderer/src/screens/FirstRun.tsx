@@ -1,19 +1,23 @@
-// The first run: a welcome, then a stage where the bundled sample edits itself in a phone while setup happens in a
-// side panel beside it (the listening model downloading, the Mac's questions, an AI editor), ending on Home.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+// The first run, staged in the Reel screen's own layout (ux-foundation-b.md section 4): a welcome; then the sample
+// is made in the player and the notes column, the way the person's own Version 1 will be; then the editor is
+// chosen beside it, which upgrades the sample; then the app opens on a new reel with no video yet.
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProviderInfo } from '../../../shared/api'
-import { reel } from '../api'
+import { clock } from '../../../shared/progress'
+import { STEP_LABEL, type Step } from '../../../shared/steps'
+import { reel, userMessage } from '../api'
 import { Icon } from '../components/icons'
-import { ConnectAI, USING_CLAUDE_CODE } from '../components/connect'
-import { BrandMark } from '../components/brand'
-import { providerName } from '../components/Sidebar'
-import { NEVER_SHARED } from '../components/ModelsAndPrivacy'
-import { Demo } from '../components/first-run/demo'
-import { MacPane } from '../components/first-run/MacPane'
-import { ModelLine, useListeningModel } from '../components/first-run/ModelLine'
-import { tokens } from '../components/first-run/sample'
+import { Logo } from '../components/brand'
+import { ConnectAI } from '../components/connect'
+import { StepRows } from '../components/Composer'
+import { Phone, PhoneViewSwitch, usePhoneView } from '../components/Phone'
+import { createPlayhead, followVideo, usePlayhead, type Playhead } from '../components/playhead'
+import { useNotify } from '../App'
+import { Demo, freshSteps, type View } from '../components/first-run/demo'
+import { ModelLine } from '../components/first-run/ModelLine'
+import { EDITS, RAW_LEN, TRANSCRIPT, tokens } from '../components/first-run/sample'
 import { sound } from '../components/first-run/sound'
-import { fly, handOffSample } from '../components/first-run/handoff'
+import { rememberSample } from '../components/first-run/handoff'
 import { byKeyboard, reducedMotion } from '../components/motion'
 import rawUrl from '../assets/sample/raw.mp4'
 import simpleUrl from '../assets/sample/simple.mp4'
@@ -25,184 +29,174 @@ import candMid from '../assets/sample/cand-mid.jpg'
 import candClose from '../assets/sample/cand-close.jpg'
 import loafUrl from '../assets/sample/v_loaf.jpg'
 import kneadUrl from '../assets/sample/v_knead.jpg'
+import '../components/reel.css'
 import '../components/first-run/first-run.css'
 
-type Pane = 'sample' | 'mac' | 'ai' | 'share'
-const STEP_NAMES: Record<Exclude<Pane, 'share'>, string> = { sample: 'The sample', mac: 'Your Mac', ai: 'AI editor' }
-const BEATS: [string, string][] = [
-  ['Write down every word', ''],
-  ['Cut the pauses and false starts', '0:24 → 0:12'],
-  ['Add subtitles', 'Key words marked'],
-  ['Pick a cover', 'Smiling at the camera']
-]
-const EASE_OUT = 'cubic-bezier(.23,1,.32,1)'
+const URLS: Record<View, string> = { raw: rawUrl, simple: simpleUrl, ai: aiUrl }
+const CAPTION = 'Good bread needs four things and a little time.'
+const EASE_IN_OUT = 'cubic-bezier(.77,0,.175,1)'
 const canFly = () => !reducedMotion() && !byKeyboard() && window.innerWidth > 860
+const LEAVE_MS = 200
 
-export function FirstRun({ onDone, platform }: { onDone: () => void; platform: string }) {
-  const mac = platform === 'darwin'
-  const computer = mac ? 'Mac' : 'PC'
-  const [stage, setStage] = useState(false)
-  const model = useListeningModel()
-  const go = useRef<HTMLButtonElement>(null)
+export function FirstRun({ onDone, platform }: { onDone: () => Promise<void>; platform: string }) {
+  const computer = platform === 'darwin' ? 'Mac' : 'PC'
+  const [start, setStart] = useState<{ from: DOMRect | null } | null>(null)
+  const [welcomeGone, setWelcomeGone] = useState(false)
   const center = useRef<HTMLImageElement>(null)
-  const welcome = useRef<HTMLDivElement>(null)
-  const [from, setFrom] = useState<DOMRect | null>(null)
-
-  const start = () => {
-    sound.unlock()
-    setFrom(canFly() ? (center.current?.getBoundingClientRect() ?? null) : null)
-    setStage(true)
-  }
+  const stage = !!start
 
   return (
     <div className="fr" data-testid="first-run">
-      <SoundToggle />
-      {!stage ? (
-        <main className="fr-welcome" ref={welcome}>
-          <div className="w-logo">
-            <Icon name="play" size={28} stroke={1.75} />
-          </div>
+      {/* mounted under the welcome, so Get started only starts things: its frame is not the stage's mount */}
+      <Stage computer={computer} start={start} onLanded={() => setWelcomeGone(true)} onDone={onDone} />
+      {!welcomeGone && (
+        <main className={`fr-welcome${stage ? ' leaving' : ''}${start?.from ? ' flying' : ''}`} aria-hidden={stage || undefined} inert={stage || undefined}>
+          <span className="w-logo" aria-hidden>
+            <Logo size={36} />
+          </span>
           <h1>Welcome to Reel Studio</h1>
-          <p className="w-lead">
-            Drop in a raw video of you talking. I keep your best takes, add subtitles, pictures and a cover, and hand you a reel ready for Instagram.
-          </p>
+          <p className="w-lead">Drop in a raw video of you talking. Your editor keeps your best takes, adds subtitles, pictures and a cover.</p>
           <div className="reels" aria-hidden>
             <img src={loafUrl} alt="" />
             <img src={posterUrl} alt="" ref={center} />
             <img src={kneadUrl} alt="" />
           </div>
-          <button ref={go} className="btn primary big" onClick={start} data-testid="get-started">
+          <button className="btn primary big" onClick={() => setStart({ from: canFly() ? (center.current?.getBoundingClientRect() ?? null) : null })} data-testid="get-started">
             Get started
           </button>
           <p className="w-foot">Free, no account. Your videos stay on this {computer}.</p>
         </main>
-      ) : (
-        <Stage mac={mac} computer={computer} model={model} from={from} onDone={onDone} />
       )}
     </div>
   )
 }
 
-function SoundToggle() {
-  const [on, setOn] = useState(sound.on)
-  return (
-    <button
-      className="fr-snd"
-      aria-pressed={on}
-      aria-label="Sound"
-      title={on ? 'Sound on' : 'Sound off'}
-      onClick={() => {
-        sound.unlock()
-        sound.set(!on)
-        setOn(!on)
-      }}
-    >
-      <Icon name={on ? 'volume' : 'mute'} size={16} />
-    </button>
+/**
+ * The middle reel moving from the welcome into the player. Both are 9:16, so one translate and scale carries it;
+ * the flyer is the player's own size and corners, scaled down at the start. Resolves when it lands; it then fades
+ * over the player's own first frame, so the Instagram screen under it comes in rather than popping.
+ */
+async function fly(src: string, from: DOMRect, to: DOMRect): Promise<void> {
+  const k = from.width / to.width
+  const dx = from.left + from.width / 2 - (to.left + to.width / 2)
+  const dy = from.top + from.height / 2 - (to.top + to.height / 2)
+  const start = `translate(${dx}px, ${dy}px) scale(${k})`
+  const node = document.createElement('div')
+  node.className = 'fr-flyer'
+  Object.assign(node.style, { left: `${to.left}px`, top: `${to.top}px`, width: `${to.width}px`, height: `${to.height}px`, transform: start })
+  const img = document.createElement('img')
+  img.src = src
+  img.alt = ''
+  node.append(img)
+  document.body.append(node)
+  await img.decode().catch(() => {})
+  const move = node.animate([{ transform: start }, { transform: 'none' }], { duration: 360, easing: EASE_IN_OUT, fill: 'forwards' })
+  const gone = () => node.remove()
+  return move.finished.then(
+    () => void node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'ease', fill: 'forwards' }).finished.then(gone, gone),
+    gone
   )
 }
 
+/** Where the player is, once PhoneFill has given it a width (its ResizeObserver runs after the first layout). */
+const placed = (el: Element) =>
+  new Promise<DOMRect>((done) => {
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect()
+      if (!r.width) return
+      ro.disconnect()
+      done(r)
+    })
+    ro.observe(el)
+  })
+
+type Pane = 'sample' | 'editor'
+
 function Stage({
-  mac,
   computer,
-  model,
-  from,
+  start,
+  onLanded,
   onDone
 }: {
-  mac: boolean
   computer: string
-  model: ReturnType<typeof useListeningModel>
-  from: DOMRect | null
-  onDone: () => void
+  /** null until Get started; then where the welcome's middle reel was, or null for no flight */
+  start: { from: DOMRect | null } | null
+  onLanded: () => void
+  onDone: () => Promise<void>
 }) {
+  const notify = useNotify()
   const toks = useMemo(tokens, [])
-  const keys = useMemo<Exclude<Pane, 'share'>[]>(() => (mac ? ['sample', 'mac', 'ai'] : ['sample', 'ai']), [mac])
+  const segs = useMemo(() => TRANSCRIPT.map((s) => ({ id: s.id, toks: toks.flatMap((t, i) => (t.seg === s.id ? [{ t, i }] : [])) })), [toks])
+  // the two pictures the editor's version adds: the loaf after "bread.", the hands after the kept take's "hands,"
+  const picAt = useMemo(
+    () =>
+      new Map([
+        [toks.findIndex((t) => t.seg === 'r3' && t.text === 'bread.'), { src: loafUrl, label: 'Picture: the loaf' }],
+        [toks.findIndex((t) => t.seg === 'r5' && t.text === 'hands,'), { src: kneadUrl, label: 'Picture: hands kneading' }]
+      ]),
+    [toks]
+  )
   const [pane, setPane] = useState<Pane>('sample')
-  const [beats, setBeats] = useState<('' | 'on' | 'done')[]>(['', '', '', ''])
+  const [steps, setSteps] = useState<Step[]>(freshSteps)
   const [finished, setFinished] = useState(false)
   const [paused, setPaused] = useState(false)
+  const [held, setHeld] = useState(false)
+  const [view, setView] = useState<View>('raw')
+  const [upgrade, setUpgrade] = useState<'making' | 'done' | null>(null)
   const [ai, setAi] = useState<ProviderInfo | null>(null)
-  const [added, setAdded] = useState<string[]>([])
+  const [leaving, setLeaving] = useState(false)
+  const [soundOn, setSoundOn] = useState(sound.on)
+  const [phoneView, setPhoneView] = usePhoneView()
+  const [playhead] = useState(createPlayhead)
   const demo = useRef<Demo | null>(null)
+  const video = useRef<HTMLVideoElement>(null)
+  const still = useRef<HTMLCanvasElement>(null)
   const r = {
-    phone: useRef<HTMLDivElement>(null),
-    scr: useRef<HTMLDivElement>(null),
-    raw: useRef<HTMLVideoElement>(null),
-    simple: useRef<HTMLVideoElement>(null),
-    ai: useRef<HTMLVideoElement>(null),
     subs: useRef<HTMLDivElement>(null),
-    ptag: useRef<HTMLSpanElement>(null),
+    tag: useRef<HTMLSpanElement>(null),
     scrim: useRef<HTMLDivElement>(null),
     cands: useRef<HTMLDivElement>(null),
-    cover: useRef<HTMLDivElement>(null),
-    words: useRef<HTMLParagraphElement>(null),
-    lenNow: useRef<HTMLSpanElement>(null),
-    lenWas: useRef<HTMLSpanElement>(null),
-    note: useRef<HTMLParagraphElement>(null),
-    rail: useRef<HTMLElement>(null),
-    script: useRef<HTMLDivElement>(null)
+    cover: useRef<HTMLDivElement>(null)
   }
   const chips = useRef<HTMLElement[]>([])
+  const segEls = useRef(new Map<string, HTMLElement>())
+  const pics = useRef<HTMLElement[]>([])
   const heading = useRef<HTMLHeadingElement>(null)
-  const nextBtn = useRef<HTMLButtonElement>(null)
-  // "Skip the demo" leaves the page when the demo ends; focus that was on it moves to the next step's button.
+  const [landed, setLanded] = useState(false)
+  const landing = !!start?.from && !landed
+
+  useEffect(() => followVideo(() => video.current, playhead), [playhead])
+  // The cover, its candidates and the editor's pictures start hidden; decoded now, their first frame on screen is not a decode.
   useEffect(() => {
-    if (finished && (document.activeElement === document.body || document.activeElement === null)) nextBtn.current?.focus({ preventScroll: true })
-  }, [finished])
+    for (const im of document.querySelectorAll<HTMLImageElement>('.fr-cover img, .fr-cands img, .fr-words .pic img')) void im.decode().catch(() => {})
+  }, [])
 
   useEffect(() => {
     const d = new Demo(
       {
-        phone: r.phone.current!,
-        scr: r.scr.current!,
-        videos: { raw: r.raw.current!, simple: r.simple.current!, ai: r.ai.current! },
+        video: video.current!,
+        still: still.current!,
         subs: r.subs.current!,
-        ptag: r.ptag.current!,
+        tag: r.tag.current!,
         scrim: r.scrim.current!,
         cands: r.cands.current!,
         cover: r.cover.current!,
-        words: r.words.current!,
-        lenNow: r.lenNow.current!,
-        lenWas: r.lenWas.current!,
-        note: r.note.current!,
-        chips: chips.current
+        chips: chips.current,
+        segs: segEls.current,
+        pics: pics.current
       },
       toks,
+      URLS,
       {
-        beat: (i, st) => setBeats((b) => b.map((x, j) => (j === i ? st : x))),
+        steps: setSteps,
+        view: setView,
+        held: setHeld,
         finished: () => setFinished(true),
-        paused: setPaused
+        paused: setPaused,
+        upgrade: setUpgrade
       }
     )
     demo.current = d
-    let alive = true
-    void (async () => {
-      // the welcome's middle reel flies into the phone; the panel and the words follow
-      if (from) {
-        const scr = r.scr.current!
-        scr.classList.add('landing')
-        r.rail.current?.animate(
-          [
-            { opacity: 0, transform: 'translateX(24px)' },
-            { opacity: 1, transform: 'none' }
-          ],
-          { duration: 420, delay: 160, easing: EASE_OUT, fill: 'backwards' }
-        )
-        r.script.current?.animate(
-          [
-            { opacity: 0, transform: 'translateY(8px)' },
-            { opacity: 1, transform: 'none' }
-          ],
-          { duration: 420, delay: 280, easing: EASE_OUT, fill: 'backwards' }
-        )
-        await fly(posterUrl, from, scr.getBoundingClientRect(), 14, 38, 560)
-        scr.classList.remove('landing')
-      }
-      // Skip can land during the flight: the demo is already finished, and focus stays where Skip put it.
-      if (!alive || d.finished) return
-      heading.current?.focus({ preventScroll: true })
-      void d.start()
-    })()
     const blur = () => d.holdEnd()
     const hidden = () => document.hidden && d.holdEnd()
     const keyup = (e: KeyboardEvent) => (e.key === ' ' || e.key === 'Enter') && d.holdEnd()
@@ -210,7 +204,6 @@ function Stage({
     document.addEventListener('visibilitychange', hidden)
     document.addEventListener('keyup', keyup)
     return () => {
-      alive = false
       d.destroy()
       window.removeEventListener('blur', blur)
       document.removeEventListener('visibilitychange', hidden)
@@ -219,33 +212,39 @@ function Stage({
     // built once for this stage
   }, [])
 
-  const next = useCallback(() => {
-    const i = keys.indexOf(pane as Exclude<Pane, 'share'>)
-    setPane(i >= 0 && i < keys.length - 1 ? keys[i + 1] : 'share')
-  }, [keys, pane])
   useEffect(() => {
-    heading.current?.focus({ preventScroll: true })
-  }, [pane])
-  const afterDemo = () => (mac ? setPane('mac') : setPane('ai'))
+    if (!start) return
+    setSoundOn(sound.on)
+    let alive = true
+    void (async () => {
+      if (start.from) await fly(posterUrl, start.from, await placed(video.current!.parentElement!))
+      else if (!byKeyboard()) await new Promise((r) => window.setTimeout(r, LEAVE_MS)) // the welcome fades out first
+      if (!alive) return
+      setLanded(true)
+      onLanded()
+      // focus was on Get started, now gone: a screen reader starts at the column
+      heading.current?.focus({ preventScroll: true })
+      // Skip can land during the flight: the demo is then already finished.
+      if (!demo.current!.finished) void demo.current!.start()
+    })()
+    return () => {
+      alive = false
+    }
+    // once, on Get started
+  }, [start])
 
-  const aiOn = useRef(false)
-  const [changing, setChanging] = useState(false)
+  // a step change moves a screen reader to its heading
+  useEffect(() => {
+    if (pane === 'editor') heading.current?.focus({ preventScroll: true })
+  }, [pane])
+
   const connected = (p: ProviderInfo) => {
     setAi(p)
-    setChanging(false)
-    if (aiOn.current) return
-    aiOn.current = true
-    void demo.current?.upgrade(
-      [
-        ['bread.', loafUrl, 'Picture: the loaf'],
-        ['hands,', kneadUrl, 'Picture: hands kneading']
-      ],
-      (t) => setAdded((a) => [...a, t])
-    )
+    void demo.current?.upgrade()
   }
-  // A provider already on from earlier counts as connected.
+  // An editor already on from before counts as connected; one switched off while here does not.
   useEffect(() => {
-    if (pane !== 'ai') return
+    if (pane !== 'editor') return
     reel.ai
       .active()
       .then((p) => p.connected && p.id !== 'none' && connected(p))
@@ -256,252 +255,280 @@ function Stage({
   const finish = async () => {
     demo.current?.holdEnd()
     demo.current?.setPaused(true)
-    handOffSample({ from: canFly() ? (r.scr.current?.getBoundingClientRect() ?? null) : null, upgraded: !!ai })
-    onDone()
+    rememberSample(upgrade !== null)
+    setLeaving(true)
+    if (!reducedMotion() && !byKeyboard()) await new Promise((r) => window.setTimeout(r, LEAVE_MS))
+    try {
+      await onDone()
+    } catch (e) {
+      // still here: the sample comes back, and the button works again
+      setLeaving(false)
+      notify(userMessage(e), 'error')
+    }
   }
 
-  const stepAt = pane === 'share' ? keys.length : keys.indexOf(pane)
+  const toggleSound = () => {
+    const next = !soundOn
+    setSoundOn(next)
+    sound.set(next).catch((e) => notify(userMessage(e), 'error'))
+  }
+
+  const current = steps.find((s) => s.state === 'now')
+  const doneCount = steps.filter((s) => s.state === 'done' || s.state === 'skipped').length
+  const version = upgrade === 'done' ? 2 : finished ? 1 : null
+  const hold = (on: boolean) => (on ? demo.current?.holdStart() : demo.current?.holdEnd())
+
   return (
-    <div className="fr-stage">
-      <div className="fr-main">
-        <div className="fr-pcol">
-          <div
-            ref={r.phone}
-            className={`fr-phone${finished ? ' holdable' : ''}`}
-            tabIndex={finished ? 0 : -1}
-            role={finished ? 'button' : 'img'}
-            aria-label={finished ? 'The sample reel. Press and hold, or hold Space, to see the original.' : 'The sample reel'}
-            onPointerDown={(e) => {
-              if (e.button !== 0 || !finished) return
-              e.currentTarget.setPointerCapture(e.pointerId)
-              demo.current?.holdStart()
-            }}
-            onPointerUp={() => demo.current?.holdEnd()}
-            onPointerCancel={() => demo.current?.holdEnd()}
-            onLostPointerCapture={() => demo.current?.holdEnd()}
-            onKeyDown={(e) => {
-              if (e.key !== ' ' && e.key !== 'Enter') return
-              e.preventDefault()
-              if (!e.repeat) demo.current?.holdStart()
-            }}
-            onContextMenu={(e) => e.preventDefault()}
-            data-testid="sample-phone"
-          >
-            <div className="scr" ref={r.scr}>
-              <video ref={r.raw} src={rawUrl} poster={posterUrl} muted playsInline preload="auto" />
-              <video ref={r.simple} className="off" src={simpleUrl} muted playsInline loop preload="auto" />
-              <video ref={r.ai} className="off" src={aiUrl} muted playsInline loop preload="auto" />
-              <div className="subs" ref={r.subs} aria-hidden />
-              <span className="island" />
-              <div className="sbar" aria-hidden>
-                <span>9:41</span>
-                <span className="bat">
-                  <i />
-                </span>
-              </div>
-              <span className="homebar" />
-              <span className="ptag" ref={r.ptag} />
-              <div className="scrim" ref={r.scrim} />
-              <div className="cands" ref={r.cands} aria-hidden>
+    <div className={`fr-stage${start ? ' on' : ''}${leaving ? ' leaving' : ''}`} inert={!start || undefined}>
+      <header className="fr-tb">
+        <span className="rt-title">
+          <h1 className="tb-h">The sample</h1>
+          {version && (
+            <span className="rt-ver" data-testid="version-on-screen">
+              Version {version}
+            </span>
+          )}
+        </span>
+        <button className="fr-snd" aria-pressed={soundOn} onClick={toggleSound} data-testid="sound-effects">
+          Sound effects: {soundOn ? 'on' : 'off'}
+        </button>
+      </header>
+      <div className="reel-b">
+        <section className="stage" aria-label="The sample reel">
+          <div className={`stage-v${landing ? ' fr-landing' : ''}`}>
+            <Phone view={phoneView} caption={CAPTION} className={held ? 'fr-held' : undefined} testid="sample-phone">
+              <video ref={video} className="fr-v" poster={posterUrl} muted playsInline preload="auto" aria-hidden />
+              <canvas ref={still} className="fr-still" aria-hidden />
+              <div className="fr-subs" ref={r.subs} aria-hidden />
+              <span className="reel-tag fr-tag" ref={r.tag} aria-hidden />
+              <div className="fr-scrim" ref={r.scrim} />
+              <div className="fr-cands" ref={r.cands} aria-hidden>
                 <img src={candWide} alt="" />
                 <img src={candMid} alt="" />
                 <img src={candClose} alt="" data-pick />
               </div>
-              <div className="cover" ref={r.cover}>
+              <div className="fr-cover" ref={r.cover} aria-hidden>
                 <img src={coverUrl} alt="" />
                 <div className="cover-t">
                   You don’t need a <em>mixer</em>
                 </div>
               </div>
-            </div>
-          </div>
-          <div className="under">
-            <span className={`hold-hint${finished ? ' show' : ''}`}>
-              <Icon name="original" size={16} /> Hold the video to see the original
-            </span>
-            {finished && (
-              <button className="icon-btn" onClick={() => demo.current?.setPaused(!paused)} aria-label={paused ? 'Play the sample' : 'Pause the sample'}>
-                <Icon name={paused ? 'play' : 'pause'} size={14} />
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="script" ref={r.script}>
-          <div className="script-h">
-            <span className="script-l">The sample</span>
-            <span className="len">
-              <span className="len-was" ref={r.lenWas} />
-              <span className="len-now" ref={r.lenNow}>
-                0:24
-              </span>
-            </span>
-          </div>
-          <p className="script-note" ref={r.note} aria-live="polite" />
-          <p className="words" ref={r.words}>
-            {toks.map((t, i) => (
-              <span key={i}>
-                <span
-                  ref={(el) => {
-                    if (el) chips.current[i] = el
+              {finished && (
+                <button
+                  className="fr-hold"
+                  aria-label="The sample reel. Press and hold, or hold Space, to see what you filmed."
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return
+                    e.currentTarget.setPointerCapture(e.pointerId)
+                    hold(true)
                   }}
-                  className={`tk${t.text ? '' : ' pz'}`}
-                  aria-label={t.text ? undefined : `pause, ${t.pause}`}
-                >
-                  {t.text ?? t.pause}
-                </span>{' '}
-              </span>
-            ))}
-          </p>
-        </div>
-      </div>
-
-      <aside className="fr-rail" ref={r.rail} aria-label="Set up Reel Studio">
-        <ol className="fr-steps" aria-label="Setup">
-          {keys.map((k, j) => (
-            <li
-              key={k}
-              className={j < stepAt ? 'done' : j === stepAt ? 'on' : undefined}
-              aria-current={j === stepAt ? 'step' : undefined}
-              data-testid={`setup-step-${k}`}
+                  onPointerUp={() => hold(false)}
+                  onPointerCancel={() => hold(false)}
+                  onLostPointerCapture={() => hold(false)}
+                  onKeyDown={(e) => {
+                    if (e.key !== ' ' && e.key !== 'Enter') return
+                    e.preventDefault()
+                    if (!e.repeat) hold(true)
+                  }}
+                  onContextMenu={(e) => e.preventDefault()}
+                  data-testid="sample-hold"
+                />
+              )}
+            </Phone>
+          </div>
+          <div className="transport">
+            <button
+              className="pp"
+              style={finished ? undefined : { visibility: 'hidden' }}
+              onClick={() => demo.current?.setPaused(!paused)}
+              aria-label={paused ? 'Play the sample' : 'Pause the sample'}
+              data-testid="play"
             >
-              {STEP_NAMES[k]}
-            </li>
-          ))}
-        </ol>
-        <div className="fr-panes">
-          <section className="fr-pane" key={pane} aria-labelledby="fr-h">
-            {pane === 'sample' && (
-              <>
-                <h2 id="fr-h" tabIndex={-1} ref={heading}>
-                  Watch me edit a sample
-                </h2>
-                <p className="lead">This is what I’ll do with your video.</p>
-                <ol className="beats">
-                  {BEATS.map(([t, d], i) => (
-                    <li key={t} className={`beat ${beats[i]}`}>
-                      <span>{t}</span>
-                      <span className="det">{i === 0 ? `${toks.filter((x) => x.text).length} words` : d}</span>
-                    </li>
-                  ))}
-                </ol>
-                <div className="pane-foot">
-                  {!finished && (
-                    <button className="link inline" onClick={() => demo.current?.skip()} data-testid="demo-skip">
-                      Skip the demo
-                    </button>
-                  )}
-                  <button
-                    ref={nextBtn}
-                    className={`btn primary big reveal${finished ? ' show' : ''}`}
-                    inert={!finished || undefined}
-                    onClick={afterDemo}
-                    data-testid="demo-next"
+              <Icon name={paused ? 'play' : 'pause'} size={14} stroke={2} />
+            </button>
+            <Clock playhead={playhead} view={view} />
+            <span className={`fr-hint${finished ? ' show' : ''}`} data-testid="hold-hint">
+              Hold the video to see what you filmed.
+            </span>
+            <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
+          </div>
+        </section>
+
+        <div className="ncol fr-col">
+          <div className="notes-h">
+            <h2 ref={heading} tabIndex={-1} id="fr-h">
+              {pane === 'sample' ? 'How a reel gets made' : 'Choose your editor'}
+            </h2>
+          </div>
+          <div className="log fr-log" role="log" aria-labelledby="fr-h">
+            <div className="fr-log-in">
+            <article className="nt">
+              <div className="nt-ask">
+                <p className="bubble">
+                  <Icon name="video" size={14} stroke={1.75} />
+                  Raw take · 0:24
+                </p>
+              </div>
+              {finished ? (
+                <div className="nt-res enter" data-testid="sample-v1">
+                  <span className="nk ok">
+                    <Icon name="check" size={12} stroke={2.4} />
+                  </span>
+                  <b className="v">Version 1</b>
+                  <span className="sep" aria-hidden>
+                    ·
+                  </span>
+                  <span className="t">0:24 down to 0:12</span>
+                </div>
+              ) : (
+                <div className="nt-res quiet" aria-busy>
+                  <span className="nk">
+                    <span className="spin" />
+                  </span>
+                  <span className="t">Making Version 1</span>
+                </div>
+              )}
+              <p className="fr-words" data-testid="sample-words">
+                <b>Heard</b>{' '}
+                {segs.map((s) => (
+                  <span
+                    key={s.id}
+                    className="fr-seg"
+                    ref={(el) => {
+                      if (el) segEls.current.set(s.id, el)
+                    }}
                   >
-                    {mac ? 'Get your Mac ready' : 'Connect your AI editor'}
-                  </button>
-                </div>
-              </>
-            )}
-            {pane === 'mac' && (
-              <>
-                <h2 id="fr-h" tabIndex={-1} ref={heading}>
-                  Get your Mac ready
-                </h2>
-                <p className="lead">Your Mac asks about each of these once. I’ll say why before it does.</p>
-                <MacPane onDone={next} />
-                <div className="pane-foot">
-                  <p className="note">You can change any of these later in System Settings.</p>
-                </div>
-              </>
-            )}
-            {pane === 'ai' && (
-              <>
-                <h2 id="fr-h" tabIndex={-1} ref={heading}>
-                  Connect your AI editor
-                </h2>
-                <p className="lead">It picks your best take, adds pictures and makes changes when you ask.</p>
-                <div className="fr-ai">{ai && !changing ? <Connected p={ai} onChange={() => setChanging(true)} /> : <ConnectAI onConnected={connected} />}</div>
-                {added.length > 0 && (
-                  <div className="changed" aria-live="polite">
-                    <h3>What an AI editor adds to the sample</h3>
-                    <ol>
-                      {added.map((t) => (
-                        <li key={t}>
-                          <Icon name="check" size={14} stroke={2.4} /> {t}
-                        </li>
-                      ))}
-                    </ol>
+                    {s.toks.map(({ t, i }) => {
+                      const pic = picAt.get(i)
+                      return (
+                        <Fragment key={i}>
+                          <span
+                            ref={(el) => {
+                              if (el) chips.current[i] = el
+                            }}
+                            className={`tk${t.text ? '' : ' pz'}`}
+                            aria-label={t.text ? undefined : `pause, ${t.pause}`}
+                          >
+                            {t.text ?? t.pause}
+                          </span>{' '}
+                          {pic && (
+                            <>
+                              <span
+                                className="tk in pic gone"
+                                role="img"
+                                aria-label={pic.label}
+                                ref={(el) => {
+                                  if (el && !pics.current.includes(el)) pics.current.push(el)
+                                }}
+                              >
+                                <img src={pic.src} alt="" />
+                              </span>{' '}
+                            </>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                  </span>
+                ))}
+              </p>
+            </article>
+            {upgrade && (
+              <article className="nt">
+                {upgrade === 'done' ? (
+                  <div className="nt-res enter" data-testid="sample-v2">
+                    <span className="nk ok">
+                      <Icon name="check" size={12} stroke={2.4} />
+                    </span>
+                    <b className="v">Version 2</b>
+                    <span className="sep" aria-hidden>
+                      ·
+                    </span>
+                    <span className="t wrap">What an editor adds: a better take and two pictures</span>
+                  </div>
+                ) : (
+                  <div className="nt-res quiet" aria-busy>
+                    <span className="nk">
+                      <span className="spin" />
+                    </span>
+                    <span className="t">Making Version 2</span>
                   </div>
                 )}
-                <div className="pane-foot">
-                  {!ai && <p className="note">Without one I make a simple cut, like the sample now. You can connect later.</p>}
-                  <button className={`btn ${ai ? 'primary big' : ''}`} onClick={next} data-testid="skip">
-                    {ai ? 'Continue' : 'Skip for now'}
-                  </button>
-                </div>
-                {ai && (
-                  <span className="sr-only" role="status">
-                    {ai.id === 'claude-cli' ? USING_CLAUDE_CODE : `Connected to ${ai.label}.`}
-                  </span>
-                )}
-              </>
+              </article>
             )}
-            {pane === 'share' && <SharePane heading={heading} onDone={() => void finish()} />}
-          </section>
+            </div>
+          </div>
+
+          <div className="cbox bare">
+            <div className={`stripwrap${!finished || upgrade === 'making' ? ' on' : ''}`}>
+              <div>
+                {!finished && (
+                  <>
+                    <div className="steps on">
+                      <div>
+                        <ul aria-label="Steps" data-testid="steps-list">
+                          <StepRows steps={steps} />
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="strip" role="status" data-testid="note-progress">
+                      <span className="bar" aria-hidden>
+                        <i style={{ transform: `scaleX(${(doneCount + (current ? 0.5 : 0)) / steps.length})` }} />
+                      </span>
+                      <span className="spin light" aria-hidden />
+                      <b>Making Version 1</b>
+                      <span className="m">{current ? ` · ${STEP_LABEL[current.id]}` : ''}</span>
+                    </div>
+                  </>
+                )}
+                {finished && upgrade === 'making' && (
+                  <div className="strip" role="status" data-testid="note-progress">
+                    <span className="spin light" aria-hidden />
+                    <b>Making Version 2</b>
+                    <span className="m"> · {STEP_LABEL.edit}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            {pane === 'editor' && (
+              <div className="connect-cin fr-pick" data-testid="composer-connect">
+                <p className="fr-why">Your editor picks your best takes, adds pictures and makes the changes you ask for, on your own Claude or ChatGPT plan.</p>
+                <ConnectAI onConnected={connected} />
+              </div>
+            )}
+          </div>
+
+          <footer className="fr-foot">
+            <ModelLine active={!!start} computer={computer} />
+            <span className="sp" />
+            {pane === 'sample' && !finished && (
+              <button className="btn ghost" onClick={() => demo.current?.skip()} data-testid="demo-skip">
+                Skip
+              </button>
+            )}
+            {pane === 'sample' && finished && (
+              <button className="btn primary" onClick={() => setPane('editor')} data-testid="demo-next">
+                Continue
+              </button>
+            )}
+            {pane === 'editor' && (
+              <button className={`btn${ai ? ' primary' : ''}`} onClick={() => void finish()} disabled={leaving} data-testid={ai ? 'editor-continue' : 'not-now'}>
+                {ai ? 'Continue' : 'Not now'}
+              </button>
+            )}
+          </footer>
         </div>
-        <ModelLine model={model} place="panel" computer={computer} />
-      </aside>
-    </div>
-  )
-}
-
-/** Once an editor is on, one row says which, so what it adds to the sample stays in view. */
-function Connected({ p, onChange }: { p: ProviderInfo; onChange: () => void }) {
-  const brand = p.id === 'claude' || p.id === 'claude-cli' ? 'claude' : p.id === 'chatgpt' || p.id === 'codex-cli' ? 'openai' : null
-  return (
-    <div className="fr-connected" data-testid="ai-connected-row">
-      <span className="av">{brand ? <BrandMark name={brand} size={18} /> : <Icon name="server" size={16} />}</span>
-      <span className="t">
-        <b>Connected to {providerName(p)}</b>
-        <span>{p.id === 'claude-cli' ? 'Your Claude Code app' : p.id === 'codex-cli' ? 'Your Codex app' : (p.detail ?? 'AI editor')}</span>
-      </span>
-      <button className="link inline" onClick={onChange}>
-        Change
-      </button>
-      <Icon name="check" size={16} stroke={2.2} />
-    </div>
-  )
-}
-
-/** Asked once, as a plain choice: two equal buttons, nothing preselected, the same words as Settings › Privacy. */
-function SharePane({ heading, onDone }: { heading: React.RefObject<HTMLHeadingElement | null>; onDone: () => void }) {
-  const [busy, setBusy] = useState(false)
-  const answer = async (on: boolean) => {
-    setBusy(true)
-    await reel.app.setSharing({ asked: true, on, usage: true, quality: true, posts: true }).catch(() => undefined)
-    onDone()
-  }
-  return (
-    <>
-      <h2 id="fr-h" tabIndex={-1} ref={heading}>
-        Help improve Reel Studio?
-      </h2>
-      <p className="lead">You can share anonymous data: which features you use and errors, a score for each edit, and view counts of reels you post.</p>
-      <p className="never share-never">
-        <Icon name="lock" size={14} />
-        {NEVER_SHARED}
-      </p>
-      <div className="pane-foot">
-        <p className="note">You can change this any time in Settings › Privacy.</p>
-        <span className="row">
-          <button className="btn" disabled={busy} onClick={() => void answer(false)} data-testid="share-no">
-            Don’t share
-          </button>
-          <button className="btn" disabled={busy} onClick={() => void answer(true)} data-testid="share-yes">
-            Share
-          </button>
-        </span>
       </div>
-    </>
+    </div>
+  )
+}
+
+/** The time on the sample and its length, as the log states it: one render a second while it plays. */
+function Clock({ playhead, view }: { playhead: Playhead; view: View }) {
+  const second = usePlayhead(playhead, Math.floor)
+  const dur = view === 'raw' ? RAW_LEN : EDITS[view].dur
+  return (
+    <span className="tc" data-testid="time">
+      {clock(Math.min(second, Math.floor(dur)))} <span>/ {view === 'raw' ? clock(RAW_LEN) : EDITS[view].len}</span>
+    </span>
   )
 }
