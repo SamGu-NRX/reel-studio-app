@@ -253,7 +253,8 @@ function Stage({
     demo.current?.holdEnd()
     demo.current?.setPaused(true)
     setLeaving(true)
-    if (!reducedMotion() && !byKeyboard()) await new Promise((r) => window.setTimeout(r, LEAVE_MS))
+    // the stage fades out (reduced motion too: a fade is not movement); from the keyboard it just goes
+    if (!byKeyboard()) await new Promise((r) => window.setTimeout(r, LEAVE_MS))
     try {
       await onDone()
     } catch (e) {

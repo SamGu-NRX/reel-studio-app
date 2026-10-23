@@ -41,6 +41,8 @@ export function createPauser(deps: { online: () => boolean; resume: (slug: strin
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   const offline = new Set<string>()
   const asleep = new Set<string>()
+  /** Between the computer's sleep and its wake: a sleep pause scheduled after the wake waits only for the network. */
+  let sleeping = false
   let poll: ReturnType<typeof setInterval> | null = null
 
   function cancel(slug: string): void {
@@ -75,12 +77,17 @@ export function createPauser(deps: { online: () => boolean; resume: (slug: strin
       deps.log(`[pause] ${slug}: ${p.reason}${p.until ? ` until ${p.until}` : ''}`)
       if (p.reason === 'quit') return go(slug)
       if (p.reason === 'offline') return waitOnline(slug)
-      if (p.reason === 'sleep') return void asleep.add(slug)
+      if (p.reason === 'sleep') return sleeping ? void asleep.add(slug) : waitOnline(slug)
       const at = p.until ? Date.parse(p.until) + (deps.marginMs ?? 30_000) : now + LIMIT_RETRY_MS
       timers.set(slug, setTimeout(() => go(slug), Math.max(0, at - now)))
     },
+    /** The computer is going to sleep (Electron powerMonitor 'suspend'). */
+    slept(): void {
+      sleeping = true
+    },
     /** The computer woke (Electron powerMonitor 'resume'): what sleep paused goes on, or waits for the network. */
     woke(): void {
+      sleeping = false
       for (const slug of [...asleep]) {
         asleep.delete(slug)
         if (deps.online()) go(slug)

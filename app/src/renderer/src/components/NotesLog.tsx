@@ -244,7 +244,7 @@ export function NotesLog({
           <span className="nk pause">
             <Icon name="pause" size={11} stroke={2.4} />
           </span>
-          <span className="t wrap" data-testid="first-paused-why">
+          <span className="t wrap full" data-testid="first-paused-why">
             Paused. {f.why ?? 'Nothing is lost.'}
           </span>
           <button className="btn primary small" onClick={onResume} data-testid="resume">
@@ -317,7 +317,7 @@ export function NotesLog({
             <span className="nk pause">
               <Icon name="pause" size={11} stroke={2.4} />
             </span>
-            <span className="t wrap">Paused. {pausedWhy ?? 'It waits below.'}</span>
+            <span className="t wrap full">Paused. {pausedWhy ?? 'It waits below.'}</span>
           </div>
         )
       case 'stopped':

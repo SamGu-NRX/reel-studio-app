@@ -114,7 +114,7 @@ html.kb .tl-track:focus-visible { outline: 2px solid var(--ink); outline-offset:
 .tl-mark.waiting::before { background: var(--marker); }
 .tl-mark > svg { position: relative; }
 html.kb .tl-mark:focus-visible { outline: 2px solid var(--ink); outline-offset: 0; }
-@media (hover: hover) and (pointer: fine) {
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .tl-mark::before { transition: transform 150ms var(--ease-out); }
   .tl-mark:hover::before { transform: scale(1.15); }
 }
@@ -206,6 +206,9 @@ html.kb .tl-mark:focus-visible { outline: 2px solid var(--ink); outline-offset: 
 .nt-res .t { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-width: 0; flex: 0 1 auto; }
 .nt-res .sep { color: var(--ink-4); flex: none; margin: 0 -2px; }
 .nt-res .t.wrap { white-space: normal; overflow-wrap: anywhere; }
+/* a pause says why and when it goes on: all of it, on as many lines as it needs, with its button under it */
+.nt-res.paused { flex-wrap: wrap; }
+.nt-res .t.full { display: block; -webkit-line-clamp: unset; flex: 1 1 200px; }
 .nt-res .lk, .reply-acts .lk, .dacts .lk, .script .lk {
   flex: none; border: 0; background: none; padding: 0; min-height: 24px; font: inherit; font-size: var(--fs-base); font-weight: 600; color: var(--ink-2); display: inline-flex; align-items: center; gap: 5px;
   text-decoration: underline; text-decoration-color: rgba(22, 30, 26, .3); text-underline-offset: 3px; white-space: nowrap; cursor: pointer;

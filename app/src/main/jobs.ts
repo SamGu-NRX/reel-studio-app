@@ -148,7 +148,8 @@ export function createJobManager(
           await updateAppState(slug, (s) => {
             s.job = { id, kind, startedAt: new Date().toISOString(), note: opts.note }
             s.lastError = null
-            delete s.paused
+            // the work a pause waits for starts again; an export or a script leaves the pause to continue it
+            if (kind === 'first-edit' || kind === 'note' || kind === 'rerender') delete s.paused
             if (kind === 'first-edit') s.status = 'working'
             opts.record?.(s)
           })

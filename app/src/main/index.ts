@@ -225,13 +225,18 @@ let sleptAt = 0
 const editorName = (p: { id: string } | null): string | null =>
   p?.id === 'claude-cli' || p?.id === 'claude' ? 'Claude' : p?.id === 'chatgpt' ? 'ChatGPT' : null
 const pauseCtx = (kind: 'first-edit' | 'note', startedAt: number, editor: string | null) => ({ kind, online: net.isOnline(), slept: sleptAt > startedAt, editor })
+/** Reels being deleted: nothing continues them (continuePaused). */
+const removing = new Set<string>()
 
 /** Continues a paused reel: Version 1 starts again where it stopped (listening kept); waiting notes run on. */
 async function continuePaused(slug: string): Promise<void> {
-  const st = await readAppState(slug)
-  if (!st.paused || jobs.forSlug(slug)) return
   const dir = projectDir(slug)
-  if ((await listVersions(dir)).some((v) => !v.draft)) {
+  if (!existsSync(dir)) return
+  const st = await readAppState(slug)
+  const made = (await listVersions(dir)).some((v) => !v.draft)
+  // checked after the reads: a reel being deleted meanwhile, or started by the person, is left alone
+  if (!st.paused || jobs.forSlug(slug) || removing.has(slug) || !existsSync(dir)) return
+  if (made) {
     await updateAppState(slug, (s) => void delete s.paused)
     return noteQueue.runNext(slug)
   }
@@ -986,14 +991,19 @@ function registerIpc(): void {
     return result
   })
   handle('projects:remove', async (_e, slug: string) => {
+    removing.add(slug)
     pauser.cancel(slug)
-    await coverScans.stop(slug)
-    const running = jobs.forSlug(slug)
-    if (running) {
-      jobs.cancel(running.id)
-      await running.done
+    try {
+      await coverScans.stop(slug)
+      const running = jobs.forSlug(slug)
+      if (running) {
+        jobs.cancel(running.id)
+        await running.done
+      }
+      await fs.rm(projectDir(slug), { recursive: true, force: true })
+    } finally {
+      removing.delete(slug)
     }
-    await fs.rm(projectDir(slug), { recursive: true, force: true })
   })
 
   handle('jobs:cancel', (_e, id: string) => noteQueue.stop(String(id)))
@@ -1374,7 +1384,10 @@ app.whenReady().then(async () => {
   for (const p of await listProjects().catch(() => [])) {
     if (p.pausedFor) pauser.schedule(p.slug, p.pausedFor.reason === 'sleep' ? { ...p.pausedFor, reason: 'offline' } : p.pausedFor)
   }
-  powerMonitor.on('suspend', () => void (sleptAt = Date.now()))
+  powerMonitor.on('suspend', () => {
+    sleptAt = Date.now()
+    pauser.slept()
+  })
   powerMonitor.on('resume', () => pauser.woke())
   // B section 7: the computer stays awake while a reel is being made
   let awake: number | null = null

@@ -166,7 +166,7 @@ html.kb :is(.fr-stage.on .stage, .fr-stage.on .fr-col, .fr-pick, .shell.arriving
   @keyframes fr-rise { from { opacity: 0; } }
   @keyframes fr-up { from { opacity: 0; } }
   .fr-stage .phone, .fr-stage .phone.fr-held, .fr-stage.leaving .phone { transform: none; transition: none; }
-  .fr-words .tk { transform: none; transition: opacity 160ms cubic-bezier(.2, .8, .2, 1); }
+  .fr-words .tk { transform: none; transition: opacity 200ms cubic-bezier(.2, .8, .2, 1); }
   .fr-words .tk::after { transition: none; }
   .fr-cands img { transition: opacity 200ms cubic-bezier(.2, .8, .2, 1); }
   .fr-cands.picked img[data-pick] { transform: none; }
