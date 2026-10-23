@@ -106,6 +106,7 @@ export async function passFirstRun(page: Page): Promise<void> {
     await passMacStage(page)
     await passListeningStage(page)
     await page.getByTestId('skip').click()
+    await page.getByTestId('share-no').click()
   }
   await expect(page.getByText('Your videos')).toBeVisible()
 }

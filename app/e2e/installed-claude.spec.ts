@@ -21,7 +21,7 @@ test('installed app: the Claude choice, in this computer\'s real state', async (
     if (EXE) expect(info.engine.mode).toBe('real')
     expect(info.ai).toBe('package')
     // one build: no flavour field, just these
-    expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'firstRunDone', 'platform', 'root', 'rootDisplay', 'test', 'version'])
+    expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'fasterExports', 'firstRunDone', 'models', 'platform', 'root', 'rootDisplay', 'sharing', 'test', 'userName', 'version'])
 
     const providers = (await page.evaluate(() => (window as any).reel.ai.providers())) as { id: string; label: string; detail?: string }[]
     expect(providers.map((p) => p.id)).toEqual(['chatgpt', 'claude', 'claude-cli', 'none'])
@@ -37,16 +37,16 @@ test('installed app: the Claude choice, in this computer\'s real state', async (
     await openSettings(page)
     await expect(page.getByTestId('signin-chatgpt')).toBeVisible()
     await expect(page.getByTestId('claude-key-toggle')).toBeVisible()
-    const panel = page.locator('.panel').first()
+    const panel = page.locator('#sec-ai')
     if (st.state === 'ready') {
       // what the person already has comes first
-      await expect(page.getByTestId('use-claude-code')).toHaveText(USE_CLAUDE_CODE)
-      await expect(panel.locator('button.btn.big').first()).toHaveAttribute('data-testid', 'use-claude-code')
+      await expect(page.getByTestId('use-claude-code')).toHaveAccessibleName(USE_CLAUDE_CODE)
+      await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-claude-code')
       await expect(page.getByTestId('signin-chatgpt')).not.toHaveClass(/primary/)
     } else {
-      await expect(panel.locator('button.btn.big').first()).toHaveAttribute('data-testid', 'signin-chatgpt')
+      await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'signin-chatgpt')
       await expect(page.getByTestId('signin-chatgpt')).toHaveClass(/primary/)
-      if (st.state === 'signed_out') await expect(page.getByTestId('claude-code-signin')).toHaveText('Sign in to your Claude Code app')
+      if (st.state === 'signed_out') await expect(page.getByTestId('claude-code-signin')).toHaveAccessibleName('Sign in to your Claude Code app')
       if (st.state === 'broken') await expect(page.locator('[data-testid=claude-code-choice][data-state=broken]')).toBeVisible()
       if (st.state === 'missing') {
         await page.getByTestId('claude-code-toggle').click()

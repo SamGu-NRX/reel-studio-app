@@ -188,17 +188,17 @@ async function claudeScreen(state: string) {
   await passFirstRun(page)
   const info = await page.evaluate(() => window.reel.app.info())
   // one build: no flavour field, just these
-  expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'firstRunDone', 'platform', 'root', 'rootDisplay', 'test', 'version'])
+  expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'fasterExports', 'firstRunDone', 'models', 'platform', 'root', 'rootDisplay', 'sharing', 'test', 'userName', 'version'])
   await openSettings(page)
   await expect(page.getByTestId('signin-chatgpt')).toBeVisible()
-  return { app, page, info, userData, panel: page.locator('.panel').first() }
+  return { app, page, info, userData, panel: page.locator('#sec-ai') }
 }
 
 test('Claude Code app ready: "Use Claude (your Claude Code app)" comes first, but only a click turns it on', async () => {
   const { app, page, info, panel } = await claudeScreen('ready')
   test.skip(info.ai !== 'mock', 'the mock plays the Claude Code states')
-  await expect(page.getByTestId('use-claude-code')).toHaveText(USE_CLAUDE_CODE)
-  await expect(panel.locator('button.btn.big').first()).toHaveAttribute('data-testid', 'use-claude-code')
+  await expect(page.getByTestId('use-claude-code')).toHaveAccessibleName(USE_CLAUDE_CODE)
+  await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-claude-code')
   await expect(page.getByTestId('use-claude-code')).toHaveClass(/primary/)
   await expect(page.getByTestId('signin-chatgpt')).not.toHaveClass(/primary/)
   await expect(panel).toContainText('It uses your own Claude plan and its usage limits.')
@@ -217,9 +217,9 @@ test('Claude Code app ready: "Use Claude (your Claude Code app)" comes first, bu
 test('Claude Code app not signed in: a sign-in window, then it waits and connects', async () => {
   const { app, page, info, userData, panel } = await claudeScreen('signs_in')
   test.skip(info.ai !== 'mock', 'the mock plays the Claude Code states')
-  await expect(panel.locator('button.btn.big').first()).toHaveAttribute('data-testid', 'signin-chatgpt')
+  await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'signin-chatgpt')
   await expect(page.getByTestId('signin-chatgpt')).toHaveClass(/primary/)
-  await expect(page.getByTestId('claude-code-signin')).toHaveText('Sign in to your Claude Code app')
+  await expect(page.getByTestId('claude-code-signin')).toHaveAccessibleName('Sign in to your Claude Code app')
   await expect(panel).toContainText('A window opens. Sign in there with your Claude account. Reel Studio never sees it.')
   await expect(panel).toContainText('It uses your own Claude plan and its usage limits.')
   expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)

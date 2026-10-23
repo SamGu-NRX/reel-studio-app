@@ -33,6 +33,7 @@ test('make a reel end to end', async () => {
   await expect(page.getByText('Connect your AI editor')).toBeVisible()
   await shot(page, '03-firstrun-connect')
   await page.getByTestId('skip').click()
+  await page.getByTestId('share-no').click()
 
   // ---- home ----
   await expect(page.getByText('Make your first reel')).toBeVisible()

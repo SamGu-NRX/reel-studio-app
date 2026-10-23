@@ -6,6 +6,7 @@ import { writeJson } from './store'
 import type { SpeechCheckResult } from './models'
 import type { ReleaseEntry } from '../shared/update'
 import type { Dismissal, RememberedRelease } from './update-machine'
+import type { DataSharing, ModelChoice } from '../shared/api'
 
 export interface Settings {
   checkUpdates: boolean
@@ -26,6 +27,8 @@ export interface Settings {
   /** Settings > "Double-check each edit": passed to every AI note as `checkEdit`. Off by default until
    * the eval harness measures the tokens and time it adds. */
   checkEdits: boolean
+  models: ModelChoice
+  sharing: DataSharing
 }
 
 const DEFAULTS: Settings = {
@@ -41,7 +44,9 @@ const DEFAULTS: Settings = {
   updateLatest: null,
   updateDismissed: null,
   updateHistory: null,
-  checkEdits: false
+  checkEdits: false,
+  models: { editor: 'auto', checker: 'auto', writer: 'auto' },
+  sharing: { asked: false, on: false, usage: true, quality: true, posts: true }
 }
 
 export async function loadSettings(): Promise<Settings> {

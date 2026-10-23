@@ -376,7 +376,9 @@ async function appInfo(): Promise<AppInfo> {
     ai: aiSource,
     test: TEST,
     dev: DEV_PROVIDERS,
-    userName: await accountNameRead
+    userName: await accountNameRead,
+    models: s.models,
+    sharing: s.sharing
   }
 }
 
@@ -538,6 +540,20 @@ async function readVersionRows(slug: string, n: number): Promise<VersionRow[] | 
 
 function registerIpc(): void {
   handle('app:info', () => appInfo())
+  handle('app:setModels', async (_e, m: unknown) => {
+    const ok = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length <= 200 && !v.includes('\0')
+    const x = (m ?? {}) as Record<string, unknown>
+    if (!ok(x.editor) || !ok(x.checker) || !ok(x.writer)) throw { code: 'BAD_INPUT', userMessage: 'Choose a model for each part.' }
+    await saveSettings({ models: { editor: x.editor as string, checker: x.checker as string, writer: x.writer as string } })
+    return appInfo()
+  })
+  handle('app:setSharing', async (_e, v: unknown) => {
+    const x = (v ?? {}) as Record<string, unknown>
+    const keys = ['asked', 'on', 'usage', 'quality', 'posts'] as const
+    if (!keys.every((k) => typeof x[k] === 'boolean')) throw { code: 'BAD_INPUT', userMessage: 'Choose what to share.' }
+    await saveSettings({ sharing: Object.fromEntries(keys.map((k) => [k, x[k]])) as Record<(typeof keys)[number], boolean> })
+    return appInfo()
+  })
   handle('app:setFasterExports', async (_e, on: boolean) => {
     if (typeof on !== 'boolean') throw { code: 'BAD_INPUT', userMessage: 'Choose whether to use faster exports.' }
     await saveSettings({ fasterExports: on })
