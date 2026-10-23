@@ -697,7 +697,8 @@ def snap_to_beat(t: float, beats: list[float], max_shift: float = BEAT_MAX_SHIFT
     return b if abs(b - t) <= max_shift else t
 
 
-def accent_time(ctx, t: float, earliest: float = 0.0) -> float:
+def accent_time(ctx, t: float, earliest: float = 0.0, *, previous: Optional[float] = None,
+                following: Optional[float] = None, min_gap: float = 0.0) -> float:
     """Snap an accent to a beat on the frame grid without exceeding its timing bounds."""
     beat = snap_to_beat(t, accent_beats(ctx))
     if beat == t:
@@ -709,6 +710,14 @@ def accent_time(ctx, t: float, earliest: float = 0.0) -> float:
     if (snapped < earliest or snapped >= ctx.duration or abs(snapped - t) > BEAT_MAX_SHIFT
             or abs(snapped - round(t * fps) / fps) > BEAT_MAX_SHIFT):
         return t
+    if ((previous is not None and snapped - previous <= min_gap)
+            or (following is not None and following - snapped <= min_gap)):
+        return t
+    # A boundary belongs to the incoming shot: landing on it is a forward crossing.
+    for segment in ctx.out_timeline:
+        cut = round(segment.out_start * fps) / fps
+        if t < cut <= snapped or snapped < cut <= t:
+            return t
     return snapped
 
 
