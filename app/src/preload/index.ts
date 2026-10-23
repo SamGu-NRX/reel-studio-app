@@ -1,3 +1,5 @@
+// TikTok API v2: https://developers.tiktok.com/doc/login-kit-desktop/
+// Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
 // The only bridge between the page and the main process. The page never sees Node or ipcRenderer.
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AppCommand, JobEvent, ModelStatus, PhoneEvent, ProviderInfo, ReelApi } from '../shared/api'
@@ -18,6 +20,26 @@ function on<T>(channel: string, cb: (v: T) => void): () => void {
 }
 
 const api: ReelApi = {
+  insights: { get: (options) => call('insights:get', options) },
+  tiktok: {
+    configure: (settings) => call('tiktok:configure', settings),
+    session: () => call('tiktok:session'),
+    connect: () => call('tiktok:connect'),
+    cancelConnect: () => call('tiktok:cancelConnect'),
+    disconnect: () => call('tiktok:disconnect'),
+    creator: () => call('tiktok:creator'),
+    publish: (input) => call('tiktok:publish', input),
+    insights: (slug, version, postId) => call('tiktok:insights', slug, version, postId)
+  },
+  instagram: {
+    configure: (settings) => call('instagram:configure', settings),
+    session: () => call('instagram:session'),
+    connect: () => call('instagram:connect'),
+    cancelConnect: () => call('instagram:cancelConnect'),
+    disconnect: () => call('instagram:disconnect'),
+    publish: (input) => call('instagram:publish', input),
+    insights: (slug, version, postId) => call('instagram:insights', slug, version, postId)
+  },
   app: {
     info: () => call('app:info'),
     clipboardFiles: () => call('app:clipboardFiles'),

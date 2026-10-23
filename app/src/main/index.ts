@@ -1,6 +1,8 @@
+// TikTok API v2: https://developers.tiktok.com/doc/login-kit-desktop/
+// Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
 import { accountName } from './account'
 import { versionRows, type VersionRow } from '../shared/version-diff'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, net, powerMonitor, powerSaveBlocker, safeStorage, shell, type IpcMainInvokeEvent, Notification } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, net, powerMonitor, powerSaveBlocker, safeStorage, shell, type IpcMainInvokeEvent, Notification } from 'electron'
 import { existsSync, promises as fs, appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -83,6 +85,12 @@ import { captureWebsite } from './capture'
 import { createModelManager } from './models'
 import { createWorkGate } from './work-gate'
 import { loadSettings, saveSettings, settleLibraryRoot } from './settings'
+import { TikTokService } from './tiktok'
+import { registerTikTokIpc } from './tiktok-ipc'
+import { InstagramService } from './instagram'
+import { registerInstagramIpc } from './instagram-ipc'
+import { registerInsightsIpc } from './insights-ipc'
+import { InstagramError } from './instagram-http'
 import { createPidRegistry } from './orphans'
 import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
@@ -627,6 +635,30 @@ async function readVersionRows(slug: string, n: number): Promise<VersionRow[] | 
 }
 
 function registerIpc(): void {
+  registerInsightsIpc({ handle, projectsRoot: projectsDir })
+  const tiktok = new TikTokService({
+    dev: DEV_PROVIDERS && !TEST, settings: loadSettings, settingsDir: settingsDir(), projectsDir,
+    secrets: safeStorage, fetch: (url, init) => fetch(url, init), openExternal: (url) => shell.openExternal(url)
+  })
+  registerTikTokIpc({ handle, service: tiktok, dev: DEV_PROVIDERS && !TEST, saveSettings })
+  app.on('before-quit', () => { tiktok.stop() })
+  const instagram = new InstagramService({
+    dev: DEV_PROVIDERS && !TEST,
+    settings: loadSettings,
+    settingsDir: settingsDir(),
+    projectsDir,
+    secrets: safeStorage,
+    fetch: (url, init) => fetch(url, init),
+    openExternal: (url) => shell.openExternal(url),
+    coverJpeg: (bytes) => {
+      const image = nativeImage.createFromBuffer(bytes)
+      if (image.isEmpty()) throw new InstagramError('IG_COVER', 'The cover image could not be read. Export this version again.')
+      // Meta requires JPEG. Quality 90 is unmeasured and still subject to the API's 8 MB limit.
+      return image.toJPEG(90)
+    }
+  })
+  registerInstagramIpc({ handle, service: instagram, dev: DEV_PROVIDERS && !TEST, saveSettings })
+  app.on('before-quit', () => { instagram.stop() })
   handle('app:info', () => appInfo())
   handle('app:setModels', async (_e, m: unknown) => {
     const ok = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length <= 200 && !v.includes('\0')

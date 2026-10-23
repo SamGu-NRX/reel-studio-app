@@ -1,3 +1,5 @@
+// TikTok API v2: https://developers.tiktok.com/doc/login-kit-desktop/
+// Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
 // App settings (not user content): first-run flag and storage location.
 import { existsSync, promises as fs } from 'node:fs'
 import { dirname } from 'node:path'
@@ -7,8 +9,11 @@ import type { SpeechCheckResult } from './models'
 import type { ReleaseEntry } from '../shared/update'
 import type { Dismissal, RememberedRelease } from './update-machine'
 import type { DataSharing, ModelChoice, PhoneView } from '../shared/api'
+import type { TikTokSettings } from '../shared/tiktok'
+import type { InstagramSettings } from '../shared/instagram'
 
-export interface Settings {
+// Instagram and TikTok (insights-data): off until a developer configures them, with no UI yet
+export interface Settings extends InstagramSettings, TikTokSettings {
   checkUpdates: boolean
   updateCheckedAt: number | null
   updateLatest: RememberedRelease | null
@@ -51,7 +56,11 @@ const DEFAULTS: Settings = {
   models: { editor: 'auto', checker: 'auto', writer: 'auto' },
   sharing: { asked: false, on: false, usage: true, quality: true, posts: true },
   phoneView: 'instagram',
-  soundEffects: true
+  soundEffects: true,
+  // Connection and publishing stay opt-in until the broker and Meta app have been configured.
+  instagramEnabled: false, instagramAppId: null, instagramBrokerUrl: null, instagramUploadOrigins: [],
+  // Posting requires explicit developer configuration and approval of the requested scopes.
+  tiktokEnabled: false, tiktokClientKey: null, tiktokBrokerUrl: null, tiktokAudited: false, tiktokDirectPost: false
 }
 
 export async function loadSettings(): Promise<Settings> {
