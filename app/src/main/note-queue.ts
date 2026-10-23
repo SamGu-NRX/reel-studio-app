@@ -273,7 +273,7 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
      * Decided in the reel's queue lane, so a note sent meanwhile waits for the decision. Resolves once
      * the queue has acted on it. */
     async onJobEvent(e: JobEvent): Promise<void> {
-      if (!e.slug || (e.type !== 'done' && e.type !== 'error' && e.type !== 'cancelled')) return
+      if (!e.slug || (e.type !== 'done' && e.type !== 'error' && e.type !== 'cancelled' && e.type !== 'paused')) return
       const slug = e.slug
       const ended = jobs.get(e.jobId)?.done ?? Promise.resolve()
       await lane(slug, async () => {

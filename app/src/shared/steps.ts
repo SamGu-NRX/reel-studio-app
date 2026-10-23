@@ -16,7 +16,7 @@ export const STEP_LABEL: Record<StepId, string> = {
   copy: 'Copying your video',
   listen: 'Listening to your video',
   retakes: 'Cutting pauses and repeated starts',
-  edit: 'Picking your best takes and pictures',
+  edit: 'Picking takes and pictures',
   sound: 'Mixing your sound',
   subtitles: 'Adding subtitles',
   video: 'Putting your reel together',

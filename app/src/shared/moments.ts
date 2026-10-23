@@ -183,7 +183,7 @@ export function noteMarks(chat: ChatMessage[], runningJobId: string | null, plac
   return marks
 }
 
-const BUSIEST_FIRST: MarkState[] = ['making', 'failed', 'stopped', 'done']
+const BUSIEST_FIRST: MarkState[] = ['making', 'paused', 'failed', 'stopped', 'done']
 
 /** Marks drawn closer than `minPx` on a `trackPx`-wide bar share one target; it shows its busiest state. */
 export function groupMarks(marks: NoteMark[], duration: number, trackPx: number, minPx = 24): { at: number; state: MarkState; items: NoteMark[] }[] {

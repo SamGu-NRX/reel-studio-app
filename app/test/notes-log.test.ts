@@ -25,7 +25,8 @@ describe('notesLog', () => {
       made: [{ version: 3, by: 'hand', summary: 'the subtitles', at: at(10) }],
       versions: [v(1, 21), v(2), v(3)],
       running: { id: 'j4', kind: 'note' },
-      sourceName: 'IMG_2207.MOV',
+      // fails if the line names the copy Reel Studio made (media/take01.mov) instead of the file the person brought in
+      source: { path: 'media/take01.mov', originalName: 'IMG_2207.MOV' },
       now
     })
     expect(log.map((e) => [e.day, e.ask.kind, e.ask.text, e.result])).toEqual([
@@ -45,7 +46,7 @@ describe('notesLog', () => {
       made: [],
       versions: [v(1)],
       running: null,
-      sourceName: null,
+      source: null,
       now
     })
     expect(log[1].result).toMatchObject({ kind: 'reply', actions: ['open-captions'] })
@@ -59,7 +60,7 @@ describe('notesLog', () => {
       msg('editor', 'No mixer.', { plan: true, script }),
       msg('you', 'shorter please', { plan: true, jobId: 's2' })
     ]
-    const base = { made: [], sourceName: null, now }
+    const base = { made: [], source: null, now }
     expect(notesLog({ ...base, chat: planning, versions: [], running: { id: 's2', kind: 'script' }, planned: true }).map((e) => [e.ask.text, e.result])).toEqual([
       ['sourdough without a mixer', { kind: 'script', script }],
       ['shorter please', { kind: 'writing' }]

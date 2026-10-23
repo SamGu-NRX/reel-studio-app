@@ -15,7 +15,7 @@ import { setupPaths } from './helpers'
 
 const J = { jobId: 'j1', slug: 's' }
 const status = (over: Partial<Extract<JobEvent, { type: 'status' }>> = {}): JobEvent => ({
-  ...J, type: 'status', message: 'Listening to your video', pct: 10, overall: 10, secondsLeft: 120, overdue: false, thinking: false, waitingForRender: false, ...over
+  ...J, type: 'status', message: 'Listening to your video', pct: 10, overall: 10, secondsLeft: 120, overdue: false, thinking: false, waiting: false, waitingForRender: false, ...over
 })
 const fold = (events: JobEvent[], s: LiveState = EMPTY_LIVE): LiveState => events.reduce(reduceLive, s)
 
@@ -66,7 +66,7 @@ describe('reduceLive (the renderer side of the contract)', () => {
   })
 
   it('a screen opened mid-job starts from projects:get', () => {
-    expect(liveFromDetail({ id: 'j9', message: 'Checking the preview', overall: 61, secondsLeft: 40, overdue: false, thinking: true })).toMatchObject({
+    expect(liveFromDetail({ id: 'j9', message: 'Checking the preview', overall: 61, secondsLeft: 40, overdue: false, thinking: true, waiting: false })).toMatchObject({
       jobId: 'j9', overall: 61, secondsLeft: 40, thinking: true, preview: null
     })
   })

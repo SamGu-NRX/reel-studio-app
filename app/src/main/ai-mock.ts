@@ -157,6 +157,7 @@ export const createMockAI: CreateAI = ({ host }) => {
   let claudeState: ClaudeCodeStatus['state'] =
     mode === 'signs_in' ? 'signed_out' : (['missing', 'broken', 'signed_out', 'ready'] as const).find((s) => s === mode) ?? 'missing'
   let claudeChosen = false
+  let checking: AbortController | null = null
   const claudeStatus = (): ClaudeCodeStatus => ({
     state: claudeState,
     ...(claudeState === 'missing' ? {} : { bin: MOCK_CLAUDE_BIN }),
@@ -194,9 +195,18 @@ export const createMockAI: CreateAI = ({ host }) => {
         const check = process.env.REELSTUDIO_MOCK_CLAUDE_CHECK ?? ''
         if (check === 'limited') throw { code: 'cli_limited', userMessage: 'The AI hit its usage limit. Try again later.' }
         if (check === 'no-answer') throw { code: 'cli_error', userMessage: 'The AI did not answer.' }
-        if (Number(check) > 0) await new Promise((r) => setTimeout(r, Number(check)))
+        if (Number(check) > 0) {
+          const stop = (checking = new AbortController())
+          await new Promise<void>((resolve, reject) => {
+            const t = setTimeout(resolve, Number(check))
+            stop.signal.addEventListener('abort', () => (clearTimeout(t), reject({ code: 'cancelled', userMessage: 'Stopped.' })))
+          }).finally(() => void (checking === stop && (checking = null)))
+        }
         claudeChosen = true
       } else claudeChosen = false
+    },
+    cancelCheck() {
+      checking?.abort()
     },
     async claudeCodeStatus() {
       return claudeStatus()
@@ -228,6 +238,14 @@ export const createMockAI: CreateAI = ({ host }) => {
       await host.runEngine('autocut', args, (p) => status('Picking your best takes', span(50, 100, p.pct), 'analyze'), signal)
       changed.push('cut')
       onEvent({ type: 'tool', name: 'autocut', summary: 'Cut out the pauses and do-overs' })
+
+      // Tests only (REELSTUDIO_MOCK_LIMIT=<ISO>): the editor's plan is at its limit until then, thrown the way the
+      // real package throws when the app pauses on it (opts.pauseOn).
+      const limitUntil = process.env.REELSTUDIO_MOCK_LIMIT
+      if (limitUntil && Date.now() < Date.parse(limitUntil)) {
+        const limited = { code: 'cli_limited', userMessage: 'The AI hit its usage limit. Try again later.', resetsAt: limitUntil }
+        if (opts?.pauseOn?.(limited)) throw limited
+      }
 
       // Tests only (REELSTUDIO_MOCK_FIRST_LOOK=<ms>): act like the real package with an AI: a first look,
       // then a while "thinking", so the Working screen's first look + thinking state can be driven.

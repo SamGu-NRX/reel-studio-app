@@ -16,7 +16,7 @@ test('Home reopens a running note or rerender on the Reel screen', async () => {
       // Hold the job snapshot steady while navigating away and back.
       const running = {
         ...detail, status: 'working' as const,
-        job: { id: 'running-change', kind, message: 'Reading your note', pct: 10, overall: 10, secondsLeft: null, overdue: false, thinking: false }
+        job: { id: 'running-change', kind, message: 'Reading your note', pct: 10, overall: 10, secondsLeft: null, overdue: false, thinking: false, waiting: false }
       }
       await app.evaluate(({ ipcMain }, d) => {
         ipcMain.removeHandler('projects:list')
