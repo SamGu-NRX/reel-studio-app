@@ -75,6 +75,22 @@ describe('version ancestry', () => {
     expect((await detail('branch-tree')).versions.map((v) => [v.n, v.parent])).toEqual([[1, null], [2, 1], [3, 2], [4, 2]])
   })
 
+  it('exposes both merge parents while preserving the single-parent reader', async () => {
+    setupPaths()
+    const dir = fakeProject('merge-tree', { versions: [1, 2, 3] })
+    writeFileSync(join(dir, 'versions/v3/version.json'), JSON.stringify({ parent: 2, parents: [2, 1] }))
+    const versions = await listVersions(dir)
+    expect(versions.map((v) => v.parent)).toEqual([null, 1, 2])
+    expect(versions[2].parents).toEqual([2, 1])
+  })
+
+  it('refuses a second parent that is not an older version', async () => {
+    setupPaths()
+    const dir = fakeProject('bad-merge-tree', { versions: [1, 2, 3] })
+    writeFileSync(join(dir, 'versions/v3/version.json'), JSON.stringify({ parent: 2, parents: [2, 4] }))
+    await expect(listVersions(dir)).rejects.toThrow(/parents.*3/i)
+  })
+
   it('refuses corrupt ancestry rather than inventing a linear parent', async () => {
     setupPaths()
     const dir = fakeProject('corrupt-tree', { versions: [1, 2] })

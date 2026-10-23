@@ -45,6 +45,10 @@ Rules:
    branch ancestry without rewriting a saved folder. Rendering without an explicit older parent
    keeps the reuse rule above.
 
+10. `render --parent A --merge-parent B` always creates a new final version and records
+    `{ "parent": A, "parents": [A, B] }`. Both parents must be distinct saved versions.
+    The AI-free layer merge and its anchor rules are in [Combining saved versions](version-merge.md).
+
 ## Render result (engine `done.result`)
 
 | field | meaning |

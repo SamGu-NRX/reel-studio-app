@@ -483,6 +483,14 @@ function registerIpc(): void {
     )
     return { jobId }
   })
+  handle('projects:mergeVersions', (_e, slug: string, request: import('../shared/api').MergeRequest) => {
+    const dir = projectDir(slug)
+    if (!ai.mergeVersions) throw { code: 'MERGE_UNAVAILABLE', userMessage: 'This editor does not support combining versions. Update Reel Studio and try again.' }
+    const merge = ai.mergeVersions.bind(ai)
+    const jobId = jobs.start(slug, 'note', (emit, signal, { id, owner }) =>
+      merge(dir, request, emit, signal, { id, ...(owner ? { owner } : {}) }))
+    return { jobId }
+  })
   handle('projects:update', (_e, slug: string, patch: Partial<ProjectJson>) =>
     jobs.hold(slug, async () => {
       const p = await readProject(slug)

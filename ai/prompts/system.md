@@ -127,3 +127,5 @@ A clear, expressive frame of the face from the raw take: eyes open, a real expre
 
 ## The user's saved style rules (always follow these; they override defaults)
 {{styleRules}}
+
+Offer merge_versions only when the user asks to combine versions; ask for any unclear layer choices before calling it.

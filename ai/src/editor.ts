@@ -5,17 +5,18 @@ import { runAgent, RunAgentResult } from './agent';
 import type { LookupFn } from './safety';
 import { Prompts } from './prompts';
 import { StyleStore } from './style';
-import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProofread, doRender, unsureWords, executeTool, load, newToolState, resolveAsset, cleanSummary, renderEvent } from './tools';
+import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProofread, doRender, unsureWords, executeTool, load, newToolState, resolveAsset, cleanSummary, renderEvent, noteBase, stageMerge, ToolInputError } from './tools';
 import { planFastNote } from './fastnote';
 import { AttachmentInfo, attachmentStills, attachmentsSection, earlierUnplaced, placedAssets, validateAttachments } from './attachments';
 import {
-  Analysis, NoteEntry, PROJECT_FILE, Project, withDefaults, Transcript, WordAnchor, hasTranscript, loadProject, normalizeAnalysis, normalizeKeep, saveProject,
-  snapshotVersion, LIBRARY_FOLDERS, anchorText, writeFileAtomic, keptWords, projectBytes, versionDir, loadTranscript, validateProject,
+  Analysis, NoteEntry, PROJECT_FILE, Project, ProjectError, withDefaults, Transcript, WordAnchor, hasTranscript, loadProject, normalizeAnalysis, normalizeKeep, saveProject,
+  snapshotVersion, LIBRARY_FOLDERS, anchorText, writeFileAtomic, keptWords, projectBytes, versionDir,
 } from './project';
 import { extractJson } from './providers/cli';
 import * as fsp from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { refuseIfOpen } from './owner';
+import { MergeRequest, MergeResult } from './version-merge';
 
 export interface EditorDeps {
   host: EngineHost;
@@ -299,42 +300,6 @@ function unfinished(state: ToolState): AIError {
   return new AIError('note_unfinished', `I ran out of time before I finished this note, so I did not change your video.${did.length ? ` I had started to: ${did.join('; ')}.` : ''} Try asking for one thing at a time.`);
 }
 
-/** A snapshot's version counter can lag its folder. Keep allocation and history from the live
- * project; only the edit comes from the selected version. Validate before creating note scratch. */
-async function noteBase(ctx: ToolContext, live: Project, n: number): Promise<Project> {
-  const invalid = (detail: string) => new AIError('bad_note_base', `Version ${n} cannot be changed. Choose another saved version.`, { detail });
-  if (!Number.isSafeInteger(n) || n < 1 || n > live.version) throw invalid('The base is not a saved version number.');
-  const dir = versionDir(ctx.projectDir, n);
-  let snapshot: Project;
-  try {
-    await fsp.access(path.join(dir, 'export.mp4'));
-    try {
-      await fsp.access(path.join(dir, '.rendering'));
-      throw invalid('This version did not finish rendering.');
-    } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
-    snapshot = await loadProject(ctx.projectDir, path.join(dir, PROJECT_FILE));
-    const problems = validateProject(snapshot, await loadTranscript(ctx.projectDir, snapshot));
-    if (problems.length) throw invalid(problems.join('; '));
-    const refs = [
-      ...snapshot.sources.map((s) => s.path), snapshot.music.track,
-      ...snapshot.broll.flatMap((b) => [b.asset, ...(['post-wall', 'icon-wall'].includes(b.treatment) && Array.isArray(b.params?.items) ? b.params.items.filter((x): x is string => typeof x === 'string') : [])]),
-    ];
-    for (const ref of refs) {
-      if (!ref) continue;
-      const asset = resolveAsset(ctx, ref);
-      if (!asset) throw invalid(`The file ${ref} is missing.`);
-    }
-  } catch (e) {
-    if (e instanceof AIError) throw e;
-    throw invalid(e instanceof Error ? e.message : String(e));
-  }
-  return {
-    ...snapshot, id: live.id, slug: live.slug, title: live.title,
-    version: live.version, createdAt: live.createdAt, updatedAt: live.updatedAt,
-    notes: live.notes, handEdits: live.handEdits,
-  };
-}
-
 /**
  * A note is all-or-nothing. It edits a private copy of project.json (work/notes/<id>/edit.json) and
  * renders its previews beside it; its final video goes to versions/v(N+1), which counts as a version
@@ -361,6 +326,7 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     return { ...newCtx(deps, projectDir, provider, onEvent, signal, 2), userNote: note, note: { id, file, dir, parent } };
   };
   const label = noteLabel(note, attached);
+  let engineStuck = false;
   try {
     let ctx = await begin();
     const { p: p0 } = await load(ctx);
@@ -406,10 +372,40 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     const placedNow = placedAssets(await loadProject(projectDir, ctx.note!.file));
     const recorded = [...refs, ...earlier.map((a) => a.asset).filter((r) => placedNow.has(r) && !refs.includes(r))];
     return await saveNote(deps, ctx, base, baseVersion, { text: note.trim(), label, summary, attachments: recorded }, opts.saveStyleRules !== false);
+  } catch (error) {
+    engineStuck = (error as { code?: string })?.code === 'ENGINE_STUCK';
+    throw error;
   } finally {
     // Only this note's scratch. saveNote handles failed finals; crash leftovers stay unpublished
     // until the app's job lane clears them (app store.ts cleanPartialVersions).
-    await fsp.rm(dir, CLEANUP_RM).catch(() => undefined);
+    if (!engineStuck) await fsp.rm(dir, CLEANUP_RM).catch(() => undefined);
+  }
+}
+
+export interface MergeEditResult extends EditResult, MergeResult {}
+
+/** Uses the same private edit, final render, compare-and-swap, and cleanup as a note. */
+export async function saveMerge(deps: EditorDeps, projectDir: string, request: MergeRequest, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: { id?: string } = {}): Promise<MergeEditResult> {
+  const id = opts.id ?? randomUUID();
+  if (!/^[\w-]+$/.test(id)) throw new AIError('bad_note_id', 'Could not start this merge. Try again.');
+  const base = await fsp.readFile(path.join(projectDir, PROJECT_FILE));
+  const live = withDefaults(JSON.parse(base.toString('utf8')));
+  const dir = path.join(projectDir, 'work', 'notes', id);
+  const ctx = newCtx(deps, projectDir, null, onEvent, signal);
+  ctx.note = { id, dir, file: path.join(dir, 'edit.json') };
+  let engineStuck = false;
+  try {
+    const merged = await stageMerge(ctx, live, request);
+    const label = `Combine Version ${request.ours} and Version ${request.theirs}`;
+    const summary = `Combined Version ${request.ours} and Version ${request.theirs}.`;
+    const result = await saveNote(deps, ctx, base, live.version, { text: label, label, summary, attachments: [] }, false);
+    return { ...result, edit: ctx.project!, report: merged.report };
+  } catch (error) {
+    engineStuck = (error as { code?: string })?.code === 'ENGINE_STUCK';
+    if (error instanceof ProjectError || error instanceof ToolInputError) throw new AIError('bad_merge', error.message);
+    throw error;
+  } finally {
+    if (!engineStuck) await fsp.rm(dir, CLEANUP_RM).catch(() => undefined);
   }
 }
 
@@ -432,6 +428,7 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
     if (!(await fsp.readFile(live)).equals(base)) throw changedElsewhere();
   };
   let renderStarted = false;
+  if (ctx.note?.mergeReport?.length) n = { ...n, summary: [n.summary, ...ctx.note.mergeReport].join(' ') };
   try {
     let final: RenderInfo | null = null;
     if (ctx.state.changed.size) {
@@ -453,6 +450,7 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
       ...(styleRulesAdded.length ? { styleRulesAdded } : {}), ...(styleSuggestions.length ? { styleSuggestions } : {}),
     };
     p.notes = [...(p.notes ?? []), entry];
+    ctx.project = p;
     const bytes = projectBytes(p);
     // a new version folder is complete, snapshot and notes included, before project.json points at it;
     // an unchanged video keeps its version, whose folder is never rewritten

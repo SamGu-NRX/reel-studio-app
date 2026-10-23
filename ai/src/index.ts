@@ -19,6 +19,7 @@ import { refuseIfOpen } from './owner';
 
 export * from './types';
 export * from './project';
+export * from './version-merge';
 export { refuseIfOpen, OWNER_LOCK } from './owner';
 export { TOOLS, TOOL_NAMES, toolSchemas, executeTool, newToolState } from './tools';
 export type { ToolContext, ToolDef } from './tools';
@@ -295,6 +296,9 @@ export function createAI(opts: CreateAIOptions) {
     },
     async applyNote(projectDir: string, note: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: editor.ApplyNoteOptions & { owner?: string } = {}): Promise<AgentResult> {
       return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => editor.applyNote(d, await modelProvider(), projectDir, note, onEvent, signal, opts)));
+    },
+    async mergeVersions(projectDir: string, request: import('./version-merge').MergeRequest, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: { owner?: string; id?: string } = {}): Promise<editor.MergeEditResult> {
+      return exclusive(projectDir, opts.owner, () => edit(opts.owner, (d) => editor.saveMerge(d, projectDir, request, onEvent, signal, opts)));
     },
     async writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult> {
       return editor.writeScript(deps(opts.host), await modelProvider(), idea, onEvent, signal);

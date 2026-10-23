@@ -46,6 +46,7 @@ export interface Broll {
   asset: string | null; assets?: string[]; params: BrollParams; [k: string]: unknown;
 }
 export interface Zoom { anchor: WordAnchor; scale: number; [k: string]: unknown }
+export interface SoundEffect { id?: string; anchor: WordAnchor; asset: string | null; [k: string]: unknown }
 export interface Cover { atSourceTime: number; source: string; text: string | null; [k: string]: unknown }
 export interface Post { caption: string; hashtags: string[]; keywords: string[]; [k: string]: unknown }
 export interface NoteEntry {
@@ -71,6 +72,7 @@ export interface Project {
   music: Music;
   broll: Broll[];
   zooms: Zoom[];
+  sfx?: SoundEffect[];
   cover: Cover;
   post: Post;
   notes: NoteEntry[];

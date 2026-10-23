@@ -721,7 +721,7 @@ def first_look_project(project_dir: Path, proj: dict, music: Optional[str] = Non
 def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
         root: Optional[Path] = None, verify: bool = True, first_look: bool = False,
         music: Optional[str] = None, cover: bool = True, project_file: Optional[Path] = None,
-        out: Optional[Path] = None, parent: Optional[int] = None) -> dict:
+        out: Optional[Path] = None, parent: Optional[int] = None, merge_parent: Optional[int] = None) -> dict:
     t_start = time.time()
     project_dir = Path(project_dir).resolve()
     proj = projmod.load(project_dir, file=project_file)
@@ -729,6 +729,13 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
     if parent is not None and (type(parent) is not int or not 1 <= parent <= committed):
         raise EngineError("BAD_NOTE_BASE", f"invalid parent {parent} at version {committed}",
                           "Choose a saved version to change.")
+    if merge_parent is not None:
+        if parent is None or type(merge_parent) is not int or not 1 <= merge_parent <= committed or merge_parent == parent:
+            raise EngineError("BAD_MERGE", "merge needs two different saved parents", "Choose two different saved versions to combine.")
+        for n in (parent, merge_parent):
+            saved_dir = project_dir / "versions" / f"v{n}"
+            if not (saved_dir / "export.mp4").is_file() or not (saved_dir / "project.json").is_file() or (saved_dir / ".rendering").exists():
+                raise EngineError("BAD_MERGE", f"missing saved parent {n}", "One of these versions is missing or unfinished. Choose another version.")
     if first_look:
         draft = True
         proj = first_look_project(project_dir, proj, music)
@@ -744,7 +751,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
 
     # A branch records a new child even if its result matches the latest video. Reusing that
     # folder would lose the selected parent, and saved metadata must never be rewritten.
-    version = committed + 1 if parent is not None and parent < committed else pick_version(project_dir, proj, root)
+    version = committed + 1 if merge_parent is not None or (parent is not None and parent < committed) else pick_version(project_dir, proj, root)
     preview = bool(draft)
     vdir = (Path(out) if out else preview_dir(project_dir)) if preview else project_dir / "versions" / f"v{version}"
     if not preview and version == committed and (vdir / "export.mp4").exists() and (vdir / "render.json").exists():
@@ -959,7 +966,10 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
         projmod.write_json(vdir / ("render_draft.json" if draft else "render.json"), manifest)
         if not preview:
             projmod.write_json(vdir / "assets.json", asset_fingerprint(project_dir, proj, root))
-            projmod.write_json(vdir / "version.json", {"parent": parent if parent is not None else committed or None})
+            metadata = {"parent": parent if parent is not None else committed or None}
+            if merge_parent is not None:
+                metadata["parents"] = [parent, merge_parent]
+            projmod.write_json(vdir / "version.json", metadata)
         if not preview and int(proj.get("version") or 0) != version:
             # Re-read: an edit saved during this 1-2 minute render must survive. Patch the one field
             # render owns instead of writing back the dict loaded at the start.

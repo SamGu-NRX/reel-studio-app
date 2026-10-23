@@ -138,3 +138,26 @@ def test_branch_parent_allocates_a_child_even_when_the_edit_matches_latest(proje
     assert json.loads((project / "versions/v3/version.json").read_text()) == {"parent": 1}
     assert (project / "project.json").read_bytes() == live
     assert {f.name: f.read_bytes() for f in v2.iterdir() if f.is_file()} == saved
+
+
+def test_merge_allocates_a_child_even_when_ours_is_the_unchanged_latest(project):
+    engine(project, "render")
+    p = json.loads((project / "project.json").read_text())
+    p["cut"]["gapCap"] = 0.3
+    (project / "project.json").write_text(json.dumps(p))
+    assert engine(project, "render")["version"] == 2
+    saved = {str(f.relative_to(project)): f.read_bytes() for n in (1, 2)
+             for f in (project / "versions" / f"v{n}").iterdir() if f.is_file()}
+    live = (project / "project.json").read_bytes()
+    note = project / "work/notes/merge"
+    note.mkdir(parents=True)
+    (note / "edit.json").write_bytes(live)
+
+    result = engine(project, "render", "--project-file", "work/notes/merge/edit.json",
+                    "--parent", "2", "--merge-parent", "1")
+
+    assert result["version"] == 3 and not result.get("reused")
+    metadata = json.loads((project / "versions/v3/version.json").read_text())
+    assert metadata == {"parent": 2, "parents": [2, 1]}
+    assert (project / "project.json").read_bytes() == live
+    assert all((project / f).read_bytes() == content for f, content in saved.items())

@@ -51,6 +51,7 @@ const api: ReelApi = {
     create: (files) => call('projects:create', files),
     resume: (slug) => call('projects:resume', slug),
     note: (slug, text, attachments, base) => call('projects:note', slug, text, attachments, base),
+    mergeVersions: (slug, request) => call('projects:mergeVersions', slug, request),
     update: (slug, patch) => call('projects:update', slug, patch),
     rerender: (slug, change, label) => call('projects:rerender', slug, change, label),
     exportVersion: (slug, n) => call('projects:export', slug, n),

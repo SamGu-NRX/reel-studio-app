@@ -1,6 +1,6 @@
 // Mirror of the @reelstudio/ai interface (docs/architecture.md section 8). The real package is loaded at
 // runtime when it exists; until then ai-mock.ts implements the same shape.
-import type { JobUpdate } from '../shared/api'
+import type { JobUpdate, MergeRequest, ProjectJson } from '../shared/api'
 
 /** What @reelstudio/ai emits: the job contract minus `heard` (main adds that one itself). */
 export type AgentEvent = Exclude<JobUpdate, { type: 'heard' }>
@@ -77,6 +77,7 @@ export interface AI {
     signal?: AbortSignal,
     opts?: { attachments?: string[]; id?: string; saveStyleRules?: boolean; owner?: string; base?: number }
   ): Promise<AgentResult>
+  mergeVersions?(projectDir: string, request: MergeRequest, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts?: { id?: string; owner?: string }): Promise<AgentResult & { edit: ProjectJson; report: string[] }>
   writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult>
   styleRules(): Promise<{ id: string; text: string; createdAt: string }[]>
   removeStyleRule(id: string): Promise<void>

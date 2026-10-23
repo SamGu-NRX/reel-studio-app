@@ -21,6 +21,7 @@ export interface ProjectSummary {
 export interface VersionInfo {
   n: number
   parent: number | null
+  parents?: [number, number]
   video: string
   videoPath: string
   draft: boolean
@@ -302,6 +303,12 @@ export interface UserError {
   link?: string
 }
 
+export interface MergeRequest {
+  ours: number
+  theirs: number
+  take: Record<'cut' | 'captions' | 'music' | 'zooms' | 'broll' | 'sfx' | 'cover', 'ours' | 'theirs'>
+}
+
 export interface ReelApi {
   app: {
     info(): Promise<AppInfo>
@@ -343,6 +350,7 @@ export interface ReelApi {
     /** jobId null = no AI connected: the note and a plain reply were added to the chat, nothing runs.
      * `attachments`: `work/assets/attach-*` refs from notes.attach* (main re-checks each one). */
     note(slug: string, text: string, attachments?: string[], base?: number): Promise<{ jobId: string | null }>
+    mergeVersions(slug: string, request: MergeRequest): Promise<{ jobId: string }>
     update(slug: string, patch: Partial<ProjectJson>): Promise<ProjectDetail>
     /** `change`: what changed, in plain words ("bigger yellow subtitles"), for the chat and the version button.
      * `label`: what to call the work while it runs ("Updating your subtitles"). Render only, never the AI. */
