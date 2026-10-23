@@ -10,12 +10,17 @@ const MAC = process.platform === 'darwin'
 function fresh(name: string) {
   const dir = mkdtempSync(join(BASE, `onboarding-${name}-`))
   const documents = join(dir, 'Documents')
+  const movies = join(dir, 'Movies')
+  mkdirSync(documents)
+  mkdirSync(movies)
   const userData = join(dir, 'user data')
-  // No REELSTUDIO_ROOT: the default folder, "Documents › Reel Studio", inside the stand-in Documents.
+  // No REELSTUDIO_ROOT: the real default folders inside stand-in Documents and Movies. A new install keeps its
+  // library in Movies; an install from before keeps it in Documents (main/settings.ts settleLibraryRoot).
   return {
-    root: join(documents, 'Reel Studio'),
+    root: join(movies, 'Reel Studio'),
+    legacyRoot: join(documents, 'Reel Studio'),
     userData,
-    env: { REELSTUDIO_ROOT: '', REELSTUDIO_DOCUMENTS: documents, REELSTUDIO_USER_DATA: userData, REELSTUDIO_MODELS_DIR: join(dir, 'models') }
+    env: { REELSTUDIO_ROOT: '', REELSTUDIO_DOCUMENTS: documents, REELSTUDIO_MOVIES: movies, REELSTUDIO_USER_DATA: userData, REELSTUDIO_MODELS_DIR: join(dir, 'models') }
   }
 }
 
@@ -34,7 +39,7 @@ test('a fresh first run walks every step, and the folder waits for Allow', async
   const { app, page } = await launch(d.env)
   try {
     await expect(page.getByTestId('get-started')).toBeVisible()
-    // Nothing is made in Documents before setup has said why (macOS would ask with no explanation).
+    // Nothing is made before setup has said why.
     expect(existsSync(d.root)).toBe(false)
     await page.getByTestId('get-started').click()
 
@@ -46,7 +51,7 @@ test('a fresh first run walks every step, and the folder waits for Allow', async
     await page.getByTestId('demo-next').click()
     if (MAC) {
       await expect(page.getByRole('heading', { name: 'Get your Mac ready' })).toBeFocused() // a screen reader starts at the new step
-      await expect(page.getByTestId('perm-folder')).toContainText('Documents › Reel Studio')
+      await expect(page.getByTestId('perm-folder')).toContainText('Movies › Reel Studio')
       await expect(page.getByTestId('perm-notifications')).toHaveAttribute('data-state', 'todo') // one card at a time
       // The status poll re-checks every 1.5 s; none of those checks may touch the folder before Allow.
       await page.waitForTimeout(3200)
@@ -94,7 +99,7 @@ test('a "no" from the Mac says what to do, and the card updates once it is allow
     await expect(page.getByTestId('perm-folder-choose')).toBeVisible()
     await expect.poll(() => opened(app)).toEqual(['x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders'])
     const folder = await helperWindow(app, 'Set up Files and Folders')
-    await expect(folder.locator('header')).toHaveText('↑ Turn on Documents Folder under Reel Studio')
+    await expect(folder.locator('header')).toHaveText('↑ Turn on Reel Studio in the list above')
     await expect(folder.locator('#done')).toHaveCount(0) // it closes by itself once the folder can be used
 
     // The person turns it on in System Settings: the helper sees it within a second, closes itself, and the
@@ -133,7 +138,9 @@ test('an existing install goes straight to Home, as before', async () => {
     await expect(page.getByText('Your videos')).toBeVisible()
     await expect(page.getByTestId('get-started')).toHaveCount(0)
     await expect(page.getByTestId('setup-steps')).toHaveCount(0)
-    expect(existsSync(join(d.root, 'Projects'))).toBe(true) // made at start, the way it always was
+    // made at start, in Documents, where an install from before the Movies default always kept it
+    expect(existsSync(join(d.legacyRoot, 'Projects'))).toBe(true)
+    expect(existsSync(d.root)).toBe(false)
     // Notifications were on before this setup existed, so they still are.
     const st = await page.evaluate(() => (window as any).reel.perm.status())
     expect(st).toMatchObject({ folder: 'allowed', notifications: 'unverified' })
