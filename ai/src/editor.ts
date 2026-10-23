@@ -117,7 +117,7 @@ async function systemPrompt(deps: EditorDeps): Promise<string> {
 function withStyleEcho(summary: string, state: ToolState): string {
   if (!state.styleRulesAdded.length) return summary;
   const rules = state.styleRulesAdded.map((r) => `"${r}"`).join(' and ');
-  return `${summary} I also saved ${state.styleRulesAdded.length === 1 ? 'this' : 'these'} to My style for your future videos: ${rules} You can remove ${state.styleRulesAdded.length === 1 ? 'it' : 'them'} in Settings.`;
+  return `${summary} I also saved ${state.styleRulesAdded.length === 1 ? 'this' : 'these'} to My style for your future reels: ${rules} You can remove ${state.styleRulesAdded.length === 1 ? 'it' : 'them'} in Settings.`;
 }
 
 /** When a first edit stopped without calling finish (step cap, or it stopped using tools), never claim
@@ -179,7 +179,7 @@ async function proofreadCaptions(deps: EditorDeps, provider: ModelProvider, ctx:
   if (!unsureWords(t, 400).some((u) => kept.has(u.id))) return;
   const finished = ctx.state.finished;
   ctx.state.finished = null;
-  onEvent({ type: 'status', message: 'Checking your captions', phase: 'edit' });
+  onEvent({ type: 'status', message: 'Checking your subtitles', phase: 'edit' });
   try {
     await runAgent({ provider, system: await systemPrompt(deps), task: deps.prompts.render('proofread', { captions: captionsForProofread(t, p) }),
       ctx, onEvent, signal, maxSteps: 3, maxMisses: 2, tokenBudget: deps.tokenBudget,
@@ -242,7 +242,7 @@ export async function firstEdit(deps: EditorDeps, provider: ModelProvider | null
   const r = await editNewVideo(deps, provider, projectDir, onEvent, signal);
   // the AI may still pick another case for this video; only say so when the video kept it
   const kept = applied && (await loadProject(projectDir)).captions.style.case === 'lower';
-  return kept ? { ...r, summary: `${r.summary} I used lowercase captions from your My style.` } : r;
+  return kept ? { ...r, summary: `${r.summary} Subtitles are lowercase, from My style.` } : r;
 }
 
 async function editNewVideo(deps: EditorDeps, provider: ModelProvider | null, projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<EditResult> {
@@ -268,7 +268,7 @@ async function editNewVideo(deps: EditorDeps, provider: ModelProvider | null, pr
     }
     if (e instanceof AIError) {
       // Stopped after a preview existed: keep what was done and say so.
-      onEvent({ type: 'status', message: 'Finishing your video', pct: 94, phase: 'final' });
+      onEvent({ type: 'status', message: 'Finishing your reel', pct: 94, phase: 'final' });
       const version = await finalize(deps, ctx, onEvent);
       const summary = withStyleEcho(`I got most of the way through your edit. ${e.userMessage}`, ctx.state);
       await snapshotVersion(projectDir, await loadProject(projectDir), version, `# v${version}
@@ -283,7 +283,7 @@ ${summary}
   }
   await proofreadCaptions(deps, provider, ctx, onEvent, signal);
   await wrapUpPost(deps, provider, ctx, onEvent, signal);
-  onEvent({ type: 'status', message: 'Finishing your video', pct: 94, phase: 'final' });
+  onEvent({ type: 'status', message: 'Finishing your reel', pct: 94, phase: 'final' });
   const version = await finalize(deps, ctx, onEvent);
   const summary = withStyleEcho(honestSummary(run, ctx.state)
     ?? 'I could not finish your first edit this time, so this version is mostly your video as it was. Try again, or tell me what to change.', ctx.state);
@@ -313,7 +313,7 @@ function noteLabel(note: string, attached: AttachmentInfo[]): string {
 /** A note that never called finish is not applied: say what it had started, and that nothing changed. */
 function unfinished(state: ToolState): AIError {
   const did = [...new Set(state.summaries)].slice(0, 8).map((d) => d[0].toLowerCase() + d.slice(1));
-  return new AIError('note_unfinished', `I ran out of time before I finished this note, so I did not change your video.${did.length ? ` I had started to: ${did.join('; ')}.` : ''} Try asking for one thing at a time.`);
+  return new AIError('note_unfinished', `I ran out of time before I finished this note, so I did not change your reel.${did.length ? ` I had started to: ${did.join('; ')}.` : ''} Try asking for one thing at a time.`);
 }
 
 /**
@@ -324,7 +324,7 @@ function unfinished(state: ToolState): AIError {
  * A failure or Stop before that leaves the project exactly as it was.
  */
 export async function applyNote(deps: EditorDeps, provider: ModelProvider | null, projectDir: string, note: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: ApplyNoteOptions = {}): Promise<EditResult> {
-  if (!provider) throw new AIError('no_ai', 'Connect an AI editor in Settings so I can make changes from your notes.');
+  if (!provider) throw new AIError('no_ai', 'Connect an editor in Settings to make changes from your notes.');
   const attached = await validateAttachments(projectDir, opts.attachments);
   if (!note.trim() && !attached.length) throw new AIError('empty_note', 'Type what you would like me to change.');
   const refs = attached.map((a) => a.asset);
@@ -433,7 +433,7 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
   await writeFileAtomic(live, bytes, undefined, async () => {
     if (!deps.owner) refuseIfOpen(ctx.projectDir);
     if (!(await fsp.readFile(live)).equals(base)) {
-      throw new AIError('project_changed', 'Your video was changed somewhere else while I worked on your note, so I left it as it was. Send your note again.');
+      throw new AIError('project_changed', 'Your reel was changed somewhere else while I worked on your note, so I left it as it was. Send your note again.');
     }
     if (ctx.signal?.aborted) throw new AIError('cancelled', 'Stopped.');
   });
@@ -460,7 +460,7 @@ export function plannedScript(p: object): string {
 }
 
 export async function writeScript(deps: EditorDeps, provider: ModelProvider | null, idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult> {
-  if (!provider) throw new AIError('no_ai', 'Connect an AI editor in Settings so I can help write your script.');
+  if (!provider) throw new AIError('no_ai', 'Connect an editor in Settings to get help writing your script.');
   onEvent({ type: 'status', message: 'Writing your script', pct: 10 });
   const system = deps.prompts.render('writeScript', { idea: idea.trim(), styleRules: await deps.style.asPromptText() });
   const messages: any[] = [{ role: 'user', content: [{ type: 'text', text: `Idea: ${idea.trim()}\n\nReply with the JSON only.` }] }];
@@ -547,15 +547,15 @@ export async function deterministicEdit(deps: EditorDeps, projectDir: string, re
     }
   }
   await saveProject(projectDir, p);
-  onEvent({ type: 'status', message: 'Getting your video ready', pct: 0, phase: 'final' });
+  onEvent({ type: 'status', message: 'Getting your reel ready', pct: 0, phase: 'final' });
   const r = await deps.host.runEngine('render', engineArgs(projectDir), progress(onEvent, 'final'), signal);
   const version = Number(r?.version ?? (await loadProject(projectDir)).version ?? 1);
   onEvent({ type: 'render', version, draft: false, ...(r?.file ? { file: String(r.file) } : {}) });
   const songName = song ? path.basename(song, path.extname(song)) : null;
-  const did = `I cut out the pauses and added captions${songName ? `, with your song "${songName}" underneath` : ''}.`;
+  const did = `pauses cut and subtitles added${songName ? `, with your song "${songName}" underneath` : ''}.`;
   const summary = why
-    ? `${why} So I made a simple version: ${did[0].toLowerCase()}${did.slice(1)}`
-    : `${did} Connect an AI editor to let me pick your best takes and add pictures.`;
+    ? `${why} So Version ${version} is a basic version: ${did}`
+    : `Basic version: ${did} Connect an editor to pick your best takes and add pictures.`;
   await snapshotVersion(projectDir, await loadProject(projectDir), version, `# v${version}\n\nSimple edit (no AI).\n\n${summary}\n`);
   onEvent({ type: 'status', message: 'Done', pct: 100 });
   return { summary, version, styleRulesAdded: [], styleSuggestions: [], changed };
