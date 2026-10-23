@@ -78,6 +78,16 @@ def cmd_make_variant(args):
     return create_variant(_project(args), args.variable, value=value)
 
 
+def cmd_lint_edit(args):
+    from . import project, render, tools
+    from .lint_edit import prepare
+    pdir = _project(args)
+    edit = project.load(pdir)
+    tl = project.timeline(pdir, edit)
+    ctx = render.make_ctx(pdir, edit, tl, True, tools.root_dir(args.root), pdir / "work" / "render")
+    return prepare(ctx, tl)
+
+
 def cmd_render(args):
     from . import render
     return render.run(_project(args), draft=args.draft, window=args.window,
@@ -336,6 +346,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--value", help="editor's alternative, encoded as JSON; omit for a new seed or +8% exposure")
     sp = add("autocut", cmd_autocut, "write the deterministic default cut")
     sp.add_argument("--gap-cap", type=float)
+    sp = add("lint-edit", cmd_lint_edit, "check the edit without rendering")
+    sp.add_argument("--root")
     sp = add("render", cmd_render, "render project.json")
     sp.add_argument("--draft", action="store_true")
     sp.add_argument("--window", help="a:b output seconds")

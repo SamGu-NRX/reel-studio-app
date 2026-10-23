@@ -30,6 +30,7 @@ class Segment:
     audio_lead: float = 0.0
     audio_tail: float = 0.0
     join_transition: Optional[str] = None
+    join_requested_frames: int = 0
     join_frames: int = 0
 
     @property

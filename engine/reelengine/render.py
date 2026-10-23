@@ -768,6 +768,11 @@ def parse_window(spec: Optional[str], duration: float):
 def make_ctx(project_dir: Path, proj: dict, tl, draft: bool, root: Path, rwork: Path) -> RenderCtx:
     from .variation import resolve
     effective, decisions = resolve(proj, tl)
+    if decisions is None:
+        effective = proj
+    # Seeded offsets must reach the audio planner, not only the render metadata.
+    resolved_tl = projmod.timeline(project_dir, effective, tl.words)
+    tl.segments[:] = resolved_tl.segments
     def _progress(stage, pct, message):
         progress(stage or STAGE, pct, message)
 
@@ -905,6 +910,8 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
     ctx = make_ctx(project_dir, proj, tl, draft, root, rwork)
     ctx.out_dir = vdir
     ctx.window = win
+    from .lint_edit import prepare
+    lint = prepare(ctx, tl)
     timings = {}
 
     # 1. audio (always the full cut, then sliced for a window, so the music sits where it will)
@@ -947,7 +954,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
     zoom = _opt_module("zoom")
     if zoom is not None and (proj.get("zooms") or ctx.variation is not None):
         try:
-            zooms = list(zoom.build_zooms(ctx) or [])
+            zooms = ctx.lint_zooms
         except Exception as exc:   # noqa: BLE001
             log(f"# zoom.build_zooms failed: {exc!r}")
             warnings.append(ZOOMS_FAILED)
@@ -1054,6 +1061,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
               "size": [out_w, out_h], "layers": len(layers), "zooms": len(zooms),
               "captions": len(cap_report), "warnings": warnings, "visualChanges": visual_changes,
               "broll": [r for r in broll_report if r.get("fallback") or r.get("skipped") or r.get("remake")]}
+    result.update(lint)
     if ctx.variation is not None:
         result["variation"] = ctx.variation
 

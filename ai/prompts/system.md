@@ -134,3 +134,5 @@ A clear, expressive frame of the face from the raw take: eyes open, a real expre
 
 ## The user's saved style rules (always follow these; they override defaults)
 {{styleRules}}
+
+Before finishing, fix the issues listed by render_draft and re-render; the engine already applied every item in fixed, so never re-check those items.

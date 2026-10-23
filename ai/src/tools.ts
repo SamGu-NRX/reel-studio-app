@@ -1305,6 +1305,15 @@ const tools: ToolDef[] = [
     },
   },
   {
+    name: 'lint_edit',
+    description: 'Check the edit deterministically before rendering. The engine applies listed fixes during rendering. Address issues and render again; fixed items need no re-check.',
+    parameters: S.obj({}),
+    async run(ctx) {
+      const result = await engine(ctx, 'lint-edit');
+      return { content: result };
+    },
+  },
+  {
     name: 'render_draft',
     description: 'Render a quick preview of the current edit. Needed before look_at_frames.',
     parameters: S.obj({}),
@@ -1317,10 +1326,11 @@ const tools: ToolDef[] = [
       // show the same frames. The full-quality render after finish includes the change anyway.
       const prior = ctx.state.renders.at(-1);
       if (!visibleChangeSinceRender(ctx) && (prior || ctx.state.changed.size)) {
+        const lint = await engine(ctx, 'lint-edit');
         ctx.state.previewSkipped = true;
         const visualChanges = prior?.result?.visualChanges as any;
         if (visualChanges) addCutStyleVerdicts(visualChanges, ctx.project?.cutStyle?.preset);
-        return { content: { ok: true, skipped: 'Nothing visible changed since the last preview, so I did not make a new one. The final video after finish includes your change. Do not render again for this.', version: prior?.version ?? null, ...(visualChanges ? { visualChanges } : {}) } };
+        return { content: { ok: true, skipped: 'Nothing visible changed since the last preview, so I did not make a new one. The final video after finish includes your change. Do not render again for this.', version: prior?.version ?? null, issues: lint.issues ?? [], fixed: lint.fixed ?? [], ...(visualChanges ? { visualChanges } : {}) } };
       }
       const info = await doRender(ctx, true);
       const r = info.result ?? {};
@@ -1363,7 +1373,7 @@ const tools: ToolDef[] = [
       const want = Math.round((typeof r.duration === 'number' ? r.duration : 60) / 6);
       if (!p.cutStyle && moments < Math.round(want * 0.75)) notes.push(`Only ${moments} b-roll moments (pictures, animations, labels; the hook title not counted) for a ${Math.round(r.duration ?? 60)} s video: hand edits carry about ${want}. Before finishing, add pictures or animations for the named things, places, numbers and examples still bare: search_images for them now, all in one reply.`);
       if (remakeAnimations.length) notes.push(`Animation${remakeAnimations.length > 1 ? 's' : ''} ${remakeAnimations.map((a: any) => a.id).join(', ')} now cover${remakeAnimations.length > 1 ? '' : 's'} the face or captions because the edit changed after ${remakeAnimations.length > 1 ? 'they were' : 'it was'} made. Remake each one now with its "fix" call (update_broll with the same anchor re-renders it into the free space), then render_draft again.`);
-      return { content: { ok: true, version: info.version, duration: r.duration ?? null, verify: r.verify ?? null, warnings: r.warnings ?? null,
+      return { content: { ok: true, version: info.version, issues: r.issues ?? [], fixed: r.fixed ?? [], duration: r.duration ?? null, verify: r.verify ?? null, warnings: r.warnings ?? null,
         ...(r.variation ? { variation: r.variation } : {}),
         ...(shown.length ? { brollShownDifferently: shown.map((b: any) => ({ id: b.id, treatment: b.treatment, ...(b.fallback ? { shownAs: b.shownAs, why: b.fallback } : { skipped: b.skipped }) })) } : {}),
         ...(remakeAnimations.length ? { remakeAnimations } : {}),

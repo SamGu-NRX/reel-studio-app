@@ -42,7 +42,8 @@ except ImportError:  # pragma: no cover
 
 DEFAULT_SCALE = 1.12
 # Preset scales are starting choices; no output-quality comparison supports them yet.
-NAMED_SCALES = {"clean": 1.10, "standard": 1.15, "hyper": 1.30, "punchline": 1.25}
+from .cut_style import CUT_STYLES
+NAMED_SCALES = {name: spec["framingPair"][1] for name, spec in CUT_STYLES.items()}
 MAX_SCALE = 2.0
 TAIL = 0.05           # hold a hair past the last word so the release is not on a syllable
 EYE_BIAS = 0.12       # centre this fraction of a face-height above the face's middle
@@ -139,7 +140,7 @@ def build_zooms(ctx, with_broll: bool = True) -> list:
         if kind == "drift":
             ramps = (0, 0)  # resolved after overlap, b-roll and duration clipping
         else:
-            ramps = (round(SNAP_IN * fps), round(SNAP_OUT * fps)) if snap else ()
+            ramps = (z.get("resolvedRampFrames", round(SNAP_IN * fps)), round(SNAP_OUT * fps)) if snap else ()
         spans.append(ZoomSpan(round(t0 * fps) / fps, round(t1 * fps) / fps, scale, round(cx, 1), round(cy, 1),
                               *ramps, last_word_end=last_word_end, kind=kind, blur=snap))
     spans.sort(key=lambda s: s.t0)
@@ -169,9 +170,9 @@ def build_zooms(ctx, with_broll: bool = True) -> list:
             if cut > s.t0 and cuts[cut] >= s.last_word_end - 1e-9:
                 s.t1 = cut
             s.ramp_out = 0
-        if s.ramp_in and (s.t1 - s.t0 < s.ramp_in / fps + 1.0 / fps or any(s.t0 < c < s.t0 + s.ramp_in / fps for c in cuts)):
+        if s.ramp_in and any(s.t0 < c < s.t0 + s.ramp_in / fps for c in cuts):
             s.ramp_in = 0
-        if s.ramp_out and s.t1 - s.t0 - s.ramp_in / fps - s.ramp_out / fps < s.ramp_in / fps:
+        if s.ramp_out and s.t1 - s.t0 - s.ramp_in / fps - s.ramp_out / fps < s.ramp_in / fps and s.t1 - s.t0 >= (s.ramp_in + s.ramp_out) / fps:
             s.ramp_out = 0
         if s.kind == "drift":
             # Include both endpoints so the last visible frame reaches the target scale.
@@ -181,27 +182,16 @@ def build_zooms(ctx, with_broll: bool = True) -> list:
             out.append(s)
     decisions = getattr(ctx, "variation", None)
     if decisions:
-        # Explicit accents override the background framing, without applying two crops at once.
-        background = decisions["framing"]
-        boundaries = sorted({t for s in out for t in (s.t0, s.t1)} |
-                            {t for s in background for t in (s["t0"], s["t1"])})
-        resolved = []
-        for a, b in zip(boundaries, boundaries[1:]):
-            mid = (a + b) / 2
-            accent = next((s for s in out if s.t0 <= mid < s.t1), None)
-            base = next((s for s in background if s["t0"] <= mid < s["t1"]), None)
-            scale = accent.scale if accent else base["scale"] if base else 1.0
-            if scale <= 1.001:
-                continue
-            if accent:
-                cx, cy = accent.cx, accent.cy
-            else:
+        # Keep each authored motion span intact; split only the static background.
+        resolved = list(out)
+        for base in decisions["framing"]:
+            boundaries = sorted({base["t0"], base["t1"], *(max(base["t0"], min(base["t1"], t)) for z in out for t in (z.t0, z.t1))})
+            for a, b in zip(boundaries, boundaries[1:]):
+                if base["scale"] <= 1.001 or any(z.t0 < b and z.t1 > a for z in out):
+                    continue
                 from .broll import output_face_union
                 fx, fy, fw, fh = output_face_union(ctx, a, b)
-                cx, cy = clamp_centre(scale, fx + fw / 2, fy + fh / 2 - EYE_BIAS * fh, W, H)
-            if resolved and resolved[-1].t1 == a and (resolved[-1].scale, resolved[-1].cx, resolved[-1].cy) == (scale, cx, cy):
-                resolved[-1].t1 = b
-            else:
-                resolved.append(ZoomSpan(a, b, scale, cx, cy))
-        return resolved
+                cx, cy = clamp_centre(base["scale"], fx + fw / 2, fy + fh / 2 - EYE_BIAS * fh, W, H)
+                resolved.append(ZoomSpan(a, b, base["scale"], cx, cy))
+        return sorted(resolved, key=lambda z: z.t0)
     return out

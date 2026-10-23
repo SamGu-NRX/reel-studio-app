@@ -307,6 +307,7 @@ def build_timeline(words: list, keep: list, sources: dict, gap_cap: float = GAP_
             continue
         outgoing = segments[si - 1]
         incoming.join_transition = join["transition"]
+        incoming.join_requested_frames = join["frames"]
         if join["transition"] == "j":
             meta = sources.get(incoming.source) or {}
             lo, _ = run_bounds(words, wi, wi, float(meta.get("duration") or 0), TAIL_KEEP)

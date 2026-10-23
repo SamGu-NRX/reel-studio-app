@@ -13,7 +13,7 @@ W, H, FPS = 360, 640, 30
 
 def context(tmp_path, project, fps=FPS):
     return RenderCtx(project, tmp_path, tmp_path, [Segment("s1", 0, 4, 0)],
-                     {"w0": 0.5, "w1": 3.4}.__getitem__, 4,
+                     {"w0": 0.5, "w1": 3.4}.__getitem__, {"w0", "w1"}.__contains__, 4,
                      {"width": W, "height": H, "fps": fps}, False, tmp_path,
                      fx.FFMPEG, fx.FFPROBE, lambda *args: None,
                      word_out_end={"w0": 0.8, "w1": 3.7}.__getitem__)

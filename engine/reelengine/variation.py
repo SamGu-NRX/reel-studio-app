@@ -39,13 +39,18 @@ def resolve(project: dict, timeline) -> tuple[dict, dict | None]:
         choices[group] = rng.choice(indices)
     selected = set(choices.values())
     p["zooms"] = [z for i, z in enumerate(p.get("zooms") or []) if i not in grouped or i in selected]
+    ramps = []
     for z in p["zooms"]:
         z["scale"] = pair[1]
+        # All variation draws share this local generator in a fixed order.
+        frames = max(1, round(.22 * p["format"]["fps"]) + rng.randint(-2, 2))
+        z["resolvedRampFrames"] = frames
+        ramps.append(frames)
     for b in p.get("broll") or []:
         b["leadIn"] = lead
     for i, keep in enumerate((p.get("cut") or {}).get("keep") or []):
         join = keep.get("join")
-        if isinstance(join, dict) and join.get("transition") in ("j", "l") and "frames" in join:
+        if isinstance(join, dict) and join.get("transition") in ("j", "l") :
             join["frames"] = rng.randint(6, 12)
             offsets.append({"join": i, "frames": join["frames"]})
     band = settings["secondsPerVisualChange"]
@@ -66,7 +71,7 @@ def resolve(project: dict, timeline) -> tuple[dict, dict | None]:
                             "scale": pair[(start + i) % 2]})
     return p, {"seed": style["seed"], "framingPair": pair, "startFraming": start,
                "cardLead": lead, "cadencePhase": phase, "accentChoices": choices,
-               "jlOffsets": offsets, "framing": framing}
+               "jlOffsets": offsets, "zoomRamps": ramps, "framing": framing}
 
 
 def _bad(message):
