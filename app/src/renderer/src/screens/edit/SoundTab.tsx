@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LibraryFile, ProjectJson } from '../../../../shared/api'
 import { clock } from '../../../../shared/progress'
 import {
+  cutsHint,
   FADE_MAX,
   firstChoice,
   gainOf,
@@ -169,7 +170,7 @@ export function SoundTab({ d, base, now, change, settle, player, vclock, joins, 
   const listed = (t: string): boolean => songs?.some((m) => t === `Library/Music/${m.name}`) ?? t.startsWith('Library/')
   const elsewhere = saved && !listed(saved) ? saved : null
   const fades = musicFades(music)
-  const joinCount = joins.length
+  const cuts = cutsHint(joins)
   return (
     <div className="edit-stack">
       <section className="edit-field" aria-labelledby="music-h">
@@ -224,7 +225,7 @@ export function SoundTab({ d, base, now, change, settle, player, vclock, joins, 
         )}
       </section>
 
-      {(!noMusic || joinCount > 0) && (
+      {(!noMusic || cuts) && (
         <section className="edit-field" aria-labelledby="fades-h" data-testid="fades">
           <h3 className="edit-label" id="fades-h">
             Fades
@@ -257,11 +258,7 @@ export function SoundTab({ d, base, now, change, settle, player, vclock, joins, 
               />
             </div>
           )}
-          {joinCount > 0 && (
-            <p className="edit-hint">
-              Your voice fades out and back in at {joinCount === 1 ? 'the cut' : `each of the ${joinCount} cuts`}, marked on the timeline, so {joinCount === 1 ? 'it never clicks' : 'none of them clicks'}.
-            </p>
-          )}
+          {cuts && <p className="edit-hint">{cuts}</p>}
         </section>
       )}
 

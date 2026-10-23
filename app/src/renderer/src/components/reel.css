@@ -125,6 +125,11 @@ html.kb .tl-mark:focus-visible { outline: 2px solid var(--ink); outline-offset: 
 .tl-music .fade { fill: var(--ink-3); }
 .tl-music .level { fill: none; stroke: var(--ink-4); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .tl-join { position: absolute; top: 11px; width: 2px; height: 10px; margin-left: -1px; border-radius: 1px; background: var(--ink-3); box-shadow: 0 0 0 1.5px var(--paper); pointer-events: none; }
+/* A J or L join: the voice crosses the cut, a bar from the tick over the seconds it crosses, before it (J) or after (L).
+   At least 6 px, so a 0.2 s bridge on a long reel still reads as one. */
+.tl-join > i { position: absolute; top: 4px; height: 2px; border-radius: 1px; background: var(--ink-3); box-shadow: 0 0 0 1.5px var(--paper); }
+.tl-join > i.j { right: 1px; }
+.tl-join > i.l { left: 1px; }
 .tl-sound {
   position: absolute; top: -11px; width: 24px; height: 24px; margin-left: -12px; padding: 0; border: 0; border-radius: 6px; background: none;
   cursor: pointer; z-index: 1; pointer-events: auto;

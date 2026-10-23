@@ -94,17 +94,22 @@ export interface VersionClock {
 export interface Join {
   t: number
   cut: string | null
+  /** The voice crossing the cut, as the render made it: `j`, the next span's voice starts `seconds` before its
+   * picture; `l`, the last span's voice runs on `seconds` over the next picture. null: a plain cut. */
+  bridge: { kind: 'j' | 'l'; seconds: number } | null
 }
 
 /**
- * Every join in the render: where one kept span ends and the next begins. The render fades the voice out and in
- * over a few milliseconds at each of them (render.py, the voice's afade), so none clicks.
+ * Every join in the render: where one kept span ends and the next begins. At a plain cut the render fades the voice
+ * out and in over a few milliseconds (render.py, the voice's afade), so none clicks. At a J or L join (project.json
+ * `cut.keep[].join`) the voice crosses the cut instead, by as much as the engine found room for (render.json
+ * segmentsDetail `audio_lead` and `audio_tail`, which are 0 when it found none).
  */
 export function joinsOf(c: VersionClock): Join[] {
   const index = new Map(c.words.map((w, i) => [w.id, i]))
   const byTime = [...c.placed.values()].sort((a, b) => a.s - b.s)
   const segs = [...c.segments].sort((a, b) => a.out_start - b.out_start)
-  return segs.slice(1).map((seg) => {
+  return segs.slice(1).map((seg, n) => {
     const end = seg.out_start + (seg.src_end - seg.src_start)
     const first = byTime.find((w) => w.s >= seg.out_start - 1e-3 && w.s < end)
     const i = first ? index.get(first.id) : undefined
@@ -112,8 +117,29 @@ export function joinsOf(c: VersionClock): Join[] {
     const prev = i ? c.words[i - 1] : undefined
     // a span after a trimmed pause carries on the range before it; only a range's first word starts a cut
     const startsRange = !!word && !(prev && c.kept.has(prev.id) && (prev.source ?? 's1') === (word.source ?? 's1'))
-    return { t: seg.out_start, cut: startsRange ? word!.id : null }
+    const lead = seg.audio_lead ?? 0
+    const tail = segs[n].audio_tail ?? 0
+    const bridge = lead > 0 ? { kind: 'j' as const, seconds: lead } : tail > 0 ? { kind: 'l' as const, seconds: tail } : null
+    return { t: seg.out_start, cut: startsRange ? word!.id : null, bridge }
   })
+}
+
+/** The Sound tab's line about the cuts: what the voice does at each, in words. null with no cuts. */
+export function cutsHint(joins: Join[]): string | null {
+  if (!joins.length) return null
+  const j = joins.filter((x) => x.bridge?.kind === 'j').length
+  const l = joins.filter((x) => x.bridge?.kind === 'l').length
+  const plain = joins.length - j - l
+  const many = (n: number, one: string, more: string): string => (n === 1 ? one : more.replace('#', String(n)))
+  if (!j && !l)
+    return `Your voice fades out and back in at ${many(plain, 'the cut', 'each of the # cuts')}, marked on the timeline, so ${many(plain, 'it never clicks', 'none of them clicks')}.`
+  const lines = [
+    j ? `At ${many(j, 'one cut', '# cuts')} your next line starts a moment before its picture.` : '',
+    l ? `At ${many(l, 'one cut', '# cuts')} your line carries on a moment over the next picture.` : '',
+    plain ? `At ${many(plain, 'the other cut', 'the other # cuts')} your voice fades out and back in, so ${many(plain, 'it never clicks', 'none of them clicks')}.` : '',
+    'The timeline marks each cut.'
+  ]
+  return lines.filter(Boolean).join(' ')
 }
 
 /** Where a sound's hit lands in the version on screen, or null when the version has no such moment. A picture's

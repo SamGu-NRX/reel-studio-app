@@ -3,7 +3,7 @@ import type { PlacedWord, ProjectJson, Word } from '../src/shared/api'
 import { describeChange } from '../src/shared/describe'
 import { countChanges, diffProject } from '../src/shared/hand-edit'
 import { placeWords, type RenderSegment } from '../src/shared/moments'
-import { gainOf, joinsOf, momentAt, momentKey, momentWhy, musicFades, newToTheEar, soundRows, soundTime, soundTitle, takenMoments, type Sfx, type VersionClock } from '../src/shared/sfx'
+import { cutsHint, gainOf, joinsOf, momentAt, momentKey, momentWhy, musicFades, newToTheEar, soundRows, soundTime, soundTitle, takenMoments, type Sfx, type VersionClock } from '../src/shared/sfx'
 import { versionRows } from '../src/shared/version-diff'
 
 // w0..w9 said one every 0.5 s. The cut keeps w0-w3 and w6-w9; the render also trims the pause inside w0-w3.
@@ -22,9 +22,32 @@ const clockOf = (): VersionClock => {
 describe('sound moments', () => {
   it('fails if a trimmed pause is offered as a cut (the engine only places {cut} where a kept range starts)', () => {
     expect(joinsOf(clockOf())).toEqual([
-      { t: 0.85, cut: null },
-      { t: 1.75, cut: 'w6' }
+      { t: 0.85, cut: null, bridge: null },
+      { t: 1.75, cut: 'w6', bridge: null }
     ])
+  })
+
+  // cut-joins: the timeline shows where the voice crosses a cut, as render.json's segments say the render made it
+  it('fails if a J or L join the render made is shown as a plain cut, or one it found no room for is shown as crossing', () => {
+    const at = (lead: number, tail: number): VersionClock => {
+      const segs = segments.map((x, i) => (i === 2 ? { ...x, audio_lead: lead } : i === 0 ? { ...x, audio_tail: tail } : x))
+      return { ...clockOf(), segments: segs }
+    }
+    expect(joinsOf(at(0.2, 0)).map((j) => j.bridge)).toEqual([null, { kind: 'j', seconds: 0.2 }])
+    expect(joinsOf(at(0, 0.1)).map((j) => j.bridge)).toEqual([{ kind: 'l', seconds: 0.1 }, null])
+    // a J join the engine clamped to 0 frames plays as a plain cut
+    expect(joinsOf(at(0, 0)).map((j) => j.bridge)).toEqual([null, null])
+  })
+
+  it("fails if the Sound tab's line about the cuts says the voice fades at a cut it crosses", () => {
+    const plain = { t: 1, cut: null, bridge: null }
+    expect(cutsHint([])).toBeNull()
+    expect(cutsHint([plain])).toBe('Your voice fades out and back in at the cut, marked on the timeline, so it never clicks.')
+    expect(cutsHint([plain, { ...plain, t: 2, bridge: { kind: 'j', seconds: 0.2 } }, { ...plain, t: 3, bridge: { kind: 'l', seconds: 0.2 } }, { ...plain, t: 4, bridge: { kind: 'l', seconds: 0.3 } }])).toBe(
+      'At one cut your next line starts a moment before its picture. At 2 cuts your line carries on a moment over the next picture. ' +
+        'At the other cut your voice fades out and back in, so it never clicks. The timeline marks each cut.'
+    )
+    expect(cutsHint([{ ...plain, bridge: { kind: 'j', seconds: 0.2 } }])).toBe('At one cut your next line starts a moment before its picture. The timeline marks each cut.')
   })
 
   it('fails if a sound added near a change of picture is not put on it, or one on a moment with a sound is', () => {

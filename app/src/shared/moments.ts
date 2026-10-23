@@ -13,6 +13,10 @@ export interface RenderSegment {
   src_start: number
   src_end: number
   out_start: number
+  /** Seconds of this span's voice heard before its picture starts: a J join (cut.py). Absent or 0: none. */
+  audio_lead?: number
+  /** Seconds of this span's voice heard after its picture ends: an L join (cut.py). Absent or 0: none. */
+  audio_tail?: number
 }
 
 /**

@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PlacedWord } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
 import { momentLabel } from '../../../shared/moments'
-import { leadIn } from '../../../shared/sfx'
+import { leadIn, type Join } from '../../../shared/sfx'
 import { Icon } from './icons'
 import { useFollowPlayhead, type Playhead } from './playhead'
 import type { Transport } from './transport'
@@ -22,8 +22,9 @@ export interface TimelineAudio {
   sounds: { key: string; at: number; label: string; off: boolean }[]
   /** the song's fade-in and fade-out in seconds, or null with no song */
   music: { fadeIn: number; fadeOut: number } | null
-  /** the cuts: where one kept span meets the next, and the voice fades out and in */
-  joins: number[]
+  /** the cuts: where one kept span meets the next. The voice fades out and in at a plain one; at a J or L join it
+   * crosses the cut (shared/sfx.ts Join `bridge`), drawn as a bar from the tick over the seconds it crosses. */
+  joins: Pick<Join, 't' | 'bridge'>[]
 }
 
 const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v))
@@ -212,7 +213,12 @@ export function Timeline({
             <path className="level" d={ramp.level} />
           </svg>
         )}
-        {duration > 0 && audio?.joins.map((t) => <span key={t} className="tl-join" style={{ left: pct(t) }} aria-hidden data-testid="timeline-join" />)}
+        {duration > 0 &&
+          audio?.joins.map(({ t, bridge }) => (
+            <span key={t} className="tl-join" style={{ left: pct(t) }} aria-hidden data-testid="timeline-join" data-bridge={bridge?.kind}>
+              {bridge && <i className={bridge.kind} style={{ width: `max(6px, ${(bridge.seconds / duration) * (width || 0)}px)` }} />}
+            </span>
+          ))}
         {sel && (
           <>
             <span className="tl-sel" style={{ left: pct(sel.a), width: `calc(${pct(sel.b)} - ${pct(sel.a)})` }} aria-hidden />

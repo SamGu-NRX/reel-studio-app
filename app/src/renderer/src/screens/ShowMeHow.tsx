@@ -211,7 +211,7 @@ export function ShowMeHow({
     return {
       sounds: rows.flatMap((r) => (r.t === null ? [] : [{ key: r.key, at: r.t, label: `${r.title} · ${r.why}`, off: !!r.warn }])),
       music: music?.enabled !== false && music?.track ? musicFades(music) : null,
-      joins: joins.map((j) => j.t)
+      joins: joins.map(({ t, bridge }) => ({ t, bridge }))
     }
   }, [now.p.sfx, now.p.broll, now.kept, music, vclock, joins, said, pack])
   // a level or a fade being dragged changes the project, not always what the timeline draws: Reel re-renders only
