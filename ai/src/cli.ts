@@ -2,7 +2,7 @@
 // reelstudio-ai CLI (dev). Commands:
 //   pick-takes  --provider claude-cli|codex-cli|claude|replay --model M --in transcript.json --out cut.json [--record f.json]
 //   first-edit  --project DIR --provider P [--model M] [--engine-cwd DIR] [--root DIR] [--record f.json] [--draft-only]
-//   apply-note  --project DIR --note "..." --provider P [--harness claude-code] [...]
+//   apply-note  --project DIR --note "..." --provider P [--harness claude-code|codex] [--check-edits] [...]
 //   write-script --idea "..." --provider P [...]
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -14,6 +14,8 @@ import { pickTakes } from './editor';
 import { PythonEngineHost } from './engineHost';
 import { createAI } from './index';
 import { ClaudeCodeHarness } from './mcp/claudeCode';
+import { CodexHarness } from './mcp/codex';
+import { SessionHarness } from './mcp/session';
 import { writeFileAtomic } from './project';
 import { devSettingsDir as defaultSettingsDir } from './safety';
 
@@ -85,8 +87,10 @@ async function main() {
       log: flags.verbose ? (l) => process.stderr.write(`[engine] ${l}\n`) : undefined,
     });
     const settingsDir = typeof flags.settings === 'string' ? flags.settings : defaultSettingsDir();
-    if (flags.harness !== undefined && flags.harness !== 'claude-code') throw new Error(`unknown harness ${String(flags.harness)}: the only one is claude-code`);
-    const harness = flags.harness === 'claude-code' ? new ClaudeCodeHarness({ model: typeof flags.model === 'string' ? flags.model : undefined }) : undefined;
+    if (flags.harness !== undefined && flags.harness !== 'claude-code' && flags.harness !== 'codex') throw new Error(`unknown harness ${String(flags.harness)}: choose claude-code or codex`);
+    const model = typeof flags.model === 'string' ? flags.model : undefined;
+    const native = flags.harness === 'claude-code' ? new ClaudeCodeHarness({ model }) : flags.harness === 'codex' ? new CodexHarness({ model }) : undefined;
+    const harness = native ? new SessionHarness(native, () => provider) : undefined;
     const ai = createAI({ host, settingsDir, dev: true, providerOverride: provider, harnessOverride: harness, finalRender: !flags['draft-only'] });
     // the engine runs in its own process group (engineHost.ts), out of reach of Ctrl-C: stop it like Stop
     // does. write-script runs no engine and takes no signal, so Ctrl-C keeps its default there.
@@ -94,7 +98,7 @@ async function main() {
     if (cmd !== 'write-script') process.once('SIGINT', () => stop.abort());
     let result: unknown;
     if (cmd === 'first-edit') result = await ai.firstEdit(String(flags.project), log, stop.signal);
-    else if (cmd === 'apply-note') result = await ai.applyNote(String(flags.project), String(flags.note ?? ''), log, stop.signal);
+    else if (cmd === 'apply-note') result = await ai.applyNote(String(flags.project), String(flags.note ?? ''), log, stop.signal, { ...(flags['check-edits'] ? { checkEdit: true } : {}) });
     else result = await ai.writeScript(String(flags.idea ?? ''), log);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     return;
@@ -126,8 +130,8 @@ async function main() {
   process.stdout.write(`reelstudio-ai <command>
   pick-takes   --provider claude-cli|codex-cli|claude|replay [--model M] --in transcript.json --out cut.json [--record session.json]
   first-edit   --project DIR --provider P [--model M] [--engine-cwd DIR] [--root DIR] [--record session.json] [--draft-only]
-  apply-note   --project DIR --note TEXT --provider P [--harness claude-code] [...]
-               --harness claude-code: claude -p runs the note and calls the tools over MCP
+  apply-note   --project DIR --note TEXT --provider P [--harness claude-code|codex] [--check-edits] [...]
+               --harness: runs the note in that CLI with tools over MCP; --check-edits checks it in the other CLI
   write-script --idea TEXT --provider P [...]
   chatgpt-signin  [--settings DIR] --insecure-plaintext
                   sign in with ChatGPT in your browser, then list models. The CLI has no OS keychain,

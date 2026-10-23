@@ -79,7 +79,7 @@ export class ClaudeCodeHarness implements Harness {
       decide = (x) => { if (!done) { done = true; resolve(x); } };
     });
     const run = await McpRun.open({
-      ctx: o.ctx, tools: o.tools, maxSteps: o.maxSteps, onEvent: o.onEvent,
+      ctx: o.ctx, tools: o.tools, customTools: o.customTools, maxSteps: o.maxSteps, onEvent: o.onEvent,
       onStop: (why) => decide(why === 'steps' ? { stoppedBy: 'steps' } : { error: run.failure }),
     });
     try {

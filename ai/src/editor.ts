@@ -1,12 +1,12 @@
 // High-level editor tasks: firstEdit, applyNote, writeScript, pickTakes, and the no-AI path.
 import * as path from 'node:path';
 import { AgentEvent, AgentResult, AIError, EngineHost, ImagePart, ModelProvider, Phase, ScriptResult, UserFacingError } from './types';
-import { effectiveTokens, runAgent, RunAgentResult } from './agent';
+import { effectiveTokens, runAgent, RunAgentResult, DEFAULT_TOKEN_BUDGET } from './agent';
+import { Harness, loopHarness } from './harness';
 import type { LookupFn } from './safety';
 import { Prompts } from './prompts';
 import { StyleStore, StyleProposal, captionCaseProposal } from './style';
 import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProofread, doRender, unsureWords, executeTool, load, newToolState, resolveAsset, cleanSummary, renderEvent, operationStatus, noteBase, stageMerge, ToolInputError, TOOL_NAMES } from './tools';
-import { Harness, loopHarness } from './harness';
 import { planFastNote } from './fastnote';
 import { LEDGER } from './assets';
 import { AttachmentInfo, attachmentStills, attachmentsSection, earlierUnplaced, placedAssets, validateAttachments } from './attachments';
@@ -15,7 +15,7 @@ import {
   snapshotVersion, LIBRARY_FOLDERS, anchorText, writeFileAtomic, keptWords, projectBytes, versionDir,
 } from './project';
 import { extractJson } from './providers/cli';
-import { CheckRecord, CheckRound, MAX_REPAIRS, askChecker, checkerEvidence, repairTask, saveCheck, unresolvedLine } from './checker';
+import { CheckRecord, CheckRound, MAX_REPAIRS, askChecker, askHarnessChecker, checkerEvidence, repairTask, saveCheck, unresolvedLine } from './checker';
 import * as fsp from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { refuseIfOpen } from './owner';
@@ -51,6 +51,8 @@ export interface EditorDeps {
   pauseOn?: (e: AIError) => boolean;
   /** what runs a note's AI turns (default our own loop over the provider) */
   harness?: Harness;
+  /** read-only checker on the other MCP harness; used when checkEdit is on and the note runs in an MCP harness */
+  checkerHarness?: Harness;
 }
 
 export interface EditResult extends AgentResult {
@@ -470,6 +472,47 @@ async function checkAndRepair(deps: EditorDeps, provider: ModelProvider, ctx: To
   }
 }
 
+/**
+ * "Double-check each edit" for a note that ran in an MCP harness (mcp-harness-2, dev only): the other harness
+ * reviews the candidate read-only (askHarnessChecker) and this one repairs, at most MAX_REPAIRS times, within
+ * the note's token allowance. Returns the reply, with what is still wrong when the repairs ran out.
+ */
+async function checkInHarness(deps: EditorDeps, harness: Harness, ctx: ToolContext,
+  n: { noteText: string; files: string; images: ImagePart[]; start: Project; said: string; tokens: number },
+  onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<string> {
+  const checker = deps.checkerHarness;
+  if (!checker) throw new AIError('check_failed', 'Connect the other AI app before double-checking this note. Your video is unchanged.');
+  // Checker and repair runs spend the note's remaining token allowance.
+  const budget = deps.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
+  let spent = n.tokens;
+  let said = n.said;
+  const count = (tokens: number) => {
+    spent += tokens;
+    if (spent > budget) throw new AIError('token_budget', 'This edit was taking too much AI work, so I stopped to protect your AI usage.');
+  };
+  for (let repairs = 0; ; repairs++) {
+    onEvent({ type: 'status', message: 'Double-checking your change', pct: 85, phase: 'edit' });
+    // The checker cannot render: prepare the current private candidate before its read-only run.
+    if (!ctx.state.renders.length || ctx.state.dirty?.size) await doRender(ctx, true, false);
+    const verdict = await askHarnessChecker(checker, {
+      system: `${deps.prompts.render('checkerHarness')}\n\n${DATA_BOUNDARY}`,
+      task: `## The user's note\n${n.noteText}${n.files ? `\n\n${n.files}` : ''}`,
+      ctx, onEvent, signal, maxSteps: 12, tokenBudget: Math.max(0, budget - spent),
+    }, n.start);
+    count(verdict.tokens);
+    if (verdict.ok) return said;
+    if (repairs === MAX_REPAIRS) return `${said} ${unresolvedLine(verdict.findings)}`;
+    onEvent({ type: 'status', message: 'Fixing what the check found', pct: 87, phase: 'edit' });
+    ctx.state.finished = null;
+    const repair = await harness.run({ system: await systemPrompt(deps), task: repairTask(n.noteText, verdict.findings, n.files), taskImages: n.images,
+      ctx, onEvent, signal, tools: TOOL_NAMES.filter((name) => name !== 'add_style_rule'), maxSteps: 12, tokenBudget: Math.max(0, budget - spent),
+      preload: ['get_project', 'get_transcript'] });
+    count(repair.tokens);
+    if (repair.stoppedBy !== 'finish') throw unfinished(ctx.state);
+    said = repair.finished || said;
+  }
+}
+
 /** The reply to a note whose edit ended where it started (applyNote). */
 const UNDONE_REPLY = "That left your video the same as before, so I didn't make a new version.";
 
@@ -535,7 +578,7 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     let ctx = await begin();
     const { p: p0 } = await load(ctx);
     // "smaller captions", "quieter music": one direct change and the final render, no AI turns
-    const fast = deps.fastNotes === false || attached.length ? null : planFastNote(note, p0);
+    const fast = deps.fastNotes === false || attached.length || (opts.checkEdit && deps.harness) ? null : planFastNote(note, p0);
     if (fast) {
       onEvent({ type: 'status', message: operationStatus(ctx, fast.calls[0].name, fast.calls[0].args) ?? 'Making your change', pct: 10, phase: 'final' });
       let ok = true;
@@ -574,11 +617,15 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     // only a reply that is nothing but a question passes: "I cut the intro. Want more?" still claims the cut
     const question = undone && /^[^.!]*\?$/.test(r.finished?.trim() ?? '') ? r.finished : null;
     // Settings > "Double-check each edit": a checker reviews a note that changed the edit before its final render
-    const review = !opts.checkEdit || !ctx.state.changed.size ? null : await checkAndRepair(deps, provider, ctx, label, p0,
+    // a note in an MCP harness (dev only) is checked by the other harness instead (mcp-harness-2, checkInHarness)
+    const harnessed = opts.checkEdit && ctx.state.changed.size && deps.harness
+      ? await checkInHarness(deps, harness, ctx, { noteText, files, images, start: p0, said: r.finished || 'I saved your preference.', tokens: r.tokens }, onEvent, signal)
+      : null;
+    const review = !opts.checkEdit || !ctx.state.changed.size || deps.harness ? null : await checkAndRepair(deps, provider, ctx, label, p0,
       { files, images, assets: [...attached, ...earlier].map((a) => a.asset) }, onEvent, signal)
       // a checker model of its own only asked (askChecker), so no agent run disposed of it
       .finally(() => (deps.checker && deps.checker !== provider ? deps.checker.dispose?.() : undefined));
-    const said = review?.summary ?? honestSummary(r, ctx.state) ?? 'I saved your preference.';
+    const said = harnessed ?? review?.summary ?? honestSummary(r, ctx.state) ?? 'I saved your preference.';
     // a note that changed nothing is saved too: its id in project.json is how the app's note queue knows it ran
     const summary = nothing
       ? r.finished || 'I looked, but I was not sure what to change. Could you say it another way?'

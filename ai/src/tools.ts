@@ -1171,6 +1171,24 @@ async function animationOf(ctx: ToolContext, asset: string | null | undefined): 
 
 // ---------------------------------------------------------------- tool definitions
 
+// At most six JSON bytes per UTF-16 code unit keeps the escaped page plus metadata below 64 KiB.
+const READ_PAGE_LIMIT = 8192;
+const READ_PAGING = {
+  offset: S.opt(S.int('UTF-16 character offset in the complete formatted result; default 0', { minimum: 0 })),
+  limit: S.opt(S.int('maximum characters to return; default and maximum 8192', { minimum: 1, maximum: READ_PAGE_LIMIT })),
+};
+const READ_PAGE_HELP = ' Results over 8192 characters, or calls with offset/limit, return {text,page:{offset,limit,total,nextOffset}}. Read nextOffset until null and concatenate text to recover the complete result. Offsets count UTF-16 code units.';
+
+function readPage(content: unknown, args: { offset?: number | null; limit?: number | null }): unknown {
+  const text = typeof content === 'string' ? content : JSON.stringify(content);
+  if (text.length <= READ_PAGE_LIMIT && args.offset == null && args.limit == null) return content;
+  const offset = args.offset ?? 0;
+  const limit = args.limit ?? READ_PAGE_LIMIT;
+  if (offset > text.length) throw new ToolInputError(`offset ${offset} exceeds result length ${text.length}`);
+  const end = Math.min(offset + limit, text.length);
+  return { text: text.slice(offset, end), page: { offset, limit, total: text.length, nextOffset: end < text.length ? end : null } };
+}
+
 const PARAMS = S.obj({
   side: S.opt(S.enum(['left', 'right', 'auto'], 'side-card / phone-card: which side of the face (auto = the roomier side)')),
   tilt: S.opt(S.num('degrees, e.g. -2.5 (cards and text-pop); 0 for the square hook title')),
@@ -1211,20 +1229,20 @@ const tools: ToolDef[] = [
   },
   {
     name: 'get_project',
-    description: 'Read the current edit: cut, captions, music, b-roll (with the words each sits on), zooms, cover, post, notes.',
-    parameters: S.obj({}),
-    async run(ctx) {
+    description: 'Read the current edit: cut, captions, music, b-roll (with the words each sits on), zooms, cover, post, notes.' + READ_PAGE_HELP,
+    parameters: S.obj(READ_PAGING),
+    async run(ctx, args) {
       const { p, t } = await load(ctx);
-      return { content: projectView(ctx, p, t) };
+      return { content: readPage(projectView(ctx, p, t), args) };
     },
   },
   {
     name: 'get_transcript',
-    description: 'Read every spoken word with its id, plus retake groups (lines said more than once) and long pauses. Also returns the current cut.',
-    parameters: S.obj({}),
-    async run(ctx) {
+    description: 'Read every spoken word with its id, plus retake groups (lines said more than once) and long pauses. Also returns the current cut.' + READ_PAGE_HELP,
+    parameters: S.obj(READ_PAGING),
+    async run(ctx, args) {
       const { p, t } = await load(ctx);
-      return { content: `${formatTranscript(t, p, ctx.analysis ?? null)}\n\nCURRENT CUT\n${JSON.stringify(cutSummary(t, p))}` };
+      return { content: readPage(`${formatTranscript(t, p, ctx.analysis ?? null)}\n\nCURRENT CUT\n${JSON.stringify(cutSummary(t, p))}`, args) };
     },
   },
   {
@@ -1370,14 +1388,14 @@ const tools: ToolDef[] = [
   },
   {
     name: 'list_library',
-    description: "List the user's own files. kind: music | images | broll | raw. Also returns images already fetched for this project.",
-    parameters: S.obj({ kind: S.enum(['music', 'images', 'broll', 'raw']) }),
+    description: "List the user's own files. kind: music | images | broll | raw. Also returns images already fetched for this project." + READ_PAGE_HELP,
+    parameters: S.obj({ kind: S.enum(['music', 'images', 'broll', 'raw']), ...READ_PAGING }),
     async run(ctx, args) {
       const kind = args.kind as LibraryKind;
       const files = await listFiles(libraryDir(ctx, kind), EXT[kind], `Library/${LIBRARY_FOLDERS[kind]}`);
       const project = kind === 'images' || kind === 'broll' ? await projectAssets(ctx) : [];
       const songs = kind === 'music' && files.length ? await librarySongs(ctx) : null;
-      return { content: { kind, files, projectAssets: project, ...(songs ? { songs, howToChoose: SONG_HELP } : {}), note: files.length ? undefined : `The ${LIBRARY_FOLDERS[kind]} folder is empty.` } };
+      return { content: readPage({ kind, files, projectAssets: project, ...(songs ? { songs, howToChoose: SONG_HELP } : {}), note: files.length ? undefined : `The ${LIBRARY_FOLDERS[kind]} folder is empty.` }, args) };
     },
   },
   {

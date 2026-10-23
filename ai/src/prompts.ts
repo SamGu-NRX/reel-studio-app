@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CUT_STYLES } from './cut-style';
 
-export type PromptName = 'system' | 'firstEdit' | 'applyNote' | 'writeScript' | 'pickTakes' | 'review' | 'proofread' | 'versionTitle' | 'checker';
+export type PromptName = 'system' | 'firstEdit' | 'applyNote' | 'writeScript' | 'pickTakes' | 'review' | 'proofread' | 'versionTitle' | 'checker' | 'checkerHarness';
 
 export function defaultPromptsDir(): string {
   const candidates = [

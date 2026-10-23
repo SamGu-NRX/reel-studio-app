@@ -50,6 +50,9 @@ async function play(calls) {
   relay.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
   const list = await request('tools/list', {});
   const tools = scenario.initTools ?? (list.result?.tools ?? []).map((t) => `mcp__reelstudio__${t.name}`);
+  const probe = tools.includes('mcp__reelstudio__harness_probe');
+  if (scenario.starts) fs.appendFileSync(scenario.starts, (probe ? 'probe' : 'note') + '\n');
+  if (probe && scenario.probe === 'refused') { process.stderr.write('MCP refused'); process.exit(1); }
   out({ type: 'system', subtype: 'init', tools, mcp_servers: [{ name: 'reelstudio', status: list.result ? 'connected' : 'failed' }] });
   let ibuf = '';
   let queue = Promise.resolve();
@@ -59,7 +62,8 @@ async function play(calls) {
     while ((i = ibuf.indexOf('\n')) >= 0) {
       const m = JSON.parse(ibuf.slice(0, i)); ibuf = ibuf.slice(i + 1);
       fs.appendFileSync(scenario.inbox, m.message.content[0].text + '\n---\n');
-      const t = scenario.turns[turn++];
+      const nonce = /nonce ([a-f0-9-]+)/.exec(m.message.content[0].text)?.[1];
+      const t = probe ? (scenario.probe === 'pass' ? [{ name: 'harness_probe', args: { nonce } }] : []) : scenario.turns[turn++];
       queue = queue.then(() => play(t ?? []));
     }
   });
