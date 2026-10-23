@@ -97,7 +97,7 @@ export function handleMediaProtocol(allowedRoots: () => string[]): void {
       }
       // FileHandle streams retain this descriptor and close it on end, error or cancellation.
       const stream = handle.createReadStream(status === 206 ? { start, end } : {})
-      const response = new Response(Readable.toWeb(stream), { status, headers })
+      const response = new Response(Readable.toWeb(stream) as ReadableStream, { status, headers })
       streaming = true
       return response
     } catch {

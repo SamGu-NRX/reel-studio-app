@@ -44,23 +44,6 @@ const DEFAULTS: Settings = {
   checkEdits: false
 }
 
-
-const DEFAULTS: Settings = {
-  firstRunDone: false,
-  root: null,
-  fasterExports: false,
-  aiAutoPicked: false,
-  aiCarriedOver: false,
-  notifications: null,
-  speechCheck: null,
-  checkUpdates: true,
-  updateCheckedAt: null,
-  updateLatest: null,
-  updateDismissed: null,
-  updateHistory: null,
-  checkEdits: false
-}
-
 export async function loadSettings(): Promise<Settings> {
   try {
     return { ...DEFAULTS, ...JSON.parse(await fs.readFile(settingsFile(), 'utf8')) }
