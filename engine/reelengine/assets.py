@@ -1070,11 +1070,14 @@ def credit_for(url: str) -> Optional[dict]:
         return None
 
 
-def _add_credit(saved: Path, entry: dict) -> None:
-    """One entry in <folder>/credits.json under the saved file's name. A book that cannot be read is
-    left alone (rewriting it as empty would drop every other picture's credit) and the picture is
-    refused: it must not reach a caption without its credit."""
+def _add_credit(saved: Path, entry: Optional[dict]) -> None:
+    """One entry in <folder>/credits.json under the saved file's name; None drops an entry left under it (the AI
+    deletes downloads it doesn't keep, so names come back). A book that cannot be read is left alone (rewriting it
+    as empty would drop every other picture's credit) and the picture is refused: it must not reach a caption
+    without its credit."""
     book_path = saved.parent / "credits.json"
+    if entry is None and not book_path.exists():
+        return
     try:
         with _FileLock(book_path):
             try:
@@ -1083,7 +1086,10 @@ def _add_credit(saved: Path, entry: dict) -> None:
                 book = {}
             if not isinstance(book, dict):
                 raise ValueError("credits.json is not an object")
-            book[saved.name] = entry
+            if entry is not None:
+                book[saved.name] = entry
+            elif book.pop(saved.name, None) is None:
+                return
             _write_json(book_path, book)
     except (OSError, ValueError) as e:
         raise EngineError("CREDIT_NOT_SAVED", f"credit not written for {saved.name}: {e}",
@@ -1094,8 +1100,7 @@ def _write_credit(saved: Path, url: str) -> Optional[dict]:
     """<folder>/credits.json maps each saved file name -> its licence + credit line, so the post
     caption can credit the pictures that need it (attributionRequired)."""
     c = credit_for(url)
-    if c:
-        _add_credit(saved, {**c, "url": url})
+    _add_credit(saved, {**c, "url": url} if c else None)
     return c
 
 

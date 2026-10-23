@@ -7,6 +7,7 @@ import { Prompts } from './prompts';
 import { StyleStore } from './style';
 import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProofread, doRender, unsureWords, executeTool, load, newToolState, resolveAsset, cleanSummary, renderEvent, operationStatus } from './tools';
 import { planFastNote } from './fastnote';
+import { LEDGER } from './assets';
 import { AttachmentInfo, attachmentStills, attachmentsSection, earlierUnplaced, placedAssets, validateAttachments } from './attachments';
 import {
   Analysis, EditReceipt, NoteEntry, PROJECT_FILE, Project, withDefaults, Transcript, WordAnchor, hasTranscript, loadProject, normalizeAnalysis, normalizeKeep, sameEdit, saveProject,
@@ -141,12 +142,41 @@ async function removeStyleRules(deps: EditorDeps, state: ToolState): Promise<voi
 /** Part of the engine would not stop and may still be writing: a failed note then touches nothing in the project. */
 const engineStuck = (e: unknown): boolean => (e as { code?: unknown } | null)?.code === 'ENGINE_STUCK';
 
-/** A failed note leaves the credits book as it was (#74). `before`: null when there was none, undefined when it could
- * not be read, and then it is left alone. */
+/** A failed note leaves the credits book as it was. `before`: null when there was none, undefined when it could not
+ * be read, and then it is left alone. */
 async function restoreCredits(projectDir: string, before: Buffer | null | undefined): Promise<void> {
   const file = path.join(projectDir, 'work', 'assets', 'credits.json');
   if (before === null) await fsp.rm(file, { force: true }).catch(() => undefined);
   else if (before) await writeFileAtomic(file, before).catch(() => undefined);
+}
+
+const entries = (dir: string) => fsp.readdir(dir, { withFileTypes: true }).catch((e) => { if (e?.code === 'ENOENT') return []; throw e; });
+
+/** The rollback deletes whatever is not in this list, so only a missing folder counts as empty. Frozen
+ * pictures are listed one by one (`frozen/<kind>/<file>`): the folder outlives a note, the files it froze
+ * don't. Only real folders are entered, never a symlink, so the rollback never deletes outside the project. */
+async function listAssets(projectDir: string): Promise<Set<string>> {
+  const dir = path.join(projectDir, 'work', 'assets');
+  const top = await entries(dir);
+  const frozen = top.find((e) => e.name === 'frozen')?.isDirectory() ? await entries(path.join(dir, 'frozen')) : [];
+  const files = await Promise.all(frozen.filter((k) => k.isDirectory()).map(async (kind) =>
+    (await entries(path.join(dir, 'frozen', kind.name))).map((f) => `frozen/${kind.name}/${f.name}`)));
+  return new Set([...top.map((e) => e.name), ...files.flat()]);
+}
+
+/** The ledger's size before a note, or null when it does not exist yet. Any other error stops the note:
+ * the rollback truncates the ledger back to this size. */
+const ledgerBytes = (projectDir: string) => fsp.stat(path.join(projectDir, LEDGER)).then((s) => s.size, (e) => {
+  if (e?.code === 'ENOENT') return null; throw e;
+});
+
+/** A failed note takes back the asset records it appended and the pictures it froze. Its downloads stay, unoffered,
+ * like any unsaved note's (tools.ts projectAssets). */
+async function restoreAssets(projectDir: string, assetsBefore: Set<string>, ledgerBefore: number | null): Promise<void> {
+  for (const f of await listAssets(projectDir).catch(() => new Set<string>())) {
+    if (f.startsWith('frozen/') && !assetsBefore.has(f)) await fsp.rm(path.join(projectDir, 'work', 'assets', f), { force: true, recursive: true }).catch(() => undefined);
+  }
+  if (ledgerBefore !== null) await fsp.truncate(path.join(projectDir, LEDGER), ledgerBefore).catch(() => undefined);
 }
 
 /** The caption's credit line follows the pictures the edit ends with (one removed after write_post
@@ -450,6 +480,9 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   // file yet. undefined: it could not be read, so the note goes ahead and a failure leaves it alone.
   const creditsBefore = await fsp.readFile(path.join(projectDir, 'work', 'assets', 'credits.json'))
     .catch((e) => (e.code === 'ENOENT' ? null : undefined));
+  // what it froze and the records it appended (restoreAssets)
+  const assetsBefore = await listAssets(projectDir);
+  const ledgerBefore = await ledgerBytes(projectDir);
   const begin = async (): Promise<ToolContext> => {
     const file = path.join(dir, 'edit.json');
     await writeFileAtomic(file, base);
@@ -507,7 +540,7 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
       : undone ? withStyleEcho(question ?? UNDONE_REPLY, ctx.state)
       : withStyleEcho(review?.record.verdict === 'unresolved' ? `${said} ${unresolvedLine(review.record.rounds.at(-1)!.fixes)}` : said, ctx.state);
     // this note's files, plus files attached to an earlier note that THIS note put in the video ("when I say X")
-    const placedNow = placedAssets(await loadProject(projectDir, ctx.note!.file));
+    const placedNow = await placedAssets(projectDir, await loadProject(projectDir, ctx.note!.file));
     const recorded = [...refs, ...earlier.map((a) => a.asset).filter((r) => placedNow.has(r) && !refs.includes(r))];
     const saved = await saveNote(deps, ctx, base, baseVersion, { text: note.trim(), label, summary, attachments: recorded }, opts.saveStyleRules !== false);
     if (review && saved.version !== undefined) {
@@ -519,7 +552,10 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     }
     return { ...saved, ...(review ? { check: review.record } : {}) };
   } catch (e) {
-    if (!engineStuck(e)) await restoreCredits(projectDir, creditsBefore);
+    if (!engineStuck(e)) {
+      await restoreCredits(projectDir, creditsBefore);
+      await restoreAssets(projectDir, assetsBefore, ledgerBefore);
+    }
     throw e;
   } finally {
     // only what this note made under its own id; a final it started stays above project.json's
