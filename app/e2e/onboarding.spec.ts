@@ -65,8 +65,8 @@ test('a fresh first run walks every step, and the folder waits for Allow', async
     await page.getByTestId('skip').click()
     await page.getByTestId('share-no').click()
 
-    await expect(page.getByText('Your videos')).toBeVisible()
-    await expect(page.getByTestId('your-turn')).toContainText('Your turn. Drop in a video of you talking.')
+    await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
+    await expect(page.getByTestId('reels-empty')).toContainText('Drop a video of you talking anywhere in this window, or start with an idea.')
     await expect(page.getByTestId('sample-card')).toBeVisible()
     const settings = JSON.parse(readFileSync(join(d.userData, 'settings.json'), 'utf8'))
     expect(settings.firstRunDone).toBe(true)
@@ -130,7 +130,7 @@ test('an existing install goes straight to Home, as before', async () => {
   writeFileSync(join(d.userData, 'settings.json'), JSON.stringify({ firstRunDone: true, root: null }))
   const { app, page } = await launch(d.env)
   try {
-    await expect(page.getByText('Your videos')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
     await expect(page.getByTestId('get-started')).toHaveCount(0)
     await expect(page.getByTestId('setup-steps')).toHaveCount(0)
     expect(existsSync(join(d.root, 'Projects'))).toBe(true) // made at start, the way it always was

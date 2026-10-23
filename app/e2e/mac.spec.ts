@@ -13,7 +13,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { CLAUDE_CODE_MISNAMED, attachMemeFlow, chooseClaudeCode, dropFiles, passMacStage, passSample, openSettings } from './helpers'
+import { CLAUDE_CODE_MISNAMED, attachMemeFlow, chooseClaudeCode, dropFiles, passMacStage, passSample, openSettings, newReel } from './helpers'
 
 const EXE = process.env.REELSTUDIO_E2E_EXE
 const USE_CLAUDE = process.env.REELSTUDIO_E2E_USE_CLAUDE !== '0'
@@ -71,7 +71,7 @@ function newest(dir: string, filter: (n: string) => boolean): string | null {
 async function firstRun(page: Page): Promise<Record<string, unknown>> {
   const info: Record<string, unknown> = {}
   const welcome = page.getByTestId('get-started')
-  await expect(welcome.or(page.getByRole('heading', { name: 'Your videos' }))).toBeVisible({ timeout: 60_000 })
+  await expect(welcome.or(page.getByRole('heading', { name: 'Reels' }))).toBeVisible({ timeout: 60_000 })
   if (!(await welcome.isVisible())) return info
   await snap(page, `${TAG}-00-welcome`)
   await passSample(page)
@@ -85,7 +85,7 @@ async function firstRun(page: Page): Promise<Record<string, unknown>> {
   info.connectAi = picked ? (await page.evaluate(() => (window as any).reel.ai.active())).label : 'none'
   if (!picked) await page.getByTestId('skip').click()
   await page.getByTestId('share-no').click()
-  await expect(page.getByText('Your videos')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
   return info
 }
 
@@ -324,7 +324,7 @@ TAKES.forEach((take, i) => {
 
       // ---- drop -> first look -> first edit ----
       await page.getByTestId('nav-home').click()
-      await page.getByTestId('new-video').click()
+      await newReel(app)
       const t0 = Date.now()
       await dropFiles(page, 'drop-zone', [take])
       await expect(page.getByText('Making your reel')).toBeVisible()

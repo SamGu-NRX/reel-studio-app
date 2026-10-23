@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { launch, makeMedia, passFirstRun } from './helpers'
+import { launch, makeMedia, passFirstRun, newReel } from './helpers'
 
 test('fails if player controls start file drag or picture drag-out stops working', async () => {
   const media = makeMedia()
@@ -12,7 +12,7 @@ test('fails if player controls start file drag or picture drag-out stops working
   })
   try {
     await passFirstRun(page)
-    await page.getByTestId('new-video').click()
+    await newReel(app)
     await page.getByTestId('file-input').setInputFiles(media.video)
     const player = page.getByTestId('player')
     await expect(player).toBeVisible({ timeout: 120_000 })

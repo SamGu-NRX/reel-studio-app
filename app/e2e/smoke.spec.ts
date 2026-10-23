@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, SHOTS, dropFiles, launch, makeMedia, passFirstRun, passMacStage, shot, openSettings } from './helpers'
+import { BASE, SHOTS, dropFiles, launch, makeMedia, passFirstRun, passMacStage, shot, openSettings, newReel } from './helpers'
 
 /** Each test starts on a fresh profile of its own, so neither depends on the order specs run in. */
 function freshProfile(name: string): { root: string; env: Record<string, string> } {
@@ -44,7 +44,7 @@ test('make a reel end to end', async () => {
   await page.getByTestId('share-no').click()
 
   // ---- home ----
-  await expect(page.getByTestId('your-turn')).toBeVisible()
+  await expect(page.getByTestId('reels-empty')).toBeVisible()
   await shot(page, '04-home-empty')
 
   // ---- library: add a song, a picture and a file it cannot use ----
@@ -57,7 +57,7 @@ test('make a reel end to end', async () => {
 
   // ---- new video: a non-video file is explained, not swallowed ----
   await page.getByTestId('nav-home').click()
-  await page.getByTestId('new-video').click()
+  await newReel(app)
   await expect(page.getByText('Drop your video here')).toBeVisible()
   await shot(page, '06-new-video')
   await page.getByTestId('file-input').setInputFiles([media.doc])
@@ -140,7 +140,7 @@ test('make a reel end to end', async () => {
   await expect(page.getByText('Where your videos are kept')).toBeVisible()
   await shot(page, '15-settings')
   await page.getByTestId('nav-home').click()
-  await page.getByTestId('new-video').click()
+  await newReel(app)
   await page.getByText('I want help writing a script first').click()
   await page.getByPlaceholder('What is your video about?').fill('Three tips for better sleep')
   // No AI: said before typing, and the button is off (no pink error after the fact).
@@ -191,13 +191,13 @@ test('make a reel end to end', async () => {
 
   // ---- quit mid-job, reopen, pick up where we left off ----
   await page.getByTestId('nav-home').click()
-  await page.getByTestId('new-video').click()
+  await newReel(app)
   await page.getByTestId('file-input').setInputFiles([media.video])
   await expect(page.getByTestId('status-message')).toContainText(/Listening/, { timeout: 60_000 })
   await app.close()
 
   ;({ app, page } = await launch(profile.env))
-  await expect(page.getByText('Your videos')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
   await expect(page.locator('[data-testid="project-card"][data-state="paused"]')).toBeVisible()
   await shot(page, '17-home-after-quit')
   await page.locator('[data-testid="project-card"][data-state="paused"]').click()
@@ -217,7 +217,7 @@ test('a force quit mid-job recovers on the next start', async () => {
   let { app, page } = await launch(profile.env)
   await passFirstRun(page)
   const before = await page.getByTestId('project-card').count()
-  await page.getByTestId('new-video').click()
+  await newReel(app)
   // Drag and drop this time (the first test used the file picker).
   await dropFiles(page, 'drop-zone', [media.video])
   await expect(page.getByTestId('status-message')).toContainText(/Listening/, { timeout: 60_000 })

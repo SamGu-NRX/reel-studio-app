@@ -17,7 +17,7 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { chooseClaudeCode, dropFiles, launch, passFirstRun, passMacStage, passSample, SHOTS, openSettings } from './helpers'
+import { chooseClaudeCode, dropFiles, launch, passFirstRun, passMacStage, passSample, SHOTS, openSettings, newReel } from './helpers'
 
 const DIR = process.env.REELSTUDIO_README_DIR
 const VIDEO = process.env.REELSTUDIO_README_VIDEO
@@ -77,7 +77,7 @@ test('make: one real reel from the presenter clip', async () => {
     await page.getByTestId('file-input').setInputFiles([SONG!])
     await expect(page.getByTestId('bin-music')).toContainText('Sunny Loop', { timeout: 60_000 })
     await page.getByTestId('nav-home').click()
-    await page.getByTestId('new-video').click()
+    await newReel(app)
     await dropFiles(page, 'drop-zone', [VIDEO!])
     await expect(page.getByText('Making your reel')).toBeVisible()
     await expect(page.getByTestId('player')).toBeVisible({ timeout: 60 * 60_000 })
@@ -99,7 +99,7 @@ test('shoot: Reel, drawer, export, home', async () => {
   test.setTimeout(30 * 60_000)
   const { app, page } = await launch(env())
   await stubConnected(app)
-  await expect(page.getByText('Your videos')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
   await page.reload()
   await expect(page.getByTestId('ai-status')).toContainText('AI editor: ChatGPT')
 
@@ -110,7 +110,7 @@ test('shoot: Reel, drawer, export, home', async () => {
   await page.getByTestId('title-input').fill('3 tiny morning habits')
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('title')).toHaveText('3 tiny morning habits')
-  await page.getByRole('button', { name: 'My videos' }).first().click()
+  await page.getByRole('button', { name: 'Reels' }).first().click()
   await expect(page.getByTestId('project-card').first()).toBeVisible()
   await page.waitForTimeout(800)
   await snap(page, 'home')
@@ -151,9 +151,9 @@ test('public: first-run connect screen and the script screen', async () => {
     await snap(page, 'connect-ai')
     await page.getByTestId('skip').click()
     await page.getByTestId('share-no').click()
-    await expect(page.getByText('Your videos')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
     await snap(page, 'home-empty')
-    await page.getByTestId('new-video').click()
+    await newReel(app)
     await page.getByText('I want help writing a script first').click()
     await page.locator('textarea').first().fill('Three tips for better sleep')
     await snap(page, 'write-a-script')

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun } from './helpers'
+import { BASE, launch, makeMedia, passFirstRun, newReel } from './helpers'
 
 test('fails if cloud save copies the wrong export or uses the wrong drive', async () => {
   test.skip(process.platform !== 'darwin', 'The native Windows flow runs on a Windows host.')
@@ -18,7 +18,7 @@ test('fails if cloud save copies the wrong export or uses the wrong drive', asyn
   try {
     await app.evaluate(({ app }, folder) => app.setPath('home', folder), home)
     await passFirstRun(page)
-    await page.getByTestId('new-video').click()
+    await newReel(app)
     await page.getByTestId('file-input').setInputFiles([media.video])
     await expect(page.getByTestId('player')).toBeVisible()
     await page.getByTestId('export').click()
