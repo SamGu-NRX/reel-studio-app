@@ -1,9 +1,9 @@
-// The Windows title bar overlay (main/window.ts) is drawn by the OS outside the page, so the modal scrim in
-// styles.css cannot reach it; while a modal is open it must take exactly the scrim's colour.
+// The Windows title bar overlay (main/window.ts) is see-through, so the page and a modal's scrim show through it.
+// Dimmed, it takes exactly the scrim's colour over the page.
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { blendHex, INK, PAPER, titleBarOverlay, WIN_TITLEBAR_HEIGHT } from '../src/main/window'
+import { blendHex, INK, OVERLAY, PAPER, titleBarOverlay, WIN_TITLEBAR_HEIGHT } from '../src/main/window'
 
 describe('titleBarOverlay', () => {
   it('matches the page background, and the modal scrim over it while a modal is open', () => {
@@ -11,9 +11,8 @@ describe('titleBarOverlay', () => {
     const m = /\.modal-backdrop\s*\{[^}]*background:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/.exec(css)
     if (!m) throw new Error('styles.css .modal-backdrop has no rgba() background')
     const scrim = '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('')
-    expect(titleBarOverlay(false)).toEqual({ color: PAPER, symbolColor: INK, height: WIN_TITLEBAR_HEIGHT })
+    expect(titleBarOverlay(false)).toEqual({ color: OVERLAY, symbolColor: INK, height: WIN_TITLEBAR_HEIGHT })
     expect(titleBarOverlay(true).color).toBe(blendHex(PAPER, scrim, Number(m[4])))
-    expect(titleBarOverlay(true).color).toBe('#b6b4b0')
   })
 
   it('blends per channel and rounds', () => {

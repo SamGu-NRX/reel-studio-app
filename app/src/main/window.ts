@@ -13,8 +13,12 @@ export const PAPER = '#F1F2EF'
 export const INK = '#161917'
 /** Height of the Windows title bar overlay (window buttons): the title-bar row the renderer leaves room for. */
 export const WIN_TITLEBAR_HEIGHT = titlebarHeight('win32')
-/** The modal scrim, as in styles.css `.modal-backdrop`: INK at 30 %. */
+/** The modal scrim, as in styles.css `.modal-backdrop`: rgba(22, 30, 26, .3). */
+export const SCRIM = '#161e1a'
 export const SCRIM_ALPHA = 0.3
+/** Fully transparent overlays draw wrong on Linux, so T3 Code uses alpha 1/255; this lets every surface, a modal's scrim
+ * included, show through the strip behind the window buttons. */
+export const OVERLAY = '#01000000'
 
 /** `top` laid over `base` at `alpha`, both #rrggbb. */
 export function blendHex(base: string, top: string, alpha: number): string {
@@ -27,13 +31,15 @@ export function blendHex(base: string, top: string, alpha: number): string {
  * page, so a modal's scrim cannot cover it. While a modal is open it takes the scrim's colour instead.
  */
 export function titleBarOverlay(dimmed: boolean): { color: string; symbolColor: string; height: number } {
-  return { color: dimmed ? blendHex(PAPER, INK, SCRIM_ALPHA) : PAPER, symbolColor: INK, height: WIN_TITLEBAR_HEIGHT }
+  return { color: dimmed ? blendHex(PAPER, SCRIM, SCRIM_ALPHA) : OVERLAY, symbolColor: INK, height: WIN_TITLEBAR_HEIGHT }
 }
 /**
  * macOS 26 draws each window button in a 14 x 14 frame that its circle fills, and Electron puts the frame's top `y`
  * below the window's top (window_buttons_proxy.mm), so this `y` centres the lights on the title-bar row.
  */
 const MAC_BUTTON = 14
+/** The row scales with page zoom; the native buttons don't, so their place is recomputed per zoom factor (T3 Code does the same). */
+const lightsAt = (zoom: number) => ({ x: 16, y: Math.round((titlebarHeight('darwin') * zoom - MAC_BUTTON) / 2) })
 
 export type { AppCommand }
 
@@ -86,7 +92,7 @@ export function createMainWindow(opts: { preload: string; stateFile: string; tes
     // system's window buttons drawn on top, so there is no grey strip and no stray menu bar.
     titleBarStyle: 'hidden',
     ...(mac
-      ? { trafficLightPosition: { x: 16, y: (titlebarHeight('darwin') - MAC_BUTTON) / 2 } }
+      ? { trafficLightPosition: lightsAt(1) }
       : { titleBarOverlay: titleBarOverlay(false) }),
     webPreferences: {
       preload: opts.preload,
@@ -101,6 +107,13 @@ export function createMainWindow(opts: { preload: string; stateFile: string; tes
     win.on('close', () => saveBounds(opts.stateFile, win))
   }
   return win
+}
+
+function zoom(w: Electron.BaseWindow | undefined, step: -1 | 0 | 1): void {
+  if (!(w instanceof BrowserWindow)) return
+  const wc = w.webContents
+  wc.setZoomLevel(step === 0 ? 0 : wc.getZoomLevel() + step * 0.5)
+  if (!w.isFullScreen()) w.setWindowButtonPosition(lightsAt(wc.getZoomFactor()))
 }
 
 /**
@@ -161,9 +174,9 @@ export function installMenu(send: (c: AppCommand) => void, dev: boolean, checkFo
       label: 'View',
       submenu: [
         ...(dev ? ([{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }] as MenuItemConstructorOptions[]) : []),
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        { label: 'Actual Size', accelerator: 'Cmd+0', click: (_i, w) => zoom(w, 0) },
+        { label: 'Zoom In', accelerator: 'Cmd+Plus', click: (_i, w) => zoom(w, 1) },
+        { label: 'Zoom Out', accelerator: 'Cmd+-', click: (_i, w) => zoom(w, -1) },
         { type: 'separator' },
         { role: 'togglefullscreen' }
       ]
