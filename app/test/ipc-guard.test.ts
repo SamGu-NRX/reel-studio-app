@@ -60,3 +60,11 @@ it('fails if a branched note or a merge request with a bad version number or sid
   expect(() => validateIpcArgs('projects:mergeVersions', ['reel', { ours: 1, theirs: 2 }])).toThrow()
   expect(() => validateIpcArgs('projects:mergeVersions', ['../reel', { ours: 1, theirs: 2, take }])).toThrow()
 })
+
+// ui-plan-chat: the planning chat's text and the plan link's reel name are checked like every other reel call
+it('fails if a planning-chat turn that is not text, or a plan link for a path outside the library, gets past the guard', () => {
+  expect(() => validateIpcArgs('projects:planSay', ['reel', 'a reel about bread'])).not.toThrow()
+  expect(() => validateIpcArgs('projects:planSay', ['reel', { text: 'bread' }])).toThrow()
+  expect(() => validateIpcArgs('phone:startPlan', ['reel'])).not.toThrow()
+  expect(() => validateIpcArgs('phone:startPlan', ['../reel'])).toThrow()
+})
