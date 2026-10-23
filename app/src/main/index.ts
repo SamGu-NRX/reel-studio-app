@@ -97,7 +97,7 @@ import { openSignInWindow, publicInfo } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
 import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord, PlatformExportResult, VersionInfo, LearnedRule, MergeRequest, StyleRule } from '../shared/api'
 import { COVER_SUGGESTIONS } from '../shared/cover'
-import { createCoverScans, parseCoverCandidates } from './cover-scan'
+import { coverScanOwner, createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
 import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment, forPerson } from '../shared/moments'
 import { parsePlatformExportRequest, secondTryPlatforms, type Platform, type PlatformTry } from '../shared/platforms'
@@ -1078,8 +1078,8 @@ function registerIpc(): void {
   handle('projects:coverCandidates', async (_e, slug: string, moments: number[], source: string): Promise<CoverCandidate[]> => {
     const at = moments.filter((t) => Number.isFinite(t) && t >= 0).slice(0, COVER_SUGGESTIONS)
     if (!at.length) return []
-    // During a note the project's job holds work/.owner.lock; the scan joins it with that job's token (note-atomic)
-    const r = await coverScans.scan(slug, owned(['--project', projectDir(slug), '--at', at.join(','), '--source', source], jobs.ownerToken(slug)))
+    const owner = coverScanOwner(jobs, slug)
+    const r = await coverScans.scan(slug, owned(['--project', projectDir(slug), '--at', at.join(','), '--source', source], owner))
     return parseCoverCandidates(r, source, projectDir(slug))
   })
   handle('projects:stopCoverCandidates', (_e, slug: string) => coverScans.stop(slug))
