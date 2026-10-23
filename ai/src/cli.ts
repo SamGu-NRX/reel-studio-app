@@ -2,7 +2,7 @@
 // reelstudio-ai CLI (dev). Commands:
 //   pick-takes  --provider claude-cli|codex-cli|claude|replay --model M --in transcript.json --out cut.json [--record f.json]
 //   first-edit  --project DIR --provider P [--model M] [--engine-cwd DIR] [--root DIR] [--record f.json] [--draft-only]
-//   apply-note  --project DIR --note "..." --provider P [...]
+//   apply-note  --project DIR --note "..." --provider P [--harness claude-code] [...]
 //   write-script --idea "..." --provider P [...]
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -13,6 +13,7 @@ import { ReplayProvider, RecordingProvider } from './providers/replay';
 import { pickTakes } from './editor';
 import { PythonEngineHost } from './engineHost';
 import { createAI } from './index';
+import { ClaudeCodeHarness } from './mcp/claudeCode';
 import { writeFileAtomic } from './project';
 import { devSettingsDir as defaultSettingsDir } from './safety';
 
@@ -83,7 +84,9 @@ async function main() {
       log: flags.verbose ? (l) => process.stderr.write(`[engine] ${l}\n`) : undefined,
     });
     const settingsDir = typeof flags.settings === 'string' ? flags.settings : defaultSettingsDir();
-    const ai = createAI({ host, settingsDir, dev: true, providerOverride: provider, finalRender: !flags['draft-only'] });
+    if (flags.harness !== undefined && flags.harness !== 'claude-code') throw new Error(`unknown harness ${String(flags.harness)}: the only one is claude-code`);
+    const harness = flags.harness === 'claude-code' ? new ClaudeCodeHarness({ model: typeof flags.model === 'string' ? flags.model : undefined }) : undefined;
+    const ai = createAI({ host, settingsDir, dev: true, providerOverride: provider, harnessOverride: harness, finalRender: !flags['draft-only'] });
     // the engine runs in its own process group (engineHost.ts), out of reach of Ctrl-C: stop it like Stop
     // does. write-script runs no engine and takes no signal, so Ctrl-C keeps its default there.
     const stop = new AbortController();
@@ -122,7 +125,8 @@ async function main() {
   process.stdout.write(`reelstudio-ai <command>
   pick-takes   --provider claude-cli|codex-cli|claude|replay [--model M] --in transcript.json --out cut.json [--record session.json]
   first-edit   --project DIR --provider P [--model M] [--engine-cwd DIR] [--root DIR] [--record session.json] [--draft-only]
-  apply-note   --project DIR --note TEXT --provider P [...]
+  apply-note   --project DIR --note TEXT --provider P [--harness claude-code] [...]
+               --harness claude-code: claude -p runs the note and calls the tools over MCP
   write-script --idea TEXT --provider P [...]
   chatgpt-signin  [--settings DIR] --insecure-plaintext
                   sign in with ChatGPT in your browser, then list models. The CLI has no OS keychain,

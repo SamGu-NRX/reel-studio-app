@@ -209,7 +209,8 @@ function workDir(): string {
 
 export interface CliOptions { model?: string; bin?: string; /** args placed before the CLI's own (e.g. a script path) */ binArgs?: string[]; timeoutMs?: number; cwd?: string; extraArgs?: string[] }
 
-function userLine(text: string, images: { label: string; img: ImagePart }[]): string {
+/** One stream-json user message for `claude -p --input-format stream-json`. */
+export function userLine(text: string, images: { label: string; img: ImagePart }[]): string {
   const content: any[] = [{ type: 'text', text }];
   for (const { label, img } of images) {
     content.push({ type: 'text', text: `[${label}]` });

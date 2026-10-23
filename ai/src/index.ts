@@ -13,6 +13,8 @@ import { SiwcAuth } from './providers/siwc';
 import { OpenAIResponsesProvider, listChatGPTModels } from './providers/openai';
 import { ClaudeCliProvider, CodexCliProvider } from './providers/cli';
 import { ReplayProvider } from './providers/replay';
+import { ClaudeCodeHarness } from './mcp/claudeCode';
+import type { Harness } from './harness';
 import { detectLocalClaude, DetectOptions, LocalClaude } from './providers/localClaude';
 import * as editor from './editor';
 import { refuseIfOpen } from './owner';
@@ -23,6 +25,9 @@ export { refuseIfOpen, OWNER_LOCK } from './owner';
 export { TOOLS, TOOL_NAMES, toolSchemas, executeTool, newToolState } from './tools';
 export type { ToolContext, ToolDef } from './tools';
 export { runAgent } from './agent';
+export { loopHarness } from './harness';
+export type { Harness, HarnessRun } from './harness';
+export { ClaudeCodeHarness } from './mcp/claudeCode';
 export { Prompts } from './prompts';
 export { StyleStore } from './style';
 export { AnthropicProvider, DEFAULT_CLAUDE_MODEL } from './providers/anthropic';
@@ -43,6 +48,9 @@ export interface AISettings {
   chatgptModel?: string;
   cliModel?: string;
   replayFixture?: string;
+  /** dev only: 'claude-code' runs a note's AI turns inside `claude -p`, its tools over MCP, while
+   * claude-cli is the active provider (mcp/claudeCode.ts); otherwise our own loop */
+  harness?: 'claude-code';
 }
 
 export interface CreateAIOptions {
@@ -68,6 +76,8 @@ export interface CreateAIOptions {
   anthropicBaseURL?: string;
   /** Force a specific model provider (tests). */
   providerOverride?: ModelProvider;
+  /** Force the harness a note runs in (tests, the dev CLI). */
+  harnessOverride?: Harness;
   finalRender?: boolean;
   maxSteps?: number;
 }
@@ -222,6 +232,16 @@ export function createAI(opts: CreateAIOptions) {
     }
   }
 
+  /** What runs a note's AI turns: Claude Code over MCP behind the dev flag, else our own loop (undefined). */
+  async function noteHarness(): Promise<Harness | undefined> {
+    if (opts.harnessOverride) return opts.harnessOverride;
+    if (!opts.dev || opts.providerOverride) return undefined;
+    const s = await settings();
+    if (s.harness !== 'claude-code' || (await active()).id !== 'claude-cli') return undefined;
+    const bin = (await localClaude()).bin;
+    return new ClaudeCodeHarness({ model: s.cliModel, ...(bin ? { bin } : {}) });
+  }
+
   return {
     providers,
     active,
@@ -294,7 +314,7 @@ export function createAI(opts: CreateAIOptions) {
       return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => editor.firstEdit(d, await modelProvider(), projectDir, onEvent, signal)));
     },
     async applyNote(projectDir: string, note: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: editor.ApplyNoteOptions & { owner?: string } = {}): Promise<AgentResult> {
-      return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => editor.applyNote(d, await modelProvider(), projectDir, note, onEvent, signal, opts)));
+      return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => editor.applyNote({ ...d, harness: await noteHarness() }, await modelProvider(), projectDir, note, onEvent, signal, opts)));
     },
     async writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult> {
       return editor.writeScript(deps(opts.host), await modelProvider(), idea, onEvent, signal);

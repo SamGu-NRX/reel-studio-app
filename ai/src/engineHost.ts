@@ -49,6 +49,13 @@ async function drained(pid: number | undefined): Promise<boolean> {
   return !groupAlive(pid);
 }
 
+/** killTree, then settles once the process and its group are gone (false: something outlived SIGKILL).
+ * `pid` must lead its own process group (spawned detached) on macOS/Linux. */
+export async function endTree(pid: number | undefined, fallback: () => void): Promise<boolean> {
+  killTree(pid, fallback);
+  return drained(pid);
+}
+
 export class PythonEngineHost implements EngineHost {
   constructor(private readonly o: PythonEngineHostOptions = {}) {}
   reelStudioRoot(): string { return this.o.root ?? defaultRoot(); }
