@@ -1,5 +1,5 @@
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { AppInfo, EngineCache, PermissionStatus } from '../../../shared/api'
+import { DEMO_HANDLE, type AppInfo, type EngineCache, type PermissionStatus } from '../../../shared/api'
 import { sizeLine } from '../../../shared/size'
 import { RELEASES_REPO } from '../../../shared/config'
 import { reel, userMessage } from '../api'
@@ -298,7 +298,11 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
             </Section>
 
             <Section id="posting">
-              <SettingRow id="instagram" line="Posting from Reel Studio isn’t ready yet. Share saves your reel and sends it to your phone." control={<span className="sval">Not connected</span>} />
+              {info.demo ? (
+                <SettingRow id="instagram" line={`Share › Post to Instagram posts to @${DEMO_HANDLE}. Demo account.`} control={<span className="sval">Connected</span>} />
+              ) : (
+                <SettingRow id="instagram" line="Posting from Reel Studio isn’t ready yet. Share saves your reel and sends it to your phone." control={<span className="sval">Not connected</span>} />
+              )}
             </Section>
 
             <Section id="about">

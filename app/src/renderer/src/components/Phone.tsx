@@ -1,7 +1,7 @@
 // The phone preview, wherever a reel is shown: the reel at 9:16 inside a thin device edge, under Instagram's
 // Reels screen ("Instagram") or alone ("Clean"). The person's choice is an app setting (main/settings.ts).
 import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import type { PhoneView } from '../../../shared/api'
+import { DEMO_HANDLE, type PhoneView } from '../../../shared/api'
 import { reel } from '../api'
 import { Icon } from './icons'
 import { Segmented } from './ui'
@@ -16,7 +16,8 @@ const emit = (next: PhoneView): void => {
 }
 // Read once at start-up, long before a reel opens. A choice made before it answers wins.
 void reel.app.info().then((i) => {
-  if (!chosen) emit(i.phoneView)
+  if (i.demo) handle = DEMO_HANDLE
+  emit(chosen ? view : i.phoneView)
 })
 
 /** The view and a setter that saves it. The setter's promise rejects when the setting could not be saved. */
@@ -154,7 +155,8 @@ function CaptionLine({ text }: { text: string }) {
   )
 }
 
-const HANDLE = 'yourname'
+/** Instagram's name line: the demo account in a demo build (set at start-up, above). */
+let handle = 'yourname'
 const COUNTS = ['1,204', '86', '31', '142']
 
 /**
@@ -198,7 +200,7 @@ export const InstagramChrome = memo(function InstagramChrome({ on, caption, play
       <div className="igc-meta">
         <div className="igc-who">
           <i className="igc-avatar" />
-          <b>{HANDLE}</b>
+          <b>{handle}</b>
           <span className="igc-follow">Follow</span>
         </div>
         {text && <CaptionLine text={text} />}
@@ -206,8 +208,8 @@ export const InstagramChrome = memo(function InstagramChrome({ on, caption, play
           <Icon name="music" size={12} stroke={2.5} />
           <div className="igc-tick">
             <div>
-              <span>{HANDLE} · Original audio</span>
-              <span>{HANDLE} · Original audio</span>
+              <span>{handle} · Original audio</span>
+              <span>{handle} · Original audio</span>
             </div>
           </div>
         </div>

@@ -480,7 +480,12 @@ export interface AppInfo {
   phoneView: PhoneView
   /** Whether the first run's sample plays its sound effects. */
   soundEffects: boolean
+  /** REELSTUDIO_DEMO=1: Instagram is the demo account (DEMO_HANDLE) and posting is simulated; the real API is never called. */
+  demo: boolean
 }
+
+/** The Instagram account a demo build posts to. */
+export const DEMO_HANDLE = 'spurs.rundown'
 
 export type PhoneView = 'instagram' | 'clean'
 
@@ -743,6 +748,8 @@ export interface ReelApi {
     setPlan(slug: string, plan: ReelPlan): Promise<void>
     /** Moves the reel through sign-off (draft → waiting → approved or changes). Returns the saved review. */
     setReview(slug: string, status: ReviewStatus, note?: string): Promise<Review>
+    /** Demo build only: records version `n` as posted to DEMO_HANDLE (no network). */
+    demoPost(slug: string, n: number): Promise<{ username: string; postId: string; at: string; review: Review }>
     /** `basic`: make the version without the editor (a failed Version 1's "Make a basic version"). */
     resume(slug: string, basic?: boolean): Promise<{ jobId: string }>
     /** jobId null = no AI connected: the note and a plain reply were added to the chat, nothing runs.

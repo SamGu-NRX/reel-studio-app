@@ -99,6 +99,7 @@ import { createPidRegistry } from './orphans'
 import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
+import { DEMO_HANDLE } from '../shared/api'
 import type { AppInfo, DropResult, EngineCache, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord, PlatformExportResult, VersionInfo, LearnedRule, MergeRequest, StyleRule } from '../shared/api'
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { coverScanOwner, createCoverScans, parseCoverCandidates } from './cover-scan'
@@ -126,6 +127,8 @@ import { takeNote } from './note-intake'
 
 const TEST = process.env.REELSTUDIO_TEST === '1'
 const DEV_PROVIDERS = process.env.REELSTUDIO_DEV === '1'
+/** Demo build: Instagram is a pretend account and Post to Instagram only records the post (see projects:demoPost). */
+const DEMO = process.env.REELSTUDIO_DEMO === '1'
 const SELF_TEST = selfTestArgs(process.argv)
 const rendererUrl = !app.isPackaged && process.env.ELECTRON_RENDERER_URL
   ? process.env.ELECTRON_RENDERER_URL
@@ -474,7 +477,8 @@ async function appInfo(): Promise<AppInfo> {
     models: s.models,
     sharing: s.sharing,
     phoneView: s.phoneView,
-    soundEffects: s.soundEffects
+    soundEffects: s.soundEffects,
+    demo: DEMO
   }
 }
 
@@ -667,7 +671,7 @@ function registerIpc(): void {
       return image.toJPEG(90)
     }
   })
-  registerInstagramIpc({ handle, service: instagram, dev: DEV_PROVIDERS && !TEST, saveSettings })
+  registerInstagramIpc({ handle, service: instagram, dev: DEV_PROVIDERS && !TEST, saveSettings, demo: DEMO })
   app.on('before-quit', () => { instagram.stop() })
   handle('app:info', () => appInfo())
   handle('app:setModels', async (_e, m: unknown) => {
@@ -991,6 +995,18 @@ function registerIpc(): void {
       s.plan = next
       if (s.status === 'planned' && s.title === PLANNED_TITLE && next.topic) s.title = titleFromTopic(next.topic)
     })
+  })
+  // Demo build: Post to Instagram records the post and marks the reel posted. Nothing leaves the computer.
+  handle('projects:demoPost', async (_e, slug: string, n: unknown) => {
+    if (!DEMO) throw { code: 'DISABLED', userMessage: 'Posting from Reel Studio isn’t ready yet.' }
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) throw { code: 'BAD_ARGS', userMessage: 'Choose a version to post.' }
+    if (!existsSync(join(projectDir(slug), 'app.json'))) throw { code: 'NOT_FOUND', userMessage: 'That reel could not be found. It may have been moved or deleted.' }
+    const at = new Date().toISOString()
+    const st = await updateAppState(slug, (s) => {
+      s.posted = [...(s.posted ?? []), { version: n, platform: 'instagram', at }]
+      s.review = { status: 'posted', by: DEMO_HANDLE, at }
+    })
+    return { username: DEMO_HANDLE, postId: `demo-${slug}-${n}-${Date.parse(at)}`, at, review: st.review! }
   })
   // Sign-off (demo build): Send for approval, Approve, Request changes. Posting sets 'posted' itself (demo-post.ts).
   handle('projects:setReview', async (_e, slug: string, status: unknown, note?: unknown) => {

@@ -2,7 +2,7 @@
 // destination, each with its own progress, Cancel and failure line. Work keeps going with the popover closed; the
 // pill then carries a ring.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import type { DataSharing, ExportResult, ProjectJson, VersionInfo } from '../../../shared/api'
+import { DEMO_HANDLE, type DataSharing, type ExportResult, type ProjectJson, type Review, type VersionInfo } from '../../../shared/api'
 import { shareOrder } from '../../../shared/share'
 import { EXPORT_EVENT } from '../App'
 import { errorCode, reel, userMessage } from '../api'
@@ -20,7 +20,9 @@ import './share.css'
 const LAST = 'rs.share.last'
 const INSTAGRAM_LIMIT = 2200
 
-type Done = { kind: 'done'; line: string; path?: string }
+/** `post`: a demo post, with View post after its line. */
+type Done = { kind: 'done'; line: string; path?: string; post?: boolean }
+const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms))
 /** "Getting Version N ready": exporting, which for a preview is a full-quality render first. */
 type Preparing = Extract<Work, { kind: 'working' }> & { prep: true }
 type Row = Work | Done | Preparing
@@ -39,7 +41,10 @@ export function Outs({
   disabled,
   quiet,
   why,
-  onSaveCaption
+  onSaveCaption,
+  review,
+  onPosted,
+  onViewPost
 }: {
   slug: string
   /** The version on screen: the one Share sends. */
@@ -54,6 +59,10 @@ export function Outs({
   why?: string
   /** Saves the caption as typed (hashtags included) and reloads the reel. */
   onSaveCaption: (caption: string) => Promise<boolean>
+  /** Demo build: where the reel is in sign-off, and what happens after Post to Instagram. */
+  review?: Review
+  onPosted?: (review: Review) => void
+  onViewPost?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [instant, setInstant] = useState(false)
@@ -72,6 +81,7 @@ export function Outs({
   // The order is set when Share opens: a row never jumps under the pointer while Share is open.
   const [last, setLast] = useState(() => localStorage.getItem(LAST))
   const [ask, setAsk] = useState<'ask' | 'answered' | null>(null)
+  const [demo, setDemo] = useState(false)
   const sharing = useRef<DataSharing | null>(null)
   const cancels = useRef(new Map<string, () => void>())
   const pending = useRef<{ key: string; files: Promise<ExportResult> } | null>(null)
@@ -90,7 +100,7 @@ export function Outs({
   }, [post])
 
   useEffect(() => {
-    void reel.app.info().then((i) => { sharing.current = i.sharing }).catch(() => {})
+    void reel.app.info().then((i) => { sharing.current = i.sharing; setDemo(i.demo) }).catch(() => {})
   }, [])
 
   const show = useCallback((fromKeys = false) => {
@@ -252,6 +262,39 @@ export function Outs({
     }
   }
 
+  /** Demo build: a pretend publish to the demo account, about 3 s of upload and processing. No network. */
+  const publish = async () => {
+    if (!version || disabled) return
+    const key = `${version.n}|post`
+    if (rows[key]?.kind === 'working') return
+    try {
+      await saveCaption()
+      for (let pct = 0; pct <= 100; pct += 4) {
+        set(key, { kind: 'working', label: `Uploading to Instagram · ${pct}%`, pct })
+        await wait(55)
+      }
+      set(key, { kind: 'working', label: 'Instagram is processing the reel', pct: null })
+      await wait(1200)
+      const r = await reel.projects.demoPost(slug, version.n)
+      set(key, { kind: 'done', line: `Posted to @${r.username}`, post: true })
+      onPosted?.(r.review)
+    } catch (e) {
+      set(key, { kind: 'failed', message: userMessage(e) })
+    }
+  }
+  const postDest = demo
+    ? [
+        {
+          id: 'post',
+          icon: <Icon name="instagram" size={16} />,
+          label: 'Post to Instagram',
+          hint: review?.status === 'posted' ? `Posted on @${DEMO_HANDLE}. Post again` : `Posts now to @${DEMO_HANDLE}, with the caption`,
+          testid: 'share-post',
+          go: () => void publish()
+        }
+      ]
+    : []
+
   const destinations: { id: string; icon: ReactNode; label: string; hint: string; testid: string; go: () => void }[] = [
     {
       id: 'instagram',
@@ -318,7 +361,7 @@ export function Outs({
       go: () => setPlatformsOpen((o) => !o)
     }
   ]
-  const ordered = shareOrder(destinations.map((d) => d.id), last).map((id) => destinations.find((d) => d.id === id)!)
+  const ordered = [...postDest, ...shareOrder(destinations.map((d) => d.id), last).map((id) => destinations.find((d) => d.id === id)!)]
 
   const working = [...Object.values(rows), ...(platformWork ? [platformWork] : [])].find((r): r is Extract<Work, { kind: 'working' }> => r.kind === 'working')
   const ring = !open && working
@@ -411,6 +454,7 @@ export function Outs({
                         <small>{d.hint}</small>
                       </span>
                       {i === 0 && last === d.id && <span className="sp-last">Last used</span>}
+                      {d.id === 'post' && review?.status === 'approved' && <span className="sp-last sp-approved">Approved</span>}
                       {isPlatforms && <Icon name="chevron-down" size={14} className={`sp-chev${platformsOpen ? ' open' : ''}`} />}
                     </button>
                     {row?.kind === 'done' && (
@@ -418,6 +462,14 @@ export function Outs({
                         <Icon name="check" size={14} />
                         <span>
                           {row.line}
+                          {row.post && onViewPost && (
+                            <>
+                              {' · '}
+                              <button type="button" className="link inline" onClick={() => (close(), onViewPost())} data-testid="view-post">
+                                View post
+                              </button>
+                            </>
+                          )}
                           {row.path && (
                             <>
                               {' · '}

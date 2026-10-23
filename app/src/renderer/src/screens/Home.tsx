@@ -239,7 +239,9 @@ export function Home({ go }: { go: Go }) {
           </>
         }
         actions={
-          view === 'all' && list.length > 0 ? (
+          <>
+          {list.length > 0 && <Segmented label="Sign-off" value={rv} options={RV} onPick={setRv} testid="review-filter" />}
+          {view === 'all' && list.length > 0 ? (
             <label className="rsearch">
               <Icon name="search" size={14} />
               <input
@@ -253,18 +255,10 @@ export function Home({ go }: { go: Go }) {
                 data-testid="reel-search"
               />
             </label>
-          ) : undefined
+          ) : null}
+          </>
         }
       />
-      {list.length > 0 && (
-        <div className="series rv-filter" role="toolbar" aria-label="Sign-off" data-testid="review-filter">
-          {RV.map((o) => (
-            <button key={o.key} className="schip" aria-pressed={rv === o.key} onClick={() => setRv(o.key)} data-testid={`review-filter-${o.key}`}>
-              {o.label} <span className="n">{list.filter((p) => inRv(p, o.key)).length}</span>
-            </button>
-          ))}
-        </div>
-      )}
       {body}
     </div>
   )
@@ -375,7 +369,6 @@ function Card({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live;
         ) : (
           p.take && <video src={`${p.take}#t=1`} muted playsInline preload="metadata" />
         )}
-        {p.review.status !== 'draft' && <ReviewBadge review={p.review} className="on-pic" />}
         {state === 'paused' && <Icon name="pause" size={30} stroke={0} className="pause-glyph" />}
         {left && <span className="left">{left}</span>}
         {state === 'making' && (
@@ -388,6 +381,12 @@ function Card({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live;
       <div className={`cm${stop ? ' why' : ''}`} data-testid="card-status">
         {meta}
       </div>
+      {(p.review.status !== 'draft' || p.series) && (
+        <div className="cm rv-line">
+          {p.review.status !== 'draft' && <ReviewBadge review={p.review} />}
+          {p.series && <span className="rv-series">{p.series}</span>}
+        </div>
+      )}
       {stop?.act && (
         <Button size="small" className="card-act" onClick={act} disabled={busy} aria-label={`${stop.act.label}: ${p.title}`} data-testid={stop.act.testid}>
           {stop.act.label}

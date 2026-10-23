@@ -109,3 +109,4 @@ html.kb .sp-chev { transition: none; }
   @keyframes share-turn { from, to { transform: rotate(-90deg); } }
   @keyframes sp-run { from, to { transform: none; } }
 }
+.sp-last.sp-approved { color: var(--green-ink); }

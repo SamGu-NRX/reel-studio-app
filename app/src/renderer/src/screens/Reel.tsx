@@ -673,6 +673,12 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
           quiet={!!compare || !!drawer || aiOff}
           why={job ? 'Wait for this version to finish.' : undefined}
           onSaveCaption={savePost}
+          review={d.review}
+          onPosted={(review) => setD((x) => x && { ...x, review, posted: true })}
+          onViewPost={() => {
+            if (!wide) void setPhoneView('instagram').catch(() => {})
+            if (version) watch(version.n)
+          }}
         />
       )}
       <span className="rt-more">
