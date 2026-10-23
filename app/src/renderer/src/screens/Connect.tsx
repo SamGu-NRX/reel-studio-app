@@ -8,7 +8,7 @@ const BACK_LABEL: Record<Exclude<Screen, { name: 'connect' }>['name'], string> =
   home: 'Reels',
   reel: 'Back to the reel',
   library: 'Library',
-  style: "What I've learned",
+  style: 'My style',
   insights: 'Insights',
   settings: 'Settings'
 }

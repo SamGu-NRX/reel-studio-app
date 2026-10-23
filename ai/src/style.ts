@@ -20,7 +20,7 @@ export interface StyleRule {
   imported?: { file: string };
   /** the question the person said Yes to */
   consent?: { proposal: string; at: string };
-  /** When its words last changed. Pausing does not count, so a paused rule keeps its place in "What I've learned". */
+  /** When its words last changed. Pausing does not count, so a paused rule keeps its place in My style. */
   updatedAt?: string;
   /** Typed in by the person with Add a rule, not learned from a note or an export. */
   byYou?: true;
@@ -96,7 +96,9 @@ export class StyleStore {
     await writeFileAtomic(this.file, JSON.stringify(data, null, 2) + '\n');
   }
 
-  /** Adds a rule unless an equivalent one already exists. `from`: where it was learned. */
+  /** Adds a rule unless an equivalent one already exists. `from`: where it was learned. Every caller is the person
+   * asking for the rule (Yes to a question, Add a rule, keeping what an export taught), so an equivalent paused
+   * rule is turned back on (PR #83: otherwise the app says "Saved" and the rule stays unused). */
   async add(text: string, from?: Pick<StyleRule, 'source' | 'imported' | 'byYou'>): Promise<{ added: boolean; rule: StyleRule }> {
     return this.serial(() => this.addNow(text, from));
   }
@@ -123,7 +125,13 @@ export class StyleStore {
     const clean = cleanRuleText(text);
     const data = await this.read();
     const dup = data.rules.find((r) => normalize(r.text) === normalize(clean));
-    if (dup) return { added: false, rule: dup };
+    if (dup) {
+      if (dup.paused) {
+        delete dup.paused;
+        await this.write(data);
+      }
+      return { added: false, rule: dup };
+    }
     const rule: StyleRule = {
       id: randomUUID(), text: clean, createdAt: new Date().toISOString(),
       ...(from?.source ? { source: from.source } : {}), ...(from?.imported ? { imported: from.imported } : {}),

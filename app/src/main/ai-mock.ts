@@ -292,8 +292,19 @@ export const createMockAI: CreateAI = ({ host }) => {
       return changeStyle(async () => {
         // as the package stores it (ai/src/style.ts cleanRuleText): one capitalised sentence
         const clean = /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`
+        const rules = await readRules()
+        // as the package's StyleStore.add: the same words again turn a paused rule back on instead of adding a copy
+        const same = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, '').replace(/\s+/g, ' ').trim()
+        const dup = rules.find((r) => same(r.text) === same(clean))
+        if (dup) {
+          if (dup.paused) {
+            delete dup.paused
+            await writeRules(rules)
+          }
+          return dup
+        }
         const rule: StyleRule = { id: randomUUID(), text: clean[0].toUpperCase() + clean.slice(1), createdAt: new Date().toISOString(), ...from }
-        await writeRules([...(await readRules()), rule])
+        await writeRules([...rules, rule])
         return rule
       })
     },

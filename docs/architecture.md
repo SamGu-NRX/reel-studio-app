@@ -68,7 +68,7 @@ Projects live in `<Documents>/Reel Studio/Projects/<slug>/`. The shared **Librar
 `payload` the app applies itself when a new video is made (only `{"kind":"caption-case","case":"lower"}` so
 far), plus `paused`, `source` (project, title, version) and `consent` (the question the person said Yes to).
 `updatedAt` is when the words last changed (a pause does not count), and `byYou` marks a rule typed in with
-Add a rule; "What I've learned" sorts by the first and names the source from the second.
+Add a rule; My style lists the newest first by the first and names the source from the second.
 `forgotten` lists the questions of removed rules, so answering one again cannot bring a rule back. All of
 these are optional. An older version reads a typed rule as a plain sentence, applies paused rules, cannot answer
 a typed question, and drops `forgotten` if it rewrites the file.

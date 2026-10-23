@@ -1,12 +1,14 @@
-// "What I've learned" (screens/MyStyle.tsx): each saved rule as one short line, with its kind, where it came
-// from and when, newest first. Read from the rule as stored; nothing here writes My style.json.
+// My style (screens/MyStyle.tsx): each saved rule as one short line, with its kind, where it came from and when,
+// newest first. Read from the rule as stored; nothing here writes My style.json.
 import type { StyleRule } from './api'
 
 export type MemoryKind = 'captions' | 'pacing' | 'music' | 'cuts' | 'look'
 
-/** The fixed keyword table (notes/design/r11/arch/memory-panel.md). Whole words only, so "cute" is not a cut. */
+/** The fixed keyword table (notes/design/r11/arch/memory-panel.md). Whole words only, so "cute" is not a cut.
+ * "Caption" is left out: in the app it is the text posted under the reel (ux-foundation-b.md section 2), so
+ * "end the caption with a question" is not about subtitles. */
 const KEYWORDS: Record<MemoryKind, string[]> = {
-  captions: ['subtitle', 'subtitles', 'caption', 'captions', 'font', 'fonts'],
+  captions: ['subtitle', 'subtitles', 'font', 'fonts'],
   pacing: ['pause', 'pauses', 'paused', 'pace', 'paced', 'pacing', 'fast', 'faster', 'slow', 'slower', 'slowly', 'tight', 'tighter', 'tightly'],
   music: ['music', 'song', 'songs', 'volume', 'beat', 'beats'],
   cuts: ['cut', 'cuts', 'cutting', 'take', 'takes', 'b-roll', 'broll', 'jump', 'jumps'],
@@ -24,8 +26,9 @@ export function classifyKind(text: string): MemoryKind | null {
   return null
 }
 
-/** Screen-reader names, in the app's words: burned-in words are "subtitles" (ux-foundation-b.md section 2). */
-export const KIND_NAME: Record<MemoryKind, string> = { captions: 'Subtitles', pacing: 'Pacing', music: 'Music', cuts: 'Cuts', look: 'Look' }
+/** Screen-reader names. Burned-in words are "subtitles", and "look" already means a subtitle look
+ * (ux-foundation-b.md section 2), so the zoom, colour and cover kind is "Visuals". */
+export const KIND_NAME: Record<MemoryKind, string> = { captions: 'Subtitles', pacing: 'Pacing', music: 'Music', cuts: 'Cuts', look: 'Visuals' }
 
 const MAX_LINE = 60
 // Words that only say "this is a lasting rule": every item here is one. Negations ("never", "don't") always stay.
@@ -79,19 +82,21 @@ export function ago(iso: string, now: number): string | null {
 
 /** Final Cut Pro exports FCPXML; every other export the app reads is Premiere Pro's XML (learn-style.ts editorOf). */
 const editorOf = (file: string): string => (/\.fcpxmld?$/i.test(file) ? 'Final Cut Pro' : 'Premiere Pro')
+/** "Learn from my past edits" keeps several files as one comma-separated name (MyStyle.tsx keep). */
+const filesOf = (r: StyleRule): string[] => r.imported?.file.split(', ').filter(Boolean) ?? []
 
 function origin(r: StyleRule): string | null {
   if (r.imported) {
-    const files = r.imported.file.split(', ').filter(Boolean)
+    const files = filesOf(r)
     return files.length > 1 ? `from ${files.length} of your past edits` : `from your ${editorOf(r.imported.file)} edit ${r.imported.file}`
   }
-  if (r.source?.note) return `from your note on ${r.source.title}`
-  if (r.source?.title) return `from ${r.source.title}`
+  if (r.source?.note) return `from your note on “${r.source.title}”`
+  if (r.source?.title) return `from “${r.source.title}”`
   if (r.byYou) return 'added by you'
   return null
 }
 
-/** Where the rule came from and when: "from your note on Bread reel, 2 days ago". A rule saved before the app
+/** Where the rule came from and when: "from your note on “Bread reel”, 2 days ago". A rule saved before the app
  * kept where rules came from reads "earlier". */
 export function sourceLine(r: StyleRule, now: number): string {
   const where = origin(r)
@@ -99,4 +104,15 @@ export function sourceLine(r: StyleRule, now: number): string {
   const edited = r.updatedAt ? ago(r.updatedAt, now) : null
   const when = edited ? `edited ${edited}` : ago(r.createdAt, now)
   return when ? `${where}, ${when}` : where
+}
+
+/** The open line's answer to "which note?": the note's own words and the version it made, or every file an
+ * export was read from. Null when the short source line already says it all. MyStyle.tsx adds the exact time. */
+export function sourceDetail(r: StyleRule): string | null {
+  const files = filesOf(r)
+  if (files.length > 1) return `Read from ${files.map((f) => `${f} (${editorOf(f)})`).join(', ')}`
+  if (!r.source?.title) return null
+  const where = `${r.source.version ? `Version ${r.source.version} of ` : ''}“${r.source.title}”`
+  if (r.source.note) return `Your note “${r.source.note}” on ${where}`
+  return r.source.version ? `From ${where}` : null
 }

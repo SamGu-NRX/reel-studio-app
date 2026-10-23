@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { StyleLesson, StyleRule } from '../../../shared/api'
-import { classifyKind, KIND_NAME, newestFirst, shortLine, sourceLine, type MemoryKind } from '../../../shared/memory'
+import { classifyKind, KIND_NAME, newestFirst, shortLine, sourceDetail, sourceLine, type MemoryKind } from '../../../shared/memory'
 import { reel, userMessage } from '../api'
 import { Spinner } from '../components/ui'
 import { Icon, type IconName } from '../components/icons'
@@ -19,7 +19,20 @@ function usedBy(r: StyleRule): string {
   return r.payload ? 'The app sets this on every new reel.' : 'Your editor reads this on every new reel.'
 }
 
-/** "What I've learned" (was My style): every saved rule as one short line, newest first. */
+const exact = (iso: string | undefined): string | null => {
+  const t = Date.parse(iso ?? '')
+  return Number.isNaN(t) ? null : new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+/** The open line's "which note, and when": the note or files, then the exact time it was saved and last edited. */
+function learnedWhen(r: StyleRule): string | null {
+  const saved = exact(r.createdAt)
+  const edited = exact(r.updatedAt)
+  const parts = [sourceDetail(r), saved && `${r.byYou ? 'Added' : 'Saved'} ${saved}`, edited && `edited ${edited}`]
+  return parts.filter(Boolean).join(' · ') || null
+}
+
+/** My style: every saved rule as one short line, newest first. */
 export function MyStyle() {
   const [rules, setRules] = useState<StyleRule[] | null>(null)
   const [open, setOpen] = useState<string | null>(null)
@@ -151,7 +164,7 @@ export function MyStyle() {
   return (
     <div className="page style-page">
       <TitleBarSlot
-        title="What I've learned"
+        title="My style"
         actions={
           <>
             <button className="btn" onClick={() => void learn()} disabled={learning} data-testid="style-learn">
@@ -171,7 +184,7 @@ export function MyStyle() {
         }
       />
       {shown.length > 0 && (
-        <p className="style-intro">Every new reel starts with these, newest first. A note that starts with “always” can add one.</p>
+        <p className="style-intro">Your editor follows these on every new reel, newest first. A note that starts with “always” can add one.</p>
       )}
       {error && (
         <p className="style-note" role="alert">
@@ -297,21 +310,22 @@ export function MyStyle() {
             const kind = classifyKind(r.text)
             const line = shortLine(r.text)
             const isOpen = open === r.id
+            const from = isOpen ? learnedWhen(r) : null
             // the forgotten row sits among these, so a rule's place is counted without it
             const place = forgot && at > forgot.at ? at - 1 : at
             return (
               <li key={r.id} className={`mem${r.paused ? ' paused' : ''}${isOpen ? ' open' : ''}`} data-testid="style-rule">
-                <span className="mem-kind">{kind ? <Icon name={KIND_ICON[kind]} size={16} /> : <i className="mem-dot" />}</span>
+                <span className="mem-kind">{kind && <Icon name={KIND_ICON[kind]} size={16} />}</span>
                 <button
                   className="mem-line"
                   aria-expanded={isOpen}
                   aria-controls={`mem-more-${r.id}`}
                   onClick={() => setOpen(isOpen ? null : r.id)}
                 >
-                  <span className="sr-only">{kind ? KIND_NAME[kind] : 'Other'}: </span>
+                  {kind && <span className="sr-only">{KIND_NAME[kind]}: </span>}
                   {line}
                 </button>
-                <span className="mem-state">{r.paused ? 'Paused' : 'Auto'}</span>
+                <span className="mem-state">{r.paused && 'Paused'}</span>
                 <span className="mem-acts">
                   <button
                     className="btn small ghost"
@@ -336,6 +350,7 @@ export function MyStyle() {
                 {isOpen && (
                   <div className="mem-more" id={`mem-more-${r.id}`}>
                     <p className="mem-full">“{r.text}”</p>
+                    {from && <p className="mem-from">{from}</p>}
                     <p className="mem-use">
                       {usedBy(r)}
                       <button

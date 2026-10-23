@@ -76,7 +76,7 @@ test('Library, My style and Insights', async () => {
   await expect(page.getByTestId('library-sound').first()).toContainText('CC0')
   await shot(page, 'library-sfx')
 
-  // ---- What I've learned: add, forget, undo ----
+  // ---- My style: add, forget, undo ----
   await page.getByTestId('nav-style').click()
   await expect(page.getByTestId('style-empty')).toBeVisible()
   await page.getByTestId('style-add').click()

@@ -1,6 +1,6 @@
 // "Remember this for next time?" for lowercase captions, end to end in the built app with the stand-in engine and
 // the mock AI playing a connected Claude Code app (REELSTUDIO_MOCK_CLAUDE=ready): a lowercase note makes a new
-// version, the app asks once, Yes saves the rule to What I've learned, the next video starts lowercase, and after Forget
+// version, the app asks once, Yes saves the rule to My style, the next video starts lowercase, and after Forget
 // the video after that does not.
 //
 // Run: npm run build && npx playwright test e2e/remember-caption-case.spec.ts

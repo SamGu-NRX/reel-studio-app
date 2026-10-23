@@ -1,6 +1,7 @@
-// What I've learned, end to end in the built app with the stand-in engine and the mock AI playing a connected
+// My style as short points, end to end in the built app with the stand-in engine and the mock AI playing a connected
 // Claude Code app: a rule remembered from a note goes to the top, newest first, with its kind and where it came
-// from; Pause keeps it in its place; Forget leaves Undo, and Undo puts the same rule back.
+// from; its line opens the note itself; Pause keeps it in its place; Forget leaves Undo, and Undo puts the same
+// rule back.
 //
 // Run: npm run build && npx playwright test e2e/memory-panel.spec.ts
 import { test, expect } from '@playwright/test'
@@ -10,7 +11,7 @@ import { BASE, launch, makeMedia, makeReel, openSettings, passFirstRun, shot } f
 
 const MINE = mkdtempSync(join(BASE, 'memory-'))
 
-test("a rule from a note goes to the top of What I've learned, and pauses, forgets and comes back", async () => {
+test('a rule from a note goes to the top of My style, and pauses, forgets and comes back', async () => {
   test.setTimeout(10 * 60_000)
   const media = makeMedia()
   const { app, page } = await launch({
@@ -40,18 +41,29 @@ test("a rule from a note goes to the top of What I've learned, and pauses, forge
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('chat')).toContainText('Remember this for next time?', { timeout: 120_000 })
     await page.getByRole('button', { name: 'Yes, remember it' }).click()
-    await expect(page.getByTestId('chat')).toContainText("You can pause or forget it in What I've learned.")
+    await expect(page.getByTestId('chat')).toContainText('You can pause or forget it in My style.')
 
-    // newest first, with its kind, where it came from, and its state
+    // newest first, with its kind and where it came from; only a paused rule is marked
     await page.getByTestId('nav-style').click()
     const rows = page.getByTestId('style-rule')
     await expect(rows).toHaveCount(2)
     const top = rows.first()
-    await expect(top.getByRole('button', { name: 'Music: Keep the music quieter when I talk' })).toBeVisible()
-    await expect(top).toContainText(/from your note on .+, just now/)
-    await expect(top).toContainText('Auto')
+    const line = top.getByRole('button', { name: 'Music: Keep the music quieter when I talk' })
+    await expect(line).toBeVisible()
+    await expect(top).toContainText(/from your note on “.+”, just now/)
+    await expect(top).not.toContainText('Paused')
     await expect(rows.nth(1)).toContainText('Big subtitles')
     await expect(rows.nth(1)).toContainText('added by you')
+
+    // the line opens the sentence the editor reads and the note it came from
+    await line.click()
+    await expect(line).toHaveAttribute('aria-expanded', 'true')
+    await expect(top).toContainText('“Always keep the music quieter when I talk.”')
+    await expect(top).toContainText(/Your note “always keep the music quieter when I talk” on (Version \d+ of )?“.+” · Saved /)
+    await expect(top).toContainText('Your editor reads this on every new reel.')
+    await shot(page, 'memory-open')
+    await line.click()
+    await expect(line).toHaveAttribute('aria-expanded', 'false')
 
     // Pause keeps it where it is
     await top.getByRole('button', { name: 'Pause "Keep the music quieter when I talk"' }).click()
