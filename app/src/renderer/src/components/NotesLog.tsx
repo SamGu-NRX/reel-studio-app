@@ -77,6 +77,7 @@ export function NotesLog({
   busy,
   aiOn,
   basic,
+  basicLine = BASIC,
   landed,
   unwatched,
   empty,
@@ -108,6 +109,8 @@ export function NotesLog({
   aiOn: boolean
   /** Version 1 was made without an editor */
   basic: boolean
+  /** What Version 1's line says when `basic` (a film brought in finished says so instead). */
+  basicLine?: string
   /** the version that just landed: its line enters */
   landed: number | null
   /** a version that landed while you compared or edited by hand */
@@ -175,7 +178,7 @@ export function NotesLog({
 
   const version = (e: LogEntry, v: number, said: string) => {
     const on = isOpen(v)
-    const text = v === 1 && basic ? BASIC : said
+    const text = v === 1 && basic ? basicLine : said
     return (
       <>
         <div className={`nt-res${shown === v ? ' cur' : ''}${landed === v ? ' enter' : ''}`} data-v={v}>

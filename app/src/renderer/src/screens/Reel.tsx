@@ -887,6 +887,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   busy={!!job}
                   aiOn={!aiOff}
                   basic={!d.aiEdited}
+                  basicLine={wide ? 'Imported finished film' : undefined}
                   landed={landed}
                   unwatched={unwatched}
                   empty={
