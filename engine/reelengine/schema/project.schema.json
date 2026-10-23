@@ -13,6 +13,7 @@
     "createdAt": { "type": "string" },
     "updatedAt": { "type": "string" },
     "version": { "type": "integer", "minimum": 0 },
+    "beatAccents": { "type": "boolean", "description": "Snap SFX hits and b-roll starts to detected music beats within 0.12 seconds. Absent or false leaves their timing unchanged unless cutStyle.preset is hyper. Speech cuts never move; b-roll keeps its word lead." },
     "format": {
       "type": "object",
       "required": ["width", "height", "fps"],

@@ -37,7 +37,7 @@ from typing import Optional
 
 import numpy as np
 
-from .compose_util import (EngineError, ffmpeg_bin, log, probe, report, resolve_asset, run, word_end,
+from .compose_util import (EngineError, ffmpeg_bin, fmt_of, log, probe, report, resolve_asset, run, word_end,
                            word_start)
 
 SR = 48000
@@ -52,6 +52,7 @@ LEVELS = {
 LIFT_CAP = 6.0            # quiet bars lifted at most this much
 CUT_CAP = 12.0            # loud bars cut at most this much
 MUSIC_EQ = "highpass=f=90,lowshelf=f=160:g=-6"
+BEAT_MAX_SHIFT = 0.12
 
 
 # --- decoding ----------------------------------------------------------------------------------
@@ -367,10 +368,8 @@ def build_audio(ctx, voice_wav) -> Path:
     mix = voice.copy()
     if track is not None:
         report(ctx, "music", 25, "Adding music")
-        start = float(mcfg.get("startAt", 0.0) or 0.0) + offset
         tinfo = probe(track, ctx)
-        if start >= tinfo["duration"] - 1.0:
-            start = 0.0
+        start = track_start(mcfg, tinfo["duration"], offset)
         music = decode(track, ctx, start=start, dur=dur, af=MUSIC_EQ)
         short = music.shape[0] < voice.shape[0] - SR * 0.1
         if music.shape[0] < voice.shape[0]:
@@ -657,12 +656,60 @@ def analyze_track_cached(path, ctx=None, cache_dir: Optional[Path] = None) -> di
     return r
 
 
-def snap_to_beat(t: float, beats: list[float], max_shift: float = 0.12) -> float:
+def track_start(mcfg: dict, duration: float, offset: float = 0.0) -> float:
+    """The mixer restarts a song when its requested in-point leaves less than a second."""
+    start = float(mcfg.get("startAt", 0.0) or 0.0) + offset
+    return 0.0 if start >= duration - 1.0 else start
+
+
+def accent_beats(ctx) -> list[float]:
+    """Detected beats on the full output clock, only for projects that request accents."""
+    proj = ctx.project or {}
+    style = proj.get("cutStyle")
+    if proj.get("beatAccents") is not True and not (isinstance(style, dict) and style.get("preset") == "hyper"):
+        return []
+    mcfg = proj.get("music") or {}
+    if not mcfg.get("enabled", True) or not mcfg.get("track"):
+        return []
+    try:
+        path = resolve_asset(ctx, mcfg["track"])
+        stat = path.stat()
+        key = (str(path), stat.st_size, stat.st_mtime_ns)
+        cached = getattr(ctx, "_accent_analysis", None)
+        if cached is None or cached[0] != key:
+            info = analyze_track_cached(path, ctx)
+            cached = (key, info["beats"], probe(path, ctx)["duration"])
+            ctx._accent_analysis = cached
+        _, beats, duration = cached
+    except (EngineError, OSError, ValueError) as exc:
+        log(f"# beat accents skipped: {exc}")
+        return []
+    # Preview windows slice the full audio mix, so their beats use this same full-cut clock.
+    start = track_start(mcfg, duration)
+    return [b - start for b in beats if 0 <= b - start < ctx.duration]
+
+
+def snap_to_beat(t: float, beats: list[float], max_shift: float = BEAT_MAX_SHIFT) -> float:
     """Nearest beat within max_shift seconds, else t unchanged."""
     if not beats:
         return t
     b = min(beats, key=lambda x: abs(x - t))
     return b if abs(b - t) <= max_shift else t
+
+
+def accent_time(ctx, t: float, earliest: float = 0.0) -> float:
+    """Snap an accent to a beat on the frame grid without exceeding its timing bounds."""
+    beat = snap_to_beat(t, accent_beats(ctx))
+    if beat == t:
+        return t
+    fps = fmt_of(ctx)[2]
+    snapped = round(beat * fps) / fps
+    # Frame rounding must preserve both the card lead and the 120 ms limit, including an SFX
+    # tied to a b-roll start whose original time was already rounded onto the frame grid.
+    if (snapped < earliest or snapped >= ctx.duration or abs(snapped - t) > BEAT_MAX_SHIFT
+            or abs(snapped - round(t * fps) / fps) > BEAT_MAX_SHIFT):
+        return t
+    return snapped
 
 
 def main(argv=None) -> int:
