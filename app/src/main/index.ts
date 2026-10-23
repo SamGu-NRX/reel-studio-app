@@ -1047,9 +1047,9 @@ function registerIpc(): void {
 
   handle('style:rules', () => ai.styleRules())
   handle('style:add', (_e, text: string) => {
-    if (!ai.addStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be saved to My style. Try again later.' }
+    if (!ai.addStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be remembered. Try again later.' }
     if (!text.trim()) throw { code: 'EMPTY', userMessage: 'Type the rule first.' }
-    return ai.addStyleRule(text)
+    return ai.addStyleRule(text, { byYou: true })
   })
   handle('style:remove', async (_e, id: string) => {
     const gone = await ai.removeStyleRule(id)
@@ -1072,15 +1072,15 @@ function registerIpc(): void {
     return readLesson(r.filePaths, (file) => runEngine('import-reference', [file]))
   })
   handle('style:keepLearned', async (_e, rules: LearnedRule[], from: string) => {
-    if (!ai.addStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be saved to My style. Try again later.' }
+    if (!ai.addStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be remembered. Try again later.' }
     const kept: StyleRule[] = []
     for (const rule of rules) kept.push(await ai.addStyleRule(rule.text, { imported: { file: from } }))
     return kept
   })
   handle('style:update', (_e, id: string, patch: { text?: unknown; paused?: unknown }) => {
-    if (!ai.updateStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be changed in My style. Try again later.' }
+    if (!ai.updateStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be changed. Try again later.' }
     const text = typeof patch?.text === 'string' ? patch.text : undefined
-    if (text !== undefined && !text.trim()) throw { code: 'EMPTY', userMessage: 'Type the rule first, or press Remove.' }
+    if (text !== undefined && !text.trim()) throw { code: 'EMPTY', userMessage: 'Type the rule first, or press Forget.' }
     return ai.updateStyleRule(id, { text, paused: typeof patch?.paused === 'boolean' ? patch.paused : undefined })
   })
   handle('style:answer', (_e, slug: string, messageId: string, yes: boolean) =>
@@ -1108,7 +1108,7 @@ function registerIpc(): void {
   )
 
   handle('style:rememberLowercase', async (_e, slug: string) => {
-    if (!ai.approveStyleProposal) throw { code: 'NOT_READY', userMessage: 'That could not be saved to My style. Try again later.' }
+    if (!ai.approveStyleProposal) throw { code: 'NOT_READY', userMessage: 'That could not be remembered. Try again later.' }
     const p = await readProject(slug)
     await ai.approveStyleProposal({
       id: randomUUID(),

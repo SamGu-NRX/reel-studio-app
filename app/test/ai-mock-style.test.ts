@@ -16,4 +16,15 @@ describe('My style in the stand-in AI', () => {
     await Promise.all([ai.addStyleRule!('Keep music quieter under talking.'), ai.approveStyleProposal!(proposal)])
     expect((await ai.styleRules()).map((r) => r.text).sort()).toEqual(['Keep music quieter under talking.', 'Use lowercase subtitles.'])
   })
+
+  it('fails if new words are not dated as the package dates them, or a pause dates a rule', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rs-mock-style '))
+    const unused = (): never => { throw new Error('not used by My style') }
+    const ai = createMockAI({ host: { reelStudioRoot: () => root, runEngine: unused, renderAnimation: unused }, settingsDir: root })
+    const rule = await ai.addStyleRule!('Big subtitles', { byYou: true })
+    expect(rule.byYou).toBe(true)
+    const edited = await ai.updateStyleRule!(rule.id, { text: 'Bigger subtitles.' })
+    expect(Date.parse(edited.updatedAt!)).toBeGreaterThanOrEqual(Date.parse(rule.createdAt))
+    expect((await ai.updateStyleRule!(rule.id, { paused: true })).updatedAt).toBe(edited.updatedAt)
+  })
 })

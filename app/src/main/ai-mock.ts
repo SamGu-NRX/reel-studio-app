@@ -325,6 +325,7 @@ export const createMockAI: CreateAI = ({ host }) => {
         if (!rule) throw { code: 'NOT_FOUND', userMessage: 'That rule is not in My style any more.' }
         if (patch.text !== undefined) {
           rule.text = patch.text.trim()
+          rule.updatedAt = new Date().toISOString()
           if (rule.text !== 'Use lowercase subtitles.') delete rule.payload
         }
         if (patch.paused !== undefined) rule.paused = patch.paused || undefined

@@ -16,7 +16,7 @@ const RAIL_W = 64
 const NAV: { key: 'home' | 'library' | 'style' | 'insights'; label: string; icon: IconName }[] = [
   { key: 'home', label: 'Reels', icon: 'film' },
   { key: 'library', label: 'Library', icon: 'folder' },
-  { key: 'style', label: 'My style', icon: 'layers' },
+  { key: 'style', label: "What I've learned", icon: 'layers' },
   { key: 'insights', label: 'Insights', icon: 'chart' }
 ]
 

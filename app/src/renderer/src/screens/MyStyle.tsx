@@ -1,53 +1,59 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { StyleLesson, StyleRule } from '../../../shared/api'
+import { classifyKind, KIND_NAME, newestFirst, shortLine, sourceLine, type MemoryKind } from '../../../shared/memory'
 import { reel, userMessage } from '../api'
 import { Spinner } from '../components/ui'
-import { Icon } from '../components/icons'
+import { Icon, type IconName } from '../components/icons'
+import { reducedMotion } from '../components/motion'
 import { TitleBarSlot } from '../components/titlebar'
 import '../components/library.css'
 
-const day = (iso: string): string => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-
-/** When and from what a rule was learned, in plain words. */
-function learned(r: StyleRule): ReactNode {
-  const when = day(r.createdAt)
-  if (r.imported) return `Learned ${when} from ${r.imported.file}`
-  if (r.source?.note) {
-    return (
-      <>
-        Learned {when} from your note <q>{r.source.note}</q> on {r.source.title}
-        {r.source.version ? `, Version ${r.source.version}` : ''}
-      </>
-    )
-  }
-  if (r.source) return `Learned ${when} from ${r.source.title}${r.source.version ? `, Version ${r.source.version}` : ''}`
-  return `Added ${when}`
-}
+const KIND_ICON: Record<MemoryKind, IconName> = { captions: 'type', pacing: 'timer', music: 'music', cuts: 'scissors', look: 'aperture' }
 
 const UNDO_MS = 8000
+const EASE = 'cubic-bezier(.2, .8, .2, 1)'
 
+/** What the open line says under the full sentence: who uses the rule, or that nobody does while it is paused. */
+function usedBy(r: StyleRule): string {
+  if (r.paused) return 'Paused. Not used on new reels until you resume it.'
+  return r.payload ? 'The app sets this on every new reel.' : 'Your editor reads this on every new reel.'
+}
+
+/** "What I've learned" (was My style): every saved rule as one short line, newest first. */
 export function MyStyle() {
   const [rules, setRules] = useState<StyleRule[] | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [adding, setAdding] = useState<string | null>(null)
-  const [removed, setRemoved] = useState<{ rule: StyleRule; index: number } | null>(null)
+  const [forgot, setForgot] = useState<{ rule: StyleRule; at: number } | null>(null)
+  const [refocus, setRefocus] = useState<string | null>(null)
   const [lesson, setLesson] = useState<(StyleLesson & { keep: boolean[] }) | null>(null)
   const [learning, setLearning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const editButtons = useRef(new Map<string, HTMLButtonElement>())
+  const forgetButtons = useRef(new Map<string, HTMLButtonElement>())
   const addButton = useRef<HTMLButtonElement>(null)
   const undoTimer = useRef<number | undefined>(undefined)
   const undoButton = useRef<HTMLButtonElement>(null)
+  const forgotRow = useRef<HTMLLIElement>(null)
+  const collapse = useRef<Animation | null>(null)
+  const list = useRef<HTMLUListElement>(null)
   const load = () => reel.style.rules().then(setRules)
   useEffect(() => {
     void load()
     return () => window.clearTimeout(undoTimer.current)
   }, [])
 
-  // the removed row's Undo takes the focus its Remove button had
+  // the forgotten row's Undo takes the focus its Forget button had, and Undo gives it back
   useEffect(() => {
-    if (removed) undoButton.current?.focus()
-  }, [removed])
+    if (forgot) undoButton.current?.focus()
+  }, [forgot])
+  useEffect(() => {
+    const el = refocus && forgetButtons.current.get(refocus)
+    if (!el) return
+    el.focus()
+    setRefocus(null)
+  }, [refocus, rules])
 
   const run = async (change: () => Promise<unknown>): Promise<boolean> => {
     setError(null)
@@ -75,17 +81,45 @@ export function MyStyle() {
     if (!adding?.trim()) return
     if (await run(() => reel.style.add(adding))) setAdding(null)
   }
-  const remove = async (r: StyleRule) => {
-    const index = rules?.findIndex((x) => x.id === r.id) ?? 0
-    if (!(await run(() => reel.style.remove(r.id)))) return
+  const settle = () => {
     window.clearTimeout(undoTimer.current)
-    setRemoved({ rule: r, index })
-    undoTimer.current = window.setTimeout(() => setRemoved(null), UNDO_MS)
+    collapse.current?.cancel()
+    collapse.current = null
+  }
+  // When Undo runs out, its line folds away instead of the rows below jumping up. If Undo had the focus, the
+  // row that takes its place gets it, so the keyboard is not sent back to the top of the window.
+  const lapse = () => {
+    const el = forgotRow.current
+    const gone = () => {
+      const hadFocus = !!el?.contains(document.activeElement)
+      const at = el ? Array.from(list.current?.children ?? []).indexOf(el) : -1
+      setForgot(null)
+      if (hadFocus)
+        requestAnimationFrame(() => {
+          const rows = list.current?.querySelectorAll<HTMLButtonElement>('.mem-line')
+          ;(rows?.[Math.min(at, rows.length - 1)] ?? addButton.current)?.focus()
+        })
+    }
+    if (!el) return gone()
+    const frames = reducedMotion() ? [{ opacity: 1 }, { opacity: 0 }] : [{ height: `${el.offsetHeight}px`, opacity: 1 }, { height: '0px', opacity: 0 }]
+    collapse.current = el.animate(frames, { duration: 200, easing: reducedMotion() ? 'ease' : EASE, fill: 'forwards' })
+    collapse.current.finished.then(gone, () => undefined)
+  }
+  const forget = async (r: StyleRule, at: number) => {
+    if (!(await run(() => reel.style.remove(r.id)))) return
+    settle()
+    if (open === r.id) setOpen(null)
+    setForgot({ rule: r, at })
+    undoTimer.current = window.setTimeout(lapse, UNDO_MS)
   }
   const undo = async () => {
-    if (!removed) return
-    window.clearTimeout(undoTimer.current)
-    if (await run(() => reel.style.restore(removed.rule.id))) setRemoved(null)
+    if (!forgot) return
+    settle()
+    const id = forgot.rule.id
+    if (await run(() => reel.style.restore(id))) {
+      setForgot(null)
+      setRefocus(id)
+    }
   }
   const learn = async () => {
     setError(null)
@@ -110,13 +144,14 @@ export function MyStyle() {
   }
 
   const kept = lesson?.keep.filter(Boolean).length ?? 0
-  const shown: (StyleRule | 'removed')[] = [...(rules ?? [])]
-  if (removed) shown.splice(Math.min(removed.index, shown.length), 0, 'removed')
+  const now = Date.now()
+  const shown: (StyleRule | 'forgot')[] = newestFirst(rules ?? [])
+  if (forgot) shown.splice(Math.min(forgot.at, shown.length), 0, 'forgot')
 
   return (
     <div className="page style-page">
       <TitleBarSlot
-        title="My style"
+        title="What I've learned"
         actions={
           <>
             <button className="btn" onClick={() => void learn()} disabled={learning} data-testid="style-learn">
@@ -135,7 +170,9 @@ export function MyStyle() {
           </>
         }
       />
-      <p className="style-intro">Your editor follows these on every reel. A note that starts with “always” adds one.</p>
+      {shown.length > 0 && (
+        <p className="style-intro">Every new reel starts with these, newest first. A note that starts with “always” can add one.</p>
+      )}
       {error && (
         <p className="style-note" role="alert">
           {error}
@@ -211,80 +248,114 @@ export function MyStyle() {
         </form>
       )}
 
-      {rules && !rules.length && !removed && adding === null && (
+      {rules && !rules.length && !forgot && adding === null && (
         <div className="style-empty" data-testid="style-empty">
-          <h2>No rules yet</h2>
-          <p>Start a note with “always”, like “always use big subtitles”, and it is added here. Or learn from edits you made in Final Cut Pro or Premiere Pro.</p>
+          <h2>Nothing learned yet</h2>
+          <p>
+            Start a note with “always”, like “always use big subtitles”, and say Yes when you’re asked to remember it. Or learn from
+            edits you made in Final Cut Pro or Premiere Pro.
+          </p>
         </div>
       )}
 
       {shown.length > 0 && (
-        <ul className="style-rows">
-          {shown.map((r) =>
-            r === 'removed' ? (
-              <li key="removed" className="style-row removed" role="status">
-                <span className="style-t">
-                  <span>Removed “{removed!.rule.text.replace(/\.$/, '')}”.</span>
-                </span>
-                <button ref={undoButton} className="btn small" onClick={() => void undo()} data-testid="style-undo">
-                  <Icon name="undo" size={14} />
-                  Undo
+        <ul ref={list} className="mem-rows">
+          {shown.map((r, at) => {
+            if (r === 'forgot') {
+              return (
+                <li key="forgot" ref={forgotRow} className="mem forgot" role="status">
+                  <span className="mem-said">Forgot “{shortLine(forgot!.rule.text)}”.</span>
+                  <button ref={undoButton} className="btn small" onClick={() => void undo()} data-testid="style-undo">
+                    <Icon name="undo" size={14} />
+                    Undo
+                  </button>
+                </li>
+              )
+            }
+            if (editing?.id === r.id) {
+              return (
+                <li key={r.id}>
+                  <form className="style-form" onSubmit={save} onKeyDown={(e) => e.key === 'Escape' && stopEditing(r.id)}>
+                    <input
+                      className="input"
+                      value={editing.text}
+                      onChange={(e) => setEditing({ id: r.id, text: e.target.value })}
+                      aria-label="Rule"
+                      autoFocus
+                      data-testid="style-edit-input"
+                    />
+                    <button className="btn small" type="submit" disabled={!editing.text.trim()}>
+                      Save
+                    </button>
+                    <button className="btn small ghost" type="button" onClick={() => stopEditing(r.id)}>
+                      Cancel
+                    </button>
+                  </form>
+                </li>
+              )
+            }
+            const kind = classifyKind(r.text)
+            const line = shortLine(r.text)
+            const isOpen = open === r.id
+            // the forgotten row sits among these, so a rule's place is counted without it
+            const place = forgot && at > forgot.at ? at - 1 : at
+            return (
+              <li key={r.id} className={`mem${r.paused ? ' paused' : ''}${isOpen ? ' open' : ''}`} data-testid="style-rule">
+                <span className="mem-kind">{kind ? <Icon name={KIND_ICON[kind]} size={16} /> : <i className="mem-dot" />}</span>
+                <button
+                  className="mem-line"
+                  aria-expanded={isOpen}
+                  aria-controls={`mem-more-${r.id}`}
+                  onClick={() => setOpen(isOpen ? null : r.id)}
+                >
+                  <span className="sr-only">{kind ? KIND_NAME[kind] : 'Other'}: </span>
+                  {line}
                 </button>
-              </li>
-            ) : editing?.id === r.id ? (
-              <li key={r.id}>
-                <form className="style-form" onSubmit={save} onKeyDown={(e) => e.key === 'Escape' && stopEditing(r.id)}>
-                  <input
-                    className="input"
-                    value={editing.text}
-                    onChange={(e) => setEditing({ id: r.id, text: e.target.value })}
-                    aria-label="Rule"
-                    autoFocus
-                    data-testid="style-edit-input"
-                  />
-                  <button className="btn small" type="submit" disabled={!editing.text.trim()}>
-                    Save
-                  </button>
-                  <button className="btn small ghost" type="button" onClick={() => stopEditing(r.id)}>
-                    Cancel
-                  </button>
-                </form>
-              </li>
-            ) : (
-              <li key={r.id} className="style-row" data-testid="style-rule">
-                <span className="style-t">
-                  <b className={r.paused ? 'paused' : undefined}>
-                    {r.text}
-                    {r.paused && <span className="badge interrupted" style={{ marginLeft: 8 }}>Paused</span>}
-                  </b>
-                  <span>{learned(r)}</span>
-                </span>
-                <span className="style-acts">
-                  <button
-                    className="btn small ghost"
-                    ref={(el) => {
-                      if (el) editButtons.current.set(r.id, el)
-                      else editButtons.current.delete(r.id)
-                    }}
-                    onClick={() => setEditing({ id: r.id, text: r.text })}
-                    aria-label={`Edit "${r.text}"`}
-                  >
-                    Edit
-                  </button>
+                <span className="mem-state">{r.paused ? 'Paused' : 'Auto'}</span>
+                <span className="mem-acts">
                   <button
                     className="btn small ghost"
                     onClick={() => void run(() => reel.style.update(r.id, { paused: !r.paused }))}
-                    aria-label={`${r.paused ? 'Turn back on' : 'Pause'} "${r.text}"`}
+                    aria-label={`${r.paused ? 'Resume' : 'Pause'} "${line}"`}
                   >
-                    {r.paused ? 'Turn back on' : 'Pause'}
+                    {r.paused ? 'Resume' : 'Pause'}
                   </button>
-                  <button className="btn small ghost danger" onClick={() => void remove(r)} aria-label={`Remove "${r.text}"`}>
-                    Remove
+                  <button
+                    className="btn small ghost"
+                    ref={(el) => {
+                      if (el) forgetButtons.current.set(r.id, el)
+                      else forgetButtons.current.delete(r.id)
+                    }}
+                    onClick={() => void forget(r, place)}
+                    aria-label={`Forget "${line}"`}
+                  >
+                    Forget
                   </button>
                 </span>
+                <span className="mem-src">{sourceLine(r, now)}</span>
+                {isOpen && (
+                  <div className="mem-more" id={`mem-more-${r.id}`}>
+                    <p className="mem-full">“{r.text}”</p>
+                    <p className="mem-use">
+                      {usedBy(r)}
+                      <button
+                        className="btn small ghost"
+                        ref={(el) => {
+                          if (el) editButtons.current.set(r.id, el)
+                          else editButtons.current.delete(r.id)
+                        }}
+                        onClick={() => setEditing({ id: r.id, text: r.text })}
+                        aria-label={`Edit "${line}"`}
+                      >
+                        <Icon name="pencil" size={13} />
+                        Edit
+                      </button>
+                    </p>
+                  </div>
+                )}
               </li>
             )
-          )}
+          })}
         </ul>
       )}
     </div>

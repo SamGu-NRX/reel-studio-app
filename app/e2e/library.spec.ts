@@ -76,7 +76,7 @@ test('Library, My style and Insights', async () => {
   await expect(page.getByTestId('library-sound').first()).toContainText('CC0')
   await shot(page, 'library-sfx')
 
-  // ---- My style: add, remove, undo ----
+  // ---- What I've learned: add, forget, undo ----
   await page.getByTestId('nav-style').click()
   await expect(page.getByTestId('style-empty')).toBeVisible()
   await page.getByTestId('style-add').click()
@@ -84,9 +84,9 @@ test('Library, My style and Insights', async () => {
   await page.keyboard.press('Enter')
   const rule = page.getByTestId('style-rule')
   await expect(rule).toHaveCount(1)
-  await expect(rule).toContainText('Always use big subtitles.')
-  await expect(rule).toContainText(/^Always use big subtitles\.Added (\w+ \d+|\d+ \w+)/)
-  await page.getByRole('button', { name: 'Remove "Always use big subtitles."' }).click()
+  await expect(rule).toContainText('Big subtitles')
+  await expect(rule).toContainText('added by you, just now')
+  await page.getByRole('button', { name: 'Forget "Big subtitles"' }).click()
   await expect(rule).toHaveCount(0)
   await expect(page.getByTestId('style-undo')).toBeFocused()
   await page.getByTestId('style-undo').click()
@@ -111,8 +111,9 @@ test('Library, My style and Insights', async () => {
   await page.getByTestId('style-lesson-keep').click()
   await expect(lesson).toHaveCount(0)
   await expect(rule).toHaveCount(2)
-  await expect(rule.nth(1)).toContainText('Open with a title on screen in the first few seconds.')
-  await expect(rule.nth(1)).toContainText(/Learned (\w+ \d+|\d+ \w+) from talking-head\.xml/)
+  // newest first
+  await expect(rule.first()).toContainText('Open with a title on screen in the first few seconds')
+  await expect(rule.first()).toContainText('from your Premiere Pro edit talking-head.xml, just now')
 
   // ---- Insights joins the sidebar once a reel has a posted record ----
   const reelDir = join(root, 'Projects', 'posted')

@@ -136,7 +136,7 @@ test('make a reel end to end', async () => {
 
   // ---- my style, settings, script ----
   await page.getByTestId('nav-style').click()
-  await expect(page.getByText('My style', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText("What I've learned", { exact: true }).first()).toBeVisible()
   await shot(page, '14-my-style')
   await openSettings(page)
   await expect(page.getByText('Library folder')).toBeVisible()

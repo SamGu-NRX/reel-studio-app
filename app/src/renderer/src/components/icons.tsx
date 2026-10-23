@@ -345,6 +345,24 @@ const P: Record<string, ReactNode> = {
       <path d="M8.5 18.5h4.5" />
     </>
   ),
+  timer: (
+    <>
+      <line x1="10" x2="14" y1="2" y2="2" />
+      <line x1="12" x2="15" y1="14" y2="11" />
+      <circle cx="12" cy="14" r="8" />
+    </>
+  ),
+  aperture: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="m14.31 8 5.74 9.94" />
+      <path d="M9.69 8h11.48" />
+      <path d="m7.38 12 5.74-9.94" />
+      <path d="M9.69 16 3.95 6.06" />
+      <path d="M14.31 16H2.83" />
+      <path d="m16.62 12-5.74 9.94" />
+    </>
+  ),
   undo: (
     <>
       <path d="M9 14 4 9l5-5" />
