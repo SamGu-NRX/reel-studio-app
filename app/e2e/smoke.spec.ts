@@ -47,12 +47,15 @@ test('make a reel end to end', async () => {
   await expect(page.getByTestId('your-turn')).toBeVisible()
   await shot(page, '04-home-empty')
 
+  // nothing posted yet, so no Insights in the sidebar
+  await expect(page.getByTestId('nav-insights')).toHaveCount(0)
+
   // ---- library: add a song, a picture and a file it cannot use ----
   await page.getByTestId('nav-library').click()
   await page.getByTestId('file-input').setInputFiles([media.song, media.picture, media.doc])
   // Said on the Library screen itself, in plain words (critique 1.12).
   await expect(page.getByTestId('library-result')).toHaveText('Added 1 song and 1 picture to your Library. Skipped notes.txt (not a video, song or picture).')
-  await expect(page.getByTestId('bin-music').getByText('happy song.mp3')).toBeVisible()
+  await expect(page.getByTestId('bin-music').getByText('happy song', { exact: true })).toBeVisible()
   await shot(page, '05-library')
 
   // ---- new video: a non-video file is explained, not swallowed ----
