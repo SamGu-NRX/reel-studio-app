@@ -209,7 +209,7 @@ small TypeScript project API and then ask the main process to re-render. The set
 `set_gap_cap`, `set_caption_style`, `add_caption_correction`, `list_library(kind)`, `choose_music(track,
 startAt, level)`, `set_music_automation`, `add_broll(anchor, treatment, asset, params)`, `update_broll`,
 `remove_broll`, `set_mirror(on, source)` (flip a mirrored take; the editor calls it when text in the room reads
-backwards in the frames it looks at, or when a note says the video is mirrored), `search_images(query)` / `fetch_image(url)`, `capture_website(url)` (a screenshot of a public web page in a locked-down offscreen window, for an app or site the speaker names), `make_animation(template, params)`, `set_zoom`,
+backwards in the frames it looks at, or when a note says the video is mirrored), `resolve_asset(kind, intent, phase, candidateId)`, `list_assets`, `preview_asset`, `export_asset_credits`, `search_images(query)` / `fetch_image(url)`, `capture_website(url)` (a screenshot of a public web page in a locked-down offscreen window, for an app or site the speaker names), `make_animation(template, params)`, `set_zoom`,
 `set_sfx` (built-in sound effects, each hitting on a word, a b-roll's appearance or a cut; the engine plays at
 most one every 2 seconds, under the voice),
 `set_cover(atSourceTime, text)`, `write_post(caption, hashtags[5], keywords)`, `add_style_rule(rule)`,
@@ -331,3 +331,11 @@ export function createAI(opts: { host: EngineHost; settingsDir: string; dev?: bo
 With no provider connected, `firstEdit` still runs the deterministic path (engine `autocut`, default captions,
 music if a track is in the Library, a cover and a render) and returns a summary saying the AI is not connected.
 See `ai/README.md` for the extra methods beyond this list.
+
+### Frozen image assets
+
+Pictures reach the edit through `resolve_asset`. It offers candidates, each with a still, read where they
+are (the Library, an attachment, or a fresh download), and only a committed candidate can be placed.
+Commit copies the bytes to `work/assets/frozen/<kind>/<sha256>.<ext>` (reusing a file with the same hash)
+and appends one record of source, licence, credit and intent to `work/assets/manifest.jsonl`. `add_broll`
+takes a committed picture's `assetId` or path; video clips and animations are placed as before.

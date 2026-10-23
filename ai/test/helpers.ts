@@ -3,7 +3,8 @@ import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
-import { EngineHost, EngineProgress, Transcript, Word, withDefaults, Project, CompletionRequest, CompletionResponse, ModelProvider, ToolCall, OWNER_LOCK } from '../src';
+import { randomUUID } from 'node:crypto';
+import { EngineHost, EngineProgress, ToolContext, executeTool, Transcript, Word, withDefaults, Project, CompletionRequest, CompletionResponse, ModelProvider, ToolCall, OWNER_LOCK } from '../src';
 
 export function tmpDir(prefix = 'rs ai '): string {
   // Spaces + non-ASCII on purpose (the dev box user folder has a space).
@@ -162,6 +163,14 @@ export class FakeHost implements EngineHost {
         for (const t of times) { const f = path.join(fd, `f_${t}.png`); await fsp.writeFile(f, tinyPng()); frames.push({ time: t, path: f }); }
         return { frames };
       }
+      case 'inspect-video':
+      case 'inspect-audio':
+      case 'inspect-image': {
+        const still = args.includes('--preview') ? args[args.indexOf('--preview') + 1] : `work/thumbs/candidate-${randomUUID()}.jpg`;
+        await fsp.mkdir(path.join(dir, 'work', 'thumbs'), { recursive: true });
+        await fsp.writeFile(path.join(dir, still), tinyPng());
+        return { previewPath: still, width: 8, height: 8, durationSec: 2, loudnessLufs: -21 };
+      }
       case 'search-images': return { results: this.searchResults };
       case 'fetch-image': {
         if (!this.engineAssets) throw { code: 'BAD_ARGS', userMessage: 'unknown command' };
@@ -170,7 +179,11 @@ export class FakeHost implements EngineHost {
         const name = args.includes('--name') ? args[args.indexOf('--name') + 1] : 'image';
         await fsp.mkdir(path.join(dir, 'work', 'assets'), { recursive: true });
         await fsp.writeFile(path.join(dir, 'work', 'assets', `${name}.png`), tinyPng());
-        return { asset: `work/assets/${name}.png`, path: path.join(dir, 'work', 'assets', `${name}.png`) };
+        // like the engine: a still of the download, named after it
+        const thumb = path.join(dir, 'work', 'thumbs', `${name}.jpg`);
+        await fsp.mkdir(path.dirname(thumb), { recursive: true });
+        await fsp.writeFile(thumb, tinyPng());
+        return { asset: `work/assets/${name}.png`, path: path.join(dir, 'work', 'assets', `${name}.png`), thumb };
       }
       case 'analyze-music': {
         if (!this.engineAssets) throw { code: 'BAD_ARGS', userMessage: 'unknown command' };
@@ -199,3 +212,27 @@ export class ScriptedModel implements ModelProvider {
 }
 
 export const call = (name: string, args: Record<string, unknown> = {}) => ({ id: undefined as any, name, args });
+
+export async function commitLocalAsset(ctx: ToolContext, ref: string, kind = 'image'): Promise<string> {
+  const staged = await executeTool(ctx, 'resolve_asset', { kind, intent: ref });
+  if (staged.isError) throw new Error(staged.content);
+  const candidate = JSON.parse(staged.content).candidates[0];
+  const committed = await executeTool(ctx, 'resolve_asset', { kind, intent: ref, phase: 'commit', candidateId: candidate.id });
+  if (committed.isError) throw new Error(committed.content);
+  return JSON.parse(committed.content).asset.committedPath;
+}
+export const commitImage = (ctx: ToolContext, ref: string) => commitLocalAsset(ctx, ref);
+export const tinyMp3 = () => Buffer.concat([Buffer.from('ID3'), Buffer.alloc(32)]);
+export const tinyMp4 = () => Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom'), Buffer.alloc(20)]);
+export function assetSteps(ref: string, placement: Record<string, unknown>, kind = 'image') {
+  const result = (req: CompletionRequest) => {
+    const message = req.messages.at(-1);
+    if (message?.role !== 'tool' || message.results[0].isError) throw new Error('Expected a successful asset tool result');
+    return JSON.parse(message.results[0].content);
+  };
+  return [
+    { toolCalls: [call('resolve_asset', { kind, intent: ref })] },
+    (req: CompletionRequest) => ({ toolCalls: [call('resolve_asset', { kind, intent: ref, phase: 'commit', candidateId: result(req).candidates[0].id })] }),
+    (req: CompletionRequest) => ({ toolCalls: [call('add_broll', { ...placement, asset: result(req).asset.assetId })] }),
+  ];
+}

@@ -11,7 +11,7 @@ import {
 import { DATA_BOUNDARY } from '../src/editor';
 import { withCacheBreakpoint, toAnthropicMessages } from '../src/providers/anthropic';
 import { childEnv, devSettingsDir, isBlockedAddress, safeResolve } from '../src/safety';
-import { FakeHost, ScriptedModel, makeProject, call, tmpDir, tinyPng, firstVersion } from './helpers';
+import { FakeHost, ScriptedModel, makeProject, call, tmpDir, tinyPng, firstVersion, commitImage } from './helpers';
 import { listVersions } from '../src';
 
 const PUBLIC = async () => ['93.184.215.14'];
@@ -25,7 +25,7 @@ async function ctxFor(extra: Partial<ToolContext> = {}) {
   return { ctx, host, dir, root };
 }
 
-const addBroll = (asset: string) => ({ anchor: { from: 'w29', to: 'w30' }, treatment: 'full-frame', asset, search: null, animation: null, params: nullP });
+const addBroll = (asset: string) => ({ anchor: { from: 'w29', to: 'w30' }, treatment: 'full-frame', asset, animation: null, params: nullP });
 
 // ---------------------------------------------------------------- 2, 3: paths
 
@@ -49,9 +49,11 @@ describe('finding 2: asset paths stay inside the project and the Library', () =>
     const { ctx, dir, root } = await ctxFor();
     const f = path.join(root, 'Library', 'Images', 'loaf.png');
     await fsp.writeFile(f, tinyPng());
-    const r = JSON.parse((await executeTool(ctx, 'add_broll', addBroll(f))).content);
-    expect(r.asset).toBe('Library/Images/loaf.png');
-    expect((await loadProject(dir)).broll[0].asset).toBe('Library/Images/loaf.png');
+    const committed = await commitImage(ctx, f);
+    const r = JSON.parse((await executeTool(ctx, 'add_broll', addBroll(committed))).content);
+    expect(r.asset).toBe(committed);
+    expect(path.isAbsolute(r.asset)).toBe(false);
+    expect((await loadProject(dir)).broll[0].asset).toBe(committed);
   });
 
   it('safeResolve resolves symlinks before checking', async (t) => {

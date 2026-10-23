@@ -7,6 +7,7 @@ import { Prompts } from './prompts';
 import { StyleProposal, StyleStore, captionCaseProposal } from './style';
 import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProofread, doRender, unsureWords, executeTool, load, newToolState, resolveAsset, cleanSummary, renderEvent } from './tools';
 import { planFastNote } from './fastnote';
+import { LEDGER } from './assets';
 import { AttachmentInfo, attachmentStills, attachmentsSection, earlierUnplaced, placedAssets, validateAttachments } from './attachments';
 import {
   Analysis, NoteEntry, PROJECT_FILE, Project, withDefaults, Transcript, WordAnchor, hasTranscript, loadProject, normalizeAnalysis, normalizeKeep, saveProject,
@@ -132,6 +133,9 @@ async function removeStyleRules(deps: EditorDeps, state: ToolState): Promise<voi
   for (const id of state.styleRuleIds) await deps.style.remove(id).catch(() => undefined);
   state.styleRuleIds = []; state.styleRulesAdded = [];
 }
+
+/** The asset ledger's size, or null when there is none yet: a note that fails takes its records back out. */
+const ledgerBytes = (projectDir: string) => fsp.stat(path.join(projectDir, LEDGER)).then((s) => s.size, () => null);
 
 /** The caption's credit line follows the pictures the edit ends with (one removed after write_post
  * loses its credit, one added gains it). */
@@ -329,6 +333,7 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   const dir = path.join(projectDir, 'work', 'notes', id);
   const base = await fsp.readFile(path.join(projectDir, PROJECT_FILE));
   const baseVersion = withDefaults(JSON.parse(base.toString('utf8'))).version;
+  const ledgerBefore = await ledgerBytes(projectDir);
   const begin = async (): Promise<ToolContext> => {
     const file = path.join(dir, 'edit.json');
     await writeFileAtomic(file, base);
@@ -374,9 +379,13 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     }
     const summary = withStyleEcho(r.finished || 'I saved your preference.', ctx.state);
     // this note's files, plus files attached to an earlier note that THIS note put in the video ("when I say X")
-    const placedNow = placedAssets(await loadProject(projectDir, ctx.note!.file));
+    const placedNow = await placedAssets(projectDir, await loadProject(projectDir, ctx.note!.file));
     const recorded = [...refs, ...earlier.map((a) => a.asset).filter((r) => placedNow.has(r) && !refs.includes(r))];
     return await saveNote(deps, ctx, base, baseVersion, { text: note.trim(), label, summary, attachments: recorded }, opts.saveStyleRules !== false);
+  } catch (e) {
+    // the note was not saved: the asset records it appended go too
+    if (ledgerBefore !== null) await fsp.truncate(path.join(projectDir, LEDGER), ledgerBefore).catch(() => undefined);
+    throw e;
   } finally {
     // only what this note made under its own id; a final it started stays above project.json's
     // version, never shown, and the app's job lane clears it (app store.ts cleanPartialVersions)

@@ -10,6 +10,7 @@ import hashlib
 import json
 import sys
 import traceback
+import uuid
 from pathlib import Path
 
 from . import proto
@@ -146,7 +147,7 @@ def cmd_search_images(args):
     return res
 
 
-def _thumb(proj: Path, out: Path) -> str | None:
+def _thumb(proj: Path, out: Path, stem: str | None = None) -> str | None:
     """A small still the AI LOOKS at before placing a picture: a matching title can hide a wrong one."""
     try:
         from PIL import Image
@@ -158,13 +159,33 @@ def _thumb(proj: Path, out: Path) -> str | None:
             bg.alpha_composite(im)
             bg = bg.convert("RGB")
             bg.thumbnail((320, 320))
-            thumb = tdir / f"{out.stem}.jpg"
+            thumb = tdir / f"{stem or out.stem}.jpg"
             bg.save(thumb, "JPEG", quality=80)
         return str(thumb)
     except Exception as e:  # noqa: BLE001 -- a missing thumbnail never costs the picture
         from .compose_util import log
         log(f"no thumbnail for {out.name}: {e}")
         return None
+
+
+def cmd_inspect_image(args):
+    """A picture the AI is choosing (Library, attachment or download), read where it is: its size and
+    a still of its own, so candidates inspected side by side never share one."""
+    from PIL import Image
+    from .safepath import safe_resolve
+    proj = _project(args)
+    src = safe_resolve(proj, args.asset, root=Path(args.root) if args.root else None, what="image")
+    with Image.open(src) as im:
+        width, height = im.size
+    thumb = _thumb(proj, src, stem=f"candidate-{uuid.uuid4().hex}")
+    if not thumb:
+        raise EngineError("NOT_AN_IMAGE", f"no still for {src.name}", "I couldn't open that picture. Try another one.")
+    return {"previewPath": _rel_to(Path(thumb), proj), "width": width, "height": height}
+
+
+def cmd_inspect_media(args):
+    from .asset_preview import inspect
+    return inspect(_project(args), Path(args.root) if args.root else None, args.asset, args.command == 'inspect-video', args.preview)
 
 
 def cmd_register_capture(args):
@@ -389,6 +410,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--copyrighted", action="store_true",
                     help="also posters/stills of shows and films (copyrighted; labelled as such)")
     sp.add_argument("words", nargs="*")
+    sp = add("inspect-image", cmd_inspect_image, "a picture's size and a still of it for the AI to look at")
+    sp.add_argument("--asset", required=True)
+    sp.add_argument("--root")
+    for name in ('inspect-video', 'inspect-audio'):
+        sp = add(name, cmd_inspect_media, 'a local contact sheet or waveform for an asset candidate')
+        sp.add_argument('--asset', required=True)
+        sp.add_argument('--root')
+        sp.add_argument('--preview')
     sp = add("register-capture", cmd_register_capture, "credit a website screenshot saved in work/assets")
     sp.add_argument("--asset", required=True)
     sp.add_argument("--url", required=True)
