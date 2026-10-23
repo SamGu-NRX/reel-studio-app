@@ -5,7 +5,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createRequire } from 'node:module'
-import { APP_DIR, BASE, ROOT, USER_DATA, passFirstRun } from './helpers'
+import { APP_DIR, BASE, ROOT, USER_DATA, passFirstRun, openSettings } from './helpers'
 
 const { latestMacYml } = createRequire(__filename)('../../packaging/latest-mac.js') as { latestMacYml(zip: string, version: string): string }
 const WIN = process.platform === 'win32'
@@ -100,7 +100,7 @@ test('fails if a prerelease update cannot be downloaded, declined or snoozed, or
   const { app, page } = await launch()
   try {
     await passFirstRun(page)
-    await page.getByTestId('nav-settings').click()
+    await openSettings(page)
     const row = page.getByTestId('update-settings')
     await expect(row).toContainText('Version 0.1.2')
     await expect(page.getByTestId('update-releases-link')).toHaveAttribute('href', 'https://github.com/AidenJohnston/reel-studio-app/releases')
@@ -113,7 +113,7 @@ test('fails if a prerelease update cannot be downloaded, declined or snoozed, or
     const button = page.getByTestId('update-button')
     await expect(button).toContainText('Download update')
     await page.getByTestId('nav-home').click()
-    await page.getByTestId('nav-settings').focus()
+    await page.getByTestId('nav-style').focus()
     await page.keyboard.press('Tab')
     const pop = page.getByTestId('update-popover')
     await expect(pop).toHaveAttribute('data-open', 'true')
@@ -144,11 +144,11 @@ test('fails if a prerelease update cannot be downloaded, declined or snoozed, or
     await page.getByTestId('confirm-no').click()
     await expect(confirm).toBeHidden()
 
-    await page.getByTestId('nav-settings').click()
-    await expect(row).toContainText('0.1.3 is downloaded')
+    await openSettings(page)
+    await expect(row).toContainText('Reel Studio 0.1.3 is downloaded.')
     await expect(page.getByTestId('update-settings-button')).toHaveText('Restart to update')
     await row.scrollIntoViewIfNeeded()
-    await page.getByTestId('nav-settings').focus()
+    await page.getByTestId('nav-style').focus()
     await page.keyboard.press('Tab') // keyboard focus opens the popover
     await expect(pop).toHaveAttribute('data-open', 'true')
     await page.getByTestId('update-not-now').click()

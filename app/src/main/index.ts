@@ -1,3 +1,4 @@
+import { accountName } from './account'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent, Notification } from 'electron'
 import { existsSync, promises as fs, appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -349,8 +350,12 @@ function handle(channel: string, fn: Handler): void {
 const rootDisplay = (root: string): string =>
   displayPath(root, { documents: app.getPath('documents'), desktop: app.getPath('desktop'), home: app.getPath('home') }, process.platform)
 
+// Read once: the sidebar shows it on every screen. Tests show no name, so screenshots never carry one.
+let accountNameRead: Promise<string | null> | null = null
+
 async function appInfo(): Promise<AppInfo> {
   const s = await loadSettings()
+  accountNameRead ??= TEST ? Promise.resolve(null) : accountName()
   // The real long path, never an 8.3 short name like USERNA~1 (design critique 1.9). Not during first run: the
   // folder is not made yet, and looking inside Documents before setup explains why is what makes macOS ask.
   let root = reelStudioRoot()
@@ -369,7 +374,8 @@ async function appInfo(): Promise<AppInfo> {
     engine: { mode: engineMode(), dir: engineDir(), python: pythonExe() },
     ai: aiSource,
     test: TEST,
-    dev: DEV_PROVIDERS
+    dev: DEV_PROVIDERS,
+    userName: await accountNameRead
   }
 }
 

@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch, passFirstRun, USER_DATA } from './helpers'
+import { launch, passFirstRun, USER_DATA, openSettings } from './helpers'
 
 const KEY = 'sk-e2e-mock-key-7f3a'
 const MODELS = ['mock-small', 'mock-large']
@@ -50,6 +50,7 @@ test('add your own AI server from Settings', async () => {
     await passFirstRun(page)
     // "Connect one" from My style: the back link names My style and returns there
     await page.getByTestId('nav-style').click()
+    await page.getByTestId('account').click()
     await page.getByTestId('sidebar-connect').click()
     await expect(page.getByTestId('nav-style')).toHaveAttribute('aria-current', 'page')
     await expect(page.getByTestId('connect-back')).toHaveText('My style')
@@ -57,7 +58,7 @@ test('add your own AI server from Settings', async () => {
     await expect(page.getByTestId('connect-screen')).toHaveCount(0)
     await expect(page.getByTestId('nav-style')).toHaveAttribute('aria-current', 'page')
 
-    await page.getByTestId('nav-settings').click()
+    await openSettings(page)
     await page.getByTestId('own-server-toggle').click()
     const dialog = page.getByTestId('connection-dialog')
     await expect(page.getByTestId('connection-kind-openai')).toBeFocused()
@@ -103,7 +104,7 @@ test('add your own AI server from Settings', async () => {
     await page.getByTestId('connection-cancel').click()
 
     await page.getByTestId('use-no-ai').click()
-    await expect(page.getByTestId('ai-status')).toContainText('No AI editor connected.')
+    await expect(page.getByTestId('ai-status')).toHaveText('No AI editor')
   } finally {
     await app.close()
   }

@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, ROOT, SHOTS, dropFiles, launch, listeningState, makeMedia, passFirstRun, passMacStage, shot } from './helpers'
+import { BASE, ROOT, SHOTS, dropFiles, launch, listeningState, makeMedia, passFirstRun, passMacStage, shot, openSettings } from './helpers'
 
 test.beforeAll(() => {
   mkdirSync(SHOTS, { recursive: true })
@@ -131,7 +131,7 @@ test('make a reel end to end', async () => {
   await page.getByTestId('nav-style').click()
   await expect(page.getByText('My style', { exact: true }).first()).toBeVisible()
   await shot(page, '14-my-style')
-  await page.getByTestId('nav-settings').click()
+  await openSettings(page)
   await expect(page.getByText('Where your videos are kept')).toBeVisible()
   await shot(page, '15-settings')
   await page.getByTestId('nav-home').click()

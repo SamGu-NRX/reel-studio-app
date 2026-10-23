@@ -13,7 +13,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { CLAUDE_CODE_MISNAMED, attachMemeFlow, chooseClaudeCode, dropFiles, passListeningStage, passMacStage } from './helpers'
+import { CLAUDE_CODE_MISNAMED, attachMemeFlow, chooseClaudeCode, dropFiles, passListeningStage, passMacStage, openSettings } from './helpers'
 
 const EXE = process.env.REELSTUDIO_E2E_EXE
 const USE_CLAUDE = process.env.REELSTUDIO_E2E_USE_CLAUDE !== '0'
@@ -166,7 +166,7 @@ test(`${TAG}: first run + macOS chrome`, async () => {
     info.osCmdN = await osShortcut(app, 'n', () => expect(page.getByTestId('drop-zone')).toBeVisible({ timeout: 5000 }))
 
     // ---- Edit > Paste into the Claude key box (the reason the Edit menu exists) ----
-    await page.getByTestId('nav-settings').click()
+    await openSettings(page)
     const other = page.getByTestId('use-different-ai')
     if (await other.isVisible()) await other.click()
     await page.getByTestId('claude-key-toggle').click()
@@ -195,14 +195,14 @@ test(`${TAG}: first run + macOS chrome`, async () => {
     await snap(page, `${TAG}-03-key-pasted`)
     await key.fill('') // never saved: the field is cleared and "Use this key" is not pressed
 
-    // ---- the title bar: traffic lights vs the sidebar logo ----
+    // ---- the title bar: traffic lights, then the sidebar toggle on the same row ----
     await page.getByTestId('nav-home').click()
     info.trafficLights = await app.evaluate(({ BrowserWindow }) => {
       const w = BrowserWindow.getAllWindows().find((x) => !x.webContents.isOffscreen())! as unknown as { getWindowButtonPosition?: () => { x: number; y: number } | null; getMediaSourceId: () => string }
       return { pos: w.getWindowButtonPosition?.() ?? null, source: w.getMediaSourceId() }
     })
     info.brand = await page.evaluate(() => {
-      const r = document.querySelector('.brand')!.getBoundingClientRect()
+      const r = document.querySelector('[data-testid="sidebar-toggle"]')!.getBoundingClientRect()
       return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
     })
     await snap(page, `${TAG}-04-home`)
@@ -215,8 +215,12 @@ test(`${TAG}: first run + macOS chrome`, async () => {
       info.nativeShot = 'refused: ' + String((e as { stderr?: Buffer }).stderr ?? e).trim().slice(0, 160)
     }
     const tl = (info.trafficLights as { pos: { x: number; y: number } | null }).pos
-    // the three buttons are 14 px tall at (x, y): the logo must start below them
-    if (tl) expect((info.brand as { top: number }).top).toBeGreaterThanOrEqual(tl.y + 14 + 6)
+    // the three buttons are about 54 px wide and 14 px tall at (x, y): the toggle sits right of them, centred on their row
+    if (tl) {
+      const b = info.brand as { left: number; top: number; bottom: number }
+      expect(b.left).toBeGreaterThanOrEqual(tl.x + 54 + 6)
+      expect(Math.abs((b.top + b.bottom) / 2 - (tl.y + 7))).toBeLessThanOrEqual(3)
+    }
 
     // ---- what the one build offers ----
     expect(info.providers).toEqual(['chatgpt', 'claude', 'claude-cli', 'none'])

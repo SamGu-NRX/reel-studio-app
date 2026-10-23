@@ -11,7 +11,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { APP_DIR, BASE, ROOT, SHOTS, chooseClaudeCode, dropFiles, launch, passFirstRun, shot } from './helpers'
+import { APP_DIR, BASE, ROOT, SHOTS, chooseClaudeCode, dropFiles, launch, passFirstRun, shot, openSettings } from './helpers'
 
 const TESTSET = process.env.REELSTUDIO_E2E_TAKES
 const takes: { file: string; path: string }[] = TESTSET ? JSON.parse(readFileSync(TESTSET, 'utf8')).takes : []
@@ -67,7 +67,7 @@ takes.forEach((take, i) => {
       await logJobs(page, join(out, 'events.log'))
 
       // Which AI is in use: the Claude Code app on this computer, chosen here (nothing picks it on its own).
-      await page.getByTestId('nav-settings').click()
+      await openSettings(page)
       await chooseClaudeCode(page, 10_000)
       const connected = page.getByTestId('ai-connected')
       await connected.waitFor({ timeout: 10_000 }).catch(() => {})

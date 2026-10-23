@@ -3,7 +3,7 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch } from './helpers'
+import { BASE, launch, openSettings } from './helpers'
 
 const MAC = process.platform === 'darwin'
 
@@ -142,7 +142,7 @@ test('an existing install goes straight to Home, as before', async () => {
     const st = await page.evaluate(() => (window as any).reel.perm.status())
     expect(st).toMatchObject({ folder: 'allowed', notifications: 'unverified' })
     // Settings has the switch for anyone who skipped it in setup
-    await page.getByTestId('nav-settings').click()
+    await openSettings(page)
     await expect(page.getByTestId('notifications-toggle')).toBeChecked()
     if (MAC) {
       // macOS never says whether they show, so System Settings is always one press away.
@@ -161,7 +161,7 @@ test('folder access taken away after setup can be given back from Settings', asy
   writeFileSync(join(d.userData, 'settings.json'), JSON.stringify({ firstRunDone: true, root: null }))
   const { app, page } = await launch({ ...d.env, REELSTUDIO_TEST_PERMISSIONS: 'folder=denied' })
   try {
-    await page.getByTestId('nav-settings').click()
+    await openSettings(page)
     await expect(page.getByTestId('folder-problem')).toContainText("Your Mac isn't letting Reel Studio use this folder")
     await page.getByTestId('folder-allow').click()
     await expect.poll(() => opened(app)).toEqual(['x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders'])

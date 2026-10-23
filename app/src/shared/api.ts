@@ -369,6 +369,8 @@ export interface AppInfo {
   test: boolean
   /** REELSTUDIO_DEV=1: show the dev-only AI providers. */
   dev: boolean
+  /** The computer account's name, for the sidebar. null in tests or when it cannot be read. */
+  userName: string | null
 }
 
 /** The person's own Claude Code app: not found / found but will not start / not signed in / ready. */

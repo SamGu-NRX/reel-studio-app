@@ -80,7 +80,7 @@ export function createMainWindow(opts: { preload: string; stateFile: string; tes
     // system's window buttons drawn on top, so there is no grey strip and no stray menu bar.
     titleBarStyle: 'hidden',
     ...(mac
-      ? { trafficLightPosition: { x: 18, y: 18 } }
+      ? { trafficLightPosition: { x: 16, y: 14 } }
       : { titleBarOverlay: titleBarOverlay(false) }),
     webPreferences: {
       preload: opts.preload,

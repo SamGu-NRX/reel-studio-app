@@ -17,7 +17,7 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { chooseClaudeCode, dropFiles, launch, passFirstRun, passListeningStage, passMacStage, SHOTS } from './helpers'
+import { chooseClaudeCode, dropFiles, launch, passFirstRun, passListeningStage, passMacStage, SHOTS, openSettings } from './helpers'
 
 const DIR = process.env.REELSTUDIO_README_DIR
 const VIDEO = process.env.REELSTUDIO_README_VIDEO
@@ -71,7 +71,7 @@ test('make: one real reel from the presenter clip', async () => {
   const { app, page } = await launch({ ...env(), REELSTUDIO_DEV: '0' })
   try {
     await passFirstRun(page)
-    await page.getByTestId('nav-settings').click()
+    await openSettings(page)
     expect(await chooseClaudeCode(page)).toBe(true)
     await page.getByTestId('nav-library').click()
     await page.getByTestId('file-input').setInputFiles([SONG!])
