@@ -31,9 +31,10 @@ test('Version 1 at a plan limit pauses, says when it continues, and continues by
     await expect(page.getByTestId('first-failed')).toHaveCount(0)
     const [r] = await reels(page)
     expect(r).toMatchObject({ status: 'interrupted', pausedFor: { reason: 'limit', until } })
-    // on Reels it sits with the reels being made, saying when
+    // on Reels it sits with the reels being made, saying why and when it continues
     await page.getByTestId('nav-home').click()
-    await expect(page.getByTestId('card-paused-for')).toContainText(/^Continues at /)
+    await expect(page.getByTestId('card-status')).toHaveText(/^(\w+ )?[Pp]lan limit · continues at /)
+    await expect(page.getByRole('region', { name: 'Making' }).getByTestId('project-card')).toHaveCount(1)
     await page.getByTestId('project-card').click()
     // nobody presses Resume: it goes on at the reset and Version 1 lands
     await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 120_000 })

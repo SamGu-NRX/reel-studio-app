@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import type { ProjectSummary } from '../../../shared/api'
 import { STILL_WORKING } from '../../../shared/live'
 import { dayLabel } from '../../../shared/notes-log'
-import { pausedWords } from '../../../shared/pause'
+import { pauseLine } from '../../../shared/pause'
 import { reel, userMessage } from '../api'
 import { useNotify } from '../App'
 import type { Go } from '../nav'
@@ -11,15 +11,18 @@ import { Icon } from '../components/icons'
 import { TitleBarSlot } from '../components/titlebar'
 import { byKeyboard, reducedMotion } from '../components/motion'
 import { SampleReel } from '../components/SampleReel'
-import { IS_MAC, PickFiles } from '../components/ui'
+import { Button, IS_MAC, PickFiles, Segmented } from '../components/ui'
 import { useModelStatus } from '../components/connect'
 import { createFromFiles, newReel } from './create'
+import { activity, stateOf } from './home-state'
 import '../components/home.css'
 
 type View = 'activity' | 'all'
+const VIEWS = [
+  { key: 'activity', label: 'Activity', testid: 'home-activity' },
+  { key: 'all', label: 'All reels', testid: 'home-all' }
+] as const
 const VIEW_KEY = 'rs.home-view'
-/** "Recent" on Activity: reels with a version touched in the last two weeks. */
-const RECENT_DAYS = 14
 /** Series chips only help once there are this many reels (spec.md section 4). */
 const SERIES_FROM = 12
 const CARD_MIN = 140
@@ -27,17 +30,6 @@ const GAP = 18
 
 /** A version being made, from the job's own events. */
 type Live = { overall: number; secondsLeft: number | null; overdue: boolean }
-type State = 'novideo' | 'making' | 'paused' | 'failed' | 'ready'
-
-/** ux-foundation-b.md section 3.4: a reel's one state. A planned reel waits for its video whatever app.json says. */
-const stateOf = (p: ProjectSummary): State =>
-  p.noVideo ? 'novideo' : p.status === 'working' || p.status === 'new' ? 'making' : p.status === 'interrupted' ? 'paused' : p.status === 'failed' ? 'failed' : 'ready'
-/** The reel can't move without you (Activity's first group). A pause that continues on its own is still Making. */
-const needsYou = (p: ProjectSummary): boolean => {
-  const s = stateOf(p)
-  return s === 'novideo' || s === 'failed' || (s === 'paused' && !p.pausedFor)
-}
-const inMaking = (p: ProjectSummary): boolean => stateOf(p) === 'making' || (stateOf(p) === 'paused' && !!p.pausedFor)
 
 function leftWords(l: Live): string | null {
   if (l.overdue) return STILL_WORKING
@@ -74,14 +66,15 @@ export function Home({ go }: { go: Go }) {
   const [found, setFound] = useState<Set<string> | null>(null)
   const page = useRef<HTMLDivElement>(null)
   const cols = useColumns(page)
-  const known = useRef(new Set<string>())
+  /** Each listed reel's status, to notice a job running for a reel the list shows as stopped or doesn't show. */
+  const known = useRef(new Map<string, ProjectSummary['status']>())
 
   useEffect(() => {
     let alive = true
     const load = () =>
       reel.projects.list().then((p) => {
         if (!alive) return
-        known.current = new Set(p.map((x) => x.slug))
+        known.current = new Map(p.map((x) => [x.slug, x.status]))
         setProjects(p)
       })
     void load()
@@ -89,8 +82,10 @@ export function Home({ go }: { go: Go }) {
       if (e.type !== 'status' || !e.slug) return void load()
       const slug = e.slug
       setLive((m) => ({ ...m, [slug]: { overall: e.overall, secondsLeft: e.secondsLeft, overdue: e.overdue } }))
-      // a reel started somewhere else (a drop, a paste, a file opened with Reel Studio)
-      if (!known.current.has(slug)) void load()
+      // a reel started somewhere else (a drop, a paste, a file opened with Reel Studio), or a Resume or Try again whose
+      // list was read before its job was recorded: the card would keep its stopped state until the job ended
+      const was = known.current.get(slug)
+      if (was === undefined || was === 'interrupted' || was === 'failed') void load()
     })
     const offQueue = reel.queue.onChange(() => void load())
     return () => {
@@ -119,8 +114,8 @@ export function Home({ go }: { go: Go }) {
 
   const open = (p: ProjectSummary) => go({ name: 'reel', slug: p.slug })
   // Resume and Try again start the job here; the card moves to Making.
-  const resume = (p: ProjectSummary) =>
-    void reel.projects.resume(p.slug).then(
+  const resume = (p: ProjectSummary): Promise<void> =>
+    reel.projects.resume(p.slug).then(
       () => reel.projects.list().then(setProjects),
       (e) => notify(userMessage(e), 'error')
     )
@@ -136,7 +131,7 @@ export function Home({ go }: { go: Go }) {
   useFlip(page, `${view}|${series}|${found ? [...found].join() : ''}`, list)
 
   const card = (p: ProjectSummary) => (
-    <Card key={p.slug} p={p} live={live[p.slug]} now={now} onOpen={() => open(p)} onResume={() => resume(p)} />
+    <Card key={p.slug} p={p} live={live[p.slug]} now={now} onOpen={() => open(p)} onAct={() => resume(p)} />
   )
   const grid = (items: ProjectSummary[]) => <div className="grid">{items.map(card)}</div>
   const section = (title: string, items: ProjectSummary[]) =>
@@ -150,9 +145,7 @@ export function Home({ go }: { go: Go }) {
   let body: ReactNode = null
   if (projects && list.length === 0) body = <Empty go={go} />
   else if (view === 'activity') {
-    const needs = list.filter(needsYou)
-    const making = list.filter(inMaking)
-    const recent = list.filter((p) => stateOf(p) === 'ready' && now.getTime() - new Date(p.versionAt ?? p.updatedAt).getTime() < RECENT_DAYS * 86_400_000)
+    const { needs, making, recent } = activity(list, now)
     // Needs you and Making are usually one to three cards each: they share a row rather than leave two mostly empty.
     const shared = needs.length > 0 && making.length > 0 && needs.length + making.length <= cols
     body = (
@@ -218,7 +211,7 @@ export function Home({ go }: { go: Go }) {
         title={
           <>
             <h1 className="tb-h">Reels</h1>
-            {list.length > 0 && <ViewSwitch view={view} onPick={pick} />}
+            {list.length > 0 && <Segmented className="tb-seg" label="Show" value={view} options={VIEWS} onPick={pick} />}
           </>
         }
         actions={
@@ -240,33 +233,6 @@ export function Home({ go }: { go: Go }) {
         }
       />
       {body}
-    </div>
-  )
-}
-
-function ViewSwitch({ view, onPick }: { view: View; onPick: (v: View) => void }) {
-  return (
-    <div className="seg2" role="radiogroup" aria-label="Show">
-      {(['activity', 'all'] as const).map((v) => (
-        <button
-          key={v}
-          role="radio"
-          aria-checked={view === v}
-          tabIndex={view === v ? 0 : -1}
-          onClick={() => onPick(v)}
-          onKeyDown={(e) => {
-            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
-            e.preventDefault()
-            const next = v === 'activity' ? 'all' : 'activity'
-            onPick(next)
-            ;(e.currentTarget.parentElement?.querySelector(`[data-view="${next}"]`) as HTMLElement | null)?.focus()
-          }}
-          data-view={v}
-          data-testid={`home-${v}`}
-        >
-          {v === 'activity' ? 'Activity' : 'All reels'}
-        </button>
-      ))}
     </div>
   )
 }
@@ -311,47 +277,43 @@ function useFlip(page: React.RefObject<HTMLElement | null>, layoutKey: string, l
   }, [page])
 }
 
+/** What a stopped reel's card says and offers: why it stopped, what happens next, and the one action that moves it. */
+function stopped(p: ProjectSummary, now: Date): { why: string; next: string; act: { label: string; testid: string } | null } | null {
+  const state = stateOf(p)
+  if (state === 'failed') return { why: 'Didn’t finish', next: p.failedWhy ?? 'open it to see why', act: { label: 'Try again', testid: 'card-retry' } }
+  if (state !== 'paused') return null
+  const line = pauseLine(p.pausedFor, now, IS_MAC ? 'Mac' : 'PC')
+  // a pause that continues on its own offers Resume now only where trying early can help: a plan that may have reset
+  const act = !p.pausedFor ? { label: 'Resume', testid: 'card-resume' } : p.pausedFor.reason === 'limit' ? { label: 'Resume now', testid: 'card-resume' } : null
+  return { ...line, act }
+}
+
 /**
  * A reel: its picture, a title on up to two lines, and one line saying where it is (ux-foundation-b.md section 3.4).
- * Only a state that isn't Ready changes the picture.
+ * Only a state that isn't Ready changes the picture. A reel that stopped says why and what happens next, and its one
+ * action is a pill under that line; the rest of the card opens the reel.
  */
-function Card({ p, live, now, onOpen, onResume }: { p: ProjectSummary; live?: Live; now: Date; onOpen: () => void; onResume: () => void }) {
+function Card({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live; now: Date; onOpen: () => void; onAct: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false)
   const state = stateOf(p)
   const left = state === 'making' && live ? leftWords(live) : null
   const fresh = state === 'ready' && isNew(p.slug, p.versionAt)
+  const stop = stopped(p, now)
   let meta: ReactNode
   let label = p.title
-  if (state === 'novideo') {
+  if (stop) {
+    meta = (
+      <>
+        <b className={state === 'failed' ? 'red' : 'amber'}>{stop.why}</b> · {stop.next}
+      </>
+    )
+    label += `. ${stop.why}, ${stop.next}`
+  } else if (state === 'novideo') {
     meta = 'Waiting for your video'
     label += ', waiting for your video'
   } else if (state === 'making') {
     meta = `Making Version ${p.version + 1}`
     label += `, making Version ${p.version + 1}${left ? `, ${left.toLowerCase()}` : ''}`
-  } else if (state === 'paused') {
-    // continuing on its own, the pause mark on the picture says Paused and the line says when or what for (it doesn't fit both)
-    meta = p.pausedFor ? (
-      <span className="amber" data-testid="card-paused-for">
-        {pausedWords(p.pausedFor, now, IS_MAC ? 'Mac' : 'PC')}
-      </span>
-    ) : (
-      <span className="amber">
-        Paused ·{' '}
-        <button className="act" onClick={onResume} data-testid="card-resume">
-          Resume
-        </button>
-      </span>
-    )
-    label += p.pausedFor ? `, paused. ${pausedWords(p.pausedFor, now, IS_MAC ? 'Mac' : 'PC')}` : ', paused'
-  } else if (state === 'failed') {
-    meta = (
-      <span className="red">
-        Didn’t finish ·{' '}
-        <button className="act" onClick={onResume} data-testid="card-retry">
-          Try again
-        </button>
-      </span>
-    )
-    label += ', didn’t finish'
   } else {
     meta = fresh ? (
       <>
@@ -363,9 +325,14 @@ function Card({ p, live, now, onOpen, onResume }: { p: ProjectSummary; live?: Li
     )
     if (fresh) label += `, Version ${p.version} is new`
   }
+  const act = () => {
+    setBusy(true)
+    void onAct().finally(() => setBusy(false))
+  }
   return (
     <div className={`rcard st-${state}`} data-slug={p.slug}>
-      <button className="hit" onClick={onOpen} title={p.title} aria-label={label} data-testid="project-card" data-state={state} />
+      {/* the tooltip carries a stopped reel's whole line: a long reason is cut at two lines */}
+      <button className="hit" onClick={onOpen} title={stop ? `${p.title}\n${stop.why} · ${stop.next}` : p.title} aria-label={label} data-testid="project-card" data-state={state} />
       <div className="im" aria-hidden>
         {state === 'novideo' ? (
           <span className="paper-t">{p.title}</span>
@@ -374,11 +341,7 @@ function Card({ p, live, now, onOpen, onResume }: { p: ProjectSummary; live?: Li
         ) : (
           p.take && <video src={`${p.take}#t=1`} muted playsInline preload="metadata" />
         )}
-        {state === 'paused' && (
-          <span className="glyph">
-            <Icon name="pause" size={12} stroke={2.4} />
-          </span>
-        )}
+        {state === 'paused' && <Icon name="pause" size={30} stroke={0} className="pause-glyph" />}
         {left && <span className="left">{left}</span>}
         {state === 'making' && (
           <span className="pb">
@@ -387,9 +350,14 @@ function Card({ p, live, now, onOpen, onResume }: { p: ProjectSummary; live?: Li
         )}
       </div>
       <div className="ttl">{p.title}</div>
-      <div className="cm" data-testid="card-status">
+      <div className={`cm${stop ? ' why' : ''}`} data-testid="card-status">
         {meta}
       </div>
+      {stop?.act && (
+        <Button size="small" className="card-act" onClick={act} disabled={busy} aria-label={`${stop.act.label}: ${p.title}`} data-testid={stop.act.testid}>
+          {stop.act.label}
+        </Button>
+      )}
     </div>
   )
 }
@@ -404,10 +372,10 @@ function Empty({ go }: { go: Go }) {
       <SampleReel />
       <h2>Drop a video of you talking anywhere in this window, or start with an idea.</h2>
       <div className="row">
-        <PickFiles label="Choose video" accept="video/*" className="btn primary" onFiles={(paths) => void createFromFiles(paths, go, notify)} />
-        <button className="btn" onClick={() => void newReel(go, notify)} data-testid="plan-reel">
+        <PickFiles label="Choose video" accept="video/*" kind="primary" onFiles={(paths) => void createFromFiles(paths, go, notify)} />
+        <Button onClick={() => void newReel(go, notify)} data-testid="plan-reel">
           Plan a reel
-        </button>
+        </Button>
       </div>
       {model && !model.installed && model.downloading && model.total > 0 && (
         <p className="faint tnum" data-testid="empty-model">

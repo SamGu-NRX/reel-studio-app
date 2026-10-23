@@ -2,7 +2,7 @@ import { RELEASES_URL } from '../../../shared/config'
 import { updateAction } from '../../../shared/update'
 import { updateSummary } from './update-copy'
 import { Icon } from './icons'
-import { Progress } from './ui'
+import { Button, Progress } from './ui'
 import { useUpdateActions, useUpdateState } from './update'
 
 /** Under Settings › Check for updates: where the update stands, and the one thing to do about it. */
@@ -23,9 +23,9 @@ export function UpdateSettingsRow() {
           {text}
         </p>
         {s.status !== 'disabled' && (
-          <button className="btn small" disabled={disabled || pending} onClick={() => void act(s)} data-testid="update-settings-button">
+          <Button size="small" disabled={disabled || pending} onClick={() => void act(s)} data-testid="update-settings-button">
             {button}
-          </button>
+          </Button>
         )}
       </div>
       {s.status === 'downloading' && <Progress pct={s.downloadPercent ?? 0} label="Downloading the update" />}

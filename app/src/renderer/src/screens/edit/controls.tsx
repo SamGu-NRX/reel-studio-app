@@ -22,43 +22,6 @@ export interface TabProps {
 /** A change to the project itself (not the words kept). */
 export const setP = (fn: (p: ProjectJson) => Partial<ProjectJson>) => (x: Draft): Draft => ({ ...x, p: { ...x.p, ...fn(x.p) } })
 
-/** A radio group is one Tab stop; the arrow keys move the choice (WAI-ARIA radio group). */
-export function arrowPick(e: React.KeyboardEvent<HTMLElement>, keys: string[], value: string | null, onPick: (k: string) => void) {
-  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
-  if (!step) return
-  e.preventDefault()
-  // with nothing checked (a colour the AI picked that is neither option), arrows start from the first, as Tab does
-  const from = value !== null && keys.includes(value) ? value : keys[0]
-  const next = keys[(keys.indexOf(from) + step + keys.length) % keys.length]
-  onPick(next)
-  e.currentTarget.querySelector<HTMLElement>(`[data-key="${next}"]`)?.focus()
-}
-/** The radio that holds the group's Tab stop: the chosen one, or the first when none of them is (a custom colour). */
-export const tabStop = (key: string, value: string | null, keys: readonly string[]): number =>
-  key === (value !== null && keys.includes(value) ? value : keys[0]) ? 0 : -1
-
-export function Seg({ value, options, onPick, testid, label }: { value: string; options: readonly { key: string; label: string }[]; onPick: (k: string) => void; testid: string; label: string }) {
-  const keys = options.map((o) => o.key)
-  return (
-    <div className="seg" role="radiogroup" aria-label={label} data-testid={testid} onKeyDown={(e) => arrowPick(e, keys, value, onPick)}>
-      {options.map((o) => (
-        <button
-          key={o.key}
-          role="radio"
-          aria-checked={o.key === value}
-          tabIndex={tabStop(o.key, value, keys)}
-          data-key={o.key}
-          className={o.key === value ? 'on' : ''}
-          onClick={() => onPick(o.key)}
-          data-testid={`${testid}-${o.key}`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 /**
  * Arrow keys between the words of a word list, so the list is one Tab stop and not one per word
  * (a 5-minute take was about 900 stops before the panel's buttons).

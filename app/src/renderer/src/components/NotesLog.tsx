@@ -5,6 +5,7 @@ import { momentLabel } from '../../../shared/moments'
 import { waitingRows, type LogEntry, type LogResult } from '../../../shared/notes-log'
 import { reel, userMessage } from '../api'
 import { Icon } from './icons'
+import { Button } from './ui'
 import { AttachmentThumb } from './NoteAttachments'
 
 /** "What changed" under a version: its before → after rows, read once when first opened. */
@@ -246,9 +247,9 @@ export function NotesLog({
           <span className="t wrap full" data-testid="first-paused-why">
             Paused. {f.why ?? 'Nothing is lost.'}
           </span>
-          <button className="btn primary small" onClick={onResume} data-testid="resume">
+          <Button kind="primary" size="small" onClick={onResume} data-testid="resume">
             {f.why ? 'Resume now' : 'Resume'}
-          </button>
+          </Button>
         </div>
       )
     return (
@@ -260,12 +261,12 @@ export function NotesLog({
           <span className="t wrap">Didn't finish. {f.why}</span>
         </div>
         <div className="nt-acts">
-          <button className="btn primary small" onClick={onResume} data-testid="retry-first">
+          <Button kind="primary" size="small" onClick={onResume} data-testid="retry-first">
             Try again
-          </button>
-          <button className="btn small" onClick={onBasic} data-testid="basic-first">
+          </Button>
+          <Button size="small" onClick={onBasic} data-testid="basic-first">
             Make a basic version
-          </button>
+          </Button>
         </div>
         {f.extra}
       </>

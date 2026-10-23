@@ -658,6 +658,8 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
     const st = await readAppState(slug).catch(() => null)
     if (!st || !existsSync(join(dir, 'app.json'))) return null
     const at = st.createdAt ?? new Date().toISOString()
+    // a script being written keeps a reel with no video planned
+    const status: ScreenStatus = st.job && st.job.kind !== 'script' ? 'working' : st.status === 'ready' ? 'failed' : st.status
     return {
       slug,
       dir,
@@ -666,14 +668,14 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
       updatedAt: st.chat[st.chat.length - 1]?.at ?? at,
       version: 0,
       thumbnail: null,
-      // a script being written keeps a reel with no video planned
-      status: st.job && st.job.kind !== 'script' ? 'working' : st.status === 'ready' ? 'failed' : st.status,
+      status,
       waiting: (st.queue ?? []).filter((q) => !q.attempt).length,
       noVideo: st.status === 'planned',
       take: null,
       versionAt: null,
       series: null,
       pausedFor: null,
+      failedWhy: status === 'failed' ? (st.lastError?.userMessage ?? null) : null,
       posted: !!st.posted?.length
     }
   }
@@ -705,6 +707,7 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
     versionAt: last?.createdAt ?? null,
     series: typeof p.series === 'string' && p.series.trim() ? p.series.trim() : null,
     pausedFor: st.paused ?? null,
+    failedWhy: status === 'failed' ? (st.lastError?.userMessage ?? null) : null,
     posted: !!st.posted?.length
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ComponentPropsWithRef, type ReactNode } from 'react'
 import { droppedPaths } from '../api'
 import { Icon, type IconName } from './icons'
 
@@ -12,7 +12,7 @@ export function Button({
   danger,
   className,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { kind?: 'primary' | 'secondary' | 'tertiary'; size?: 'small' | 'big'; danger?: boolean }) {
+}: ComponentPropsWithRef<'button'> & { kind?: 'primary' | 'secondary' | 'tertiary'; size?: 'small' | 'big'; danger?: boolean }) {
   const cls = ['btn', kind === 'primary' && 'primary', kind === 'tertiary' && 'ghost', size, danger && 'danger', className].filter(Boolean).join(' ')
   return <button type="button" {...rest} className={cls} />
 }
@@ -36,6 +36,72 @@ export function IconButton({
     >
       <Icon name={icon} size={16} stroke={1.75} />
     </button>
+  )
+}
+
+/** A radio group is one Tab stop; the arrow keys move the choice (WAI-ARIA radio group). */
+export function arrowPick<K extends string>(e: React.KeyboardEvent<HTMLElement>, keys: readonly K[], value: string | null, onPick: (k: K) => void) {
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
+  if (!step) return
+  e.preventDefault()
+  // with nothing checked (a colour the AI picked that is neither option), arrows start from the first, as Tab does (#53)
+  const from = value !== null && keys.some((k) => k === value) ? value : keys[0]
+  const next = keys[(keys.findIndex((k) => k === from) + step + keys.length) % keys.length]
+  onPick(next)
+  e.currentTarget.querySelector<HTMLElement>(`[data-key="${next}"]`)?.focus()
+}
+/** The radio that holds the group's Tab stop: the chosen one, or the first when none of them is (a custom colour). */
+export const tabStop = (key: string, value: string | null, keys: readonly string[]): number =>
+  key === (value !== null && keys.includes(value) ? value : keys[0]) ? 0 : -1
+
+/**
+ * The app's one segmented control: two to four choices on a sunk pill track, the chosen one on a lifted thumb that
+ * slides to it (180 ms; instant from the keyboard or with reduced motion). Segments share the widest one's width, so
+ * the thumb is one size. `value` may match no option (a custom subtitle colour): then nothing is lifted.
+ */
+export function Segmented<K extends string>({
+  label,
+  value,
+  options,
+  onPick,
+  testid,
+  className
+}: {
+  label: string
+  value: string | null
+  options: readonly { key: K; label: ReactNode; title?: string; testid?: string }[]
+  onPick: (k: K) => void
+  /** The group's test id; each option is `${testid}-${key}` unless it names its own. */
+  testid?: string
+  className?: string
+}) {
+  const keys = options.map((o) => o.key)
+  const at = keys.findIndex((k) => k === value)
+  return (
+    <div
+      className={['segmented', className].filter(Boolean).join(' ')}
+      role="radiogroup"
+      aria-label={label}
+      data-testid={testid}
+      onKeyDown={(e) => arrowPick(e, keys, value, onPick)}
+    >
+      {at >= 0 && <i className="seg-thumb" aria-hidden style={{ width: `calc((100% - 4px) / ${options.length})`, transform: `translateX(${at * 100}%)` }} />}
+      {options.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          role="radio"
+          aria-checked={o.key === value}
+          tabIndex={tabStop(o.key, value, keys)}
+          title={o.title}
+          data-key={o.key}
+          onClick={() => onPick(o.key)}
+          data-testid={o.testid ?? (testid ? `${testid}-${o.key}` : undefined)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -285,14 +351,14 @@ export function useFileDrop(onFiles: (paths: string[]) => void) {
 }
 
 /** Hidden file picker behind a normal button. */
-export function PickFiles({ label, accept, onFiles, className, icon }: { label: string; accept?: string; onFiles: (p: string[]) => void; className?: string; icon?: ReactNode }) {
+export function PickFiles({ label, accept, onFiles, kind, icon }: { label: string; accept?: string; onFiles: (p: string[]) => void; kind?: 'primary' | 'secondary'; icon?: ReactNode }) {
   const ref = useRef<HTMLInputElement>(null)
   return (
     <>
-      <button className={className ?? 'btn'} onClick={() => ref.current?.click()}>
+      <Button kind={kind} onClick={() => ref.current?.click()}>
         {icon}
         {label}
-      </button>
+      </Button>
       <input
         ref={ref}
         type="file"

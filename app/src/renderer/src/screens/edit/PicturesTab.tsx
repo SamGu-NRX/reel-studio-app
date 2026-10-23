@@ -4,7 +4,7 @@ import { clock } from '../../../../shared/progress'
 import { reel, userMessage } from '../../api'
 import { useNotify } from '../../App'
 import { Icon } from '../../components/icons'
-import { IS_MAC } from '../../components/ui'
+import { Button, IS_MAC } from '../../components/ui'
 import { fileTitle, pressKeys, setP, wordKeys, type TabProps } from './controls'
 
 type Broll = NonNullable<ProjectJson['broll']>[number]
@@ -93,9 +93,9 @@ export function PicturesTab({ d, base, now, change, player, placed, images, relo
           ))}
         </p>
         <div className="edit-actions">
-          <button className="btn small ghost" onClick={() => setPicking(null)}>
+          <Button size="small" kind="tertiary" onClick={() => setPicking(null)}>
             Cancel
-          </button>
+          </Button>
         </div>
       </div>
     )
@@ -127,9 +127,9 @@ export function PicturesTab({ d, base, now, change, player, placed, images, relo
                     </span>
                   )}
                 </div>
-                <button className="btn small ghost danger" onClick={() => change(setP((p) => ({ broll: (p.broll ?? []).filter((x) => x.id !== b.id) })))}>
+                <Button size="small" kind="tertiary" danger onClick={() => change(setP((p) => ({ broll: (p.broll ?? []).filter((x) => x.id !== b.id) })))}>
                   Remove
-                </button>
+                </Button>
               </li>
             )
           })}
@@ -147,9 +147,9 @@ export function PicturesTab({ d, base, now, change, player, placed, images, relo
           </div>
         )}
         <div className="edit-actions">
-          <button className="btn small" onClick={() => void choose()} data-testid="picture-add">
+          <Button size="small" onClick={() => void choose()} data-testid="picture-add">
             <Icon name="plus" size={14} /> Choose a picture on this {IS_MAC ? 'Mac' : 'PC'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

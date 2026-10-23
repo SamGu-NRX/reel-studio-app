@@ -8,7 +8,7 @@ import { useNotify } from '../App'
 import { Icon } from '../components/icons'
 import { byKeyboard, reducedMotion } from '../components/motion'
 import { SafeBand } from '../components/Phone'
-import { IS_MAC } from '../components/ui'
+import { Button, IS_MAC } from '../components/ui'
 import { CoverTab } from './edit/CoverTab'
 import { CutTab, type CutMode } from './edit/CutTab'
 import { PicturesTab, pictureUrl } from './edit/PicturesTab'
@@ -299,14 +299,14 @@ export function ShowMeHow({
           {n ? `${n} ${n === 1 ? 'change' : 'changes'}` : 'Nothing changed yet'}
         </span>
         {s.canUndo && (
-          <button className="btn ghost small" onClick={s.undo} title={IS_MAC ? 'Undo (⌘Z)' : 'Undo (Ctrl+Z)'} data-testid="drawer-undo">
+          <Button kind="tertiary" size="small" onClick={s.undo} title={IS_MAC ? 'Undo (⌘Z)' : 'Undo (Ctrl+Z)'} data-testid="drawer-undo">
             <Icon name="undo" size={14} /> Undo
-          </button>
+          </Button>
         )}
         <span className="spacer" />
-        <button className="btn primary" disabled={!n || making} onClick={() => void make()} data-testid="make-version">
+        <Button kind="primary" disabled={!n || making} onClick={() => void make()} data-testid="make-version">
           Make Version {next}
-        </button>
+        </Button>
       </div>
 
       <SkipRanges player={player} ranges={skip} />

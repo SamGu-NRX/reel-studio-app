@@ -47,6 +47,8 @@ export interface ProjectSummary {
   /** Paused without you (app.json `paused`): it continues on its own, and this says when or what for. Null when it
    * runs, or waits for you. */
   pausedFor: PausedFor | null
+  /** Why Version 1 didn't finish (app.json `lastError`), for its card. Null unless `status` is 'failed'. */
+  failedWhy: string | null
   /** A version of it was posted (app.json `posted`). */
   posted: boolean
 }

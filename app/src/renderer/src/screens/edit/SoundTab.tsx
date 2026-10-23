@@ -5,9 +5,9 @@ import { kindName, levelOf, SFX_LEVELS, sfxName, sfxReason, sfxWord, type Sfx, t
 import { reel, userMessage } from '../../api'
 import { useNotify } from '../../App'
 import { Icon } from '../../components/icons'
-import { IS_MAC } from '../../components/ui'
+import { IS_MAC, Segmented } from '../../components/ui'
 import { usePlayhead } from '../../components/playhead'
-import { fileTitle, Seg, setP, type TabProps } from './controls'
+import { fileTitle, setP, type TabProps } from './controls'
 import { useAudition } from './preview'
 
 const MUSIC_LEVELS = [
@@ -199,7 +199,7 @@ export function SoundTab({ d, base, now, change, player, placed }: TabProps) {
                         ))}
                         {!byId.has(s.sound) && <option value={s.sound}>{`${name.kind}, ${name.variant}`}</option>}
                       </select>
-                      <Seg
+                      <Segmented
                         testid="sfx-level"
                         label={`How loud the ${name.kind.toLowerCase()} is`}
                         value={levelOf(s)}

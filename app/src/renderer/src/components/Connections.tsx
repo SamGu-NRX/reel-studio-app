@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ConnectionInfo, ConnectionKind, ProviderInfo, SaveConnectionResult } from '../../../shared/api'
 import { reel, userMessage } from '../api'
-import { Confirm, Modal, MoreMenu, Spinner } from './ui'
+import { Button, Confirm, Modal, MoreMenu, Spinner } from './ui'
 import { Icon } from './icons'
 import { ConnectedMark, ProviderRow } from './provider-row'
 
@@ -65,9 +65,9 @@ export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) =>
         mark={<Icon name="server" size={20} />}
         status={list.length ? `${list.length} saved` : 'Not set up'}
         action={
-          <button className="btn small" onClick={() => setEditing('new')} data-testid={list.length ? 'connection-add' : 'own-server-toggle'}>
+          <Button size="small" onClick={() => setEditing('new')} data-testid={list.length ? 'connection-add' : 'own-server-toggle'}>
             {list.length ? 'Add another' : 'Set up'}
-          </button>
+          </Button>
         }
       >
         {list.length > 0 && (
@@ -82,9 +82,9 @@ export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) =>
                     </span>
                   </div>
                   {!c.active && (
-                    <button className="btn small" onClick={() => void use(c)} data-testid="connection-use">
+                    <Button size="small" onClick={() => void use(c)} data-testid="connection-use">
                       Use this
-                    </button>
+                    </Button>
                   )}
                   <MoreMenu
                     label={`More for ${c.label}`}
@@ -407,12 +407,12 @@ function ConnectionDialog({ editing, onClose, onSaved }: { editing: ConnectionIn
           </div>
         )}
         <div className="row">
-          <button type="button" className="btn ghost" onClick={onClose} disabled={busy} data-testid="connection-cancel">
+          <Button kind="tertiary" onClick={onClose} disabled={busy} data-testid="connection-cancel">
             Cancel
-          </button>
+          </Button>
           <span className="spacer" />
           {busy && <span className="muted-sm">Sending one short message to check it works.</span>}
-          <button type="submit" className="btn primary" disabled={busy} data-testid="connection-save">
+          <Button type="submit" kind="primary" disabled={busy} data-testid="connection-save">
             {busy ? (
               <>
                 <Spinner /> Checking…
@@ -422,7 +422,7 @@ function ConnectionDialog({ editing, onClose, onSaved }: { editing: ConnectionIn
             ) : (
               'Connect'
             )}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

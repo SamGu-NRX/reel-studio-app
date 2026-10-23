@@ -1,7 +1,8 @@
 import type { ProjectJson } from '../../../../shared/api'
 import { CAPTION_PRESETS, applyPreset, lookFromStyle, presetOf, rowPosition } from '../../../../shared/caption-presets'
 import { SubtitleSample } from '../../components/Player'
-import { arrowPick, Seg, setP, tabStop, type TabProps } from './controls'
+import { arrowPick, Segmented, tabStop } from '../../components/ui'
+import { setP, type TabProps } from './controls'
 
 type Captions = NonNullable<ProjectJson['captions']>
 type Style = Record<string, unknown>
@@ -84,21 +85,21 @@ export function SubtitlesTab({ now, change, next, sample }: TabProps & { sample:
           </div>
           <div className="edit-field">
             <span className="edit-label">Size</span>
-            <Seg testid="cap-size" label="Size" value={sizeKey(style)} options={SIZES} onPick={(k) => setStyle({ size: SIZES.find((x) => x.key === k)!.size, sizePicked: true })} />
+            <Segmented testid="cap-size" label="Size" value={sizeKey(style)} options={SIZES} onPick={(k) => setStyle({ size: SIZES.find((x) => x.key === k)!.size, sizePicked: true })} />
           </div>
           <div className="edit-field">
             <span className="edit-label">Position</span>
-            <Seg testid="cap-pos" label="Position" value={positionKey(style)} options={POSITIONS} onPick={(k) => setStyle({ position: rowPosition(k as 'higher' | 'lower', style) })} />
+            <Segmented testid="cap-pos" label="Position" value={positionKey(style)} options={POSITIONS} onPick={(k) => setStyle({ position: rowPosition(k as 'higher' | 'lower', style) })} />
           </div>
           {/* a look that lights up the word being said still has a colour for the rest (#53) */}
           <div className="edit-field">
             <span className="edit-label">Colour</span>
-            <Seg testid="cap-color" label="Colour" value={colorKey(style)} options={COLORS} onPick={(k) => setStyle({ color: COLORS.find((x) => x.key === k)!.color })} />
+            <Segmented testid="cap-color" label="Colour" value={colorKey(style)} options={COLORS} onPick={(k) => setStyle({ color: COLORS.find((x) => x.key === k)!.color })} />
           </div>
           {!!style.highlight && (
             <div className="edit-field">
               <span className="edit-label">Word being said</span>
-              <Seg testid="cap-highlight" label="Word being said" value={highlightKey(style)} options={HIGHLIGHTS} onPick={(k) => setStyle({ highlight: HIGHLIGHTS.find((x) => x.key === k)!.color })} />
+              <Segmented testid="cap-highlight" label="Word being said" value={highlightKey(style)} options={HIGHLIGHTS} onPick={(k) => setStyle({ highlight: HIGHLIGHTS.find((x) => x.key === k)!.color })} />
             </div>
           )}
           <p className="edit-hint">The phone shows a line of your reel in this look. The dashed frame is where Instagram's buttons don't cover the subtitles.</p>

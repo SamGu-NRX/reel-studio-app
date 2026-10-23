@@ -9,7 +9,7 @@ import { fallbackOrder, PHONE_HELP, waitForPhone, type PhoneFallback } from '../
 import { qrSvg } from '../../../shared/qr'
 import { reel, userMessage } from '../api'
 import { Icon } from './icons'
-import { FOLDER_APP, IS_MAC, Spinner } from './ui'
+import { Button, FOLDER_APP, IS_MAC, Spinner } from './ui'
 import './SendToPhone.css'
 
 const EMAIL_LIMIT = 20_000_000
@@ -145,9 +145,9 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
           <b>AirDrop</b> (iPhone or iPad near this Mac)
           <p className="muted-sm">Click Share, choose AirDrop, then pick your phone. Tap Accept on the phone.</p>
         </div>
-        <button className="btn small" onClick={() => void reel.phone.shareSheet(video)} data-testid="phone-airdrop">
+        <Button size="small" onClick={() => void reel.phone.shareSheet(video)} data-testid="phone-airdrop">
           Share
-        </button>
+        </Button>
       </div>
     ),
     cloud: <CloudSave video={video} icon={<Glyph name="cloud" />} />,
@@ -166,8 +166,8 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
             </p>
           )}
         </div>
-        <button
-          className="btn small"
+        <Button
+          size="small"
           onClick={async () => {
             await reel.phone.emailSelf(video)
             setEmailed(true)
@@ -175,7 +175,7 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
           data-testid="phone-email"
         >
           Email
-        </button>
+        </Button>
       </div>
     ),
     cable: (
@@ -197,9 +197,9 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
     <div className="stack send-phone" data-testid="send-to-phone">
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <h2>Send to my phone</h2>
-        <button className="btn ghost small" onClick={onBack} data-testid="phone-back">
+        <Button kind="tertiary" size="small" onClick={onBack} data-testid="phone-back">
           <Icon name="back" size={16} /> Back
-        </button>
+        </Button>
       </div>
 
       {!error && (
@@ -226,9 +226,9 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
             {stopped ? (
               <div className="row wrap">
                 <span className="muted">This code stopped working after 15 minutes, to keep your reel private.</span>
-                <button className="btn small" onClick={() => setAttempt((n) => n + 1)} data-testid="phone-renew">
+                <Button size="small" onClick={() => setAttempt((n) => n + 1)} data-testid="phone-renew">
                   Make a new code
-                </button>
+                </Button>
               </div>
             ) : sent ? (
               <p className="phone-sent" data-testid="phone-sent" role="status">
@@ -326,9 +326,9 @@ export function SendToPhone({ video, caption, onBack, onSent }: { video: string;
       )}
 
       <div className="row" style={{ justifyContent: 'flex-end' }}>
-        <button className="btn ghost" onClick={onBack} data-autofocus data-testid="phone-done">
+        <Button kind="tertiary" onClick={onBack} data-autofocus data-testid="phone-done">
           Done
-        </button>
+        </Button>
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { ProjectJson } from '../../../shared/api'
 import { canJoin, retype, setBreak, shownAs, type LineToken } from '../../../shared/subtitle-lines'
+import { Button } from './ui'
 
 type Captions = NonNullable<ProjectJson['captions']>
 type Correction = NonNullable<Captions['corrections']>[number]
@@ -130,14 +131,14 @@ export function SubtitleLines({
               }}
             />
             {joinable && (
-              <button
-                className="btn small ghost sub-join"
+              <Button
+                size="small" kind="tertiary" className="sub-join"
                 title="Put this line onto the one above"
                 aria-label={`Join line ${i + 1} to the line above`}
                 onClick={() => join(i, typed(i))}
               >
                 Join
-              </button>
+              </Button>
             )}
           </div>
         )

@@ -27,6 +27,24 @@ export function pausedWords(p: PausedFor, now: Date, computer: string): string {
   }
 }
 
+/**
+ * A paused reel's card on Reels: why it stopped and what happens next, short enough for two lines of a narrow card.
+ * `p` null: the person stopped it, and only Resume continues it.
+ */
+export function pauseLine(p: PausedFor | null, now: Date, computer: string): { why: string; next: string } {
+  if (!p) return { why: 'You paused it', next: 'resumes where it stopped' }
+  switch (p.reason) {
+    case 'limit':
+      return { why: p.editor ? `${p.editor} plan limit` : 'Plan limit', next: p.until ? `continues ${when(p.until, now)}` : 'continues when it resets' }
+    case 'offline':
+      return { why: 'No internet', next: 'continues once online' }
+    case 'sleep':
+      return { why: `Your ${computer} slept`, next: 'continues when it wakes' }
+    case 'quit':
+      return { why: 'Reel Studio closed', next: 'continuing now' }
+  }
+}
+
 /** The reel's log: why it stopped, and when it goes on. Names the editor's plan when it is known. */
 export function pausedSentence(p: PausedFor, now: Date, computer: string): string {
   switch (p.reason) {

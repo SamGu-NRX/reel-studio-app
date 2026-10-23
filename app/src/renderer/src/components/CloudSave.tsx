@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { CloudDrive } from '../../../shared/api'
 import { driveNames } from '../../../shared/cloud-drive-names'
 import { errorCode, reel, userMessage } from '../api'
-import { FOLDER_APP } from './ui'
+import { Button, FOLDER_APP } from './ui'
 
 const ICLOUD_URL = 'https://www.icloud.com/iclouddrive/'
 const GDRIVE_URL = 'https://drive.google.com/drive/my-drive'
@@ -84,14 +84,14 @@ export function CloudSave({ video, icon }: { video: string; icon: ReactNode }) {
           <div className="row wrap cloud-buttons">
             {buttons.map((drive) => (
               // aria-disabled, not disabled: a disabled button drops keyboard focus to the page mid-save
-              <button
-                className="btn small"
+              <Button
+                size="small"
                 key={drive.folder}
                 aria-disabled={state.kind === 'saving'}
                 onClick={() => state.kind !== 'saving' && void save(drive)}
               >
                 Save to {label(drive)}
-              </button>
+              </Button>
             ))}
           </div>
         )}

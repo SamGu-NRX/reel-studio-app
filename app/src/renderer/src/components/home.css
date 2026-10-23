@@ -3,13 +3,7 @@
 .page.home { max-width: none; padding: var(--space-s) var(--gutter) var(--space-l); }
 
 /* in the title-bar row, beside "Reels" */
-.seg2 { display: inline-flex; margin-left: 8px; padding: 2px; gap: 2px; border-radius: var(--r-md); background: var(--sunk); }
-.seg2 > button {
-  height: 26px; padding: 0 12px; border: 0; border-radius: var(--r-sm); background: transparent; font: inherit; font-size: var(--fs-sm); font-weight: 560;
-  color: var(--ink-2); cursor: pointer; transition: background-color 120ms ease, color 120ms ease;
-}
-.seg2 > button[aria-checked="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(22, 30, 26, .12), 0 0 0 .5px rgba(22, 30, 26, .08); }
-@media (hover: hover) and (pointer: fine) { .seg2 > button[aria-checked="false"]:hover { color: var(--ink); } }
+.tb-seg { margin-left: 8px; align-self: center; }
 
 .rsearch { position: relative; display: flex; align-items: center; width: 240px; height: 28px; border-radius: var(--r-sm); background: var(--sunk); color: var(--ink-3); }
 .rsearch .icon { position: absolute; left: 9px; pointer-events: none; }
@@ -37,12 +31,13 @@
 .schip[aria-pressed="true"] .n { color: rgba(241, 242, 239, .75); }
 @media (hover: hover) and (pointer: fine) { .schip[aria-pressed="false"]:hover { color: var(--ink); border-color: var(--ink-4); } }
 
-/* A card is the one filled surface here (spec.md section 1): the picture is the object you open. */
+/* A card is the one filled surface here (spec.md section 1): the picture is the object you open. The picture and the
+   words sit under the card-wide hit button; only a stopped reel's action pill sits above it. */
 .rcard { position: relative; min-width: 0; }
 .rcard .hit { position: absolute; inset: 0; z-index: 3; border: 0; padding: 0; background: transparent; border-radius: var(--r-lg); cursor: pointer; }
 html.kb .rcard .hit:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
 .rcard .im {
-  position: relative; display: block; aspect-ratio: 9 / 16; border-radius: var(--r-lg); overflow: hidden; background: var(--sunk);
+  position: relative; display: block; width: 100%; aspect-ratio: 9 / 16; border-radius: var(--r-lg); overflow: hidden; background: var(--sunk);
   box-shadow: var(--e1); transition: transform 180ms var(--ease-out);
 }
 .rcard .im img, .rcard .im video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -51,7 +46,7 @@ html.kb .rcard .hit:focus-visible { outline: 2px solid var(--ink); outline-offse
   content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px rgba(0, 0, 0, .22);
   background: linear-gradient(180deg, rgba(0, 0, 0, .12) 0%, transparent 22%, transparent 62%, rgba(0, 0, 0, .26) 100%);
 }
-@media (hover: hover) and (pointer: fine) { .rcard .hit:hover ~ .im { transform: translateY(-2px); } }
+@media (hover: hover) and (pointer: fine) { .rcard:hover .im { transform: translateY(-2px); } }
 .rcard .hit:active ~ .im { transform: scale(.98); }
 
 /* No video yet: paper, with the title set large */
@@ -61,16 +56,21 @@ html.kb .rcard .hit:focus-visible { outline: 2px solid var(--ink); outline-offse
   position: absolute; inset: 14px 14px auto; display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden;
   font-size: var(--fs-heading); line-height: 24px; font-weight: 640; font-stretch: 108%; letter-spacing: -.01em; color: var(--ink); overflow-wrap: anywhere; text-wrap: pretty;
 }
-/* Paused: dimmed, with a pause mark */
-.rcard.st-paused .im img, .rcard.st-paused .im video { filter: saturate(.45) brightness(.62); }
-.rcard .glyph {
-  position: absolute; top: 8px; left: 8px; z-index: 2; width: 24px; height: 24px; border-radius: 50%; background: rgba(255, 255, 255, .94);
-  color: var(--ink); display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+
+/* Stopped (Paused, Didn't finish): the picture goes dim and the edges close in, so it reads as stopped from across the
+   grid; a frame-less reel gets the same dark ground so the mark still shows. Didn't finish loses its colour and its
+   edges close in further: Sam asked for the two to differ at a glance. */
+.rcard:is(.st-paused, .st-failed) .im { background: #5E625F; }
+.rcard.st-paused .im :is(img, video) { filter: saturate(.4) brightness(.48); }
+.rcard.st-paused .im::after { box-shadow: inset 0 0 32px rgba(0, 0, 0, .3); background: radial-gradient(120% 88% at 50% 45%, transparent 34%, rgba(0, 0, 0, .55) 100%); }
+.rcard.st-failed .im :is(img, video) { filter: grayscale(1) brightness(.46) contrast(.9); }
+.rcard.st-failed .im::after { box-shadow: inset 0 0 40px 6px rgba(0, 0, 0, .5); background: radial-gradient(110% 80% at 50% 45%, transparent 22%, rgba(0, 0, 0, .78) 100%); }
+/* the pause mark: bare, in the middle, as a player shows it */
+.rcard .pause-glyph {
+  position: absolute; top: 50%; left: 50%; z-index: 2; margin: -15px 0 0 -15px; color: #fff; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .45));
 }
-/* Didn't finish: no colour, and the edges close in */
-.rcard.st-failed .im img, .rcard.st-failed .im video { filter: grayscale(.9) brightness(.8); }
-.rcard.st-failed .im { background: #CFD2CD; }
-.rcard.st-failed .im::after { box-shadow: inset 0 0 56px 6px rgba(0, 0, 0, .5); background: none; }
+.rcard .pause-glyph rect { fill: currentColor; stroke: none; }
+
 /* Making: a thin bar along the bottom, moved by the job's own events */
 .rcard .pb { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, .35); overflow: hidden; }
 .rcard.st-making .im:not(:has(img, video)) .pb { background: rgba(22, 25, 23, .12); }
@@ -89,17 +89,16 @@ html.kb .rcard .hit:focus-visible { outline: 2px solid var(--ink); outline-offse
   font-size: var(--fs-base); line-height: 17px; font-weight: 600; overflow-wrap: anywhere;
 }
 .rcard .cm {
-  position: relative; z-index: 4; pointer-events: none; margin-top: 2px; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3);
+  margin-top: 2px; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
 }
-.rcard .cm .amber { color: var(--amber); font-weight: 560; }
-.rcard .cm .red { color: var(--pencil); font-weight: 560; }
-.rcard .cm .act {
-  pointer-events: auto; border: 0; padding: 0; background: none; font: inherit; color: inherit; cursor: pointer;
-  text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 2px; transition: text-decoration-color 120ms ease;
-}
-@media (hover: hover) and (pointer: fine) { .rcard .cm .act:hover { text-decoration-color: currentColor; } }
+/* a stopped reel's line, why then what happens next: it may take a second line rather than lose the second half */
+.rcard .cm.why { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-wrap: pretty; }
+.rcard .cm b { font-weight: 560; }
+.rcard .cm .amber { color: var(--amber); }
+.rcard .cm .red { color: var(--pencil); }
 .rcard .cm .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin: 0 6px 1px 0; vertical-align: middle; }
+.rcard .card-act { position: relative; z-index: 4; margin-top: 8px; }
 
 html.kb .rcard .im { transition: none; }
 @media (prefers-reduced-motion: reduce) {
@@ -130,10 +129,12 @@ html.kb .sample-card .im:focus-visible { outline: 2px solid var(--ink); outline-
   -webkit-text-stroke: .6cqw #000; paint-order: stroke fill; transition: opacity 200ms ease; pointer-events: none;
 }
 .sample-card .cover-t em { font-style: normal; background: var(--marker); color: #111; -webkit-text-stroke: 0; padding: 0 1.2cqw; border-radius: 1.2cqw; }
+/* play or pause, bare on the picture like the cards' pause mark (no disc behind it) */
 .sample-card .yt-play {
-  position: absolute; right: 8px; bottom: 8px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
-  background: rgba(255, 255, 255, .94); color: var(--ink); box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+  position: absolute; right: 10px; bottom: 10px; width: 24px; height: 24px; display: grid; place-items: center; color: #fff;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .5));
 }
+.sample-card .yt-play :is(polygon, rect) { fill: currentColor; }
 .sample-card figcaption { display: flex; justify-content: space-between; margin-top: 10px; font-size: var(--fs-base); }
 .sample-card figcaption b { font-weight: 620; }
 .sample-card figcaption span { color: var(--ink-3); font-variant-numeric: tabular-nums; }

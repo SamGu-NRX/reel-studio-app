@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 import type { DropResult, LibraryBin, LibraryFile, LibraryPreview } from '../../../shared/api'
 import { describeSorted } from '../../../shared/describe'
 import { reel, userMessage } from '../api'
-import { FOLDER_APP, PickFiles, Spinner } from '../components/ui'
+import { Button, FOLDER_APP, PickFiles, Spinner } from '../components/ui'
 import { Icon } from '../components/icons'
 import { TitleBarSlot } from '../components/titlebar'
 import '../components/library.css'
@@ -277,7 +277,7 @@ export function Library({ added }: { added?: { results: DropResult[]; at: number
         actions={
           <>
             {busy && <Spinner />}
-            <PickFiles className="btn primary" label="Add files" icon={<Icon name="plus" />} onFiles={add} />
+            <PickFiles kind="primary" label="Add files" icon={<Icon name="plus" />} onFiles={add} />
           </>
         }
       />
@@ -305,9 +305,9 @@ export function Library({ added }: { added?: { results: DropResult[]; at: number
       <div className="lib-sub">
         <span>{ABOUT[tab]}</span>
         {folder && (
-          <button className="btn ghost small" onClick={() => reel.app.openFolder(folder.dir)}>
+          <Button kind="tertiary" size="small" onClick={() => reel.app.openFolder(folder.dir)}>
             Show in {FOLDER_APP}
-          </button>
+          </Button>
         )}
       </div>
       {result && (

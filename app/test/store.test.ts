@@ -242,6 +242,23 @@ describe('project store', () => {
     expect(Object.fromEntries(list.map((p) => [p.slug, p.posted]))).toEqual({ quiet: false, shared: true })
   })
 
+  it("fails if a Didn't finish card can't say why, or a reel that has a version still carries an old failure", async () => {
+    setupPaths()
+    await ensureRoot()
+    fakeProject('stuck')
+    fakeProject('recovered', { versions: [1] })
+    for (const slug of ['stuck', 'recovered'])
+      await updateAppState(slug, (s) => {
+        s.status = 'failed'
+        s.lastError = { code: 'NO_SPEECH', userMessage: 'No speech was heard in this video.' }
+      })
+    const list = await listProjects()
+    expect(Object.fromEntries(list.map((p) => [p.slug, [p.status, p.failedWhy]]))).toEqual({
+      stuck: ['failed', 'No speech was heard in this video.'],
+      recovered: ['ready', null]
+    })
+  })
+
   it('cleans half-written versions and temp files', async () => {
     setupPaths()
     await ensureRoot()
