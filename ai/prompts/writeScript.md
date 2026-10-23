@@ -52,11 +52,15 @@ Short text overlays for viewers watching on mute, in the order they appear.
 - Numbers and prices exactly as spoken, as digits.
 - Only claims the script makes. Nothing invented.
 
+## Title
+
+A name for the reel in the creator's own list of reels: 2 to 6 plain words, what the reel is about, sentence case, no quotes, no emoji, no hashtags.
+
 ## Output
 
 Reply ONLY with JSON, no other text:
 
-{"hook": string, "script": string, "onScreenText": string[]}
+{"title": string, "hook": string, "script": string, "onScreenText": string[]}
 
 "hook" is the first spoken line. "script" is the full spoken script including the hook, one line per sentence, separated by newlines. "onScreenText" is the list of overlays in order.
 
