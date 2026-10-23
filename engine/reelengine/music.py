@@ -427,23 +427,29 @@ def build_audio(ctx, voice_wav) -> Path:
 # --- track analysis ----------------------------------------------------------------------------
 
 def _onset_envelope(mono: np.ndarray, sr: int, n_fft: int = 1024, hop: int = 512) -> np.ndarray:
-    """Spectral flux (log magnitude, half-wave rectified), one value per hop."""
+    """Positive spectral change, with window centres on the audio clock.
+
+    The L2 magnitude change preserves transient strength. Summing log changes
+    gave quiet broadband hi-hats more weight than louder tonal beat clicks.
+    """
     n = len(mono)
     if n < n_fft:
         return np.zeros(1)
-    frames = 1 + (n - n_fft) // hop
+    # Padding keeps clicks at either edge visible and centres frame i at i*hop.
+    mono = np.pad(mono, (n_fft // 2, n_fft // 2))
+    frames = 1 + n // hop
     win = np.hanning(n_fft).astype(np.float32)
     env = np.zeros(frames, np.float32)
     prev = None
     for s in range(0, frames, 2048):
         idx = np.arange(s, min(frames, s + 2048))
         seg = np.stack([mono[i * hop: i * hop + n_fft] for i in idx]) * win
-        mag = np.log1p(10 * np.abs(np.fft.rfft(seg, axis=1)))
+        mag = np.abs(np.fft.rfft(seg, axis=1))
         if prev is not None:
             mag_all = np.vstack([prev[None, :], mag])
         else:
-            mag_all = np.vstack([mag[:1], mag])
-        flux = np.maximum(0, np.diff(mag_all, axis=0)).sum(axis=1)
+            mag_all = np.vstack([np.zeros_like(mag[:1]), mag])
+        flux = np.sqrt((np.maximum(0, np.diff(mag_all, axis=0)) ** 2).sum(axis=1))
         env[idx] = flux
         prev = mag[-1]
     env -= np.convolve(env, np.ones(16) / 16, mode="same")     # remove slow trend
@@ -454,10 +460,12 @@ def _tempo_and_beats(env: np.ndarray, fps: float) -> tuple[Optional[float], list
     """(bpm, beat times, confidence 0..1) from an onset envelope via autocorrelation + phase pick."""
     if len(env) < fps * 4 or env.max() <= 0:
         return None, [], 0.0
-    e = (env - env.mean()) / (env.std() + 1e-9)
+    # Smooth only the tempo evidence: narrow transients split across adjacent hops,
+    # so raw integer-lag correlation can prefer a half-tempo harmonic (140 -> 70).
+    smooth = np.convolve(env, [0.25, 0.5, 0.25], mode="same")
+    e = (smooth - smooth.mean()) / (smooth.std() + 1e-9)
     ac = np.correlate(e, e, mode="full")[len(e) - 1:]
     ac /= ac[0] + 1e-9
-    lags = np.arange(len(ac))
     bpm_of = lambda lag: 60.0 * fps / lag  # noqa: E731
     lo, hi = int(fps * 60 / 180), int(fps * 60 / 60)
     best, best_lag = -1e9, None
@@ -477,15 +485,55 @@ def _tempo_and_beats(env: np.ndarray, fps: float) -> tuple[Optional[float], list
         period = l + float(np.clip(d, -0.5, 0.5))
     else:
         period = float(l)
-    phases = [env[int(p)::max(1, int(round(period)))].sum() for p in range(int(round(period)))]
-    phase = int(np.argmax(phases))
-    beats, t = [], float(phase)
-    while t < len(env):
-        i = int(round(t))
-        w = max(1, int(period * 0.1))
-        j = i - w + int(np.argmax(env[max(0, i - w): i + w + 1])) if i - w >= 0 else i
+    padded = np.pad(env, (1, 1))
+    peaks = np.flatnonzero((env > padded[:-2]) & (env >= padded[2:]))
+    a, b, c = padded[peaks], env[peaks], padded[peaks + 2]
+    positions = np.maximum(0, peaks + np.clip(
+        (a - c) / (2 * (a - 2 * b + c) + 1e-12), -0.5, 0.5))
+
+    # Refine the lag with local onset intervals before assigning beat numbers.
+    # Average without amplitude weights: hop alignment changes peak strength,
+    # so weighting those intervals biases the period on long click tracks.
+    intervals = []
+    for t in positions:
+        start, end = np.searchsorted(positions, [t + period * 0.8, t + period * 1.2])
+        if start < end:
+            j = start + int(np.argmax(env[peaks[start:end]]))
+            intervals.append(positions[j] - t)
+    if len(intervals) >= 4:
+        refined = float(np.mean(intervals))
+        if abs(refined - period) < period * 0.05:
+            period = refined
+
+    # Score the same fractional period we emit. Rounding the stride accumulates
+    # phase error across a track even when its BPM estimate is close.
+    frames = np.arange(len(env))
+    phases = np.arange(0, period, 0.5)
+    phase = float(max(phases, key=lambda p: np.interp(
+        np.arange(p, len(env), period), frames, smooth).sum()))
+
+    # Fit period and phase to nearby onsets over the whole track.
+    for _ in range(3):
+        numbers = np.rint((positions - phase) / period)
+        keep = np.abs(positions - (phase + numbers * period)) < period * 0.2
+        if keep.sum() < 4:
+            break
+        design = np.column_stack([np.ones(keep.sum()), numbers[keep]])
+        weights = np.sqrt(env[peaks[keep]])
+        fitted_phase, fitted_period = np.linalg.lstsq(
+            design * weights[:, None], positions[keep] * weights, rcond=None)[0]
+        if abs(fitted_period - period) > period * 0.05:
+            break
+        phase, period = float(fitted_phase), float(fitted_period)
+    phase %= period
+    beats = []
+    for t in np.arange(phase - period, len(env) + period * 0.1, period):
+        near = np.flatnonzero(np.abs(positions - t) <= period * 0.1)
+        # A grid point without an onset is not a beat to accent, including silence.
+        if not len(near):
+            continue
+        j = positions[near[np.argmax(env[peaks[near]])]]
         beats.append(round(max(0, j) / fps, 3))
-        t += period
     conf = float(np.clip(ac[best_lag], 0, 1))
     return round(bpm_of(period), 1), beats, round(conf, 3)
 
@@ -522,7 +570,7 @@ def find_arrivals(curve: list, window: float, lookback: float = 30.0, top: int =
             for d, o, b, a in sorted(picked, key=lambda m: m[1])]
 
 
-ANALYSIS_VERSION = 3     # bump when analyze_track's output changes (the analysis cache key)
+ANALYSIS_VERSION = 4     # recompute beat grids made with rounded phase strides and early timestamps
 
 
 def mood_of(energy: str, brightness: str, dynamic: bool, bpm) -> str:
@@ -564,9 +612,10 @@ def analyze_track(path, ctx=None) -> dict:
         seg = st[k: k + int(window)]
         curve.append([float(k), round(float(np.mean(np.maximum(seg, -60.0))), 1)])
     arrivals = find_arrivals(curve, window)
-    hop = 512
-    env = _onset_envelope(mono.astype(np.float32), sr, 1024, hop)
+    n_fft, hop = 1024, 512
+    env = _onset_envelope(mono.astype(np.float32), sr, n_fft, hop)
     bpm, beats, conf = _tempo_and_beats(env, sr / hop)
+    beats = [b for b in beats if b < len(mono) / sr]
     onset_rate = float((env > env.mean() + 2 * env.std()).mean() * sr / hop) if len(env) else 0.0
     spec = np.abs(np.fft.rfft(mono[: sr * 60] if len(mono) > sr * 60 else mono))
     freqs = np.fft.rfftfreq(min(len(mono), sr * 60), 1 / sr)

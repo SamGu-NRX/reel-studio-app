@@ -8,8 +8,7 @@ import pytest
 
 from reelengine import broll, music, project, render, sfx
 
-# This tempo gives the existing detector a stable phase over the short click track.
-BPM = 117.45
+BPM = 120
 PERIOD = 60 / BPM
 TARGETS = (4 * PERIOD, 12 * PERIOD)
 
@@ -93,6 +92,8 @@ def test_word_cuts_and_word_mapping_never_move(tmp_path, click_track):
     ctx, tl = context(tmp_path, click_track,
                       cut={"keep": [{"from": "w0", "to": "w1"}, {"from": "w3", "to": "w4"}], "gapCap": 5})
     assert len(tl.segments) == 2
+    # The shortened cut puts the two effects inside the pack's two-second gap.
+    ctx.project["sfx"] = ctx.project["sfx"][:1]
     before = times(ctx)
     segments, words, cut = deepcopy(tl.segments), deepcopy(tl.words_out), deepcopy(ctx.project["cut"])
     ctx.project["beatAccents"] = True
