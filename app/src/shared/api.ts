@@ -496,7 +496,6 @@ export interface StyleRule {
   paused?: boolean
   /** Set: the app applies this rule itself when a new video is made. Otherwise the AI reads it on every edit. */
   payload?: { kind: 'caption-case'; case: 'lower' }
-  paused?: boolean
   /** The reel, version and note it was learned from. */
   source?: { project: string; title: string; version: number; note?: string }
   /** Learned from another editor's export (My style, Learn from my past edits): its file name. */

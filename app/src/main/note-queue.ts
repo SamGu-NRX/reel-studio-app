@@ -187,7 +187,7 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
           if (q.hand) throw { code: 'NOT_A_NOTE', userMessage: 'Open Edit it myself to change this edit.' }
           q.text = t
         })
-      )
+      ).then(() => undefined)
     },
 
     cancel(slug: string, id: string): Promise<void> {

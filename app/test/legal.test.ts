@@ -10,13 +10,13 @@ it('fails if Settings > About opens a license file the installer does not ship',
   const block = /- from: \$\{env\.RS_REPO_ROOT\}\n\s+to: (\S+)\n\s+filter:\n((?:\s+- .+\n)+)/.exec(builder)
   const shipped = block?.[2].split('\n').map((l) => l.trim().replace(/^- /, '')).filter(Boolean) ?? []
 
-  initPaths({ isPackaged: true, resourcesPath: '/Resources', documentsDir: '/d', userDataDir: '/u', appDir: join(REPO, 'app') })
+  initPaths({ isPackaged: true, resourcesPath: '/Resources', documentsDir: '/d', moviesDir: '/m', userDataDir: '/u', appDir: join(REPO, 'app') })
   for (const doc of ['license', 'notices']) {
     const file = legalFile(doc)
     expect(dirname(file)).toBe(join('/Resources', block?.[1] ?? '?'))
     expect(shipped).toContain(basename(file))
   }
-  initPaths({ isPackaged: false, resourcesPath: '', documentsDir: '/d', userDataDir: '/u', appDir: join(REPO, 'app') })
+  initPaths({ isPackaged: false, resourcesPath: '', documentsDir: '/d', moviesDir: '/m', userDataDir: '/u', appDir: join(REPO, 'app') })
   expect([legalFile('license'), legalFile('notices')].every(existsSync)).toBe(true)
   expect(() => legalFile('../package.json')).toThrow()
 })

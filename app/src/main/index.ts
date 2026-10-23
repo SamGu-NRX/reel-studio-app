@@ -5,7 +5,6 @@ import { existsSync, promises as fs, appendFileSync, mkdirSync, mkdtempSync, rea
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { clipboardFiles, filesFromArgv } from './intake'
-import { randomUUID } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { assertIpcSender, validateIpcArgs } from './ipc-guard'
@@ -56,6 +55,7 @@ import {
   titleFromFile,
   uniqueSlug,
   updateAppState,
+  stamp,
   writeJson,
   writeProject,
   type AppState
@@ -92,7 +92,7 @@ import { createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
 import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment, forPerson } from '../shared/moments'
 import { parsePlatformExportRequest, secondTryPlatforms, type Platform, type PlatformTry } from '../shared/platforms'
-import { exportPlatforms, sweepExportStaging, type ExportTry, checkPlatformExport } from './platform-export'
+import { exportPlatforms, sweepExportStaging, type ExportTry } from './platform-export'
 import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { displayPath } from '../shared/display-path'
@@ -244,7 +244,7 @@ async function continuePaused(slug: string): Promise<void> {
   if (!st.paused || jobs.forSlug(slug) || removing.has(slug) || !existsSync(dir)) return
   if (made) {
     await updateAppState(slug, (s) => void delete s.paused)
-    return noteQueue.runNext(slug)
+    return noteQueue.resume(slug)
   }
   if (!existsSync(join(dir, 'project.json'))) {
     await updateAppState(slug, (s) => {

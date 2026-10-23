@@ -129,6 +129,7 @@ function boot(problems: string[]) {
     jobs,
     changed: () => undefined,
     log: () => undefined,
+    startHand: async () => { throw new Error('this model sends no hand edits') },
     startNote: async (slug, note, record) =>
       jobs.start(slug, 'note', async (_emit, signal, { owner }) => {
         if (active.has(slug)) problems.push(`OneProjectJob: two notes run on ${slug}`)

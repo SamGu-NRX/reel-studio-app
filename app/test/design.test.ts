@@ -1,7 +1,7 @@
 // Design critique helpers: progress + time left, "Version 3: bigger yellow subtitles", friendly
 // folder names, and the Library summary line.
 import { describe, expect, it } from 'vitest'
-import { STAGES, clock, estimateSecondsLeft, overallProgress, stageIndex, timeLeftText } from '../src/shared/progress'
+import { clock, estimateSecondsLeft, timeLeftText } from '../src/shared/progress'
 import { acceptRewrite, describeChange, describeFacts, describeSorted, versionMessage, versionTitle, versionTooltip } from '../src/shared/describe'
 import { displayPath } from '../src/shared/display-path'
 import type { ChatMessage, DropResult, ProjectJson } from '../src/shared/api'
