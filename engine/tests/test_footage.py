@@ -460,3 +460,21 @@ def test_search_refuses_a_thumbnail_cache_outside_the_index(library, tmp_path):
     with pytest.raises(EngineError, match="thumbnail cache folder is a symlink"):
         command(root, "search", "--query", "twenty bucks")
     assert list(outside.iterdir()) == []
+
+
+@pytest.mark.parametrize("stored_hash", ["absolute", "../escape", "A" * 64, "a" * 63, "g" * 64])
+def test_search_rejects_malformed_stored_hash_before_thumbnail_writes(library, tmp_path, stored_hash):
+    from reelengine.proto import EngineError
+
+    root, _ = library
+    command(root, "index")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    digest = str(outside) if stored_hash == "absolute" else stored_hash
+    with connect(root) as db:
+        for table in ("paths", "files", "stages", "words", "transcripts", "shots", "text_fts"):
+            db.execute(f"UPDATE {table} SET hash=?", (digest,))
+    with pytest.raises(EngineError, match="invalid footage hash"):
+        command(root, "search", "--query", "twenty bucks")
+    assert list(outside.iterdir()) == []
+    assert not (root / ".index" / "thumbs").exists()

@@ -321,7 +321,15 @@ def lookup(root: Path, path: Path, model: str, language: str | None = None):
 
 
 def _thumbnail(root: Path, digest: str, source: Path, midpoint: float) -> str:
-    out = root / ".index" / "thumbs" / digest[:2] / digest
+    # Index rows can be modified independently of the media. Validate before using a hash as a path.
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise EngineError("UNSAFE_PATH", "invalid footage hash",
+                          "The footage index contains an invalid file hash. Remove the index and try again.")
+    thumbs = root / ".index" / "thumbs"
+    out = thumbs / digest[:2] / digest
+    if not out.resolve().is_relative_to(thumbs.resolve()):
+        raise EngineError("UNSAFE_PATH", "thumbnail cache path is outside the thumbs folder",
+                          "The footage thumbnail folder points elsewhere. Remove the index and try again.")
     for folder in (root / ".index", root / ".index" / "thumbs", out.parent, out):
         if folder.is_symlink():
             raise EngineError("UNSAFE_PATH", "thumbnail cache folder is a symlink",
