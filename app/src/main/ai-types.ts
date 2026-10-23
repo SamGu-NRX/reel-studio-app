@@ -65,6 +65,8 @@ export interface AI {
   setActive(id: ProviderStatus['id']): Promise<void>
   signInChatGPT(openExternal: (url: string) => Promise<void>): Promise<ProviderStatus>
   signOutChatGPT(): Promise<void>
+  stockProviders(): Promise<{ id: 'pexels' | 'pixabay' | 'openverse'; connected: boolean }[]>
+  setStockKey(provider: 'pexels' | 'pixabay', key: string | null): Promise<void>
   setClaudeKey(key: string | null): Promise<ProviderStatus>
   firstEdit(projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<AgentResult>
   /** `opts.attachments`: `work/assets/attach-*` refs main already checked (the AI checks them again). */

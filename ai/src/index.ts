@@ -1,4 +1,5 @@
 // @reelstudio/ai: providers, prompts, tools and the editor agent loop (docs/architecture.md sections 6 and 8).
+import { StockSearch, StockProvider } from './stock';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
@@ -17,6 +18,8 @@ import { detectLocalClaude, DetectOptions, LocalClaude } from './providers/local
 import * as editor from './editor';
 
 export * from './types';
+export { StockSearch } from './stock';
+export type { StockProvider, StockKind, StockResult } from './stock';
 export * from './project';
 export { TOOLS, TOOL_NAMES, toolSchemas, executeTool, newToolState } from './tools';
 export type { ToolContext, ToolDef } from './tools';
@@ -106,7 +109,8 @@ export function createAI(opts: CreateAIOptions) {
     locks.set(key, tail);
     return run;
   }
-  const deps = (): editor.EditorDeps => ({ host: opts.host, prompts, style, fetchImpl: opts.fetch, finalRender: opts.finalRender, maxSteps: opts.maxSteps, tokenBudget: opts.tokenBudget, lookup: opts.lookup });
+  const stockSearch = new StockSearch({ settingsDir: opts.settingsDir, key: stockKey, fetchImpl: opts.fetch });
+  const deps = (): editor.EditorDeps => ({ host: opts.host, prompts, style, stockSearch, fetchImpl: opts.fetch, finalRender: opts.finalRender, maxSteps: opts.maxSteps, tokenBudget: opts.tokenBudget, lookup: opts.lookup });
 
   async function settings(): Promise<AISettings> {
     try { return JSON.parse(await fsp.readFile(settingsFile, 'utf8')); } catch { return {}; }
@@ -131,6 +135,12 @@ export function createAI(opts: CreateAIOptions) {
     if (opts.secretStore?.isEncryptionAvailable()) await writeFileAtomic(keyEnc, opts.secretStore.encryptString(key), 0o600);
     else if (opts.allowPlaintextSecrets) await writeFileAtomic(keyPlain, key, 0o600);
     else throw new AIError('no_secure_storage', 'This computer has no safe place to keep your Claude key, so I did not save it. Add it from the Reel Studio app.');
+  }
+
+  async function stockKey(provider: 'pexels' | 'pixabay'): Promise<string | null> {
+    if (!opts.secretStore?.isEncryptionAvailable()) return null;
+    try { return opts.secretStore.decryptString(await fsp.readFile(path.join(opts.settingsDir, `${provider}-key.bin`))); }
+    catch { return null; }
   }
 
   async function statusOf(id: ProviderId): Promise<ProviderStatus> {
@@ -240,6 +250,18 @@ export function createAI(opts: CreateAIOptions) {
       await siwc.signOut();
       const s = await settings();
       if (s.active === 'chatgpt') await saveSettings({ active: undefined });
+    },
+    async stockProviders(): Promise<{ id: StockProvider; connected: boolean }[]> {
+      return [{ id: 'pexels', connected: !!await stockKey('pexels') }, { id: 'pixabay', connected: !!await stockKey('pixabay') }, { id: 'openverse', connected: true }];
+    },
+    async setStockKey(provider: 'pexels' | 'pixabay', key: string | null): Promise<void> {
+      if (!['pexels', 'pixabay'].includes(provider) || (key !== null && typeof key !== 'string')) throw new AIError('bad_stock_key', 'Choose Pexels or Pixabay and enter an API key.');
+      const file = path.join(opts.settingsDir, `${provider}-key.bin`);
+      const trimmed = key?.trim();
+      if (!trimmed) { await fsp.rm(file, { force: true }); return; }
+      if (!opts.secretStore?.isEncryptionAvailable()) throw new AIError('no_secure_storage', 'This computer cannot securely save stock API keys. Enable secure storage and try again.');
+      try { await writeFileAtomic(file, opts.secretStore.encryptString(trimmed), 0o600); }
+      catch { throw new AIError('stock_key_save_failed', 'The stock API key could not be saved securely. Try again.'); }
     },
     async setClaudeKey(key: string | null): Promise<ProviderStatus> {
       const trimmed = key?.trim() || null;

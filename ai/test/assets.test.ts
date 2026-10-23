@@ -314,7 +314,8 @@ describe('frozen image assets', () => {
       { toolCalls: [call('finish', { summary_for_user: 'Added the bread.' })] },
     ]);
     host.failRender = true;
-    const ai = createAI({ host, settingsDir: tmpDir('settings '), providerOverride: model, finalRender: false });
+    const ai = createAI({ host, settingsDir: tmpDir('settings '), providerOverride: model, finalRender: false,
+      fetch: async () => Response.json({ results: [] }) });
     await expect(ai.applyNote(dir, 'show the bread', () => undefined)).rejects.toThrow();
     expect(await fs.readFile(path.join(dir, 'work/assets/manifest.jsonl'), 'utf8')).toBe(ledger);
     // the note froze the same bytes as the earlier record, so that file is still the earlier record's

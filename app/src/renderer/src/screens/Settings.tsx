@@ -1,3 +1,4 @@
+import { StockKeys } from '../components/stock-keys'
 import { useEffect, useState } from 'react'
 import type { AppInfo } from '../../../shared/api'
 import { RELEASES_URL } from '../../../shared/config'
@@ -51,6 +52,8 @@ export function Settings({ info, onInfo }: { info: AppInfo; onInfo: (i: AppInfo)
         </p>
         <ConnectAI onConnected={(p) => notify(p.id === 'claude-cli' ? USING_CLAUDE_CODE : `Connected to ${p.label}.`)} />
       </section>
+
+      <StockKeys />
 
       <section className="panel">
         <h2>Listening model</h2>

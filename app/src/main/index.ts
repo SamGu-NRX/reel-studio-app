@@ -394,6 +394,8 @@ function registerIpc(): void {
   handle('ai:signInChatGPT', () => ai.signInChatGPT((url) => shell.openExternal(url)))
   handle('ai:cancelSignIn', () => ai.cancelSignInChatGPT?.())
   handle('ai:signOutChatGPT', () => ai.signOutChatGPT())
+  handle('ai:stockProviders', () => ai.stockProviders())
+  handle('ai:setStockKey', (_e, provider: 'pexels' | 'pixabay', key: string | null) => ai.setStockKey(provider, key))
   handle('ai:setClaudeKey', (_e, key: string | null) => ai.setClaudeKey(key))
   // The person's own Claude Code app: the page gets the state only; the sign-in happens in Anthropic's CLI.
   const claudeCode = async () => (await ai.claudeCodeStatus?.()) ?? { state: 'missing' as const }

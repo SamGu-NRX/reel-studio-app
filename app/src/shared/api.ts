@@ -328,6 +328,8 @@ export interface ReelApi {
     signInChatGPT(): Promise<ProviderInfo>
     cancelSignIn(): Promise<void>
     signOutChatGPT(): Promise<void>
+    stockProviders(): Promise<{ id: 'pexels' | 'pixabay' | 'openverse'; connected: boolean }[]>
+    setStockKey(provider: 'pexels' | 'pixabay', key: string | null): Promise<void>
     setClaudeKey(key: string | null): Promise<ProviderInfo>
     /** A fresh look at the person's own Claude Code app. */
     claudeCodeStatus(): Promise<ClaudeCodeInfo>
