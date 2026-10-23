@@ -31,6 +31,11 @@ def test_render_has_every_planned_frame(tmp_path, video, keep):
     fx.make_project(pdir, video, keep=keep)
     res = render.run(pdir, draft=True, root=tmp_path, verify=False)
     assert _frames(Path(res["file"])) == round(res["duration"] * 30)
+    manifest = json.loads((Path(res["versionDir"]) / "render_draft.json").read_text())
+    meter = res["visualChanges"]
+    assert meter == manifest["visualChanges"]
+    assert meter["overall"]["cuts"] == len(manifest["segmentsDetail"]) - 1
+    assert meter["overall"]["brollStarts"] == meter["overall"]["zoomStarts"] == 0
 
 
 def _zones(left_w, right_w, H=1920):

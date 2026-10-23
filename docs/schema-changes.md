@@ -35,3 +35,7 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
   never flipped; every reader of the face box in output pixels mirrors x (`x' = W - x - w`). Written by the AI's
   `set_mirror` tool and by the "Flip picture (it's mirrored)" toggle in "Edit it myself"; turning it off removes
   the field, so the project matches one that never had it.
+
+## 2026-10-23 (cut vocabulary)
+
+- `cutStyle` (optional): `{preset, seed}` selects the reel's fixed cut vocabulary. Presets are `clean`, `standard`, `hyper`, and `punchline`; the seed is an integer used for repeatable within-style choices. The preset values are defined in `engine/reelengine/cut_style.py` and mirrored in the AI package.

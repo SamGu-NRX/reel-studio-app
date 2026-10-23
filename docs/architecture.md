@@ -199,7 +199,7 @@ The agent loop lives in `ai/`. Tools are strict JSON-schema functions that opera
 small TypeScript project API and then ask the main process to re-render. The set:
 
 `get_project`, `get_transcript` (with retake groups and pauses from `analyze`), `set_cut(keep)`,
-`set_gap_cap`, `set_caption_style`, `add_caption_correction`, `list_library(kind)`, `choose_music(track,
+`set_gap_cap`, `set_cut_style(preset, seed)`, `set_caption_style`, `add_caption_correction`, `list_library(kind)`, `choose_music(track,
 startAt, level)`, `set_music_automation`, `add_broll(anchor, treatment, asset, params)`, `update_broll`,
 `remove_broll`, `set_mirror(on, source)` (flip a mirrored take; the editor calls it when text in the room reads
 backwards in the frames it looks at, or when a note says the video is mirrored), `search_images(query)` / `fetch_image(url)`, `capture_website(url)` (a screenshot of a public web page in a locked-down offscreen window, for an app or site the speaker names), `make_animation(template, params)`, `set_zoom`,

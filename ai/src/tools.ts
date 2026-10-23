@@ -3,6 +3,7 @@
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
+import { randomInt } from 'node:crypto';
 import {
   Analysis, Broll, LIBRARY_FOLDERS, LibraryKind, MusicLevel, Project, Transcript, TREATMENTS, Word, WordAnchor,
   anchorText, anchorWords, approxDuration, approxOutputTimes, keptWords, loadAnalysis, loadProject, loadTranscript,
@@ -12,6 +13,7 @@ import { S, JSONSchema, validate, fillNulls } from './schema';
 import { ANIMATION_IDS, ENGINE_FED, TimedWord, alignWordTimes, animationParamsSchema, cleanParams, itemTimes, phraseTime, templateSpec } from './animations';
 import { chooseReadableLayout, minHeroPx } from './readable';
 import { AgentEvent, AIError, EngineHost, ImagePart, ToolSchema } from './types';
+import { CUT_STYLES, CutPreset } from './cut-style';
 import { StyleStore, cleanRuleText, noteAsksToRemember } from './style';
 import { BlockedUrlError, LookupFn, UnsafePathError, guardedFetch, pathProblem, safeResolve, slugName, sniffImage } from './safety';
 
@@ -235,6 +237,7 @@ function projectView(ctx: ToolContext, p: Project, t: Transcript): unknown {
     title: p.title,
     version: p.version,
     format: p.format,
+    ...(p.cutStyle ? { cutStyle: p.cutStyle, cutStyleSettings: CUT_STYLES[p.cutStyle.preset] } : {}),
     sources: p.sources.map((s) => ({ id: s.id, duration: s.duration, mirror: s.mirror === true })),
     cut: cutSummary(t, p),
     captions: p.captions,
@@ -399,7 +402,7 @@ export function captionsForProofread(t: Transcript, p: Project): string {
 }
 
 /** Changes the user can only hear or read outside the picture: a preview shows nothing new. */
-const NOT_VISIBLE = new Set(['music', 'post']);
+const NOT_VISIBLE = new Set(['music', 'post', 'cutStyle']);
 
 export function visibleChangeSinceRender(ctx: ToolContext): boolean {
   return [...(ctx.state.dirty ?? [])].some((f) => !NOT_VISIBLE.has(f));
@@ -717,6 +720,16 @@ const PARAMS = S.obj({
   style: S.opt(S.enum(['pop', 'label'], 'text-pop look: label = dark words on a white box, as written (the hook title, a step label "2: Editing"); pop = big outlined capitals (one key word or number). Default pop')),
 });
 
+function addCutStyleVerdicts(meter: any, preset?: CutPreset): void {
+  if (!preset) return;
+  const band = CUT_STYLES[preset].secondsPerVisualChange;
+  for (const key of ['overall', 'first5', 'first30']) {
+    const row = meter[key];
+    if (!row) continue;
+    row.verdict = band === null ? 'not applicable' : (row.perMinute > 0 && row.perMinute >= 60 / band[1] && row.perMinute <= 60 / band[0] ? 'in band' : 'out of band');
+  }
+}
+
 const tools: ToolDef[] = [
   {
     name: 'get_project',
@@ -750,6 +763,16 @@ const tools: ToolDef[] = [
         content: { ok: true, ...(cutSummary(t, p) as object) },
         summary: 'Picked your best takes',
       };
+    },
+  },
+  {
+    name: 'set_cut_style',
+    description: 'Choose the reel cut style. Pick clean for serious or emotional material, standard by default, hyper for high-energy lists, or punchline for comedy. A seed makes accent choices repeatable.',
+    parameters: S.obj({ preset: S.enum(['clean', 'standard', 'hyper', 'punchline']), seed: S.opt(S.int('integer seed; omit to generate one')) }),
+    async run(ctx, args) {
+      const seed = args.seed === null || args.seed === undefined ? randomInt(0, 2 ** 31) : args.seed;
+      await mutate(ctx, 'cutStyle', (p) => { p.cutStyle = { preset: args.preset as CutPreset, seed }; });
+      return { content: { ok: true, cutStyle: { preset: args.preset, seed }, settings: CUT_STYLES[args.preset as CutPreset] }, summary: `Set cut style to ${args.preset} (seed ${seed})` };
     },
   },
   {
@@ -1212,12 +1235,16 @@ const tools: ToolDef[] = [
       const prior = ctx.state.renders.at(-1);
       if (!visibleChangeSinceRender(ctx) && (prior || ctx.state.changed.size)) {
         ctx.state.previewSkipped = true;
-        return { content: { ok: true, skipped: 'Nothing visible changed since the last preview, so I did not make a new one. The final video after finish includes your change. Do not render again for this.', version: prior?.version ?? null } };
+        const visualChanges = prior?.result?.visualChanges as any;
+        if (visualChanges) addCutStyleVerdicts(visualChanges, ctx.project?.cutStyle?.preset);
+        return { content: { ok: true, skipped: 'Nothing visible changed since the last preview, so I did not make a new one. The final video after finish includes your change. Do not render again for this.', version: prior?.version ?? null, ...(visualChanges ? { visualChanges } : {}) } };
       }
       const info = await doRender(ctx, true);
       const r = info.result ?? {};
       const p = ctx.project!;
       const notes: string[] = [];
+      const visualChanges = r.visualChanges as any;
+      if (visualChanges) addCutStyleVerdicts(visualChanges, p.cutStyle?.preset);
       // Some engine builds do not draw every layer yet. Never delete the user's edit because a frame lacks it.
       if (p.broll.length && r.layers === 0) notes.push('This preview engine did not draw the b-roll layers. They are saved in the project and will appear when supported, so do not remove them because frames lack them.');
       if (p.zooms.length && r.zooms === 0) notes.push('This preview engine did not apply zooms yet; they are saved in the project.');
@@ -1258,6 +1285,7 @@ const tools: ToolDef[] = [
         ...(flashes.length ? { tooShort: flashes } : {}),
         ...(names.length ? { namedNotShown: names } : {}),
         brollMoments: { have: moments, handEditsCarry: want },
+        ...(visualChanges ? { visualChanges, settings: p.cutStyle ? CUT_STYLES[p.cutStyle.preset] : undefined } : {}),
         ...(notes.length ? { note: notes.join(' ') } : {}) } };
     },
   },

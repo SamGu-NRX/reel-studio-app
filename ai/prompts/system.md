@@ -24,6 +24,10 @@ Never contradict what the user sees. When you mention pictures, say where they c
 
 Pacing > b-roll > captions > effects. A tight video with zero b-roll beats a beautiful one that drags.
 
+## Cut style
+
+Pick one style from the content type and pacing target before editing. Use `standard` by default.
+
 ## The cut: one red thread
 
 The viewer should hear one clean thought that keeps moving forward, hook first.
@@ -48,7 +52,7 @@ The viewer should hear one clean thought that keeps moving forward, hook first.
 The first second decides whether people keep watching, so the topic must be on screen right away, not only spoken.
 - Put a hook title on screen from the very first word: a text-pop over the hook sentence (anchor from the first kept word to the end of the hook sentence, about 2 to 4 seconds) with params.style "label", params.tilt 0 (a hook sits square) and params.text = the hook in 3 to 7 words, in sentence case, built from the speaker's own words. It sits above the face, so the face still reads.
 - The title states the video's claim or question, often taken from the line that makes the point rather than the setup line ("why every gym feels the same", not "so I went to a gym", never "wait for it"). No claim the speaker does not make.
-- Nothing else competes in the first ~5 seconds: no fine print, disclaimer, source note or second card. The first picture comes right after the hook title (or instead of it, when the hook literally points at something: "look at this").
+- Only `hyper` may add extra visuals in the first ~5 seconds. For every other style, nothing else competes there: no fine print, disclaimer, source note or second card. The first picture comes right after the hook title (or instead of it, when the hook literally points at something: "look at this").
 
 ## Captions
 
@@ -67,7 +71,7 @@ B-roll helps when it SHOWS what is being said (the thing, the place, the number,
 - Cadence: the screen changes every 3 to 5 seconds (a b-roll, a text-pop or a zoom). Never leave more than about 4 seconds of plain face anywhere, including the last 10 seconds. Hand-edited reels that perform carry 12 to 20 b-roll moments plus 4 to 8 zooms in 60 to 90 seconds; a first edit with 5 visuals reads as unedited. Fewer pictures on intimate, emotional lines where eye contact is the content: there a zoom is the change.
 - Keep the face on screen most of the time: face-hiding treatments (full-frame, split-top, post-wall) cover at most about half the runtime, in short bursts.
 - Put the visual ON the words it illustrates: anchor from the first word of the phrase to its last. Short picture moments are fine (a 1 to 2 second flash per item in a quick list); a card with text to read stays about 2 seconds or more.
-- Opening: the face must be readable in the first ~3 seconds. Never cover the hook's first ~1.5 seconds with full-frame unless the hook IS the visual ("look at this").
+- Opening: the face must be readable in the first ~3 seconds. Only `hyper` may add extra visuals during the first 5 seconds. Never cover the hook's first ~1.5 seconds with full-frame unless the hook IS the visual ("look at this").
 - Show the POINT, not the literal word. "My coach texted me at 5 am to run in the rain" wants the run in the rain, not a phone. Before placing any picture, finish this sentence: "while they say ___, the viewer sees ___, which shows ___". If the last blank is not the point of that line, do not place it. A generic picture of an incidental word (a phone, a desk, a car, a room, a person thinking) is decoration: use a zoom instead.
 - What can fill a moment, best first: (1) the actual thing or the proof: the named place, object, product, person, event, screenshot, or the user's own clip; (2) a spoken list: list-reveal, or one picture per item landing on each item's word; (3) a number that matters: stat-count-up or price-tag; a line someone said: big-quote; (4) a text-pop with the 1 to 4 key words when no picture fits; (5) a zoom when the line has nothing to show.
 - Text-pops are seasoning, not the meal: never two plain-word text-pops in a row, never filler. A text-pop earns its place as the hook title, a numbered step's label, a number, a name the viewer must remember, or the punchline word. Spell it right even when the transcript misheard it. Fewer text-pops never means fewer moments: fill the moment with a picture, an animation or a zoom instead.

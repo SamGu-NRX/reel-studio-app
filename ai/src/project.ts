@@ -6,6 +6,8 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+import { CUT_STYLES, CutPreset } from './cut-style';
+
 export interface Format { width: number; height: number; fps: number }
 export interface Source {
   id: string; path: string; duration?: number; fps?: number; width?: number; height?: number; rotation?: number;
@@ -54,10 +56,13 @@ export interface NoteEntry {
   attachments?: string[];
 }
 
+export interface CutStyle { preset: CutPreset; seed: number }
+
 export interface Project {
   schemaVersion: 1;
   id: string; title: string; slug: string; createdAt: string; updatedAt: string; version: number;
   format: Format;
+  cutStyle?: CutStyle;
   sources: Source[];
   transcript: { file: string; language?: string };
   cut: { keep: WordAnchor[]; gapCap: number; minSaving?: number; [k: string]: unknown };
@@ -126,6 +131,11 @@ export function validateProject(p: unknown, transcript?: Transcript): string[] {
   const q = p as Record<string, any>;
   if (q.schemaVersion !== 1) out.push('schemaVersion must be 1');
   for (const k of ['id', 'title', 'slug']) if (!isStr(q[k])) out.push(`${k} must be a string`);
+  if (q.cutStyle !== undefined) {
+    if (!q.cutStyle || typeof q.cutStyle !== 'object' || !Object.prototype.hasOwnProperty.call(q.cutStyle, 'preset') || !Object.prototype.hasOwnProperty.call(q.cutStyle, 'seed')) out.push('cutStyle needs preset and seed');
+    else if (!Object.prototype.hasOwnProperty.call(CUT_STYLES, q.cutStyle.preset)) out.push('cutStyle.preset must be clean, standard, hyper, or punchline');
+    else if (!Number.isInteger(q.cutStyle.seed)) out.push('cutStyle.seed must be an integer');
+  }
   if (!q.format || !isNum(q.format.width) || !isNum(q.format.height) || !isNum(q.format.fps)) out.push('format needs width/height/fps');
   if (!Array.isArray(q.sources)) out.push('sources must be an array');
   if (!q.cut || !Array.isArray(q.cut.keep)) out.push('cut.keep must be an array');

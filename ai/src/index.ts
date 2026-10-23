@@ -19,6 +19,8 @@ import * as editor from './editor';
 export * from './types';
 export * from './project';
 export { TOOLS, TOOL_NAMES, toolSchemas, executeTool, newToolState } from './tools';
+export { CUT_STYLES } from './cut-style';
+export type { CutPreset } from './cut-style';
 export type { ToolContext, ToolDef } from './tools';
 export { runAgent } from './agent';
 export { Prompts } from './prompts';

@@ -49,6 +49,14 @@
         "model": { "type": "string" }
       }
     },
+    "cutStyle": {
+      "type": "object",
+      "required": ["preset", "seed"],
+      "properties": {
+        "preset": { "enum": ["clean", "standard", "hyper", "punchline"] },
+        "seed": { "type": "integer" }
+      }
+    },
     "cut": {
       "type": "object",
       "required": ["keep"],

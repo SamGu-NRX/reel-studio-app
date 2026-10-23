@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import captions as capmod, cut as cutmod, project as projmod, safepath, tools
+from .cut_style import visual_change_meter
 from .proto import EngineError, log, progress
 from .render_ctx import Layer, RenderCtx, Segment, ZoomSpan
 
@@ -894,11 +895,18 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
             warnings.append("libass did not report its font choice; caption font unverified")
     os.replace(out_part, out)
 
+    # Count visible event starts on the rendered output timeline. These values are lead decisions and have not been tested on Reel Studio output yet.
+    raw_broll = []
+    try:
+        raw_broll = json.loads((Path(project_dir) / "work" / "layers" / "layers.json").read_text()).get("items", [])
+    except (OSError, ValueError):
+        pass
+    visual_changes = visual_change_meter(dur, segments, raw_broll, zooms)
     result = {"version": version, "preview": preview, "versionDir": str(vdir), "file": str(out),
               "draft": draft, "window": list(win) if win else None, "firstLook": first_look,
               "duration": round(dur, 3), "segments": len(segments), "encoder": encoder,
               "size": [out_w, out_h], "layers": len(layers), "zooms": len(zooms),
-              "captions": len(cap_report), "warnings": warnings,
+              "captions": len(cap_report), "warnings": warnings, "visualChanges": visual_changes,
               "broll": [r for r in broll_report if r.get("fallback") or r.get("skipped") or r.get("remake")]}
 
     # 5. cover (full renders only; a preview may skip it). It ran beside the encode (above).
