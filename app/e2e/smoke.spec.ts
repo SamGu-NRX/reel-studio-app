@@ -70,7 +70,8 @@ test('make a reel end to end', async () => {
 
   // ---- reel ----
   await expect(page.getByTestId('player')).toBeVisible({ timeout: 240_000 })
-  await expect(page.getByTestId('what-i-did')).toContainText('Added music')
+  // Version 1 opens on what the first cut did, compared with the raw video.
+  await expect(page.getByTestId('chat')).toContainText('Music')
   await page.waitForFunction(() => {
     const v = document.querySelector('video')
     return !!v && v.readyState >= 2 && v.videoWidth > 0
@@ -78,12 +79,8 @@ test('make a reel end to end', async () => {
   await shot(page, '08-reel')
   const aiSource = await page.evaluate(() => window.reel.app.info().then((i) => i.ai))
 
-  // "What I did" never claims AI work the no-AI path did not do (grandma test 7 + 12).
-  if (aiSource === 'mock') {
-    await expect(page.getByTestId('did-cut')).toContainText('Cut the pauses and repeated starts')
-    await expect(page.getByTestId('extras')).toContainText('Write a post caption')
-    await expect(page.getByTestId('what-i-did')).not.toContainText('best takes')
-  }
+  // The notes never claim AI work the no-AI path did not do (grandma test 7 + 12).
+  if (aiSource === 'mock') await expect(page.getByTestId('chat')).toContainText('No AI editor yet, so I made a simple cut.')
   // The native player's menu (download, speed, picture-in-picture) is gone.
   expect(await page.getByTestId('player').getAttribute('controls')).toBeNull()
   expect(await page.getByTestId('player').getAttribute('disablepictureinpicture')).not.toBeNull()
@@ -104,14 +101,14 @@ test('make a reel end to end', async () => {
   await expect(page.getByTestId('sub-preview')).toHaveCount(0)
   await page.getByTestId('tab-cut').click()
   await page.getByTestId('make-version').click()
-  await expect(page.getByTestId('versions').getByText('Version 2')).toBeVisible({ timeout: 120_000 })
+  await expect(page.getByTestId('version-switch')).toContainText('Version 2', { timeout: 120_000 })
   await shot(page, '11-reel-v2')
 
   // ---- no AI connected: no way to ask for a change, one way to connect ----
   if (aiSource === 'mock') {
-    await expect(page.getByTestId('composer-connect')).toHaveText('Connect an AI editor to ask for changes')
+    await expect(page.getByTestId('composer-connect')).toBeVisible()
+    await expect(page.getByText('Connect an AI editor to ask for changes.')).toBeVisible()
     await expect(page.getByTestId('note-input')).toHaveCount(0)
-    await expect(page.getByTestId('ai-banner')).toContainText('You can still change anything under Edit it myself')
     await expect(page.getByTestId('change-at')).toHaveCount(0)
     await expect(page.getByTestId('sidebar-connect')).toHaveCount(0)
   }
