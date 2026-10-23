@@ -1040,6 +1040,8 @@ function registerIpc(): void {
     return { jobId: startFirstEdit(slug, null, basic === true) }
   })
   handle('projects:note', async (_e, slug: string, text: string, attachments?: unknown, at?: unknown, onVersion?: unknown, requestedBase?: unknown) => {
+    const staged = await demoEdit.note(slug, String(text ?? ''))
+    if (staged) return staged
     const dir = projectDir(slug)
     // never trust the page: every attached ref is re-read from THIS project's own sidecars or its staging folder, and
     // a video kept closed refuses the note before the queue or the chat shows it (note-intake.ts)

@@ -758,6 +758,31 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     <div className="reel-page" data-slug={slug}>
       <TitleBarSlot title={title} actions={actions} />
       <div className={`reel-b${expanded && drawer ? ' edit-full' : ''}`} data-testid="reel-body">
+        {/* Drag to make the notes column wider or narrower. */}
+        <div
+          className="notes-resize"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize notes"
+          onPointerDown={(e) => {
+            const body = e.currentTarget.parentElement
+            if (!body) return
+            e.currentTarget.setPointerCapture(e.pointerId)
+            const move = (ev: PointerEvent) => {
+              const r = body.getBoundingClientRect()
+              const w = Math.min(Math.max(r.right - ev.clientX, 320), r.width - 360)
+              body.style.setProperty('--notes-w', `${w}px`)
+            }
+            const up = () => {
+              window.removeEventListener('pointermove', move)
+              window.removeEventListener('pointerup', up)
+              document.documentElement.classList.remove('side-resizing')
+            }
+            document.documentElement.classList.add('side-resizing')
+            window.addEventListener('pointermove', move)
+            window.addEventListener('pointerup', up)
+          }}
+        />
         <section className="stage" aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
           {planned ? (
             <PlannedStage title={d.title} onFiles={(p) => void addVideo(p)} />

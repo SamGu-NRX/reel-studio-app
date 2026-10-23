@@ -2,7 +2,11 @@
    and the notes for the editor in a column on the right, behind a hairline. The page never scrolls; the notes do. */
 
 .reel-page { height: 100%; display: flex; flex-direction: column; min-width: 0; }
-.reel-b { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 31vw, 400px); }
+.reel-b { flex: 1; min-height: 0; display: grid; position: relative; grid-template-columns: minmax(0, 1fr) var(--notes-w, clamp(360px, 31vw, 400px)); }
+.notes-resize { position: absolute; top: 0; bottom: 0; right: calc(var(--notes-w, clamp(360px, 31vw, 400px)) - 6px); width: 12px; cursor: col-resize; z-index: 3; touch-action: none; }
+.notes-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 5px; width: 2px; background: transparent; transition: background-color 150ms ease; }
+@media (hover: hover) and (pointer: fine) { .notes-resize:hover::after { background: var(--line, rgba(22, 30, 26, .15)); } }
+.edit-full > .notes-resize { display: none; }
 
 /* ---- the title-bar row: the title (click to rename), the version on screen, Back to latest ---- */
 .rt-title { display: flex; align-items: center; gap: 10px; min-width: 0; }

@@ -16,7 +16,6 @@ const SOURCE = 'solanke-equalises-for-10-man-spurs'
 const TITLE = 'Solanke equaliser · new reel'
 const SERIES = "Solanke's equaliser"
 const ORIGINAL_NAME = 'Rundown plain cut · Solanke equalises for 10-man Spurs.mp4'
-const NOTE = 'Make it punchier: add the score, cards for Tonali and Solanke from their ScorePlay photos, and a strong cover.'
 
 /** The note's steps: what the status line says, from which second, and where the bar is by its end (about 60 s). */
 const STEPS: { at: number; message: string; to: number }[] = [
@@ -30,7 +29,16 @@ const STEPS: { at: number; message: string; to: number }[] = [
 ]
 const TOTAL_S = 60
 
-type Live = { id: string; kind: 'note'; message: string; pct: number; overall: number; secondsLeft: number | null; overdue: false; thinking: false; waiting: false; waitingForRender: false }
+/** Before Version 1: the first edit, so the reel isn't ready the instant it's suggested (about 25 s). */
+const FIRST: { at: number; message: string; to: number }[] = [
+  { at: 0, message: 'Picking a moment from the match', to: 15 },
+  { at: 5, message: 'Fetching the clip from ScorePlay', to: 35 },
+  { at: 10, message: 'Transcribing the commentary', to: 60 },
+  { at: 16, message: 'Cutting Version 1', to: 99 }
+]
+const FIRST_S = 25
+
+type Live = { id: string; kind: 'note' | 'first-edit'; message: string; pct: number; overall: number; secondsLeft: number | null; overdue: false; thinking: false; waiting: false; waitingForRender: false }
 
 const clone = (a: string, b: string): Promise<void> => fs.copyFile(a, b, fsc.COPYFILE_FICLONE)
 const iso = (): string => new Date().toISOString()
@@ -51,7 +59,7 @@ function frame(video: string, out: string): Promise<void> {
 }
 
 export function createDemoEdit(emit: (e: JobEvent) => void, log: (line: string) => void) {
-  let run: { id: string; timer: NodeJS.Timeout; startedAt: number; live: Live } | null = null
+  let run: { id: string; timer: NodeJS.Timeout; startedAt: number; live: Live; steps: typeof STEPS; total: number; note: string; done: (id: string) => Promise<void> } | null = null
 
   const stopTimer = () => {
     if (run) clearInterval(run.timer)
@@ -62,19 +70,22 @@ export function createDemoEdit(emit: (e: JobEvent) => void, log: (line: string) 
     if (!run) return
     const t = (Date.now() - run.startedAt) / 1000
     let i = 0
-    while (i + 1 < STEPS.length && t >= STEPS[i + 1].at) i++
-    const step = STEPS[i]
-    const end = STEPS[i + 1]?.at ?? TOTAL_S
-    const from = STEPS[i - 1]?.to ?? 0
+    const S = run.steps
+    const TOTAL = run.total
+    while (i + 1 < S.length && t >= S[i + 1].at) i++
+    const step = S[i]
+    const end = S[i + 1]?.at ?? TOTAL
+    const from = S[i - 1]?.to ?? 0
     const overall = Math.min(99, Math.round(from + ((step.to - from) * Math.min(1, (t - step.at) / (end - step.at)))))
-    run.live = { ...run.live, message: step.message, pct: overall, overall, secondsLeft: Math.max(1, Math.round(TOTAL_S - t)) }
+    run.live = { ...run.live, message: step.message, pct: overall, overall, secondsLeft: Math.max(1, Math.round(TOTAL - t)) }
     emit({ type: 'status', jobId: run.id, slug: DEMO_SLUG, message: step.message, pct: overall, overall, secondsLeft: run.live.secondsLeft, overdue: false, thinking: false, waiting: false, waitingForRender: false })
-    if (t >= TOTAL_S) void land(run.id)
+    if (t >= TOTAL) void run.done(run.id)
   }
 
   /** Version 2: the source reel's real edit, its cards' pictures, and the editor's real summary. */
   const land = async (id: string) => {
     if (run?.id !== id) return
+    const note = run.note
     stopTimer()
     const src = join(projectsDir(), SOURCE)
     const dir = join(projectsDir(), DEMO_SLUG)
@@ -94,7 +105,7 @@ export function createDemoEdit(emit: (e: JobEvent) => void, log: (line: string) 
       await updateAppState(DEMO_SLUG, (s) => {
         for (const m of s.chat) if (m.jobId === id) m.outcome = 'done'
         s.chat.push({ id: randomUUID(), from: 'editor', text: summary, at: iso(), version: 2, jobId: id })
-        s.versionsMade = [...(s.versionsMade ?? []), { version: 2, by: 'note', summary: NOTE, at: iso() }]
+        s.versionsMade = [...(s.versionsMade ?? []), { version: 2, by: 'note', summary: note, at: iso() }]
         s.job = null
         s.status = 'ready'
         s.review = { status: 'waiting', at: iso() }
@@ -107,46 +118,84 @@ export function createDemoEdit(emit: (e: JobEvent) => void, log: (line: string) 
     }
   }
 
-  /** Makes the reel from scratch (any earlier one is replaced) with Version 1 in and the note running. Returns its slug. */
+  const begin = (id: string, kind: Live['kind'], steps: typeof STEPS, total: number, note: string, done: (id: string) => Promise<void>) => {
+    const live: Live = { id, kind, message: steps[0].message, pct: 0, overall: 0, secondsLeft: total, overdue: false, thinking: false, waiting: false, waitingForRender: false }
+    run = { id, startedAt: Date.now(), live, steps, total, note, done, timer: setInterval(tick, 1000) }
+  }
+
+  /** Version 1 lands: Rundown's plain cut of the clip. */
+  const firstLanded = async (id: string) => {
+    if (run?.id !== id) return
+    stopTimer()
+    const src = join(projectsDir(), SOURCE)
+    const dir = join(projectsDir(), DEMO_SLUG)
+    try {
+      for (const sub of ['media', join('versions', 'v1'), 'work']) await fs.mkdir(join(dir, sub), { recursive: true })
+      await clone(join(src, 'media', 'take01.mp4'), join(dir, 'media', 'take01.mp4'))
+      await clone(join(src, 'media', 'take01.mp4'), join(dir, 'versions', 'v1', 'export.mp4'))
+      await fs.copyFile(join(src, 'work', 'transcript.json'), join(dir, 'work', 'transcript.json'))
+      await frame(join(dir, 'versions', 'v1', 'export.mp4'), join(dir, 'versions', 'v1', 'cover.png')).catch(async () => {
+        await fs.copyFile(join(src, 'versions', 'v1', 'cover.png'), join(dir, 'versions', 'v1', 'cover.png'))
+      })
+      const p = await readJson<ProjectJson>(join(src, 'project.json'), {} as ProjectJson)
+      const at = iso()
+      Object.assign(p, { id: randomUUID(), slug: DEMO_SLUG, title: TITLE, series: SERIES, version: 1, createdAt: at, updatedAt: at, broll: [], zooms: [] })
+      if (p.sources?.[0]) p.sources[0].originalName = ORIGINAL_NAME
+      await writeJson(join(dir, 'project.json'), p)
+      await writeJson(join(dir, 'versions', 'v1', 'project.json'), p)
+      const text = "Version 1 is Rundown's plain cut of Solanke's equaliser, straight from the clip plan. Tell me what to change."
+      await updateAppState(DEMO_SLUG, (s) => {
+        s.chat.push({ id: randomUUID(), from: 'editor', text, at, version: 1, jobId: id })
+        s.job = null
+        s.status = 'ready'
+      })
+      emit({ type: 'done', jobId: id, slug: DEMO_SLUG, summary: text, version: 1 })
+    } catch (e) {
+      log(`[demo-edit] Version 1 failed: ${String(e)}`)
+      await updateAppState(DEMO_SLUG, (s) => void (s.job = null)).catch(() => {})
+      emit({ type: 'error', jobId: id, slug: DEMO_SLUG, code: 'DEMO', userMessage: 'Version 1 could not be made. Try again.' })
+    }
+  }
+
+  /** Suggest a reel for me: a new reel whose first edit runs for about 25 s, then Version 1 lands. Returns its slug. */
   const start = async (): Promise<string> => {
     stopTimer()
     const src = join(projectsDir(), SOURCE)
     const dir = join(projectsDir(), DEMO_SLUG)
     if (!existsSync(join(src, 'project.json'))) throw { code: 'NOT_FOUND', userMessage: `The demo needs the reel “${SOURCE}” in the library.` }
     await fs.rm(dir, { recursive: true, force: true })
-    for (const sub of ['media', join('versions', 'v1'), 'work']) await fs.mkdir(join(dir, sub), { recursive: true })
-    await clone(join(src, 'media', 'take01.mp4'), join(dir, 'media', 'take01.mp4'))
-    await clone(join(src, 'media', 'take01.mp4'), join(dir, 'versions', 'v1', 'export.mp4'))
-    await fs.copyFile(join(src, 'work', 'transcript.json'), join(dir, 'work', 'transcript.json'))
-    await frame(join(dir, 'versions', 'v1', 'export.mp4'), join(dir, 'versions', 'v1', 'cover.png')).catch(async (e) => {
-      log(`[demo-edit] no frame for the cover (${String(e)}); using the source reel's`)
-      await fs.copyFile(join(src, 'versions', 'v1', 'cover.png'), join(dir, 'versions', 'v1', 'cover.png'))
-    })
-    const p = await readJson<ProjectJson>(join(src, 'project.json'), {} as ProjectJson)
-    const at = iso()
-    Object.assign(p, { id: randomUUID(), slug: DEMO_SLUG, title: TITLE, series: SERIES, version: 1, createdAt: at, updatedAt: at, broll: [], zooms: [] })
-    if (p.sources?.[0]) p.sources[0].originalName = ORIGINAL_NAME
-    await writeJson(join(dir, 'project.json'), p)
-    await writeJson(join(dir, 'versions', 'v1', 'project.json'), p)
-
+    await fs.mkdir(dir, { recursive: true })
     const id = randomUUID()
+    const at = iso()
     const state: AppState = {
-      chat: [
-        { id: randomUUID(), from: 'editor', text: "Version 1 is Rundown's plain cut of Solanke's equaliser, straight from the clip plan.", at, version: 1 },
-        { id: randomUUID(), from: 'you', text: NOTE, at, jobId: id }
-      ],
-      job: { id, kind: 'note', startedAt: at, note: NOTE },
-      status: 'ready',
+      chat: [],
+      job: { id, kind: 'first-edit', startedAt: at },
+      status: 'working',
       lastError: null,
       title: TITLE,
       aiEdited: true,
+      createdAt: at,
       review: { status: 'draft' }
-    }
+    } as AppState
     await writeJson(join(dir, 'app.json'), state)
-    const live: Live = { id, kind: 'note', message: STEPS[0].message, pct: 0, overall: 0, secondsLeft: TOTAL_S, overdue: false, thinking: false, waiting: false, waitingForRender: false }
-    run = { id, startedAt: Date.now(), live, timer: setInterval(tick, 1000) }
-    log(`[demo-edit] started ${DEMO_SLUG}; Version 2 lands in ${TOTAL_S} s`)
+    begin(id, 'first-edit', FIRST, FIRST_S, '', firstLanded)
+    log(`[demo-edit] started ${DEMO_SLUG}; Version 1 lands in ${FIRST_S} s`)
     return DEMO_SLUG
+  }
+
+  /** Any note sent on the suggested reel: the editor "works" on it for about a minute, then Version 2 lands. */
+  const note = async (slug: string, text: string): Promise<{ jobId: string } | null> => {
+    if (slug !== DEMO_SLUG || run || !existsSync(join(projectsDir(), DEMO_SLUG, 'versions', 'v1'))) return null
+    if (existsSync(join(projectsDir(), DEMO_SLUG, 'versions', 'v2'))) return null
+    const id = randomUUID()
+    const at = iso()
+    await updateAppState(DEMO_SLUG, (s) => {
+      s.chat.push({ id: randomUUID(), from: 'you', text, at, jobId: id })
+      s.job = { id, kind: 'note', startedAt: at, note: text }
+    })
+    begin(id, 'note', STEPS, TOTAL_S, text, land)
+    log(`[demo-edit] note on ${DEMO_SLUG}; Version 2 lands in ${TOTAL_S} s`)
+    return { jobId: id }
   }
 
   /** Stop on the running note: it ends as stopped, Version 1 stays. */
@@ -161,5 +210,5 @@ export function createDemoEdit(emit: (e: JobEvent) => void, log: (line: string) 
     return true
   }
 
-  return { start, stop, live: (slug: string): Live | null => (slug === DEMO_SLUG && run ? run.live : null) }
+  return { start, stop, note, live: (slug: string): Live | null => (slug === DEMO_SLUG && run ? run.live : null) }
 }
