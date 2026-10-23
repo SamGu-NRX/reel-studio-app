@@ -166,6 +166,7 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
 
   return (
     <div ref={root} className="sp-plat" data-enter data-testid="share-platforms">
+      <p className="muted-sm">None of these are connected yet. Each gets a video, cover and caption to post yourself.</p>
       <fieldset className="sp-checks" disabled={saving}>
         <legend className="sr-only">Platforms</legend>
         {PLATFORM_RULES.map((rule) => {

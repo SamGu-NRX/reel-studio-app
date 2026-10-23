@@ -43,7 +43,8 @@
 .sp-ic { width: 20px; display: grid; place-items: center; flex: none; color: var(--ink-2); }
 .sp-l { flex: 1; min-width: 0; display: grid; }
 .sp-l b { font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 560; }
-.sp-l small { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Wraps: a hint that says a platform isn't connected must be read whole. */
+.sp-l small { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); text-wrap: pretty; }
 .sp-last { flex: none; font-size: var(--fs-xs); line-height: var(--lh-xs); font-weight: 560; color: var(--ink-3); }
 .sp-chev { flex: none; color: var(--ink-3); transition: transform 150ms var(--ease-out); }
 .sp-chev.open { transform: rotate(180deg); }

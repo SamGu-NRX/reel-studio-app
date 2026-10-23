@@ -254,7 +254,8 @@ export function Outs({
       id: 'instagram',
       icon: <Icon name="instagram" size={16} />,
       label: 'Save for Instagram',
-      hint: 'Saves the reel and copies the caption',
+      // Posting needs Instagram's sign-in, which isn't built (spec.md section 11), so the row says what it does instead.
+      hint: 'Not connected yet. Saves the reel and copies the caption.',
       testid: 'share-instagram',
       go: () =>
         void run('instagram', async (files) => {
@@ -310,7 +311,7 @@ export function Outs({
       id: 'platforms',
       icon: <Icon name="layers" size={16} />,
       label: 'Other platforms',
-      hint: 'TikTok, YouTube Shorts and 5 more',
+      hint: 'TikTok, YouTube Shorts and 5 more, with Try 2',
       testid: 'share-platforms-toggle',
       go: () => setPlatformsOpen((o) => !o)
     }

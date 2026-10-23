@@ -1,4 +1,5 @@
 // Share's popover: Help improve is asked once, only after a share that worked, and the last destination used comes first.
+// Nothing in it claims to post: Instagram and the other platforms say they aren't connected.
 //
 // Run: npx playwright test e2e/share.spec.ts (after npm run build).
 import { test, expect } from '@playwright/test'
@@ -6,7 +7,7 @@ import { chmodSync, mkdirSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { BASE, launch, makeMedia, passFirstRun, startReel } from './helpers'
 
-test('fails if Help improve is asked before a share that worked or a second time, or the last destination used is not first', async () => {
+test('fails if Help improve is asked before a share that worked or a second time, the last destination used is not first, or a platform reads as connected', async () => {
   test.skip(process.platform !== 'darwin', 'Uses a macOS iCloud Drive folder to make a save fail.')
   test.setTimeout(15 * 60_000)
   const dir = mkdtempSync(join(BASE, 'share-'))
@@ -29,6 +30,10 @@ test('fails if Help improve is asked before a share that worked or a second time
     await page.getByTestId('share').click()
     await expect(pop).toBeVisible()
     await expect(ask).toHaveCount(0)
+    await expect(pop.getByTestId('share-instagram')).toContainText('Not connected yet. Saves the reel and copies the caption.')
+    await pop.getByTestId('share-platforms-toggle').click()
+    await expect(pop.getByTestId('share-platforms')).toContainText('None of these are connected yet')
+    await pop.getByTestId('share-platforms-toggle').click()
 
     // A save that fails is not a share.
     chmodSync(icloud, 0o500)
