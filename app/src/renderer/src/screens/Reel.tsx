@@ -5,7 +5,7 @@ import { EMPTY_LIVE, liveFromDetail, reduceLive, type LiveState } from '../../..
 import { NO_TIMELINE, noSpeech, noteMarks, noteMoment, sourceAt, wordsAt, wordsBetween, type RenderSegment } from '../../../shared/moments'
 import { notesLog, type LogEntry } from '../../../shared/notes-log'
 import type { Step } from '../../../shared/steps'
-import { reel, userMessage } from '../api'
+import { droppedPaths, reel, userMessage } from '../api'
 import type { Go } from '../nav'
 import { Confirm, PickFiles, Spinner, useFileDrop } from '../components/ui'
 import { Icon } from '../components/icons'
@@ -165,7 +165,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
         if (next.job) {
           setJob((cur) => (cur?.jobId === next.job!.id ? cur : liveFromDetail(next.job!)))
           if (next.job.steps) setFirstSteps(next.job.steps)
-        }
+        } else setJob(null)
         if (next.words.length) setHeard((h) => (h.length ? h : next.words.map((w) => w.w)))
         const latest = next.versions[next.versions.length - 1]?.n ?? null
         setSelected((cur) => (selectLatest || cur === null || !next.versions.some((v) => v.n === cur) ? latest : cur))
@@ -334,7 +334,9 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
             made: d.versionsMade,
             versions: d.versions,
             running: d.job
-              ? { id: d.job.id, kind: d.job.kind === 'rerender' ? 'hand' : d.job.kind === 'first-edit' ? 'first-edit' : d.job.kind === 'script' ? 'script' : 'note' }
+              ? d.job.kind === 'export'
+                ? null
+                : { id: d.job.id, kind: d.job.kind === 'rerender' ? 'hand' : d.job.kind === 'first-edit' ? 'first-edit' : d.job.kind === 'script' ? 'script' : 'note' }
               : null,
             planned: d.status === 'planned',
             sourceName: d.project.sources?.[0]?.path ? fileName(d.project.sources[0].path) : null,
@@ -532,8 +534,12 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     setSelected(b)
   }
 
-  const src = planned ? null : hasVersions ? (changePreview ?? version?.video ?? null) : (firstLook ?? d.sourceVideo)
-  const tag = changePreview ? 'Quick preview' : !hasVersions && !planned && src ? (firstLook ? 'First look' : 'Original') : null
+  // Share's own work (a preview made full quality, other platforms) shows on the Share button, not in the note box
+  const shareWork = d.job?.kind === 'export' && d.job.id === job?.jobId
+  // comparing and Edit it myself stay on the versions they show; a running job's preview waits (B section 5, step 3)
+  const jobPreview = compare || drawer ? null : changePreview
+  const src = planned ? null : hasVersions ? (jobPreview ?? version?.video ?? null) : (firstLook ?? d.sourceVideo)
+  const tag = jobPreview ? 'Quick preview' : !hasVersions && !planned && src ? (firstLook ? 'First look' : 'Original') : null
   const waiting = d.queue.filter((q) => !q.attempt).length
   const nextSpot = Math.max(0, ...pins.map((p) => p.n)) + 1
   const placeholder = planned
@@ -593,7 +599,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
           version={version}
           versions={d.versions}
           post={d.project.post}
-          disabled={!version || !!job}
+          disabled={!version || (!!job && !shareWork)}
           why={job ? 'Wait for this version to finish.' : undefined}
           onSaveCaption={savePost}
         />
@@ -626,7 +632,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     <div className="reel-over">
       {drawer && <div className="edit-stage" ref={setStage} />}
       {tag && (
-        <span className="reel-tag" data-testid={changePreview ? 'change-preview' : 'first-tag'}>
+        <span className="reel-tag" data-testid={jobPreview ? 'change-preview' : 'first-tag'}>
           {tag}
         </span>
       )}
@@ -669,7 +675,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     <div className="reel-page">
       <TitleBarSlot title={title} actions={actions} />
       <div className="reel-b">
-        <section className={`stage${compare ? ' comparing' : ''}${pointing ? ' pointing' : ''}`} aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
+        <section className="stage" aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
           {planned ? (
             <PlannedStage title={d.title} onFiles={(p) => void addVideo(p)} />
           ) : (
@@ -797,13 +803,24 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
               {showComposer && (
                 <div
                   className="cwrap"
+                  data-testid="composer-wrap"
                   onDragOver={(e) => {
                     if (!Array.from(e.dataTransfer.types).includes('Files')) return
                     e.preventDefault()
                     e.dataTransfer.dropEffect = 'copy'
                   }}
+                  {...(planned && { 'data-video-drop': true })}
                   onDrop={(e) => {
-                    if (!Array.from(e.dataTransfer.types).includes('Files') || aiOff || planned) return
+                    if (!Array.from(e.dataTransfer.types).includes('Files')) return
+                    if (planned) {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      window.dispatchEvent(new Event(NOTE_DROP_DONE))
+                      const paths = droppedPaths(e)
+                      if (paths.length) void addVideo(paths)
+                      return
+                    }
+                    if (aiOff) return
                     e.preventDefault()
                     e.stopPropagation()
                     window.dispatchEvent(new Event(NOTE_DROP_DONE))
@@ -826,7 +843,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     att={heldN ? { ...att, busy: att.busy + heldN } : att}
                     checking={!providerChecked}
                     placeholder={placeholder}
-                    job={job}
+                    job={shareWork ? null : job}
                     making={making}
                     firstSteps={first?.kind === 'making' ? firstSteps : null}
                     steps={steps}
@@ -984,7 +1001,7 @@ function PlannedStage({ title, onFiles }: { title: string; onFiles: (paths: stri
     onFiles(paths)
   })
   return (
-    <div className={`planned${drop.over ? ' over' : ''}`} {...drop.props} data-note-drop data-testid="planned-stage">
+    <div className={`planned${drop.over ? ' over' : ''}`} {...drop.props} data-video-drop data-testid="planned-stage">
       <div className="planned-frame">
         <p className="planned-title">{title}</p>
         <div className="planned-ask">

@@ -157,7 +157,7 @@ export function Composer({
           {stripShown && strip === 'held' && (
             <div className="strip wait" role="status" data-testid="queue-held">
               <b data-testid="queue-count">{held === 1 ? '1 note held' : `${held} notes held`}</b>
-              <span className="m">· because you stopped</span>
+              <span className="m">· waiting for you to send</span>
               <span className="sp" />
               <button className="sbtn" onClick={onClear} data-testid="queue-clear">
                 Clear

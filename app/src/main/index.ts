@@ -102,7 +102,6 @@ import { autoUpdater } from 'electron-updater'
 import { electronUpdaterBackend } from './updater-electron'
 import { disabledReason, updateMode } from './update-machine'
 import { createJobFeedback, createMainWindow, feedbackLog, installMenu, startDragOut, windowStateFile, type AppCommand } from './window'
-import { viewerFullScreen } from './viewer-fullscreen'
 
 const TEST = process.env.REELSTUDIO_TEST === '1'
 const DEV_PROVIDERS = process.env.REELSTUDIO_DEV === '1'
@@ -188,7 +187,6 @@ let ai: AI
 let perms: Permissions
 let aiSource: 'package' | 'mock' = 'mock'
 let win: BrowserWindow | null = null
-let setViewerFullScreen: ((on: boolean) => void) | null = null
 
 function broadcast(channel: string, payload: unknown): void {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(channel, payload)
@@ -477,7 +475,7 @@ async function finishedExportVersion(slug: string, n: number): Promise<VersionIn
     // A preview is not the full-quality file: make it first, as a normal job (progress, Stop, and
     // nothing else can run on this video meanwhile) (review 25).
     let stopped: AbortSignal | undefined
-    jobs.start(slug, 'rerender', async (emit, signal, { owner }) => {
+    jobs.start(slug, 'export', async (emit, signal, { owner }) => {
       stopped = signal
       emit({ type: 'status', message: 'Making the full-quality video', pct: 1, phase: 'final' })
       const r: any = await runEngine(
@@ -599,7 +597,6 @@ function registerIpc(): void {
     else shell.showItemInFolder(p)
   })
   handle('app:copyText', (_e, t: string) => clipboard.writeText(String(t)))
-  handle('app:fullScreen', (_e, on: boolean) => setViewerFullScreen?.(on === true))
   ipcMain.on('app:startDrag', (e, file: string) => {
     try {
       assertIpcSender(e, win?.webContents, rendererUrl)
@@ -1053,11 +1050,6 @@ function registerIpc(): void {
     return (pack.sounds ?? []).map((x) => ({ id: x.id, kind: x.job, seconds: x.seconds, onsetMs: x.onsetMs, url: mediaUrl(join(dir, x.file)) }))
   })
 
-  handle('script:write', (_e, idea: string) => {
-    if (!String(idea ?? '').trim()) throw { code: 'EMPTY', userMessage: 'Tell me your idea in a sentence or two first.' }
-    return ai.writeScript(String(idea), () => {})
-  })
-
   handle('update:state', () => updates.state())
   handle('update:check', () => updates.check('button'))
   handle('update:download', () => updates.download())
@@ -1140,7 +1132,6 @@ function showTestNotification(): Promise<NotifyResult> {
 // ---- window -------------------------------------------------------------------------------------
 function createWindow(): void {
   win = createMainWindow({ preload: join(__dirname, '../preload/index.js'), stateFile: windowStateFile(settingsDir()), test: TEST })
-  setViewerFullScreen = viewerFullScreen(win)
   installMenu(sendCommand, DEV_PROVIDERS || !app.isPackaged, () =>
     void menuCheckForUpdates(updates, {
       focus: () => win?.show(),

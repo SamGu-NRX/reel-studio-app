@@ -38,16 +38,20 @@ const kindOfType = (mime: string): Kind =>
 export type Intent =
   | { kind: 'reel' }
   | { kind: 'note'; rect: DOMRect }
+  /** a reel with no video yet, under the pointer: the video becomes this reel's */
+  | { kind: 'this-reel'; rect: DOMRect }
   | { kind: 'library' }
   | { kind: 'refuse'; what: string; where: 'reel' | 'anywhere' }
 
 /**
  * `screen`: the screen under the drag. `note`: the reel's notes column, when the pointer is over it (an element
- * marked `data-note-drop`, which takes the drop itself). One video among the files makes a reel; the rest go to the Library.
+ * marked `data-note-drop`, which takes the drop itself; on a reel with no video yet it is marked `data-video-drop`). One video among
+ * the files makes a reel; the rest go to the Library.
  */
 export function intentFor(files: { kind: Kind; what: string }[], screen: string, note: Element | null): Intent {
   const video = files.some((f) => f.kind === 'video')
   const media = files.some((f) => f.kind === 'media')
+  if (note?.hasAttribute('data-video-drop')) return video ? { kind: 'this-reel', rect: note.getBoundingClientRect() } : { kind: 'refuse', what: files[0]?.what ?? 'a file', where: 'anywhere' }
   if (note && (video || media)) return { kind: 'note', rect: note.getBoundingClientRect() }
   if (screen === 'library') return { kind: 'library' }
   if (video) return { kind: 'reel' }
@@ -82,6 +86,7 @@ function Words({ intent }: { intent: Intent }) {
       </>
     )
   if (intent.kind === 'note') return <h2>Attach to your note</h2>
+  if (intent.kind === 'this-reel') return <h2>Use it for this reel</h2>
   return (
     <>
       <h2>That’s {intent.what}, not a video</h2>
@@ -103,7 +108,7 @@ export function DropVeil({ veil }: { veil: Veil | null }) {
   if (!mounted || !last) return null
   const intent = last.intent
   const bad = intent.kind === 'refuse'
-  const r = intent.kind === 'note' ? intent.rect : null
+  const r = intent.kind === 'note' || intent.kind === 'this-reel' ? intent.rect : null
   return (
     <div
       className={`dropveil${leaving ? ' leave' : ''}${r ? ' on-note' : ''}${bad ? ' bad' : ''}`}

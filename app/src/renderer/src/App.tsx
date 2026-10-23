@@ -33,7 +33,7 @@ export const EXPORT_EVENT = 'reel:export'
 
 const hasFiles = (e: DragEvent): boolean => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')
 const sameIntent = (a: Intent, b: Intent): boolean =>
-  a.kind === 'note' && b.kind === 'note'
+  (a.kind === 'note' && b.kind === 'note') || (a.kind === 'this-reel' && b.kind === 'this-reel')
     ? a.rect.x === b.rect.x && a.rect.y === b.rect.y && a.rect.width === b.rect.width && a.rect.height === b.rect.height
     : a.kind === 'refuse' && b.kind === 'refuse'
       ? a.what === b.what && a.where === b.where
@@ -148,7 +148,7 @@ export function App() {
     open()
     const paste = (event: ClipboardEvent) => {
       const target = event.target
-      if (event.defaultPrevented || (target instanceof Element && target.closest('input, textarea, [contenteditable], [data-note-drop]'))) return
+      if (event.defaultPrevented || (target instanceof Element && target.closest('input, textarea, [contenteditable], [data-note-drop], [data-video-drop]'))) return
       void reel.app.clipboardFiles().then((paths) => intake(paths)).catch((err) => notify(userMessage(err), 'error'))
     }
     window.addEventListener('paste', paste)
@@ -163,7 +163,8 @@ export function App() {
   useEffect(() => {
     let depth = 0
     const sense = (e: DragEvent) => {
-      const note = (e.target as Element | null)?.closest?.('[data-note-drop]') ?? null
+      const at = e.target as Element | null
+      const note = at?.closest?.('[data-video-drop]') ?? at?.closest?.('[data-note-drop]') ?? null
       const intent = intentFor(draggedFiles(e.dataTransfer!), screenRef.current.name, note)
       setVeil((v) => (v?.kind === 'refused' ? v : v && sameIntent(v.intent, intent) ? v : { kind: 'over', intent }))
     }

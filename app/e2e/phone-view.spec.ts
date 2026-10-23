@@ -75,13 +75,6 @@ test('fails if the phone stops filling its column at 9:16, the view is not Insta
     await page.getByTestId('tab-cut').click()
     await expect(page.getByTestId('safe-band')).toHaveCount(0)
     await page.keyboard.press('Escape')
-
-    await page.getByTestId('player').evaluate((v: HTMLVideoElement) => ((v.muted = true), v.play()))
-    await page.getByTestId('phone').hover()
-    await page.getByTestId('open-fullscreen').click()
-    await expect(page.getByTestId('fullscreen').getByTestId('ig-overlay')).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(page.getByTestId('fullscreen')).toHaveCount(0)
   } finally {
     await app.close()
   }

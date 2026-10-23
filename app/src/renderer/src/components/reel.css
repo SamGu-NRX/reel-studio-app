@@ -347,5 +347,3 @@ html.kb :is(.acc, .stripwrap, .steps, .tchip, .spot, .draghandle, .tl-mark, .tra
   .helper .hb i { animation: none; width: 100%; opacity: .5; }
 }
 @keyframes line-fade { from { opacity: 0; } }
-/* Comparing and pointing at a spot are modes of their own: full screen waits until they are done. */
-.stage:is(.comparing, .pointing) .fs-open { display: none; }

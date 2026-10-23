@@ -34,8 +34,7 @@ const api: ReelApi = {
     setSharing: (sharing) => call('app:setSharing', sharing),
     setPhoneView: (view) => call('app:setPhoneView', view),
     onCommand: (cb) => on<AppCommand>('app:command', cb),
-    startDrag: (file) => ipcRenderer.send('app:startDrag', file),
-    fullScreen: (on) => call('app:fullScreen', on)
+    startDrag: (file) => ipcRenderer.send('app:startDrag', file)
   },
   model: {
     status: () => call('model:status'),

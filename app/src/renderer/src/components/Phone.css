@@ -23,8 +23,8 @@
 .phone-empty { color: #bbb; font-size: 14px; padding: 20px; text-align: center; }
 /* Instagram's screen sits over the reel and its subtitles; the player's own controls sit over Instagram's. While
    they show, the play controls take the tab bar's place, so they never cover the name, caption and audio row. */
-:is(.phone-screen, .fs-frame) > :is(.big-play, .scrub, .sound-chip, .fs-open, .phone-tag, .abswitch) { z-index: 2; }
-:is(.phone-screen, .fs-frame):has(> .igc:not(.off)) > .scrub { height: calc(100cqw * 50 / 393); padding-top: 0; padding-bottom: 0; background: #000; }
+.phone-screen > :is(.big-play, .scrub, .sound-chip, .phone-tag, .abswitch) { z-index: 2; }
+.phone-screen:has(> .igc:not(.off)) > .scrub { height: calc(100cqw * 50 / 393); padding-top: 0; padding-bottom: 0; background: #000; }
 
 /* ---- Instagram's Reels screen (InstagramChrome), in iOS points: --pt is one point of a 393 pt wide iPhone screen,
    so every part keeps its proportion to the reel at any size. The point sizes are estimates of the iOS app's:

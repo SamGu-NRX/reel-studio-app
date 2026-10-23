@@ -530,7 +530,7 @@ function QueuedRow({ slug, q, i, count, held, on, onEditHand, onError }: { slug:
         <span className="nk">
           <span className="wait-dot" />
         </span>
-        <span className="t">{held ? 'Held because you stopped' : `${i === 0 ? 'Next' : 'Then'}, on Version ${on}`}</span>
+        <span className="t">{held ? 'Held until you send it' : `${i === 0 ? 'Next' : 'Then'}, on Version ${on}`}</span>
         {draft === null && (
           <>
             <button className="lk" onClick={() => (q.hand ? onEditHand(q.id) : setDraft(q.text))} data-testid="queue-edit">

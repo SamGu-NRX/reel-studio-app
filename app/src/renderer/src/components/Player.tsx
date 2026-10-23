@@ -6,7 +6,6 @@ import { groupMarks, type NoteMark } from '../../../shared/moments'
 import { Icon } from './icons'
 import { reel } from '../api'
 import { FOLDER_APP } from './ui'
-import { FullScreenReel } from './FullScreenReel'
 import { createPlayhead, followVideo, useFollowPlayhead, type Playhead } from './playhead'
 import { NO_LAYERS, layersReducer, type Layer } from './videoLayers'
 import type { Transport } from './transport'
@@ -353,9 +352,6 @@ export function PhonePlayer({
   const [muted, setMuted] = useState(!!autoPlayMuted)
   const [dur, setDur] = useState(0)
   const [started, setStarted] = useState(false)
-  // The phone's video while the reel is open full screen.
-  const [full, setFull] = useState<HTMLVideoElement | null>(null)
-  const closeFull = useCallback(() => setFull(null), [])
   const dragOrigin = useRef<EventTarget | null>(null)
   const [rate, setRate] = useState(() => {
     const r = Number(localStorage.getItem(RATE_KEY))
@@ -720,21 +716,6 @@ export function PhonePlayer({
             <div className={holdTag ? 'phone-tag' : undefined} role="status" data-testid="original-tag">
               {holdTag}
             </div>
-            {!holdingOriginal && !(still && subtitle) && (
-              <button className="fs-open" onClick={() => setFull(video.current)} data-testid="open-fullscreen">
-                <Icon name="maximize" size={15} stroke={2} /> Full screen
-              </button>
-            )}
-            {full && (
-              <FullScreenReel
-                src={src}
-                poster={poster}
-                from={full}
-                view={view}
-                caption={caption}
-                onClosed={closeFull}
-              />
-            )}
             {subtitle && !holdingOriginal && <SubtitleSample look={subtitle.look} text={subtitle.text} width={width} testid="sub-preview" />}
             <InstagramChrome on={view === 'instagram' && !holdingOriginal} caption={caption} playing={playing} />
             {subtitle && !holdingOriginal && <SafeBand />}
