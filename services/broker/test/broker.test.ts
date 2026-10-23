@@ -165,10 +165,22 @@ describe('credential boundaries and lifecycle', () => {
     }
     expect([...store.records.keys()].filter(key => key.startsWith('code:'))).toHaveLength(0)
   })
+  it.each([200, 500])('keeps a reservation when TikTok returns an error body with HTTP %i', async status => {
+    const store = new MemoryStore()
+    const broker = createBroker({ config: baseConfig, store, objects: new MemoryObjectStore(), fetch: async () => response({ error: 'server_error' }, status) })
+    expect((await broker(req('/api/tiktok/oauth/token', ttCode))).status).toBe(status === 500 ? 502 : 400)
+    expect([...store.records.keys()].filter(key => key.startsWith('code:'))).toHaveLength(1)
+  })
+  it('keeps a reservation when the TikTok exchange times out', async () => {
+    const store = new MemoryStore()
+    const broker = createBroker({ config: baseConfig, store, objects: new MemoryObjectStore(), fetch: async () => { throw new DOMException('Timed out', 'TimeoutError') } })
+    expect((await broker(req('/api/tiktok/oauth/token', ttCode))).status).toBe(500)
+    expect([...store.records.keys()].filter(key => key.startsWith('code:'))).toHaveLength(1)
+  })
   it('refuses a 1001st outstanding TikTok code reservation', async () => {
     const store = new MemoryStore()
     const now = Date.now()
-    for (let i = 0; i < 1000; i++) await store.records.set(`code:${i}`, { key: `code:${i}`, owner: '', expiresAt: now + 600_000, value: true })
+    for (let i = 0; i < 1000; i++) store.records.set(`code:${i}`, { key: `code:${i}`, owner: '', expiresAt: now + 600_000, value: true })
     let calls = 0
     const broker = createBroker({ config: baseConfig, store, objects: new MemoryObjectStore(), fetch: async () => { calls++; return response({ access_token: 'tt-access', refresh_token: 'tt-refresh', expires_in: 86400, refresh_expires_in: 31536000, open_id: 'tt-user', scope: 'user.info.basic,video.upload' }) } })
     expect((await broker(req('/api/tiktok/oauth/token', { ...ttCode, code: 'one-too-many' }))).status).toBe(429)

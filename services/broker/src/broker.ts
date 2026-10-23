@@ -41,7 +41,7 @@ const secureEqual = (a: string, b: string) => {
 }
 const noStore = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff' }
 class HttpError extends Error {
-  constructor(readonly status: number, readonly code: number | string) { super('Broker request rejected') }
+  constructor(readonly status: number, readonly code: number | string, readonly upstreamStatus?: number) { super('Broker request rejected') }
 }
 function fail(status: number, code: number | string = status): never { throw new HttpError(status, code) }
 function json(value: unknown, status = 200) { return Response.json(value, { status, headers: noStore }) }
@@ -91,7 +91,7 @@ export function createBroker(options: Options): (request: Request) => Promise<Re
       const raw = error.success ? (typeof error.data.error === 'string' ? error.data.error : error.data.error.code) : undefined
       const safeCode = p === 'instagram' ? (typeof raw === 'number' ? raw : 190) :
         (typeof raw === 'string' && ['invalid_grant', 'invalid_client', 'invalid_request', 'invalid_scope', 'access_denied', 'rate_limit_exceeded', 'access_token_invalid'].includes(raw) ? raw : 'server_error')
-      throw new HttpError(response.status === 429 ? 429 : response.status >= 500 ? 502 : 400, safeCode)
+      throw new HttpError(response.status === 429 ? 429 : response.status >= 500 ? 502 : 400, safeCode, response.status)
     }
     return body
   }
@@ -252,7 +252,7 @@ export function createBroker(options: Options): (request: Request) => Promise<Re
       try {
         rawToken = await upstream('tiktok', 'https://open.tiktokapis.com/v2/oauth/token/', { method: 'POST', body: form })
       } catch (error) {
-        if (error instanceof HttpError && error.status >= 400 && error.status < 500) {
+        if (error instanceof HttpError && error.upstreamStatus !== undefined && error.upstreamStatus >= 400 && error.upstreamStatus < 500) {
           await store.transaction(claimKey, tx => tx.remove(claimKey))
         }
         throw error
