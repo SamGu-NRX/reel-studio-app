@@ -26,6 +26,11 @@ class Segment:
     # the inclusive word-id range this segment came from (first, last); informational
     first_word: Optional[str] = None
     last_word: Optional[str] = None
+    # Source handles mixed across a picture join; the kept span's clock does not move.
+    audio_lead: float = 0.0
+    audio_tail: float = 0.0
+    join_transition: Optional[str] = None
+    join_frames: int = 0
 
     @property
     def duration(self) -> float:

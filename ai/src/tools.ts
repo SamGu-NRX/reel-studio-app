@@ -763,8 +763,14 @@ const tools: ToolDef[] = [
   },
   {
     name: 'set_cut',
-    description: 'Replace the whole cut. keep = inclusive word-id ranges in OUTPUT order. Everything not listed is removed.',
-    parameters: S.obj({ keep: S.arr(ANCHOR, 'ranges to keep, in the order they should play', { minItems: 1 }) }),
+    description: 'Replace the whole cut. keep = inclusive word-id ranges in OUTPUT order. Optional joins after the first range: hard, j, l or smash. J/L frames are clamped by the engine to available source handles; 6-12 frames is a starting range.',
+    parameters: S.obj({ keep: S.arr(S.obj({
+      ...ANCHOR.properties,
+      join: S.opt(S.obj({
+        transition: S.enum(['hard', 'j', 'l', 'smash']),
+        frames: S.int('Requested overlap in output frames, usually 6-12; ignored for hard and smash', { minimum: 0 }),
+      }, 'Join into this range; null on the first range or for the default hard cut')),
+    }), 'ranges to keep, in the order they should play', { minItems: 1 }) }),
     async run(ctx, args) {
       const { t } = await load(ctx);
       const { keep, problems } = normalizeKeep(t, args.keep);

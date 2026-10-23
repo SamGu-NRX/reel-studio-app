@@ -64,12 +64,14 @@
       "properties": {
         "keep": {
           "type": "array",
+          "prefixItems": [{ "$ref": "#/$defs/wordRange", "not": { "required": ["join"] } }],
           "items": {
             "type": "object",
             "required": ["from", "to"],
             "properties": {
               "from": { "$ref": "#/$defs/wordId" },
-              "to": { "$ref": "#/$defs/wordId" }
+              "to": { "$ref": "#/$defs/wordId" },
+              "join": { "$ref": "#/$defs/join" }
             }
           }
         },
@@ -223,6 +225,14 @@
   },
   "$defs": {
     "wordId": { "type": "string", "pattern": "^w[0-9]+$" },
+    "join": {
+      "type": "object",
+      "required": ["transition", "frames"],
+      "properties": {
+        "transition": { "enum": ["hard", "j", "l", "smash"] },
+        "frames": { "type": "integer", "minimum": 0 }
+      }
+    },
     "wordRange": {
       "type": "object",
       "required": ["from", "to"],

@@ -62,3 +62,27 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
   voice's speech loudness, 6 dB more while the voice is talking, `gainDb` (-24 to +12) on top but never above 4 dB
   under the voice, and its sample peak stays 3 dB under the voice's loudest peak. Word and cut anchors are
   remapped after a re-transcription like the others. Written by the AI's `set_sfx`; an empty list removes the field.
+
+## 2026-10-23 (per-join transitions)
+
+- Each `cut.keep[]` range after the first may carry `join: {transition, frames}`.
+  `transition` is `hard`, `j`, `l` or `smash`; `frames` is a non-negative integer in
+  output-frame units. Missing joins and explicit `hard` retain hard-cut timing.
+  Request 6-12 frames as a starting range, not a measured optimum.
+- J adds source audio before the incoming picture starts. L keeps the outgoing
+  source audio after its picture ends. The engine clamps these handles at adjacent
+  transcript words, source bounds and the neighboring output segment, then rounds
+  down to whole output frames. A continuous source span or no room means no bridge.
+- Picture timing, kept-word audio timing and total duration do not move. The voice
+  renderer overlaps the handles with the existing 6 ms edge fades instead of
+  concatenating extra time. Word-anchored captions therefore keep their timestamps.
+- `smash` keeps a hard picture cut, derives an `impact-hit` at `at.cut`, and adds a
+  200 ms, -6 dB dip through the music automation curve. These sound choices are
+  starting values without listening-test evidence. The existing SFX spacing and
+  loudness limits still apply; skipped hits produce the existing render warnings.
+  An explicit SFX at that cut replaces the automatic hit. The dip uses the existing
+  gain smoothing and only applies when a music track plays.
+- `frames` has no effect for hard or smash. Derived effects do not modify the saved
+  project. Removing a join removes its automatic effects on the next render.
+  The AI's `set_cut` accepts joins and forbids J/L with beat accents on the same join
+  in its editing guidance; beat-accent scheduling is not part of this schema.

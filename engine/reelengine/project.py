@@ -214,7 +214,8 @@ def timeline(project_dir: Path, proj: dict, words: Optional[list] = None) -> cut
                           "There's nothing in the edit yet. Let me pick your takes first.")
     return cutmod.build_timeline(words, keep, source_meta(proj),
                                  gap_cap=float(c.get("gapCap", cutmod.GAP_CAP)),
-                                 min_saving=float(c.get("minSaving", cutmod.MIN_SAVING)))
+                                 min_saving=float(c.get("minSaving", cutmod.MIN_SAVING)),
+                                 join_fps=float(proj["format"]["fps"]))
 
 
 def _anchor_slots(proj: dict):

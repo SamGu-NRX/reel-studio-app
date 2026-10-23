@@ -109,10 +109,18 @@ def plan(ctx) -> tuple[list, list]:
     in time order; left_out: [{"at", "sound", "skipped"}] with the reason in plain words."""
     pack = load_pack()
     cands, left = [], []
-    for i, e in enumerate((ctx.project or {}).get("sfx") or []):
+    entries = [(e, None) for e in (ctx.project or {}).get("sfx") or []]
+    explicit_cuts = {(e.get("at") or {}).get("cut") for e, _ in entries}
+    for seg in ctx.out_timeline:
+        if seg.join_transition == "smash" and seg.first_word not in explicit_cuts:
+            # A short impact uses the pack's measured onset and existing level caps.
+            # This is a starting choice, not a listening-tested default.
+            t = round(seg.out_start * fmt_of(ctx)[2]) / fmt_of(ctx)[2]
+            entries.append(({"at": {"cut": seg.first_word}, "sound": "impact-hit"}, t))
+    for i, (e, automatic_time) in enumerate(entries):
         at = e.get("at") or {}
         snd = pack.get(e.get("sound"))
-        t = hit_time(ctx, at) if snd else None
+        t = (automatic_time if automatic_time is not None else hit_time(ctx, at)) if snd else None
         if snd is None:
             left.append({"at": at, "sound": e.get("sound"), "skipped": "it is not one of the built-in sounds"})
         elif t is None:

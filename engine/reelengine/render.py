@@ -2,12 +2,13 @@
 for a final render; drafts and window previews overwrite versions/preview/ (docs/versions.md).
 
 Order of operations (docs/architecture.md section 5): cut video (+ zooms) -> overlay layers by z -> captions burned
-last -> mux the audio. The audio is built FIRST, as its own file: the cut voice (sample-exact
-atrim/concat of the same segments the picture uses), then A2's music mix (or plain loudness
-normalisation to -14 LUFS when no music module is installed). The video pass maps that file.
+last -> mux the audio. The audio is built FIRST, as its own file: the cut voice, then the music
+and SFX mix (or plain loudness normalisation to -14 LUFS without the music module). The video pass
+maps that file.
 
-Segment boundaries are on the source frame grid (cut.py), so each segment's picture and sound are
-the same length and the concat cannot drift. Every ffmpeg input is bounded.
+Segment boundaries are on the source frame grid (cut.py). Ordinary cuts concatenate matching
+picture and voice spans. J/L joins overlap bounded audio handles on the same output clock without
+moving the kept speech or lengthening the picture. Every ffmpeg input is bounded.
 
 Inputs are opened in LANES: each lane is one ffmpeg input of a source whose segments run forward in
 source time. A cut in source order is one lane per source. A reordered cut (hook recorded last,
@@ -289,11 +290,13 @@ def voice_signature(segments: list, src_paths: dict) -> str:
             return [str(p), None, None]
     data = [1, [[s.source, round(s.src_start, 6), round(s.src_end, 6)] for s in segments],
             {k: st(v) for k, v in sorted(src_paths.items())}]
+    if any(s.audio_lead or s.audio_tail for s in segments):
+        data.append([[s.out_start, s.audio_lead, s.audio_tail] for s in segments])
     return hashlib.sha1(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path) -> Path:
-    """The cut voice: atrim/concat of exactly the picture's segments, 48 kHz stereo wav.
+    """48 kHz stereo voice. J/L mix source handles across an unchanged picture clock.
     Kept (same file, same mtime) when the segments and sources are unchanged, so music.build_audio's
     mix cache, keyed on this file's mtime, hits on every render that did not change the cut."""
     sig = voice_signature(segments, src_paths)
@@ -304,6 +307,10 @@ def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path) -> 
     except OSError:
         pass
     sig_file.unlink(missing_ok=True)
+    overlap = any(s.audio_lead or s.audio_tail for s in segments)
+    if overlap:
+        segments = [Segment(s.source, s.src_start - s.audio_lead, s.src_end + s.audio_tail,
+                            s.out_start - s.audio_lead) for s in segments]
     lanes = plan_lanes(segments)
     cmd = [ctx.ffmpeg, "-y", "-nostdin", "-hide_banner", "-loglevel", "error"]
     seg_input = {}
@@ -324,9 +331,15 @@ def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path) -> 
         f = min(fade, d / 4)
         chains.append(f"[{pad}]atrim=start={_f(seg.src_start - seek)}:end={_f(seg.src_end - seek)},"
                       f"asetpts=PTS-STARTPTS,aresample=48000,"
-                      f"afade=t=in:d={_f(f)},afade=t=out:st={_f(max(0.0, d - f))}:d={_f(f)}[a{i}]")
+                      f"afade=t=in:d={_f(f)},afade=t=out:st={_f(max(0.0, d - f))}:d={_f(f)}"
+                      + (f",adelay={round(seg.out_start * 48000)}S:all=1" if overlap else "") + f"[a{i}]")
         labels.append(f"[a{i}]")
-    if len(segments) == 1:
+    if overlap:
+        # Place rather than concat the handles: concat would lengthen the reel and
+        # shift every later word. Fades remain local to each source's audio edges.
+        chains.append("".join(labels) + f"amix=inputs={len(labels)}:normalize=0,"
+                      f"apad=whole_dur={_f(ctx.duration)},atrim=duration={_f(ctx.duration)}[aout]")
+    elif len(segments) == 1:
         chains.append(f"{labels[0]}anull[aout]")
     else:
         chains.append("".join(labels) + f"concat=n={len(segments)}:v=0:a=1[aout]")
@@ -899,7 +912,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
     t = time.time()
     audio = build_audio(ctx, tl.segments, src_paths, rwork, warnings)
     timings["audio"] = round(time.time() - t, 2)
-    if proj.get("sfx"):
+    if proj.get("sfx") or any(s.join_transition == "smash" for s in tl.segments):
         try:
             from . import sfx as sfxmod
             placed, left = sfxmod.plan(ctx)
