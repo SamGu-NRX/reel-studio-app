@@ -319,7 +319,7 @@ export function MyStyle() {
                 <button
                   className="mem-line"
                   aria-expanded={isOpen}
-                  aria-controls={`mem-more-${r.id}`}
+                  aria-controls={isOpen ? `mem-more-${r.id}` : undefined}
                   onClick={() => setOpen(isOpen ? null : r.id)}
                 >
                   {kind && <span className="sr-only">{KIND_NAME[kind]}: </span>}
