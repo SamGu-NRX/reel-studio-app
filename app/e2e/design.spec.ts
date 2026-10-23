@@ -187,7 +187,7 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await expect(page.getByTestId('moment-suggest')).toBeVisible()
   await shot(page, 'd-12-reel-with-ai')
 
-  // ---- an AI check that has not answered: the change button waits, and no connect prompt shows ----
+  // ---- an AI check that has not answered: the reel still opens at once; only the change button waits ----
   await app.evaluate(({ ipcMain }) => {
     ipcMain.removeHandler('ai:active')
     const waiting: ((v: unknown) => void)[] = []
@@ -195,6 +195,7 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
     ipcMain.handle('ai:active', () => new Promise((answer) => waiting.push(answer)))
   })
   await page.getByTestId('nav-home').click()
+  const opened = Date.now()
   await page.getByTestId('project-card').first().click()
   await expect(page.getByTestId('player')).toBeVisible({ timeout: 1000 })
   await expect(page.getByTestId('share')).toBeEnabled({ timeout: 1000 })
@@ -222,6 +223,10 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
       answer({ ok: true, value: { id: 'chatgpt', connected: true, label: 'ChatGPT', detail: '' } })
   })
   await expect(page.getByTestId('note-input')).toBeEnabled()
+  // ...then it is attached like any drop.
+  await expect(page.getByTestId('note-attachment')).toHaveCount(1)
+  await expect(page.getByTestId('send')).toBeEnabled()
+  await page.getByTestId('note-attachment-remove').click()
   await stubConnected(app)
 
   // ---- Library: a drop anywhere on the window lands in the Library ----

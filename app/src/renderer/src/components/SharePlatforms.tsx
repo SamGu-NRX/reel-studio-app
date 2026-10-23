@@ -2,7 +2,7 @@
 // the reel has one player (Player.tsx), so each try uses its version's own cover.
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { PlatformExportResult, VersionInfo } from '../../../shared/api'
-import { PLATFORM_RULES, captionLength, checkPlatform, platformRule, secondTryPlatforms, secondTryProblem, tryChanges, type Platform, type PlatformTry } from '../../../shared/platforms'
+import { PLATFORM_RULES, captionLength, checkPlatform, fallbackCoverSeconds, platformRule, secondTryPlatforms, secondTryProblem, tryChanges, type Platform, type PlatformTry } from '../../../shared/platforms'
 import { errorCode, reel, userMessage } from '../api'
 import { Icon } from './icons'
 import { FOLDER_APP } from './ui'
@@ -29,7 +29,6 @@ export function SharePlatforms({ slug, version, versions, caption, disabled, onW
 }) {
   const [selected, setSelected] = useState<Platform[]>([])
   const [second, setSecond] = useState<PlatformTry | null>(null)
-  const [safe, setSafe] = useState(false)
   const [state, setState] = useState<State>({ kind: 'idle' })
   const [lengths, setLengths] = useState<Record<number, number>>({})
   const saving = state.kind === 'saving'
@@ -81,7 +80,10 @@ export function SharePlatforms({ slug, version, versions, caption, disabled, onW
   const sameVideo = !second || second.version === version.n
   const tryNames = selected.filter((p) => platformRule(p).tryTwo).map((p) => platformRule(p).label)
   const secondPlatforms = second ? secondTryPlatforms(selected, sameVideo) : []
-  const problem = second && selected.length ? secondTryProblem(selected, first, second, fps) : null
+  // Both tries keep their version's own cover here; the clock says which frame that is (shared/platforms.ts coverFrame).
+  const firstLength = lengths[version.n]
+  const coverClock = { fps, end: firstLength ?? Infinity, fallback: version.cover || firstLength === undefined ? null : fallbackCoverSeconds(firstLength) }
+  const problem = second && selected.length ? secondTryProblem(selected, first, second, coverClock) : null
   // Until a version's length is read, NaN passes every length rule, so the caption is still checked. Main checks the length again.
   const issues = (platforms: Platform[], text: string, seconds: number | undefined, prefix: string) =>
     platforms.flatMap((p) => checkPlatform(p, text, seconds ?? Number.NaN).map((i) => ({ ...i, text: `${prefix}${platformRule(p).label}: ${i.message}` })))
@@ -89,8 +91,8 @@ export function SharePlatforms({ slug, version, versions, caption, disabled, onW
     ...issues(selected, caption, lengths[version.n], second ? 'Try 1 on ' : ''),
     ...(second ? issues(secondPlatforms, second.caption, lengths[second.version], 'Try 2 on ').filter((c) => c.kind !== 'duration' || !sameVideo) : [])
   ]
-  const blocking = checks.filter((c) => c.blocking)
-  const ready = selected.length > 0 && safe && !blocking.length && !problem && !disabled
+  // Limits change and vary by account, so they warn and never stop the save
+  const ready = selected.length > 0 && !problem && !disabled
 
   const save = async () => {
     setState({ kind: 'saving', pct: null, jobId: null })
@@ -146,23 +148,14 @@ export function SharePlatforms({ slug, version, versions, caption, disabled, onW
           <label className="sp-lbl" htmlFor="platform-caption-2">Try 2 caption</label>
           <textarea id="platform-caption-2" className="textarea sp-caption" rows={2} value={second.caption} onChange={(e) => setSecond({ ...second, caption: e.target.value })} aria-describedby="try-two-status" />
           <small id="try-two-status" role="status" className={problem ? 'sp-fail' : 'muted-sm'} data-testid="try-two-status">
-            {problem ?? (tryChanges(first, second, fps).length > 1 ? "You changed more than one thing. If Try 2 wins, you won't know which change helped." : null)}
+            {problem ?? (tryChanges(first, second, coverClock).length > 1 ? "You changed more than one thing. If Try 2 wins, you won't know which change helped." : null)}
           </small>
         </fieldset>
       )}
 
-      {selected.length > 0 && (
-        <label className="sp-check">
-          <input type="checkbox" checked={safe} disabled={saving} onChange={(e) => setSafe(e.target.checked)} />
-          <span>
-            <b>I checked the edges</b>
-            <small>Platform buttons can cover subtitles and details near the edges. Nothing is cropped or moved.</small>
-          </span>
-        </label>
-      )}
       {checks.length > 0 && (
         <ul className="sp-issues">
-          {checks.map((c) => <li key={c.text} className={c.blocking ? 'sp-fail' : 'muted-sm'}>{c.text}</li>)}
+          {checks.map((c) => <li key={c.text} className="muted-sm">{c.text}</li>)}
         </ul>
       )}
 

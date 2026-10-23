@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { promises as fs } from 'node:fs'
+import { promises as fs, renameSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { copyToCloudDrive, detectCloudDrives } from '../src/main/cloud-drive'
@@ -92,12 +92,13 @@ it('fails if a failed copy deletes a file the sync client put at the reel\'s nam
   const folder = join(dir, 'drive', 'Reel Studio')
   const target = join(folder, 'Family reel.mp4')
   await fs.writeFile(source, 'complete video')
-  vi.spyOn(fs, 'copyFile').mockImplementationOnce(async () => {
-    await fs.writeFile(join(folder, 'synced'), 'video from another device')
-    await fs.rename(join(folder, 'synced'), target)
+  // the copy reports progress as it streams: the sync client puts a file at the name, then the disk fills
+  const onProgress = (): void => {
+    writeFileSync(join(folder, 'synced'), 'video from another device')
+    renameSync(join(folder, 'synced'), target)
     throw Object.assign(new Error('disk full'), { code: 'ENOSPC' })
-  })
-  await expect(copyToCloudDrive(source, join(dir, 'drive'))).rejects.toThrow('disk full')
+  }
+  await expect(copyToCloudDrive(source, join(dir, 'drive'), { onProgress })).rejects.toThrow('disk full')
   expect(await fs.readdir(folder)).toEqual(['Family reel.mp4'])
   expect(await fs.readFile(target, 'utf8')).toBe('video from another device')
 })
@@ -128,13 +129,15 @@ it('fails if a save replaces a file the sync client put at the reel\'s name whil
   const folder = join(dir, 'drive', 'Reel Studio')
   const taken = join(folder, 'Family reel.mp4')
   await fs.writeFile(source, 'complete video')
-  const copyFile = fs.copyFile.bind(fs)
-  vi.spyOn(fs, 'copyFile').mockImplementationOnce(async (from, to, mode) => {
-    await copyFile(from, to, mode)
-    await fs.writeFile(join(folder, 'synced'), 'video from another device')
-    await fs.rename(join(folder, 'synced'), taken)
-  })
-  const saved = await copyToCloudDrive(source, join(dir, 'drive'))
+  // the sync client puts a file at the name while the copy streams
+  let synced = false
+  const onProgress = (): void => {
+    if (synced) return
+    synced = true
+    writeFileSync(join(folder, 'synced'), 'video from another device')
+    renameSync(join(folder, 'synced'), taken)
+  }
+  const saved = await copyToCloudDrive(source, join(dir, 'drive'), { onProgress })
   expect(basename(saved)).toBe('Family reel (2).mp4')
   expect(await fs.readFile(taken, 'utf8')).toBe('video from another device')
   expect(await fs.readFile(saved, 'utf8')).toBe('complete video')

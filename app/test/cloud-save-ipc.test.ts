@@ -34,7 +34,7 @@ it.skipIf(process.platform !== 'darwin' && process.platform !== 'win32')('fails 
   vi.spyOn(fs, 'stat').mockImplementation(((path: string, ...rest: []) => (other(path) ? never : stat(path, ...rest))) as typeof fs.stat)
   vi.spyOn(fs, 'readdir').mockImplementation(((path: string, ...rest: []) => (other(path) ? never : readdir(path, ...rest))) as typeof fs.readdir)
 
-  const saved = await handlers.get('cloud:save')!({} as Electron.IpcMainInvokeEvent, video, iCloud)
+  const saved = await handlers.get('cloud:save')!({} as Electron.IpcMainInvokeEvent, video, iCloud, 'save-1')
   expect(saved).toBe(join(iCloud, 'Reel Studio', 'Family reel.mp4'))
   expect(await fs.readFile(saved as string, 'utf8')).toBe('complete video')
 }, 5000)
@@ -52,11 +52,15 @@ it.skipIf(process.platform !== 'darwin' && process.platform !== 'win32')('fails 
   // The drive stops answering mid-copy and never fails.
   let copying!: () => void
   const started = new Promise<void>((resolve) => (copying = resolve))
-  vi.spyOn(fs, 'copyFile').mockImplementation(() => {
+  // (the streamed copy starts by reading the video's size)
+  const stat = fs.stat.bind(fs)
+  vi.spyOn(fs, 'stat').mockImplementation(((path: string, ...rest: []) => {
+    // the video by name: the handler hands the copy its real path (/private/var on a Mac)
+    if (!String(path).endsWith(join('Reel Studio', 'Family reel.mp4')) || String(path).includes('CloudDocs')) return stat(path, ...rest)
     copying()
     return new Promise<never>(() => {})
-  })
-  void handlers.get('cloud:save')!({} as Electron.IpcMainInvokeEvent, video, iCloud)
+  }) as typeof fs.stat)
+  void handlers.get('cloud:save')!({} as Electron.IpcMainInvokeEvent, video, iCloud, 'save-1')
   await started
 
   vi.useFakeTimers()

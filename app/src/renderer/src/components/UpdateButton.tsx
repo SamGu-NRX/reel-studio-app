@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { showsUpdateButton, type UpdateState } from '../../../shared/update'
-import { releaseLinkLabel, updateButtonLabel, updateHeadline, updateIcon, updateSubline, updateSummary } from './update-copy'
+import { notesHeading, releaseLinkLabel, updateButtonLabel, updateHeadline, updateIcon, updateSubline, updateSummary } from './update-copy'
 import { reel } from '../api'
 import { useNotify } from '../App'
 import { Icon } from './icons'
@@ -185,19 +185,20 @@ export function UpdateButton() {
           <div className="update-pop-title">{updateHeadline(s)}</div>
           <div className="update-pop-sub">{s.status === 'error' ? updateSummary(s) : `Reel Studio ${s.downloadedVersion ?? s.availableVersion}`}</div>
         </div>
-        {notes && (
-          <section className="update-pop-notes">
-            <h3>What's new</h3>
+        {/* every release newer than this copy, newest first (main/update-machine.ts) */}
+        {notes.map((n) => (
+          <section className="update-pop-notes" key={n.version}>
+            <h3>{notesHeading(n, notes.length)}</h3>
             <ul>
-              {notes.items.map((t, i) => (
+              {n.items.map((t, i) => (
                 <li key={`${i}:${t}`}>{t}</li>
               ))}
             </ul>
           </section>
-        )}
+        ))}
         <div className="update-pop-foot">
           <button className="update-pop-link" tabIndex={open ? 0 : -1} onClick={() => openReleasePage(notify)} data-testid="update-release-link">
-            {notes ? releaseLinkLabel(notes) : 'Read the release notes on GitHub'}
+            {notes[0] ? releaseLinkLabel(notes[0]) : 'Read the release notes on GitHub'}
             <Icon name="external" size={12} stroke={2} />
           </button>
           {s.status !== 'downloading' && (

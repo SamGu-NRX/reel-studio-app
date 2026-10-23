@@ -57,9 +57,9 @@ describe('answering a typed My style question (lowercase captions)', () => {
 
   it("the AI's own copy of the typed rule is asked once, and its other lowercase rules are still asked", () => {
     // "make the captions lowercase and remember to keep hashtags lowercase in the post", with an AI that saved both
-    const c = styleConsent('I made the captions lowercase.', ['Use lowercase captions.', 'Keep hashtags lowercase in the post.'], undefined, proposal)
+    const c = styleConsent('I made the captions lowercase.', ['Use lowercase subtitles.', 'Keep hashtags lowercase in the post.'], undefined, proposal)
     expect(c.suggestions).toEqual(['Keep hashtags lowercase in the post.'])
-    expect(c.undo).toEqual(['Use lowercase captions.', 'Keep hashtags lowercase in the post.'])
+    expect(c.undo).toEqual(['Use lowercase subtitles.', 'Keep hashtags lowercase in the post.'])
   })
 
   it('a double click on Yes saves and replies once', async () => {

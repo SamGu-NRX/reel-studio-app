@@ -21,7 +21,7 @@ function standIn(): { ai: ReturnType<typeof createMockAI>; root: string } {
 
 const proposal: StyleProposal = {
   id: 'q1',
-  text: 'Use lowercase captions.',
+  text: 'Use lowercase subtitles.',
   payload: { kind: 'caption-case', case: 'lower' },
   source: { project: 'p1', title: 'Baking bread', version: 2 }
 }
@@ -46,7 +46,7 @@ describe('My style in the stand-in AI', () => {
     expect(await ai.approveStyleProposal!(proposal)).toEqual({ status: 'saved' })
     expect(await ai.approveStyleProposal!(proposal)).toEqual({ status: 'saved' })
     const rules = await ai.styleRules()
-    expect(rules).toEqual([expect.objectContaining({ text: 'Use lowercase captions.', consent: expect.objectContaining({ proposal: 'q1' }) })])
+    expect(rules).toEqual([expect.objectContaining({ text: 'Use lowercase subtitles.', consent: expect.objectContaining({ proposal: 'q1' }) })])
     await ai.removeStyleRule(rules[0].id)
     expect(await ai.approveStyleProposal!(proposal)).toEqual({ status: 'forgotten' })
     expect(await ai.styleRules()).toEqual([])
@@ -65,9 +65,9 @@ describe('My style in the stand-in AI', () => {
     const { ai } = standIn()
     await ai.approveStyleProposal!(proposal)
     const [rule] = await ai.styleRules()
-    await ai.updateStyleRule!(rule.id, { text: ' use lowercase captions ' })
+    await ai.updateStyleRule!(rule.id, { text: ' use lowercase subtitles ' })
     expect(await ai.styleRules()).toEqual([
-      expect.objectContaining({ text: 'Use lowercase captions.', payload: { kind: 'caption-case', case: 'lower' } })
+      expect.objectContaining({ text: 'Use lowercase subtitles.', payload: { kind: 'caption-case', case: 'lower' } })
     ])
   })
 
@@ -75,7 +75,7 @@ describe('My style in the stand-in AI', () => {
     const { ai } = standIn()
     await ai.approveStyleProposal!(proposal)
     const [rule] = await ai.styleRules()
-    await ai.updateStyleRule!(rule.id, { text: 'use lowercase captions for tutorials' })
+    await ai.updateStyleRule!(rule.id, { text: 'use lowercase subtitles for tutorials' })
     expect(await ai.approveStyleProposal!(proposal)).toEqual({ status: 'exists' })
     expect(await ai.styleRules()).toEqual([expect.not.objectContaining({ payload: expect.anything() })])
   })

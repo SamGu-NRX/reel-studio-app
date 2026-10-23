@@ -40,7 +40,8 @@ export function UpdateSettingsRow() {
 /** What's new: the waiting update's changes, scrollable, or the releases page while there is none. */
 export function WhatsNew() {
   const s = useUpdateState()
-  const notes = s?.releaseNotes
+  // the newest release this copy can update to; older ones are on the releases page
+  const notes = s?.releaseNotes[0]
   const more = notes ? notes.totalItems - notes.items.length : 0
   return (
     <div className="srow-more">

@@ -340,7 +340,7 @@ describe('note queue', () => {
     a.jobs.keepClosed(slug)
     await a.send(slug, 'first')
     expect(a.jobs.forSlug(slug)).toBeUndefined()
-    expect((await replies(slug)).at(-1)).toMatch(/is still running on this video/)
+    expect((await replies(slug)).at(-1)).toMatch(/is still running on this reel/)
     expect(await waitingTexts(slug)).toEqual(['first'])
     expect((await readAppState(slug)).queueHeld).toBe(true)
   }, 60000)
