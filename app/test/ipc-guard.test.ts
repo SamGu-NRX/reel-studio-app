@@ -48,3 +48,15 @@ it('compares packaged renderer paths without case differences on Windows', () =>
   expect(() => assertIpcSender(event, contents, 'file:///c:/program%20files/reel/index.html')).not.toThrow()
   expect(() => assertIpcSender(event, contents, 'file:///c:/program%20files/reel/other.html')).toThrow()
 })
+
+// version-tree and version-merge: the page names saved versions by number and a side per layer, nothing else
+it('fails if a branched note or a merge request with a bad version number or side gets past the guard', () => {
+  const take = { cut: 'ours', captions: 'theirs', music: 'ours', zooms: 'ours', broll: 'ours', sfx: 'ours', cover: 'ours' }
+  expect(() => validateIpcArgs('projects:note', ['reel', 'slower', [], undefined, 2, 1])).not.toThrow()
+  for (const base of [0, 1.5, '1', -1]) expect(() => validateIpcArgs('projects:note', ['reel', 'slower', [], undefined, 2, base])).toThrow()
+  expect(() => validateIpcArgs('projects:mergeVersions', ['reel', { ours: 1, theirs: 2, take }])).not.toThrow()
+  expect(() => validateIpcArgs('projects:mergeVersions', ['reel', { ours: 0, theirs: 2, take }])).toThrow()
+  expect(() => validateIpcArgs('projects:mergeVersions', ['reel', { ours: 1, theirs: 2, take: { ...take, cut: 'both' } }])).toThrow()
+  expect(() => validateIpcArgs('projects:mergeVersions', ['reel', { ours: 1, theirs: 2 }])).toThrow()
+  expect(() => validateIpcArgs('projects:mergeVersions', ['../reel', { ours: 1, theirs: 2, take }])).toThrow()
+})
