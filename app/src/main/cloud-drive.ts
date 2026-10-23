@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { constants, promises as fs } from 'node:fs'
+import { createReadStream, createWriteStream, promises as fs } from 'node:fs'
 import { basename, extname, join } from 'node:path'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import type { CloudDrive } from '../shared/api'
 
 export async function detectCloudDrives({ platform, home, driveRoots = Array.from({ length: 26 }, (_, i) => `${String.fromCharCode(65 + i)}:\\`) }: {
@@ -26,7 +28,23 @@ export async function detectCloudDrives({ platform, home, driveRoots = Array.fro
   return drives
 }
 
-export async function copyToCloudDrive(source: string, folder: string): Promise<string> {
+/** Streamed, not cloned, so a slow drive reports `pct` (0-100) as it goes and the copy can be stopped. */
+async function copyWithProgress(source: string, target: string, signal?: AbortSignal, onProgress?: (pct: number) => void): Promise<void> {
+  const size = (await fs.stat(source)).size
+  let copied = 0
+  let reported = -1
+  const count = new Transform({
+    transform(chunk: Buffer, _encoding, done) {
+      copied += chunk.length
+      const pct = size ? Math.floor((copied * 100) / size) : 100
+      if (pct !== reported) onProgress?.((reported = pct))
+      done(null, chunk)
+    }
+  })
+  await pipeline(createReadStream(source), count, createWriteStream(target, { flags: 'wx' }), { signal })
+}
+
+export async function copyToCloudDrive(source: string, folder: string, { signal, onProgress }: { signal?: AbortSignal; onProgress?: (pct: number) => void } = {}): Promise<string> {
   const destination = join(folder, 'Reel Studio')
   await fs.mkdir(destination, { recursive: true })
   const temp = join(destination, `.${randomUUID()}.tmp`)
@@ -43,7 +61,7 @@ export async function copyToCloudDrive(source: string, folder: string): Promise<
     }
     try {
       await reservation.close()
-      await fs.copyFile(source, temp, constants.COPYFILE_EXCL)
+      await copyWithProgress(source, temp, signal, onProgress)
       await fs.rename(temp, target)
       return target
     } catch (error) {
