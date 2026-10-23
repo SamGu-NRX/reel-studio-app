@@ -173,7 +173,11 @@ export function createJobManager(
         // and it did not exist before (an unchanged edit re-renders, and so reuses, the current version).
         const existed = new Set(slug ? (await listVersions(projectDir(slug))).filter((v) => !v.draft).map((v) => v.n) : [])
         const finals = new Set<number>()
+        // false once `fn` has settled: a stopped engine's late lines must not reach the screen
+        let reporting = true
         const res = await fn((e) => {
+          // A stopped engine can still report progress after its job has ended; the job's result wins.
+          if (!reporting) return
           if (e.type === 'status') {
             if (e.message && e.message !== logged) log(`[job ${kind}] ${(logged = e.message)}`)
             job.message = e.message || job.message
@@ -202,7 +206,9 @@ export function createJobManager(
             pending.push(video.then((v) => { if (open) send({ jobId: id, slug, type: 'render', version: r.version, draft: r.draft, firstLook: !!r.firstLook, video: v }) }))
           } else if (e.type === 'reply') send({ jobId: id, slug, type: 'reply', text: e.text })
           else send({ jobId: id, slug, type: 'heard', words: e.words })
-        }, abort.signal, { id, owner: owner?.token ?? null })
+        }, abort.signal, { id, owner: owner?.token ?? null }).finally(() => {
+          reporting = false
+        })
         await Promise.all(pending) // a render's event before `done`, never after
         if (progress && mediaSec > 0) {
           // what each phase really took on this computer: the next estimate starts from it

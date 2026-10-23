@@ -161,6 +161,8 @@ export class FakeHost implements EngineHost {
         await fsp.writeFile(path.join(vd, 'project.json'), JSON.stringify(p, null, 2));
         if (!draft) await fsp.writeFile(path.join(vd, 'assets.json'), await this.fingerprint(dir));
         await this.afterRenderFiles?.({ draft, dir: vd });
+        // like the engine: its own steps, the last one saying the video is ready
+        for (const [pct, message] of [[12, 'Placing your pictures'], [90, 'Making your cover'], [100, 'Your video is ready']] as const) onProgress?.({ stage: 'render', pct, message });
         if (!draft) {
           p.version = v;
           await fsp.writeFile(pj, JSON.stringify(p, null, 2));
