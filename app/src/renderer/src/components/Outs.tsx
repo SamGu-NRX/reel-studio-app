@@ -38,7 +38,6 @@ export function Outs({
   post,
   disabled,
   why,
-  exportFile,
   onSaveCaption
 }: {
   slug: string
@@ -50,8 +49,6 @@ export function Outs({
   /** A version is being made: nothing new can start. */
   disabled: boolean
   why?: string
-  /** Exports the version on screen once; later calls get the same files. */
-  exportFile: () => Promise<ExportResult>
   /** Saves the caption as typed (hashtags included) and reloads the reel. */
   onSaveCaption: (caption: string) => Promise<boolean>
 }) {
@@ -63,6 +60,7 @@ export function Outs({
   const box = useRef<HTMLDivElement>(null)
   const helpRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<{ phone: string } | null>(null)
+  // Keyed by version and destination ("3|instagram"): a line belongs to the version it was for.
   const [rows, setRows] = useState<Record<string, Row>>({})
   const [platformWork, setPlatformWork] = useState<Work | null>(null)
   const [platformsOpen, setPlatformsOpen] = useState(false)
@@ -73,7 +71,8 @@ export function Outs({
   const [ask, setAsk] = useState<'ask' | 'answered' | null>(null)
   const sharing = useRef<DataSharing | null>(null)
   const cancels = useRef(new Map<string, () => void>())
-  const pending = useRef<{ n: number; files: Promise<ExportResult> } | null>(null)
+  const pending = useRef<{ key: string; files: Promise<ExportResult> } | null>(null)
+  const saving = useRef<Promise<boolean> | null>(null)
   const openRef = useRef(open)
   openRef.current = open
   const { drives, label: driveName } = useCloudDrives()
@@ -91,9 +90,6 @@ export function Outs({
     void reel.app.info().then((i) => { sharing.current = i.sharing }).catch(() => {})
   }, [])
 
-  // A done or failed line belongs to the version it was for.
-  useEffect(() => setRows((all) => Object.fromEntries(Object.entries(all).filter(([, r]) => r.kind === 'working'))), [version?.n])
-
   const show = useCallback((fromKeys = false) => {
     if (!version) return
     setInstant(fromKeys)
@@ -109,9 +105,13 @@ export function Outs({
     if (refocus) button.current?.focus({ preventScroll: true })
   }, [])
 
-  // File › Share… (Cmd+E) and Ctrl+E: a keyboard action, so it opens at once.
+  // File › Share… (Cmd+E) and Ctrl+E: a keyboard action, so it opens and closes at once.
   useEffect(() => {
-    const fn = () => (openRef.current ? close() : show(true))
+    const fn = () => {
+      if (!openRef.current) return show(true)
+      setInstant(true)
+      close()
+    }
     window.addEventListener(EXPORT_EVENT, fn)
     return () => window.removeEventListener(EXPORT_EVENT, fn)
   }, [show, close])
@@ -130,9 +130,22 @@ export function Outs({
     if (ask === 'ask') helpRef.current?.scrollIntoView({ block: 'nearest' })
   }, [ask])
 
+  // Focus follows the view: the first destination that can start, the phone panel's Back, then Send to my phone again.
+  const shownView = open ? (view ? 'phone' : 'list') : null
+  const lastView = useRef<string | null>(null)
+  useEffect(() => {
+    const from = lastView.current
+    lastView.current = shownView
+    if (!shownView || !box.current) return
+    const target =
+      shownView === 'phone' ? box.current.querySelector<HTMLElement>('[data-testid="phone-back"]')
+        : from === 'phone' ? box.current.querySelector<HTMLElement>('[data-testid="share-phone"]')
+        : box.current.querySelector<HTMLElement>('.sp-go:not(:disabled)')
+    requestAnimationFrame(() => target?.focus({ preventScroll: true }))
+  }, [shownView])
+
   useEffect(() => {
     if (!open) return
-    requestAnimationFrame(() => box.current?.querySelector<HTMLElement>('[data-first]')?.focus({ preventScroll: true }))
     const away = (e: PointerEvent) => {
       const t = e.target as Node
       if (!box.current?.contains(t) && !button.current?.contains(t)) close(false)
@@ -160,15 +173,15 @@ export function Outs({
     return reel.jobs.onEvent((e) => {
       if (e.slug !== slug || e.type !== 'status') return
       setPrepJob(e.jobId)
-      setRows((all) => Object.fromEntries(Object.entries(all).map(([id, r]) => [id, isPrep(r) ? { ...r, pct: e.overall } : r])))
+      setRows((all) => Object.fromEntries(Object.entries(all).map(([key, r]) => [key, isPrep(r) ? { ...r, pct: e.overall } : r])))
     })
   }, [preparing, slug])
 
-  const set = (id: string, row: Row | null) => {
+  const set = (key: string, row: Row | null) => {
     setRows((all) => {
       const next = { ...all }
-      if (row) next[id] = row
-      else delete next[id]
+      if (row) next[key] = row
+      else delete next[key]
       return next
     })
     if (row && row.kind !== 'working' && !openRef.current) setUnseen(row.kind === 'done' ? 'done' : 'failed')
@@ -190,17 +203,27 @@ export function Outs({
     void reel.app.setSharing(sharing.current).catch(() => {})
   }
 
+  /** Saves the caption if it changed, after any save already on its way. Rejects when it couldn't be saved: nothing is shared then. */
   const saveCaption = async () => {
+    if (saving.current) await saving.current
     if (caption === savedCaption.current) return
     const before = savedCaption.current
     savedCaption.current = caption
-    if (!(await onSaveCaption(caption))) savedCaption.current = before
+    const write = onSaveCaption(caption)
+    saving.current = write
+    const ok = await write
+    if (saving.current === write) saving.current = null
+    if (ok) return
+    savedCaption.current = before
+    throw { code: 'CAPTION', userMessage: "The caption wasn't saved, so nothing was shared. Try again." }
   }
 
-  const exported = (): Promise<ExportResult> => {
-    if (pending.current?.n === version!.n) return pending.current.files
-    const files = exportFile()
-    pending.current = { n: version!.n, files }
+  /** One export per version and caption: the caption file beside the video always holds the words that were copied. */
+  const exported = (n: number): Promise<ExportResult> => {
+    const key = `${n}|${savedCaption.current}`
+    if (pending.current?.key === key) return pending.current.files
+    const files = reel.projects.exportVersion(slug, n)
+    pending.current = { key, files }
     files.catch(() => {
       if (pending.current?.files === files) pending.current = null
     })
@@ -208,19 +231,21 @@ export function Outs({
   }
 
   /** Runs one destination: the caption saved, the version exported (once), then `go`. `go` returns the done line, or null for nothing to show. */
-  const run = async (id: string, go: (files: ExportResult, progress: (row: Row) => void) => Promise<Done | null>) => {
-    if (!version || disabled || rows[id]?.kind === 'working') return
+  const run = async (id: string, go: (files: ExportResult, progress: (row: Row) => void, key: string) => Promise<Done | null>) => {
+    if (!version || disabled) return
+    const key = `${version.n}|${id}`
+    if (rows[key]?.kind === 'working') return
     localStorage.setItem(LAST, id)
-    set(id, { kind: 'working', label: version.draft ? 'Making the full-quality video' : `Getting Version ${version.n} ready`, pct: null, prep: true })
+    set(key, { kind: 'working', label: version.draft ? 'Making the full-quality video' : `Getting Version ${version.n} ready`, pct: null, prep: true })
     try {
       await saveCaption()
-      const end = await go(await exported(), (row) => set(id, row))
-      set(id, end)
+      const end = await go(await exported(version.n), (row) => set(key, row), key)
+      set(key, end)
       if (end) shared()
     } catch (e) {
-      set(id, errorCode(e) === 'CANCELLED' ? null : { kind: 'failed', message: userMessage(e) })
+      set(key, errorCode(e) === 'CANCELLED' ? null : { kind: 'failed', message: userMessage(e) })
     } finally {
-      cancels.current.delete(id)
+      cancels.current.delete(key)
     }
   }
 
@@ -260,9 +285,9 @@ export function Outs({
         hint: 'Into a Reel Studio folder',
         testid: drive.label === 'iCloud Drive' ? 'save-icloud' : 'save-gdrive',
         go: () =>
-          void run(id, async (files, progress) => {
+          void run(id, async (files, progress, key) => {
             const job = saveToDrive(files.video, drive, (pct) => progress({ kind: 'working', label: `Saving to ${name} · ${pct}%`, pct }))
-            cancels.current.set(id, job.cancel)
+            cancels.current.set(key, job.cancel)
             progress({ kind: 'working', label: `Saving to ${name}`, pct: 0 })
             const path = await job.done
             return path ? { kind: 'done', line: `Saved to ${name}`, path } : null
@@ -326,126 +351,127 @@ export function Outs({
           ref={box}
           className={`pop share-pop${leaving ? ' leave' : ''}${instant ? ' instant' : ''}`}
           role="dialog"
-          aria-labelledby="share-h"
+          aria-labelledby={view ? undefined : 'share-h'}
+          aria-label={view ? 'Send to my phone' : undefined}
           hidden={!mounted}
           inert={leaving || undefined}
           data-testid="share-pop"
         >
-          {view ? (
+          {view && (
             <SendToPhone
               video={view.phone}
               caption={caption}
               onBack={() => setView(null)}
               onSent={() => {
-                set('phone', { kind: 'done', line: 'Sent to your phone' })
+                set(`${version.n}|phone`, { kind: 'done', line: 'Sent to your phone' })
                 shared()
               }}
             />
-          ) : (
-            <>
-              <h2 id="share-h" className="sp-h">{version.n ? `Share Version ${version.n}` : 'Share the preview'}</h2>
-              {why && <p className="muted-sm sp-why">{why}</p>}
-              {version.draft && !why && <p className="muted-sm sp-why">This is a preview. Sharing makes the full-quality video first.</p>}
-              <div className="sp-cap">
-                <label htmlFor="share-caption">Caption</label>
-                <span className={`tnum${over ? ' sp-over' : ''}`} aria-live="polite">{caption.length.toLocaleString()}/{INSTAGRAM_LIMIT.toLocaleString()}</span>
-              </div>
-              <textarea
-                id="share-caption"
-                className="textarea sp-caption"
-                rows={3}
-                value={caption}
-                placeholder="A line or two to post under the reel"
-                onChange={(e) => setCaption(e.target.value)}
-                onBlur={() => void saveCaption()}
-                data-testid="share-caption"
-              />
-              <ul className="sp-list">
-                {ordered.map((d, i) => {
-                  const row = rows[d.id]
-                  const isPlatforms = d.id === 'platforms'
-                  return (
-                    <li key={d.id} className="sp-row">
-                      <button
-                        type="button"
-                        className="sp-go"
-                        onClick={d.go}
-                        disabled={!isPlatforms && (disabled || row?.kind === 'working')}
-                        aria-expanded={isPlatforms ? platformsOpen : undefined}
-                        data-first={i === 0 || undefined}
-                        data-testid={d.testid}
-                      >
-                        <span className="sp-ic">{d.icon}</span>
-                        <span className="sp-l">
-                          <b>{d.label}</b>
-                          <small>{d.hint}</small>
-                        </span>
-                        {i === 0 && last === d.id && <span className="sp-last">Last used</span>}
-                        {isPlatforms && <Icon name="chevron-down" size={14} className={`sp-chev${platformsOpen ? ' open' : ''}`} />}
-                      </button>
-                      {row?.kind === 'done' && (
-                        <p className="sp-done" role="status">
-                          <Icon name="check" size={14} />
-                          <span>
-                            {row.line}
-                            {row.path && (
-                              <>
-                                {' · '}
-                                <button type="button" className="link inline" onClick={() => void reel.app.openFolder(row.path!)} aria-label={`Show in ${FOLDER_APP}`}>
-                                  Show
-                                </button>
-                              </>
-                            )}
-                          </span>
-                        </p>
-                      )}
-                      {row && row.kind !== 'done' && (
-                        <Strip
-                          work={row}
-                          onCancel={cancels.current.get(d.id) ?? (isPrep(row) && prepJob ? () => void reel.jobs.cancel(prepJob) : undefined)}
-                          onRetry={disabled ? undefined : d.go}
-                        />
-                      )}
-                      {isPlatforms && (
-                        <div hidden={!platformsOpen}>
-                          <SharePlatforms
-                            slug={slug}
-                            version={version}
-                            versions={versions}
-                            caption={caption}
-                            disabled={disabled}
-                            onWork={(w) => {
-                              setPlatformWork(w)
-                              if (w?.kind === 'failed' && !openRef.current) setUnseen('failed')
-                            }}
-                            beforeSave={saveCaption}
-                            onSaved={() => {
-                              localStorage.setItem(LAST, 'platforms')
-                              if (!openRef.current) setUnseen('done')
-                              shared()
-                            }}
-                          />
-                        </div>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-              {ask === 'ask' && (
-                <div ref={helpRef} className="sp-help" data-testid="help-improve">
-                  <p>
-                    <b>Help improve Reel Studio?</b> Share anonymous data: the features you use, a score for each edit and your posts’ view counts.
-                  </p>
-                  <p className="muted-sm">{NEVER_SHARED}</p>
-                  <div className="sp-help-b">
-                    <button type="button" className="btn small" onClick={() => answer(false)} data-testid="help-no">Don’t share</button>
-                    <button type="button" className="btn small" onClick={() => answer(true)} data-testid="help-yes">Share</button>
-                  </div>
-                </div>
-              )}
-              {ask === 'answered' && <p className="muted-sm sp-help-done" role="status">Saved. Change it any time in Settings › Privacy.</p>}
-            </>
           )}
+          {/* Kept mounted under the phone panel, so Other platforms' work keeps its progress and Cancel. */}
+          <div className="sp-main" hidden={!!view}>
+            <h2 id="share-h" className="sp-h">{version.n ? `Share Version ${version.n}` : 'Share the preview'}</h2>
+            {why && <p className="muted-sm sp-why">{why}</p>}
+            {version.draft && !why && <p className="muted-sm sp-why">This is a preview. Sharing makes the full-quality video first.</p>}
+            <div className="sp-cap">
+              <label htmlFor="share-caption">Caption</label>
+              <span className={`tnum${over ? ' sp-over' : ''}`}>{caption.length.toLocaleString()}/{INSTAGRAM_LIMIT.toLocaleString()}</span>
+            </div>
+            <textarea
+              id="share-caption"
+              className="textarea sp-caption"
+              rows={3}
+              value={caption}
+              placeholder="A line or two to post under the reel"
+              onChange={(e) => setCaption(e.target.value)}
+              onBlur={() => void saveCaption().catch(() => {})}
+              data-testid="share-caption"
+            />
+            <ul className="sp-list">
+              {ordered.map((d, i) => {
+                const key = `${version.n}|${d.id}`
+                const row = rows[key]
+                const isPlatforms = d.id === 'platforms'
+                return (
+                  <li key={d.id} className="sp-row">
+                    <button
+                      type="button"
+                      className="sp-go"
+                      onClick={d.go}
+                      disabled={!isPlatforms && (disabled || row?.kind === 'working')}
+                      aria-expanded={isPlatforms ? platformsOpen : undefined}
+                      data-testid={d.testid}
+                    >
+                      <span className="sp-ic">{d.icon}</span>
+                      <span className="sp-l">
+                        <b>{d.label}</b>
+                        <small>{d.hint}</small>
+                      </span>
+                      {i === 0 && last === d.id && <span className="sp-last">Last used</span>}
+                      {isPlatforms && <Icon name="chevron-down" size={14} className={`sp-chev${platformsOpen ? ' open' : ''}`} />}
+                    </button>
+                    {row?.kind === 'done' && (
+                      <p className="sp-done" role="status">
+                        <Icon name="check" size={14} />
+                        <span>
+                          {row.line}
+                          {row.path && (
+                            <>
+                              {' · '}
+                              <button type="button" className="link inline" onClick={() => void reel.app.openFolder(row.path!)} aria-label={`Show in ${FOLDER_APP}`}>
+                                Show
+                              </button>
+                            </>
+                          )}
+                        </span>
+                      </p>
+                    )}
+                    {row && row.kind !== 'done' && (
+                      <Strip
+                        work={row}
+                        onCancel={cancels.current.get(key) ?? (isPrep(row) && prepJob ? () => void reel.jobs.cancel(prepJob) : undefined)}
+                        onRetry={disabled ? undefined : d.go}
+                      />
+                    )}
+                    {isPlatforms && (
+                      <div hidden={!platformsOpen}>
+                        <SharePlatforms
+                          slug={slug}
+                          version={version}
+                          versions={versions}
+                          caption={caption}
+                          disabled={disabled}
+                          onWork={(w) => {
+                            setPlatformWork(w)
+                            if (w?.kind === 'failed' && !openRef.current) setUnseen('failed')
+                          }}
+                          beforeSave={saveCaption}
+                          onSaved={() => {
+                            localStorage.setItem(LAST, 'platforms')
+                            if (!openRef.current) setUnseen('done')
+                            shared()
+                          }}
+                        />
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+            {ask === 'ask' && (
+              <div ref={helpRef} className="sp-help" data-testid="help-improve">
+                <p>
+                  <b>Help improve Reel Studio?</b> Share anonymous data: the features you use, a score for each edit and your posts’ view counts.
+                </p>
+                <p className="muted-sm">{NEVER_SHARED}</p>
+                <div className="sp-help-b">
+                  <button type="button" className="btn small" onClick={() => answer(false)} data-testid="help-no">Don’t share</button>
+                  <button type="button" className="btn small" onClick={() => answer(true)} data-testid="help-yes">Share</button>
+                </div>
+              </div>
+            )}
+            {ask === 'answered' && <p className="muted-sm sp-help-done" role="status">Saved. Change it any time in Settings › Privacy.</p>}
+          </div>
         </div>
       )}
     </div>

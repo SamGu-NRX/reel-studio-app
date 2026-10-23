@@ -1,6 +1,6 @@
 // Share › Other platforms: the presets (#52) and Try 2 (#61), for the caption at the top of Share. No preview video here:
 // the reel has one player (Player.tsx), so each try uses its version's own cover.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { PlatformExportResult, VersionInfo } from '../../../shared/api'
 import { PLATFORM_RULES, captionLength, checkPlatform, platformRule, secondTryPlatforms, secondTryProblem, tryChanges, type Platform, type PlatformTry } from '../../../shared/platforms'
 import { errorCode, reel, userMessage } from '../api'
@@ -34,6 +34,9 @@ export function SharePlatforms({ slug, version, versions, caption, disabled, onW
   const [lengths, setLengths] = useState<Record<number, number>>({})
   const saving = state.kind === 'saving'
 
+  // A saved line belongs to the version it was saved from; work under way keeps going.
+  useEffect(() => setState((s) => (s.kind === 'saving' ? s : { kind: 'idle' })), [version.n])
+
   const needed = [version.n, ...(second ? [second.version] : [])].filter((n) => lengths[n] === undefined)
   useEffect(() => {
     let live = true
@@ -61,14 +64,27 @@ export function SharePlatforms({ slug, version, versions, caption, disabled, onW
   const workKey = work ? `${work.kind}:${work.kind === 'working' ? work.label : work.message}` : ''
   useEffect(() => onWorkRef.current(work), [workKey]) // eslint-disable-line react-hooks/exhaustive-deps -- `work` is rebuilt each render; its key says when it changed
 
-  const toggle = (p: Platform) => setSelected((cur) => (cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]))
+  const toggle = (p: Platform) => {
+    const next = selected.includes(p) ? selected.filter((x) => x !== p) : [...selected, p]
+    setSelected(next)
+    if (!next.some((x) => platformRule(x).tryTwo)) setSecond(null)
+  }
+  const pickVersion = (e: KeyboardEvent<HTMLDivElement>) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
+    if (!step || !second) return
+    e.preventDefault()
+    const i = (versions.findIndex((v) => v.n === second.version) + step + versions.length) % versions.length
+    setSecond({ ...second, version: versions[i].n })
+    e.currentTarget.querySelectorAll<HTMLElement>('[role=radio]')[i]?.focus()
+  }
   const first: PlatformTry = { version: version.n, caption, coverSeconds: null }
   const sameVideo = !second || second.version === version.n
   const tryNames = selected.filter((p) => platformRule(p).tryTwo).map((p) => platformRule(p).label)
   const secondPlatforms = second ? secondTryPlatforms(selected, sameVideo) : []
   const problem = second && selected.length ? secondTryProblem(selected, first, second, fps) : null
+  // Until a version's length is read, NaN passes every length rule, so the caption is still checked. Main checks the length again.
   const issues = (platforms: Platform[], text: string, seconds: number | undefined, prefix: string) =>
-    seconds === undefined ? [] : platforms.flatMap((p) => checkPlatform(p, text, seconds).map((i) => ({ ...i, text: `${prefix}${platformRule(p).label}: ${i.message}` })))
+    platforms.flatMap((p) => checkPlatform(p, text, seconds ?? Number.NaN).map((i) => ({ ...i, text: `${prefix}${platformRule(p).label}: ${i.message}` })))
   const checks = [
     ...issues(selected, caption, lengths[version.n], second ? 'Try 1 on ' : ''),
     ...(second ? issues(secondPlatforms, second.caption, lengths[second.version], 'Try 2 on ').filter((c) => c.kind !== 'duration' || !sameVideo) : [])
@@ -117,9 +133,9 @@ export function SharePlatforms({ slug, version, versions, caption, disabled, onW
         <fieldset className="sp-try" disabled={saving} data-testid="try-two-panel">
           <legend className="sr-only">Try 2</legend>
           {versions.length > 1 ? (
-            <div className="sp-vers" role="radiogroup" aria-label="Try 2 version">
+            <div className="sp-vers" role="radiogroup" aria-label="Try 2 version" onKeyDown={pickVersion}>
               {versions.map((v) => (
-                <button key={v.n} type="button" role="radio" aria-checked={v.n === second.version} className={`sp-ver${v.n === second.version ? ' on' : ''}`} onClick={() => setSecond({ ...second, version: v.n })}>
+                <button key={v.n} type="button" role="radio" aria-checked={v.n === second.version} tabIndex={v.n === second.version ? 0 : -1} className={`sp-ver${v.n === second.version ? ' on' : ''}`} onClick={() => setSecond({ ...second, version: v.n })}>
                   Version {v.n}
                 </button>
               ))}
