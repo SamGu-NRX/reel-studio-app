@@ -1,60 +1,93 @@
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AppInfo, PermissionStatus } from '../../../shared/api'
-import { RELEASES_URL } from '../../../shared/config'
+import { RELEASES_REPO } from '../../../shared/config'
 import { reel, userMessage } from '../api'
 import type { Go, SettingsSection } from '../nav'
-import { ConnectAI, DevProviders, ModelDownload, USING_CLAUDE_CODE } from '../components/connect'
+import { AnthropicKey, ConnectAI, DevProviders, downloadLine, useActiveEditor, useModelStatus } from '../components/connect'
+import { Connections } from '../components/Connections'
 import { usePermissionStatus } from '../components/permissions'
-import { FOLDER_APP } from '../components/ui'
+import { FOLDER_APP, IS_MAC, Progress, Spinner } from '../components/ui'
 import { Icon } from '../components/icons'
 import { useUpdateState } from '../components/update'
-import { UpdateSettingsRow } from '../components/UpdateSettings'
+import { UpdateSettingsRow, WhatsNew } from '../components/UpdateSettings'
 import { useNotify } from '../App'
 import { Models, Privacy } from '../components/ModelsAndPrivacy'
+import { TitleBarSlot } from '../components/titlebar'
+import { Disclosure } from '../components/provider-row'
+import { findSettings, SECTIONS, SETTING_IDS, SETTINGS, type SectionId, type SettingId } from '../components/settings-index'
+import { SearchHits, SettingRow, Switch } from '../components/settings-rows'
 import '../components/settings.css'
 
-const SECTIONS: [SettingsSection, string][] = [
-  ['ai', 'Your AI editor'],
-  ['listen', 'Listening model'],
-  ['where', 'Where videos are kept'],
-  ['notify', 'Notifications'],
-  ['privacy', 'Privacy'],
-  ['about', 'About and updates']
-]
+/** Where the older section names (nav.ts) land now. */
+const SECTION_OF: Record<SettingsSection, SectionId> = { ai: 'editor', listen: 'storage', where: 'storage', notify: 'notifications', privacy: 'privacy', about: 'about' }
+const ADVANCED: SettingId[] = ['model-edits', 'model-checks', 'model-titles', 'own-server', 'api-key']
+const REPO_FILE = (f: string): string => `https://github.com/${RELEASES_REPO}/blob/main/${f}`
 
 export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i: AppInfo) => void; go?: Go; section?: SettingsSection }) {
   const notify = useNotify()
-  const [current, setCurrent] = useState<SettingsSection>(section ?? 'ai')
-  const page = useRef<HTMLDivElement>(null)
+  const [query, setQuery] = useState('')
+  const hits = useMemo(() => findSettings(query), [query])
+  const search = useRef<HTMLInputElement>(null)
+  const [current, setCurrent] = useState<SectionId>(SECTION_OF[section ?? 'ai'])
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const lock = useRef(0)
-  // The side list marks the section being read, so a long page never loses its place.
+  const page = useRef<HTMLDivElement>(null)
+  const [active, setActive] = useActiveEditor()
+
+  // The list of sections marks the one being read, so a long page never loses its place.
   useEffect(() => {
+    if (hits) return
     const root = page.current?.closest('.main') ?? null
     const seen = new Map<Element, boolean>()
+    const blocks = Array.from(page.current?.querySelectorAll('.ssec') ?? [])
     const io = new IntersectionObserver(
       (es) => {
         es.forEach((e) => seen.set(e.target, e.isIntersecting))
-        const top = Array.from(document.querySelectorAll('.sblock')).find((b) => seen.get(b))
-        if (top && performance.now() > lock.current) setCurrent(top.id.replace('sec-', '') as SettingsSection)
+        const top = blocks.find((b) => seen.get(b))
+        if (top && performance.now() > lock.current) setCurrent(top.id.replace('sec-', '') as SectionId)
       },
       { root, rootMargin: '0px 0px -60% 0px' }
     )
-    document.querySelectorAll('.sblock').forEach((b) => io.observe(b))
-    if (section && section !== 'ai') document.getElementById(`sec-${section}`)?.scrollIntoView({ block: 'start' })
+    blocks.forEach((b) => io.observe(b))
     return () => io.disconnect()
+  }, [hits])
+
+  useEffect(() => {
+    if (section && section !== 'ai') document.getElementById(`sec-${SECTION_OF[section]}`)?.scrollIntoView({ block: 'start' })
+    search.current?.focus({ preventScroll: true })
   }, [section])
-  const goTo = (k: SettingsSection) => {
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        search.current?.focus()
+        search.current?.select()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const goTo = (k: SectionId) => {
     lock.current = performance.now() + 1000
     setCurrent(k)
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('kb')
     document.getElementById(`sec-${k}`)?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
   }
+  const clear = () => {
+    setQuery('')
+    search.current?.focus()
+  }
+  const shown = (id: SettingId): boolean => !hits || hits.has(id)
+  const sections = (Object.keys(SECTIONS) as SectionId[]).filter((k) => !hits || SETTING_IDS.some((id) => SETTINGS[id].section === k && hits.has(id)))
+
   const update = useUpdateState()
   const [savingExports, setSavingExports] = useState(false)
-  const toggleExports = async (on: boolean) => {
+  const toggleExports = async () => {
     setSavingExports(true)
     try {
-      onInfo(await reel.app.setFasterExports(on))
+      onInfo(await reel.app.setFasterExports(!info.fasterExports))
     } catch (e) {
       notify(userMessage(e), 'error')
     } finally {
@@ -93,169 +126,287 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
     if (!p) return
     try {
       onInfo(await reel.app.setRoot(p))
-      notify('New videos will be kept there. Your old videos stay where they were.')
+      notify('New reels are kept there. Reels you already made stay where they are.')
     } catch (e) {
       notify(userMessage(e), 'error')
     }
   }
 
+  const advanced = (
+    <>
+      <Models info={info} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
+      <Connections onConnected={setActive} />
+      <AnthropicKey active={active} onConnected={setActive} />
+    </>
+  )
+
   return (
     <div className="page settings-page" ref={page}>
-      <div className="page-h">
-        <h1>Settings</h1>
-      </div>
+      <TitleBarSlot title="Settings" />
       <div className="settings">
-        <nav className="snav" aria-label="Settings">
-          {SECTIONS.map(([k, l]) => (
-            <button key={k} aria-current={current === k} onClick={() => goTo(k)} data-testid={`settings-${k}`}>
-              {l}
+        <nav className="snav" aria-label="Settings sections">
+          {sections.map((k) => (
+            <button key={k} aria-current={!hits && current === k} onClick={() => goTo(k)} data-testid={`settings-nav-${k}`}>
+              {SECTIONS[k]}
             </button>
           ))}
         </nav>
-        <div>
-          <section className="sblock" id="sec-ai">
-            <h2>Your AI editor</h2>
-            <p>It picks your best takes, adds pictures that match what you say, and changes your video from your notes.</p>
-            <ConnectAI onConnected={(p) => notify(p.id === 'claude-cli' ? USING_CLAUDE_CODE : `Connected to ${p.label}.`)} />
-            <Models info={info} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
-          </section>
-
-          <section className="sblock" id="sec-listen">
-            <h2>Listening model</h2>
-            <p>Turns your voice into words, on this computer. About 500 MB, one time only.</p>
-            <ModelDownload secondary />
-          </section>
-
-          <section className="sblock" id="sec-where">
-            <h2>Where your videos are kept</h2>
-            <div className="perm">
-              <span className="ic">
-                <Icon name="folder" size={16} />
-              </span>
-              <div>
-                <b title={info.root} data-testid="root-display">
-                  {info.rootDisplay}
-                </b>
-                <span>Your videos never leave this computer unless you send them.</span>
-              </div>
-              <span className="spacer" />
-              <button className="btn small" onClick={() => reel.app.openFolder(info.root)}>
-                Show in {FOLDER_APP}
+        <div className="sbody">
+          <div className="ssearch" role="search">
+            <Icon name="search" size={16} stroke={1.75} />
+            <input
+              ref={search}
+              type="search"
+              value={query}
+              placeholder="Search settings"
+              aria-label="Search settings"
+              aria-keyshortcuts={IS_MAC ? 'Meta+F' : 'Control+F'}
+              spellCheck={false}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Escape') return
+                e.preventDefault()
+                e.stopPropagation()
+                if (query) setQuery('')
+                else e.currentTarget.blur()
+              }}
+              data-testid="settings-search"
+            />
+            {query && (
+              <button className="icon-btn ssearch-x" aria-label="Clear search" onClick={clear}>
+                <Icon name="x" size={14} stroke={2} />
               </button>
-              <button className="btn small ghost" onClick={change}>
-                Change…
-              </button>
-            </div>
-            {perm && perm.folder !== 'allowed' && (
-              <div className="row">
-                <p className="perm-problem" role="alert" data-testid="folder-problem">
-                  {perm.folder === 'unusable'
-                    ? "I can't save in this folder. Choose another one."
-                    : perm.folder === 'denied'
-                      ? "Your Mac isn't letting Reel Studio use this folder. Press Allow to turn it on in System Settings."
-                      : 'Press Allow so Reel Studio can use this folder.'}
-                </p>
-                {(perm.folder === 'denied' || perm.folder === 'not-asked') && (
-                  <button className="btn small primary" disabled={pending === 'folder'} onClick={() => void request('folder', () => reel.perm.allowFolder())} data-testid="folder-allow">
-                    Allow
-                  </button>
-                )}
+            )}
+          </div>
+          <p className="sr-only" role="status">
+            {hits ? (hits.size === 1 ? '1 setting matches' : hits.size ? `${hits.size} settings match` : 'No settings match') : ''}
+          </p>
+
+          <SearchHits.Provider value={hits}>
+            {hits?.size === 0 && (
+              <div className="snone" data-testid="settings-no-match">
+                <p>No settings match “{query.trim()}”.</p>
+                <button className="btn small" onClick={clear}>
+                  Clear search
+                </button>
               </div>
             )}
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={info.fasterExports}
-                disabled={savingExports}
-                onChange={(e) => void toggleExports(e.target.checked)}
-                aria-describedby="export-rate-help"
-                data-testid="faster-exports"
-              />
-              Faster exports (30 fps)
-            </label>
-            <p id="export-rate-help" className="muted-sm toggle-help">
-              For new videos. Leave off to keep smoother motion from 60 fps footage.
-            </p>
-          </section>
 
-          <section className="sblock" id="sec-notify">
-            <h2>Notifications</h2>
-            {alerts === undefined || alerts === 'unsupported' ? (
-              <p>This computer doesn't show notifications from Reel Studio.</p>
-            ) : (
-              <>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={alertsOn}
-                    disabled={pending !== null && pending !== 'folder'}
-                    onChange={(e) => void toggleAlerts(e.target.checked)}
-                    data-testid="notifications-toggle"
-                  />
-                  Tell me when a video is ready
-                </label>
-                <p className="muted-sm toggle-help" data-testid="notifications-note">
-                  {alerts === 'asking'
-                    ? 'Your Mac asks in the top-right corner of the screen. Choose Allow.'
-                    : alerts === 'blocked'
-                      ? 'Notifications are off for Reel Studio on this computer. Turn them on in your system settings, then press Try again.'
-                      : alerts === 'unverified' && isMac
-                        ? "Your Mac decides whether they show. If you don't see them, turn them on in System Settings."
-                        : 'So you can do other things while your video is being made.'}
-                </p>
-                {alerts !== 'off' && (isMac || alerts === 'asking' || alerts === 'blocked') && (
-                  <div className="row toggle-help">
-                    {isMac && (
-                      <button className="btn small" onClick={() => void reel.perm.openSettings('notifications')} data-testid="notifications-settings">
-                        Open System Settings
-                      </button>
-                    )}
-                    {alerts === 'asking' && pending === null && (
-                      <button className="btn small ghost" onClick={() => void toggleAlerts(true)}>
-                        Ask again
-                      </button>
-                    )}
-                    {alerts === 'blocked' && (
-                      <button className="btn small ghost" onClick={() => void toggleAlerts(true)}>
-                        Try again
+            <Section id="editor" desc="It picks your best takes, adds pictures and makes the changes in your notes.">
+              {shown('editor') && (
+                <div className="srow picker-row" data-setting="editor">
+                  <ConnectAI advanced={false} />
+                </div>
+              )}
+              {hits ? (
+                ADVANCED.some(shown) && advanced
+              ) : (
+                <Disclosure label="Advanced" hint="Models by role, your own AI server, an API key" open={advancedOpen} onToggle={() => setAdvancedOpen((o) => !o)} testid="settings-advanced">
+                  {advanced}
+                </Disclosure>
+              )}
+            </Section>
+
+            <Section id="posting">
+              <SettingRow id="instagram" line="Posting from Reel Studio isn’t ready yet. Share saves your reel and sends it to your phone." control={<span className="sval">Not connected</span>} />
+            </Section>
+
+            <Section id="storage">
+              <SettingRow
+                id="library-folder"
+                line={
+                  <span className="sval-path" title={info.root} data-testid="root-display">
+                    {info.rootDisplay}
+                  </span>
+                }
+                control={
+                  <span className="sctl">
+                    <button className="btn small" onClick={() => reel.app.openFolder(info.root)}>
+                      Show in {FOLDER_APP}
+                    </button>
+                    <button className="btn small ghost" onClick={() => void change()}>
+                      Change…
+                    </button>
+                  </span>
+                }
+              >
+                {perm && perm.folder !== 'allowed' && (
+                  <div className="srow-more row">
+                    <p className="pv-note error" role="alert" data-testid="folder-problem">
+                      {perm.folder === 'unusable'
+                        ? "Reel Studio can't save in this folder. Choose another one."
+                        : perm.folder === 'denied'
+                          ? "Your Mac isn't letting Reel Studio use this folder. Press Allow to turn it on in System Settings."
+                          : 'Press Allow so Reel Studio can use this folder.'}
+                    </p>
+                    {(perm.folder === 'denied' || perm.folder === 'not-asked') && (
+                      <button className="btn small" disabled={pending === 'folder'} onClick={() => void request('folder', () => reel.perm.allowFolder())} data-testid="folder-allow">
+                        Allow
                       </button>
                     )}
                   </div>
                 )}
-              </>
+              </SettingRow>
+              <ListeningModel />
+              <SettingRow
+                id="faster-exports"
+                line="Exports at 30 fps. Leave off to keep the smoother motion of 60 fps footage."
+                control={<Switch on={info.fasterExports} disabled={savingExports} labelledBy="set-faster-exports" onToggle={() => void toggleExports()} testid="faster-exports" />}
+              />
+            </Section>
+
+            <Section id="notifications">
+              {alerts === undefined || alerts === 'unsupported' ? (
+                <SettingRow id="notifications" line="This computer doesn't show notifications from Reel Studio." />
+              ) : (
+                <SettingRow
+                  id="notifications"
+                  line={
+                    <span data-testid="notifications-note">
+                      {alerts === 'asking'
+                        ? 'Your Mac asks in the top-right corner of the screen. Choose Allow.'
+                        : alerts === 'blocked'
+                          ? 'Notifications are off for Reel Studio on this computer. Turn them on in your system settings, then press Try again.'
+                          : alerts === 'unverified' && isMac
+                            ? "Your Mac decides whether they show. If you don't see them, turn them on in System Settings."
+                            : 'One notification per reel, so you can do other things while it’s made.'}
+                    </span>
+                  }
+                  control={
+                    <Switch on={alertsOn} disabled={pending !== null && pending !== 'folder'} labelledBy="set-notifications" onToggle={() => void toggleAlerts(!alertsOn)} testid="notifications-toggle" />
+                  }
+                >
+                  {alerts !== 'off' && (isMac || alerts === 'asking' || alerts === 'blocked') && (
+                    <div className="srow-more row">
+                      {isMac && (
+                        <button className="btn small" onClick={() => void reel.perm.openSettings('notifications')} data-testid="notifications-settings">
+                          Open System Settings
+                        </button>
+                      )}
+                      {alerts === 'asking' && pending === null && (
+                        <button className="btn small ghost" onClick={() => void toggleAlerts(true)}>
+                          Ask again
+                        </button>
+                      )}
+                      {alerts === 'blocked' && (
+                        <button className="btn small ghost" onClick={() => void toggleAlerts(true)}>
+                          Try again
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </SettingRow>
+              )}
+            </Section>
+
+            <Section id="privacy">
+              <Privacy info={info} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
+            </Section>
+
+            <Section id="about">
+              <SettingRow id="version" line={`Reel Studio ${info.version}. No account needed.${info.engine.mode === 'fake' ? ' Test engine in use.' : ''}`} />
+              <SettingRow
+                id="licence"
+                line="Free and open source under the MIT licence. The parts it's built on keep their own licences."
+                control={
+                  <span className="sctl">
+                    <a className="ext-link" href={REPO_FILE('LICENSE')} target="_blank" rel="noreferrer" data-testid="licence-link">
+                      Licence <Icon name="external" size={12} stroke={2} />
+                    </a>
+                    <a className="ext-link" href={REPO_FILE('THIRD_PARTY.md')} target="_blank" rel="noreferrer" data-testid="notices-link">
+                      Notices <Icon name="external" size={12} stroke={2} />
+                    </a>
+                  </span>
+                }
+              />
+              <SettingRow
+                id="updates"
+                line="Once a day, Reel Studio asks GitHub for a newer version. Nothing about you or your reels is sent."
+                control={update !== null && <Switch on={update.autoCheck} labelledBy="set-updates" onToggle={() => void toggleUpdates(!update.autoCheck)} testid="check-updates" />}
+              >
+                <UpdateSettingsRow />
+              </SettingRow>
+              <SettingRow id="whats-new">
+                <WhatsNew />
+              </SettingRow>
+            </Section>
+
+            {info.dev && !hits && (
+              <section className="ssec" id="sec-dev">
+                <h2>Developer: AI provider</h2>
+                <p className="ssec-desc">Shown because REELSTUDIO_DEV=1.</p>
+                <DevProviders />
+              </section>
             )}
-          </section>
-
-          <section className="sblock" id="sec-privacy">
-            <h2>Privacy</h2>
-            <Privacy info={info} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
-          </section>
-
-          {info.dev && (
-            <section className="sblock" id="sec-dev">
-              <h2>Developer: AI provider</h2>
-              <p>Shown because REELSTUDIO_DEV=1.</p>
-              <DevProviders />
-            </section>
-          )}
-
-          <section className="sblock" id="sec-about">
-            <h2>About and updates</h2>
-            <p>Reel Studio {info.version}. Free and open source (MIT). No accounts.</p>
-            {update !== null && (
-              <>
-                <label className="toggle">
-                  <input type="checkbox" checked={update.autoCheck} onChange={(e) => void toggleUpdates(e.target.checked)} data-testid="check-updates" />
-                  Check for updates
-                </label>
-                <p className="muted-sm toggle-help">Once a day, Reel Studio asks GitHub if there is a newer version. Nothing about you or your videos is sent.</p>
-              </>
-            )}
-            <UpdateSettingsRow />
-            {info.engine.mode === 'fake' && <p className="muted-sm">Test engine in use.</p>}
-          </section>
+          </SearchHits.Provider>
         </div>
       </div>
     </div>
+  )
+}
+
+/** A heading and its rows. A search that finds none of them hides the whole section. */
+function Section({ id, desc, children }: { id: SectionId; desc?: string; children: ReactNode }) {
+  const hits = useContext(SearchHits)
+  if (hits && !SETTING_IDS.some((s) => SETTINGS[s].section === id && hits.has(s))) return null
+  return (
+    <section className="ssec" id={`sec-${id}`} aria-labelledby={`sec-${id}-h`} data-testid={`settings-${id}`}>
+      <h2 id={`sec-${id}-h`}>{SECTIONS[id]}</h2>
+      {desc && !hits && <p className="ssec-desc">{desc}</p>}
+      <div className="srows">{children}</div>
+    </section>
+  )
+}
+
+/** The on-device model that writes down what you say. */
+function ListeningModel() {
+  const { s } = useModelStatus()
+  const line = 'Writes down what you say, on this computer, for subtitles and your notes. About 500 MB, once.'
+  if (!s) return <SettingRow id="listening-model" line={line} control={<Spinner />} />
+  const paused = !s.installed && !s.downloading && s.pct > 0 && s.pct < 100
+  return (
+    <SettingRow
+      id="listening-model"
+      line={line}
+      control={
+        s.installed ? (
+          <span className="sval ok" data-testid="model-ready">
+            <Icon name="check" size={13} stroke={2.4} />
+            Ready
+          </span>
+        ) : s.checking ? (
+          <span className="sval">Checking…</span>
+        ) : s.downloading ? (
+          <button className="btn small ghost" onClick={() => void reel.model.cancel()} data-testid="pause-model">
+            Pause
+          </button>
+        ) : (
+          <button className="btn small" onClick={() => void reel.model.download()} data-testid="download-model">
+            {paused ? 'Keep downloading' : 'Download'}
+          </button>
+        )
+      }
+    >
+      {(s.downloading || paused || s.checking) && (
+        <div className="srow-more">
+          <Progress pct={s.pct} label={s.checking ? 'Checking the listening model' : 'Downloading the listening model'} />
+          {!s.checking && (
+            <span className="muted-sm" data-testid="model-progress">
+              {downloadLine(s, s.downloading ? 'Downloading' : 'Paused at')}
+            </span>
+          )}
+        </div>
+      )}
+      {s.error && (
+        <p className="pv-note error" role="alert" data-testid="model-error">
+          {s.error}
+        </p>
+      )}
+      {s.installed && s.checkFailed && (
+        <p className="muted-sm srow-more" data-testid="model-check-failed">
+          Reel Studio couldn't work out the fastest settings for this computer, so the listening model uses its usual ones. Everything still works.
+        </p>
+      )}
+    </SettingRow>
   )
 }

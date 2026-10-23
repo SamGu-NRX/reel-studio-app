@@ -3,54 +3,56 @@ import type { AppInfo, DataSharing, ModelChoice, ModelRole, ProviderInfo } from 
 import { reel, userMessage } from '../api'
 import { Icon } from './icons'
 import { PopMenu } from './PopMenu'
+import { useActiveEditor } from './connect'
+import { SettingRow, Switch, useShown } from './settings-rows'
+import type { SettingId } from './settings-index'
 
-const ROLES: [ModelRole, string, string][] = [
-  ['editor', 'Editor', 'Makes the edits you ask for.'],
-  ['checker', 'Checker', 'Looks over every edit on its own before it’s saved.'],
-  ['writer', 'Writer', 'Writes titles, version summaries and status lines. A small, fast model is enough.']
+const ROLES: [ModelRole, SettingId, string][] = [
+  ['editor', 'model-edits', 'Makes the edits in your notes.'],
+  ['checker', 'model-checks', 'Looks over every edit on its own before it’s saved.'],
+  ['writer', 'model-titles', 'Titles, version summaries and status lines. A small, fast model is enough.']
 ]
 
-/** The models a connection says it has. Only your own server lists them; Claude and ChatGPT pick their own. */
+/** Claude Code's model names, as `claude --help` lists them for `--model` (2.1.308). */
+const CLAUDE_CODE_MODELS = ['fable', 'opus', 'sonnet']
+
+const shown = (m: string): string => (CLAUDE_CODE_MODELS.includes(m) ? m[0].toUpperCase() + m.slice(1) : m)
+
+/** The models the editor in use can be asked for. ChatGPT and an API key pick their own, so they list none. */
 async function offeredModels(p: ProviderInfo | null): Promise<string[]> {
-  if (!p || p.id !== 'custom' || !p.connectionId) return []
+  if (!p?.connected) return []
+  if (p.id === 'claude-cli') return CLAUDE_CODE_MODELS
+  if (p.id !== 'custom' || !p.connectionId) return []
   const c = (await reel.ai.connections()).find((x) => x.id === p.connectionId)
   if (!c) return []
   return (await reel.ai.connectionModels({ kind: c.kind, baseURL: c.baseURL, id: c.id })).models
 }
 
 /**
- * Settings › Your AI editor › Models: one folded row; open, a row per role, each Auto unless you pick one.
- * The choices are saved; the AI editor does not read them yet, and the footnote says so.
+ * Settings › Editor › Advanced: a model per role, each Auto unless you pick one the editor offers. The choices are
+ * saved; the editor does not read them yet, and the line under the rows says so.
  */
 export function Models({ info, onInfo, onError }: { info: AppInfo; onInfo: (i: AppInfo) => void; onError: (m: string) => void }) {
-  const [open, setOpen] = useState(false)
-  const [provider, setProvider] = useState<ProviderInfo | null>(null)
+  const [provider] = useActiveEditor()
   const [offered, setOffered] = useState<string[]>([])
   const [menu, setMenu] = useState<ModelRole | null>(null)
   const anchors = useRef<Partial<Record<ModelRole, HTMLButtonElement | null>>>({})
   const anchor = useRef<HTMLButtonElement | null>(null)
+  const anyShown = [useShown('model-edits'), useShown('model-checks'), useShown('model-titles')].some(Boolean)
 
   useEffect(() => {
     let live = true
-    const read = (p: ProviderInfo) => {
-      setProvider(p)
-      offeredModels(p)
-        .then((m) => live && setOffered(m))
-        .catch(() => live && setOffered([]))
-    }
-    reel.ai.active().then(read).catch(() => {})
-    const off = reel.ai.onChange(read)
+    offeredModels(provider)
+      .then((m) => live && setOffered(m))
+      .catch(() => live && setOffered([]))
     return () => {
       live = false
-      off()
     }
-  }, [])
+  }, [provider])
 
-  if (!provider || !provider.connected || provider.id === 'none') return null
+  const editor = !!provider?.connected && provider.id !== 'none'
   const m = info.models
-  const gone = (r: ModelRole) => m[r] !== 'auto' && !offered.includes(m[r])
-  const label = (r: ModelRole) => (m[r] === 'auto' ? 'Auto' : m[r])
-  const summary = ROLES.map(([r, name]) => `${name} ${label(r)}`).join(' · ')
+  const gone = (r: ModelRole) => editor && m[r] !== 'auto' && !offered.includes(m[r])
   const pick = async (r: ModelRole, v: string) => {
     setMenu(null)
     anchors.current[r]?.focus()
@@ -62,99 +64,85 @@ export function Models({ info, onInfo, onError }: { info: AppInfo; onInfo: (i: A
   }
 
   return (
-    <div className={`adv${open ? ' open' : ''}`} data-testid="models">
-      <button className="advh" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <span className="tt">
-          <b>Models</b>
-          <span>
-            {ROLES.some(([r]) => gone(r)) && <i className="wdot" aria-hidden />}
-            {summary}
-          </span>
-        </span>
-        <Icon name="chevron-down" size={14} className="chev" />
-      </button>
-      <div className={`acc${open ? ' open' : ''}`} inert={!open || undefined}>
-        <div>
-          <div className="mrows">
-            {ROLES.map(([r, name, line]) => (
-              <div className="mrow" key={r}>
-                <div className="mt">
-                  <b id={`mr-${r}`}>{name}</b>
-                  <span>{line}</span>
-                  {gone(r) && (
-                    <p className="mnote warn">
-                      <Icon name="alert" size={14} />
-                      {m[r]} isn’t offered by your connection right now, so Auto is used instead.
-                    </p>
-                  )}
-                </div>
-                <button
-                  ref={(el) => {
-                    anchors.current[r] = el
-                  }}
-                  className={`mpick${gone(r) ? ' warn' : ''}`}
-                  aria-haspopup="menu"
-                  aria-expanded={menu === r}
-                  aria-labelledby={`mr-${r} mpv-${r}`}
-                  onClick={(e) => {
-                    anchor.current = e.currentTarget
-                    setMenu(menu === r ? null : r)
-                  }}
-                  data-testid={`model-${r}`}
-                >
-                  <span id={`mpv-${r}`}>{label(r)}</span>
-                  <Icon name="updown" size={14} />
-                </button>
-                {menu === r && (
-                  <PopMenu open onClose={() => setMenu(null)} anchor={anchor} label={`${name} model`} style={{ right: 0, top: 'calc(100% - 6px)', width: 240 }} origin="top right">
-                    <button className="mi" role="menuitemradio" aria-checked={m[r] === 'auto'} onClick={() => void pick(r, 'auto')}>
-                      {m[r] === 'auto' ? <Icon name="check" size={16} /> : <span className="mi-sp" />}
-                      Auto
+    <div className="models" data-testid="models">
+      {anyShown && <h3 className="ssub">Models</h3>}
+      {ROLES.map(([r, id, line]) => (
+        <SettingRow
+          key={r}
+          id={id}
+          line={
+            <>
+              {editor ? line : `${line} Choose an editor first.`}
+              {gone(r) && (
+                <span className="mnote warn">
+                  <Icon name="alert" size={14} />
+                  {shown(m[r])} isn’t offered by your editor right now.
+                </span>
+              )}
+            </>
+          }
+          control={
+            <span className="mpick-at">
+              <button
+                ref={(el) => {
+                  anchors.current[r] = el
+                }}
+                className={`mpick${gone(r) ? ' warn' : ''}`}
+                aria-haspopup="menu"
+                aria-expanded={menu === r}
+                aria-labelledby={`set-${id} mpv-${r}`}
+                disabled={!editor}
+                onClick={(e) => {
+                  anchor.current = e.currentTarget
+                  setMenu(menu === r ? null : r)
+                }}
+                data-testid={`model-${r}`}
+              >
+                <span id={`mpv-${r}`}>{m[r] === 'auto' ? 'Auto' : shown(m[r])}</span>
+                <Icon name="updown" size={14} />
+              </button>
+              {menu === r && (
+                <PopMenu open onClose={() => setMenu(null)} anchor={anchor} label="Model" style={{ right: 0, top: 'calc(100% + 6px)', width: 240 }} origin="top right">
+                  <button className="mi" role="menuitemradio" aria-checked={m[r] === 'auto'} onClick={() => void pick(r, 'auto')}>
+                    {m[r] === 'auto' ? <Icon name="check" size={16} /> : <span className="mi-sp" />}
+                    Auto
+                  </button>
+                  {offered.length > 0 && <hr />}
+                  {offered.map((x) => (
+                    <button key={x} className="mi" role="menuitemradio" aria-checked={m[r] === x} onClick={() => void pick(r, x)}>
+                      {m[r] === x ? <Icon name="check" size={16} /> : <span className="mi-sp" />}
+                      {shown(x)}
                     </button>
-                    {offered.length > 0 && <hr />}
-                    {offered.map((x) => (
-                      <button key={x} className="mi" role="menuitemradio" aria-checked={m[r] === x} onClick={() => void pick(r, x)}>
-                        {m[r] === x ? <Icon name="check" size={16} /> : <span className="mi-sp" />}
-                        {x}
-                      </button>
-                    ))}
-                    {!offered.length && (
-                      <button className="mi" role="menuitemradio" aria-checked={false} disabled>
-                        <span className="mi-sp" />
-                        {provider.id === 'custom' ? 'Your server lists no models' : 'Picks its own models'}
-                      </button>
-                    )}
-                  </PopMenu>
-                )}
-              </div>
-            ))}
-          </div>
-          <p className="mfoot">Saved on this computer. For now your AI editor still picks its own models, whatever is set here.</p>
-        </div>
-      </div>
+                  ))}
+                  {!offered.length && (
+                    <button className="mi" role="menuitemradio" aria-checked={false} disabled>
+                      <span className="mi-sp" />
+                      {provider?.id === 'custom' ? 'Your server lists no models' : 'This editor picks its own model'}
+                    </button>
+                  )}
+                </PopMenu>
+              )}
+            </span>
+          }
+        />
+      ))}
+      {anyShown && <p className="srow-foot">Auto picks from what your editor offers. Saved on this computer; the editor doesn’t use these choices yet.</p>}
     </div>
   )
 }
 
-const PARTS: [keyof Omit<DataSharing, 'asked' | 'on'>, string, string][] = [
-  ['usage', 'Usage', 'Which features you use, and errors.'],
-  ['quality', 'Edit quality', 'A score for each edit: kept, changed or undone.'],
-  ['posts', 'Post results', 'View counts of reels you’ve posted. Nothing else.']
+const PARTS: [keyof Omit<DataSharing, 'asked' | 'on'>, SettingId, string][] = [
+  ['usage', 'sharing-usage', 'Which features you use, and errors.'],
+  ['quality', 'sharing-quality', 'A score for each edit: kept, changed or undone.'],
+  ['posts', 'sharing-posts', 'View counts of reels you’ve posted. Nothing else.']
 ]
 
 export const NEVER_SHARED = 'Never your videos, words, notes or file names.'
 
-function Switch({ on, disabled, labelledBy, onToggle, testid }: { on: boolean; disabled?: boolean; labelledBy: string; onToggle: () => void; testid: string }) {
-  return (
-    <button className="switch" role="switch" aria-checked={on} aria-labelledby={labelledBy} disabled={disabled} onClick={onToggle} data-testid={testid}>
-      <i />
-    </button>
-  )
-}
-
 /** Settings › Privacy: one switch for sharing, then what to share. Only the choice is saved; nothing is sent. */
 export function Privacy({ info, onInfo, onError }: { info: AppInfo; onInfo: (i: AppInfo) => void; onError: (m: string) => void }) {
   const s = info.sharing
+  const master = useShown('sharing')
   const set = async (patch: Partial<DataSharing>) => {
     try {
       onInfo(await reel.app.setSharing({ ...s, asked: true, ...patch }))
@@ -163,31 +151,21 @@ export function Privacy({ info, onInfo, onError }: { info: AppInfo; onInfo: (i: 
     }
   }
   return (
-    <div className="privacy" data-testid="privacy">
-      <div className="prow-m">
-        <div className="pt">
-          <b id="pv-all">Share anonymous data to help improve Reel Studio</b>
+    <div className={`privacy${s.on ? '' : ' off'}`} data-testid="privacy">
+      <SettingRow
+        id="sharing"
+        line={
           <span className="never">
             <Icon name="lock" size={14} />
             {NEVER_SHARED}
           </span>
-        </div>
-        <Switch on={s.on} labelledBy="pv-all" onToggle={() => void set({ on: !s.on })} testid="share-on" />
-      </div>
-      <div className={`psubs${s.on ? '' : ' off'}`} role="group" aria-label="What's shared">
-        {PARTS.map(([k, name, line]) => (
-          <div className="psub" key={k}>
-            <div className="pt">
-              <b id={`pv-${k}`}>{name}</b>
-              <span>{line}</span>
-            </div>
-            <Switch on={s.on && s[k]} disabled={!s.on} labelledBy={`pv-${k}`} onToggle={() => void set({ [k]: !s[k] })} testid={`share-${k}`} />
-          </div>
-        ))}
-      </div>
-      <p className="pfoot">
-        {s.on ? 'Nothing is sent yet. When it is, it goes with no account or name attached.' : 'Nothing is shared. Turn this on to choose what to share.'}
-      </p>
+        }
+        control={<Switch on={s.on} labelledBy="set-sharing" onToggle={() => void set({ on: !s.on })} testid="share-on" />}
+      />
+      {PARTS.map(([k, id, line]) => (
+        <SettingRow key={k} id={id} sub line={line} control={<Switch on={s.on && s[k]} disabled={!s.on} labelledBy={`set-${id}`} onToggle={() => void set({ [k]: !s[k] })} testid={`share-${k}`} />} />
+      ))}
+      {master && <p className="srow-foot">{s.on ? 'Nothing is sent yet. When it is, it goes with no account or name attached.' : 'Nothing is shared. Turn this on to choose what to share.'}</p>}
     </div>
   )
 }
