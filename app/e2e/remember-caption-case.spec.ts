@@ -7,7 +7,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun, shot } from './helpers'
+import { BASE, launch, makeMedia, openSettings, passFirstRun, shot } from './helpers'
 
 const MINE = mkdtempSync(join(BASE, 'remember-'))
 const ROOT = join(MINE, 'Documents', 'Reel Studio')
@@ -30,7 +30,7 @@ test('a lowercase note is remembered only on Yes, starts the next video lowercas
   try {
     test.skip((await page.evaluate(() => window.reel.app.info())).ai !== 'mock', 'the mock plays the connected AI')
     await passFirstRun(page)
-    await page.getByTestId('nav-settings').click()
+    await openSettings(page)
     await page.getByTestId('use-claude-code').click()
     await expect(page.getByTestId('ai-connected')).toBeVisible()
 
