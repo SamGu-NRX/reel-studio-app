@@ -409,9 +409,15 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   } finally {
     // Only this note's scratch. saveNote handles failed finals; crash leftovers stay unpublished
     // until the app's job lane clears them (app store.ts cleanPartialVersions).
-    await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    await fsp.rm(dir, CLEANUP_RM).catch(() => undefined);
   }
 }
+
+// On Windows a folder cannot be deleted while another program (a virus scanner reading a fresh export.mp4)
+// holds a file in it without delete sharing; fs.rm then fails at once with EPERM or EBUSY. Retry for about
+// 3 s (Node waits retryDelay * attempt between tries). A longer hold still leaves the unpublished folder,
+// which the next render of that number replaces and the app's cleanPartialVersions removes at startup.
+const CLEANUP_RM = { recursive: true, force: true, maxRetries: 5, retryDelay: 200 } as const;
 
 const changedElsewhere = (): AIError =>
   new AIError('project_changed', 'Your video was changed somewhere else while I worked on your note, so I left it as it was. Send your note again.');
@@ -475,7 +481,7 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
     if (renderStarted && (e as { code?: string })?.code !== 'ENGINE_STUCK') {
       const saved = await loadProject(ctx.projectDir).catch(() => null);
       if (saved && saved.version <= baseVersion) {
-        await fsp.rm(versionDir(ctx.projectDir, baseVersion + 1), { recursive: true, force: true }).catch(() => undefined);
+        await fsp.rm(versionDir(ctx.projectDir, baseVersion + 1), CLEANUP_RM).catch(() => undefined);
       }
     }
     throw e;
