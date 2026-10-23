@@ -1,0 +1,39 @@
+/* Bringing a video in (Intake.tsx): what a dragged file will do, and the thumbnail that flies into the new reel. */
+
+.dropveil {
+  position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; pointer-events: none;
+  background: rgba(241, 242, 239, .82); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); transition: opacity 150ms ease;
+}
+@starting-style { .dropveil { opacity: 0; } }
+.dropveil.leave { opacity: 0; }
+/* the whole window is the target: a frame just inside its edge, and the words in the middle */
+.dropveil .target {
+  position: absolute; inset: 12px; border-radius: var(--r-lg); box-shadow: inset 0 0 0 2px rgba(22, 25, 23, .18);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px; text-align: center; color: var(--ink-2);
+  transition: transform 180ms var(--ease-out);
+}
+@starting-style { .dropveil .target { transform: scale(.985); } }
+.dropveil .target .icon { margin-bottom: 4px; }
+.dropveil h2 { font-size: var(--fs-heading); line-height: var(--lh-heading); font-weight: 620; color: var(--ink); text-wrap: balance; }
+.dropveil p { font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-3); max-width: 340px; text-wrap: pretty; }
+.dropveil.bad .target { box-shadow: inset 0 0 0 2px rgba(191, 54, 38, .45); color: var(--pencil); }
+.dropveil.bad h2 { color: var(--pencil); }
+/* over a reel's notes column: only the column answers, the reel stays in view */
+.dropveil.on-note { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.dropveil.on-note .target {
+  inset: auto; flex-direction: row; gap: 8px; background: rgba(247, 248, 246, .96); box-shadow: inset 0 0 0 2px var(--ink-3); padding: 8px 12px; color: var(--ink);
+}
+.dropveil.on-note .target .icon { margin: 0; }
+.dropveil.on-note h2 { font-size: var(--fs-md); line-height: var(--lh-md); }
+
+.flyer {
+  position: fixed; z-index: 80; pointer-events: none; border-radius: var(--r-lg); overflow: hidden; background: var(--bezel);
+  box-shadow: var(--e3); transform-origin: center; will-change: transform;
+}
+.flyer video { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity 120ms ease; }
+.flyer.framed video { opacity: 1; }
+
+html.kb .dropveil, html.kb .dropveil .target { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .dropveil .target { transform: none !important; transition-property: opacity; }
+}

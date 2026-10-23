@@ -1,11 +1,48 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { droppedPaths } from '../api'
 import { Icon, type IconName } from './icons'
+
+/**
+ * The app's three text buttons (spec section 1): primary (green pill, at most one per view), secondary (hairline pill)
+ * and tertiary (text, underlined on hover). `small` is for dense rows, `big` for onboarding. Styles: styles.css `.btn`.
+ */
+export function Button({
+  kind = 'secondary',
+  size,
+  danger,
+  className,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { kind?: 'primary' | 'secondary' | 'tertiary'; size?: 'small' | 'big'; danger?: boolean }) {
+  const cls = ['btn', kind === 'primary' && 'primary', kind === 'tertiary' && 'ghost', size, danger && 'danger', className].filter(Boolean).join(' ')
+  return <button type="button" {...rest} className={cls} />
+}
+
+/** An icon button: bare, 28 px, a wash on hover. The label is its name for screen readers and, with its shortcut, its tooltip. */
+export function IconButton({
+  icon,
+  label,
+  shortcut,
+  onDark,
+  className,
+  ...rest
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label' | 'title'> & { icon: IconName; label: string; shortcut?: string; onDark?: boolean }) {
+  return (
+    <button
+      type="button"
+      {...rest}
+      className={['icon-btn', onDark && 'on-dark', className].filter(Boolean).join(' ')}
+      aria-label={label}
+      title={shortcut ? `${label} (${shortcut})` : label}
+    >
+      <Icon name={icon} size={16} stroke={1.75} />
+    </button>
+  )
+}
 
 export function Progress({ pct, done, label }: { pct: number; done?: boolean; label?: string }) {
   return (
     <div className={`progress${done ? ' done' : ''}`} role="progressbar" aria-label={label ?? 'Progress'} aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
-      <div style={{ width: `${Math.max(3, Math.min(100, pct))}%` }} />
+      <div style={{ transform: `translateX(${Math.max(3, Math.min(100, pct)) - 100}%)` }} />
     </div>
   )
 }
@@ -38,23 +75,53 @@ export function Toast({ text, kind, onClose }: { text: string; kind?: 'error' | 
   return (
     <div className={`toast${kind === 'error' ? ' error' : ''}`} role={kind === 'error' ? 'alert' : 'status'} data-testid="toast">
       <span>{text}</span>
-      {kind === 'error' && (
-        <button className="icon-btn on-dark" onClick={onClose} aria-label="Close" title="Close">
-          <Icon name="x" />
-        </button>
-      )}
+      {kind === 'error' && <IconButton icon="x" label="Close" onDark onClick={onClose} />}
     </div>
   )
 }
 
-/** A dialog. Esc and a click outside close it (when it can be closed); focus moves into it. */
-export function Modal({ children, onClose, wide, testid }: { children: ReactNode; onClose?: () => void; wide?: boolean; testid?: string }) {
+const FOCUSABLE = 'button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, [tabindex]:not([tabindex="-1"])'
+
+/** A dialog. Esc and a click outside close it (when it can be closed); focus moves into it and Tab stays in it. */
+export function Modal({ children, onClose, wide, testid, labelledBy }: { children: ReactNode; onClose?: () => void; wide?: boolean; testid?: string; labelledBy?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null
-    const first = ref.current?.querySelector<HTMLElement>('[data-autofocus]') ?? ref.current?.querySelector<HTMLElement>('button')
+    // A dialog with nothing to press ("Getting it ready…") takes focus itself.
+    const first = ref.current?.querySelector<HTMLElement>('[data-autofocus]') ?? ref.current?.querySelector<HTMLElement>('button') ?? ref.current
+    // updater: everything behind the dialog is inert while it is open
+    const background: HTMLElement[] = []
+    let branch = ref.current?.parentElement
+    while (branch?.parentElement) {
+      for (const sibling of branch.parentElement.children) {
+        if (sibling instanceof HTMLElement && sibling !== branch && !sibling.inert) {
+          sibling.inert = true
+          background.push(sibling)
+        }
+      }
+      branch = branch.parentElement
+    }
     first?.focus()
-    return () => prev?.focus?.()
+    // aria-modal says the page behind is out of reach; without this, Tab walked into it.
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !ref.current) return
+      const items = Array.from(ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.offsetParent !== null)
+      if (!items.length) {
+        e.preventDefault()
+        ref.current.focus()
+        return
+      }
+      const at = items.indexOf(document.activeElement as HTMLElement)
+      const next = e.shiftKey ? (at <= 0 ? items.length - 1 : at - 1) : at === -1 || at === items.length - 1 ? 0 : at + 1
+      e.preventDefault()
+      items[next].focus()
+    }
+    window.addEventListener('keydown', trap)
+    return () => {
+      window.removeEventListener('keydown', trap)
+      background.forEach((el) => { el.inert = false })
+      prev?.focus?.()
+    }
   }, [])
   useEffect(() => {
     if (!onClose) return
@@ -69,7 +136,7 @@ export function Modal({ children, onClose, wide, testid }: { children: ReactNode
   }, [onClose])
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div ref={ref} className={`modal${wide ? ' wide' : ''}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal data-testid={testid}>
+      <div ref={ref} tabIndex={-1} className={`modal${wide ? ' wide' : ''}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-labelledby={labelledBy} data-testid={testid}>
         {children}
       </div>
     </div>
@@ -78,46 +145,36 @@ export function Modal({ children, onClose, wide, testid }: { children: ReactNode
 
 /** "Are you sure?" with the safe choice in focus. */
 export function Confirm(props: { title: string; body: string; yes: string; no: string; danger?: boolean; onYes: () => void; onNo: () => void }) {
+  const titleId = useId()
   return (
-    <Modal onClose={props.onNo} testid="confirm">
-      <h2>{props.title}</h2>
+    <Modal onClose={props.onNo} testid="confirm" labelledBy={titleId}>
+      <h2 id={titleId}>{props.title}</h2>
       <p className="muted">{props.body}</p>
       <div className="row" style={{ justifyContent: 'flex-end' }}>
-        <button className="btn ghost" onClick={props.onNo} data-autofocus data-testid="confirm-no">
+        <Button kind="tertiary" onClick={props.onNo} data-autofocus data-testid="confirm-no">
           {props.no}
-        </button>
-        <button className={`btn ${props.danger ? 'danger-solid' : 'primary'}`} onClick={props.onYes} data-testid="confirm-yes">
+        </Button>
+        <Button kind="primary" danger={props.danger} onClick={props.onYes} data-testid="confirm-yes">
           {props.yes}
-        </button>
+        </Button>
       </div>
     </Modal>
   )
 }
 
-/**
- * A small menu behind a button: "More" for things that should not sit next to the main action (Delete), or the
- * other half of a split button. Focus moves into the menu when it opens; arrow keys move between items.
- */
-export function MoreMenu({ items, label = 'More', icon = 'more', triggerClassName = 'icon-btn', testid = 'more', disabled, up }: {
-  items: { label: string; run: () => void; danger?: boolean; testid?: string; disabled?: boolean }[]
-  label?: string
-  icon?: IconName
-  triggerClassName?: string
-  testid?: string
-  disabled?: boolean
-  /** Open above the button, for a button near the bottom of the window. */
-  up?: boolean
-}) {
+/** A small "more" menu for things that should not sit next to the main action (Delete). */
+export function MoreMenu({ items, label = 'More' }: { items: { label: string; run: () => void; danger?: boolean; testid?: string; disabled?: boolean }[]; label?: string }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (!open) return
-    const enabled = () => [...(ref.current?.querySelectorAll<HTMLButtonElement>('[role=menuitem]:not(:disabled)') ?? [])]
-    enabled()[0]?.focus()
+    const items = () => Array.from(ref.current?.querySelectorAll<HTMLElement>('[role=menuitem]:not(:disabled)') ?? [])
+    items()[0]?.focus()
     const away = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false)
     }
+    // The keys a menu answers to: arrows move, Esc closes and gives focus back to the ⋯ button, Tab leaves.
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
@@ -125,9 +182,9 @@ export function MoreMenu({ items, label = 'More', icon = 'more', triggerClassNam
         trigger.current?.focus()
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault()
-        const list = enabled()
-        const at = list.indexOf(document.activeElement as HTMLButtonElement)
-        list[(at + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length]?.focus()
+        const all = items()
+        const at = all.indexOf(document.activeElement as HTMLElement)
+        all[(at + (e.key === 'ArrowDown' ? 1 : all.length - 1)) % all.length]?.focus()
       } else if (e.key === 'Tab') setOpen(false)
     }
     window.addEventListener('mousedown', away)
@@ -139,11 +196,11 @@ export function MoreMenu({ items, label = 'More', icon = 'more', triggerClassNam
   }, [open])
   return (
     <div className="more" ref={ref}>
-      <button ref={trigger} className={triggerClassName} aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen((o) => !o)} data-testid={testid}>
-        <Icon name={icon} />
+      <button ref={trigger} className="icon-btn" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-testid="more">
+        <Icon name="more" />
       </button>
       {open && (
-        <div className={`more-menu${up ? ' up' : ''}`} role="menu" aria-label={label}>
+        <div className="more-menu" role="menu">
           {items.map((it) => (
             <button
               key={it.label}
@@ -151,8 +208,6 @@ export function MoreMenu({ items, label = 'More', icon = 'more', triggerClassNam
               className={it.danger ? 'danger' : ''}
               disabled={it.disabled}
               onClick={() => {
-                // Back on the button first, so a dialog the item opens returns focus there when it closes.
-                trigger.current?.focus()
                 setOpen(false)
                 it.run()
               }}
@@ -227,9 +282,6 @@ export function PickFiles({ label, accept, onFiles, className, icon }: { label: 
   )
 }
 
-export function Check({ done }: { done: boolean }) {
-  return <span className={`check${done ? ' done' : ''}`}>{done ? <Icon name="check" size={14} stroke={2.5} /> : null}</span>
-}
 
 /** Platform words, switched once: Finder/Dock on a Mac, Explorer/taskbar on Windows. Getting a video to a phone is the "Send to my phone" button (components/SendToPhone.tsx), the same on both. */
 export const IS_MAC = /Mac/i.test(navigator.platform)

@@ -1,0 +1,141 @@
+/* Reels (screens/Home.tsx): Activity first (what needs you, what is being made, recent), All reels one click away. */
+
+.page.home { max-width: none; padding: var(--space-s) var(--gutter) var(--space-l); }
+
+/* in the title-bar row, beside "Reels" */
+.seg2 { display: inline-flex; margin-left: 8px; padding: 2px; gap: 2px; border-radius: var(--r-md); background: var(--sunk); }
+.seg2 > button {
+  height: 26px; padding: 0 12px; border: 0; border-radius: var(--r-sm); background: transparent; font: inherit; font-size: var(--fs-sm); font-weight: 560;
+  color: var(--ink-2); cursor: pointer; transition: background-color 120ms ease, color 120ms ease;
+}
+.seg2 > button[aria-checked="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(22, 30, 26, .12), 0 0 0 .5px rgba(22, 30, 26, .08); }
+@media (hover: hover) and (pointer: fine) { .seg2 > button[aria-checked="false"]:hover { color: var(--ink); } }
+
+.rsearch { position: relative; display: flex; align-items: center; width: 240px; height: 28px; border-radius: var(--r-sm); background: var(--sunk); color: var(--ink-3); }
+.rsearch .icon { position: absolute; left: 9px; pointer-events: none; }
+.rsearch input {
+  width: 100%; height: 100%; border: 0; outline: 0; background: transparent; padding: 0 10px 0 29px; border-radius: inherit;
+  font: inherit; font-size: var(--fs-base); color: var(--ink);
+}
+.rsearch:focus-within { box-shadow: 0 0 0 2px var(--ink); background: var(--surface); }
+.rsearch input::-webkit-search-cancel-button { -webkit-appearance: none; }
+
+.home .sec-h { font-size: var(--fs-section); line-height: var(--lh-section); font-weight: 620; margin: 0 0 12px; }
+.home .grid { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); gap: 24px 18px; margin-bottom: var(--space-m); }
+.home .grid.top { row-gap: 0; }
+.home .grid.top > .sec-h { grid-row: 1; }
+.home .grid.top > .rcard { grid-row: 2; }
+.home-quiet { font-size: var(--fs-md); line-height: var(--lh-md); color: var(--ink-2); }
+
+.series { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 20px; }
+.schip {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-strong);
+  background: transparent; font: inherit; font-size: var(--fs-sm); font-weight: 560; color: var(--ink-2); cursor: pointer; transition: background-color 120ms ease, color 120ms ease;
+}
+.schip .n { color: var(--ink-3); font-weight: 500; font-variant-numeric: tabular-nums; }
+.schip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.schip[aria-pressed="true"] .n { color: rgba(241, 242, 239, .75); }
+@media (hover: hover) and (pointer: fine) { .schip[aria-pressed="false"]:hover { color: var(--ink); border-color: var(--ink-4); } }
+
+/* A card is the one filled surface here (spec.md section 1): the picture is the object you open. */
+.rcard { position: relative; min-width: 0; }
+.rcard .hit { position: absolute; inset: 0; z-index: 3; border: 0; padding: 0; background: transparent; border-radius: var(--r-lg); cursor: pointer; }
+html.kb .rcard .hit:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+.rcard .im {
+  position: relative; display: block; aspect-ratio: 9 / 16; border-radius: var(--r-lg); overflow: hidden; background: var(--sunk);
+  box-shadow: var(--e1); transition: transform 180ms var(--ease-out);
+}
+.rcard .im img, .rcard .im video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* darker edges over the picture, so the corner mark and the bar read on any cover */
+.rcard .im::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px rgba(0, 0, 0, .22);
+  background: linear-gradient(180deg, rgba(0, 0, 0, .12) 0%, transparent 22%, transparent 62%, rgba(0, 0, 0, .26) 100%);
+}
+@media (hover: hover) and (pointer: fine) { .rcard .hit:hover ~ .im { transform: translateY(-2px); } }
+.rcard .hit:active ~ .im { transform: scale(.98); }
+
+/* No video yet: paper, with the title set large */
+.rcard.st-novideo .im { background: var(--surface); }
+.rcard.st-novideo .im::after { display: none; }
+.rcard .paper-t {
+  position: absolute; inset: 14px 14px auto; display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden;
+  font-size: var(--fs-heading); line-height: 24px; font-weight: 640; font-stretch: 108%; letter-spacing: -.01em; color: var(--ink); overflow-wrap: anywhere; text-wrap: pretty;
+}
+/* Paused: dimmed, with a pause mark */
+.rcard.st-paused .im img, .rcard.st-paused .im video { filter: saturate(.45) brightness(.62); }
+.rcard .glyph {
+  position: absolute; top: 8px; left: 8px; z-index: 2; width: 24px; height: 24px; border-radius: 50%; background: rgba(255, 255, 255, .94);
+  color: var(--ink); display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+}
+/* Didn't finish: no colour, and the edges close in */
+.rcard.st-failed .im img, .rcard.st-failed .im video { filter: grayscale(.9) brightness(.8); }
+.rcard.st-failed .im { background: #CFD2CD; }
+.rcard.st-failed .im::after { box-shadow: inset 0 0 56px 6px rgba(0, 0, 0, .5); background: none; }
+/* Making: a thin bar along the bottom, moved by the job's own events */
+.rcard .pb { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, .35); overflow: hidden; }
+.rcard.st-making .im:not(:has(img, video)) .pb { background: rgba(22, 25, 23, .12); }
+.rcard.st-making .im:not(:has(img, video)) .pb i { background: var(--ink-2); }
+/* the time left sits on the picture, over the bar: the card's one line below has no room for both */
+.rcard .left {
+  position: absolute; left: 9px; right: 9px; bottom: 17px; z-index: 2; font-size: var(--fs-xs); line-height: var(--lh-xs); font-weight: 600;
+  color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .6), 0 0 8px rgba(0, 0, 0, .5); text-wrap: balance; font-variant-numeric: tabular-nums;
+}
+.rcard.st-making .im:not(:has(img, video)) .left { color: var(--ink-2); text-shadow: none; }
+.rcard .pb i { display: block; height: 100%; background: #fff; transform-origin: left; transition: transform 600ms linear; }
+
+/* the title gets two lines before it is cut; then one line saying where the reel is */
+.rcard .ttl {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 10px;
+  font-size: var(--fs-base); line-height: 17px; font-weight: 600; overflow-wrap: anywhere;
+}
+.rcard .cm {
+  position: relative; z-index: 4; pointer-events: none; margin-top: 2px; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
+}
+.rcard .cm .amber { color: var(--amber); font-weight: 560; }
+.rcard .cm .red { color: var(--pencil); font-weight: 560; }
+.rcard .cm .act {
+  pointer-events: auto; border: 0; padding: 0; background: none; font: inherit; color: inherit; cursor: pointer;
+  text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 2px; transition: text-decoration-color 120ms ease;
+}
+@media (hover: hover) and (pointer: fine) { .rcard .cm .act:hover { text-decoration-color: currentColor; } }
+.rcard .cm .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin: 0 6px 1px 0; vertical-align: middle; }
+
+html.kb .rcard .im { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .rcard .im { transition: none; }
+  .rcard .pb i { transition: none; }
+}
+
+/* No reels yet: the sample, and one invitation */
+.home-empty { min-height: calc(100vh - var(--titlebar) - 96px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 0; }
+.home-empty .sample-card { width: clamp(150px, 15vw, 188px); }
+.home-empty h2 { margin-top: 28px; max-width: 460px; font-size: var(--fs-heading); line-height: var(--lh-heading); font-weight: 620; letter-spacing: -.01em; text-wrap: balance; }
+.home-empty .row { display: flex; gap: 10px; margin-top: 20px; }
+.home-empty .faint { margin-top: 16px; }
+
+.sample-card { margin: 0; }
+.sample-card .im {
+  position: relative; display: block; width: 100%; padding: 0; border: 0; aspect-ratio: 9 / 16; border-radius: var(--r-lg); overflow: hidden; cursor: pointer;
+  background: #1b1d1c; box-shadow: var(--e2); container-type: inline-size; transition: transform 160ms var(--ease-out);
+}
+.sample-card .im:active { transform: scale(.98); }
+html.kb .sample-card .im:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.sample-card img, .sample-card video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity 200ms ease; }
+.sample-card video { opacity: 0; }
+.sample-card video.on { opacity: 1; }
+.sample-card img.off, .sample-card .cover-t.off { opacity: 0; }
+.sample-card .cover-t {
+  position: absolute; left: 8%; right: 8%; top: 13%; text-align: center; color: #fff; font: 600 11cqw/1.12 'Reel Subtitles', sans-serif; text-transform: uppercase;
+  -webkit-text-stroke: .6cqw #000; paint-order: stroke fill; transition: opacity 200ms ease; pointer-events: none;
+}
+.sample-card .cover-t em { font-style: normal; background: var(--marker); color: #111; -webkit-text-stroke: 0; padding: 0 1.2cqw; border-radius: 1.2cqw; }
+.sample-card .yt-play {
+  position: absolute; right: 8px; bottom: 8px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(255, 255, 255, .94); color: var(--ink); box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+}
+.sample-card figcaption { display: flex; justify-content: space-between; margin-top: 10px; font-size: var(--fs-base); }
+.sample-card figcaption b { font-weight: 620; }
+.sample-card figcaption span { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+html.kb .sample-card .im { transition: none; }
+@media (prefers-reduced-motion: reduce) { .sample-card .im { transition: none; } }

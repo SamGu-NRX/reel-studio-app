@@ -1,77 +1,8 @@
-// Ported from T3 Code: PermissionChecklist.tsx and usePermissionStatus.ts.
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+// Ported from T3 Code: usePermissionStatus.ts.
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PermissionStatus } from '../../../shared/api'
 import { pollPermissions } from '../../../shared/permission-poll'
 import { reel } from '../api'
-import { Icon } from './icons'
-import { Spinner } from './ui'
-
-export interface PermissionItem {
-  id: string
-  icon: ReactNode
-  title: string
-  description?: ReactNode
-  optional?: boolean
-  state: 'ask' | 'working' | 'allowed'
-  /** What the done state says; "Allowed" unless the Mac's answer can't be read. */
-  doneLabel?: string
-  onAllow: () => void
-  problem?: ReactNode
-  actions?: ReactNode
-}
-
-export function PermissionChecklist({ items, busy = false }: { items: readonly PermissionItem[]; busy?: boolean }) {
-  return (
-    <ul className="perm-list">
-      {items.map((p) => (
-        <li key={p.id} className={`perm-row${p.problem ? ' has-problem' : ''}`} data-testid={`perm-${p.id}`} data-state={p.state}>
-          <span className="perm-icon" aria-hidden>
-            {p.icon}
-          </span>
-          <div className="perm-text">
-            <p className="perm-title" id={`perm-${p.id}-title`}>
-              {p.title}
-              {p.optional && <span className="perm-optional">Optional</span>}
-            </p>
-            {p.description && <p className="perm-desc">{p.description}</p>}
-            {p.problem && (
-              <p className="perm-problem" role="alert" data-testid={`perm-${p.id}-problem`}>
-                {p.problem}
-              </p>
-            )}
-            {p.actions && <div className="perm-actions">{p.actions}</div>}
-          </div>
-          {/* Mounted from the start, so a screen reader hears each change. */}
-          <span className="sr-only" role="status">
-            {p.state === 'allowed' ? `${p.title}: ${(p.doneLabel ?? 'Allowed').toLowerCase()}` : p.state === 'working' ? `${p.title}: waiting for your Mac` : ''}
-          </span>
-          <div className="perm-end">
-            {p.state === 'allowed' ? (
-              <span className="perm-ok">
-                <Icon name="check" size={16} stroke={2.25} />
-                {p.doneLabel ?? 'Allowed'}
-              </span>
-            ) : p.state === 'working' ? (
-              <span className="perm-wait">
-                <Spinner /> Asking
-              </span>
-            ) : (
-              <button
-                className="btn small"
-                disabled={busy}
-                onClick={p.onAllow}
-                aria-describedby={`perm-${p.id}-title`}
-                data-testid={`perm-${p.id}-allow`}
-              >
-                Allow
-              </button>
-            )}
-          </div>
-        </li>
-      ))}
-    </ul>
-  )
-}
 
 /** `apply` takes an action's answer and drops a check already on its way, so the row never flips back for a moment. */
 export function usePermissionStatus() {

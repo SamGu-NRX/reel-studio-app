@@ -1,73 +1,120 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ClaudeCodeInfo, ModelStatus, ProviderInfo } from '../../../shared/api'
-import { reel, userMessage } from '../api'
-import { Progress, Spinner } from './ui'
+import { errorCode, reel, userMessage } from '../api'
+import { IS_MAC, Progress, Spinner } from './ui'
 import { Icon } from './icons'
 import { Connections } from './Connections'
+import { BrandMark } from './brand'
+import { ConnectedMark, Disclosure, ProviderRow, type Tone } from './provider-row'
+import { SETTINGS } from './settings-index'
+import './connect.css'
 
-/** What works with no AI at all. One honest line, shown wherever we ask people to connect. */
-export const WITHOUT_AI =
-  'Without AI, Reel Studio still cuts the pauses and repeated starts, adds subtitles, your music and a cover. ' +
-  'With AI it also picks your best takes, adds pictures, writes your post caption and changes the video from your notes.'
+/** What Reel Studio makes with no editor connected. Nobody says "I" here: no editor is there to say it. */
+export const WITHOUT_EDITOR = 'Without an editor, Reel Studio makes a basic version: pauses and retakes removed, subtitles and a cover.'
 
 /** Anthropic's own install page for the Claude Code app. */
 export const CLAUDE_CODE_SETUP_URL = 'https://code.claude.com/docs/en/setup'
 export const USE_CLAUDE_CODE = 'Use Claude (your Claude Code app)'
 export const USING_CLAUDE_CODE = 'Using Claude through your Claude Code app.'
-const CLAUDE_PLAN_LINE = 'It uses your own Claude plan and its usage limits.'
+const HERE = IS_MAC ? 'this Mac' : 'this PC'
 /** While a sign-in window is open: check every 3 s, for up to 10 minutes. */
 const WAIT_EVERY_MS = 3000
 const WAIT_FOR_MS = 10 * 60_000
 
+/** The editor in use, kept current: every call that changes it announces the change (main/index.ts changesAI). */
+export function useActiveEditor(): [ProviderInfo | null, (p: ProviderInfo) => void] {
+  const [active, setActive] = useState<ProviderInfo | null>(null)
+  useEffect(() => {
+    let live = true
+    reel.ai
+      .active()
+      .then((p) => live && setActive(p))
+      .catch(() => {})
+    const off = reel.ai.onChange(setActive)
+    return () => {
+      live = false
+      off()
+    }
+  }, [])
+  return [active, setActive]
+}
+
+const isOn = (p: ProviderInfo | null, id: ProviderInfo['id']): boolean => !!p && p.connected && p.id === id
+
+/** The check call to Claude failed: what happened, and what to do, in plain words. */
+function claudeCheckFailed(e: unknown): string {
+  switch (errorCode(e)) {
+    case 'cli_limited':
+      return 'Your Claude plan is at its limit. Try again after it resets.'
+    case 'cli_timeout':
+      return "Claude took too long to answer. Check you're online, then try again."
+    case 'cli_error':
+      return "Claude didn't answer. Open your Claude Code app once to check it works, then try again."
+    case 'cli_missing':
+      return `The Claude Code app isn't on ${HERE} any more.`
+    default:
+      return userMessage(e)
+  }
+}
+
 /**
- * Connect your AI editor, for normal people. Whatever the person already has comes first: a signed-in Claude Code
- * app makes "Use Claude (your Claude Code app)" the big button; otherwise "Sign in with ChatGPT" is, with the
- * Claude choice below it in its real state (sign in, or how to install it). "Use an Anthropic API key" and "Use
- * your own AI server" stay the quiet advanced choices. Used by the Connect screen, Settings and First run.
+ * Choose your editor: one picker for the first run, Settings, the composer with no editor and a failed Version 1.
+ * A signed-in Claude Code leads with the one filled button; otherwise ChatGPT's sign-in does. "Use Claude" makes
+ * main send Claude one short message before anything says Connected. `advanced={false}` leaves out the Advanced
+ * disclosure (your own server, an API key) for a page that places those itself (Settings).
  *
  * Reel Studio never sees the Claude sign-in: it happens in Anthropic's own app, in a terminal window, and the app
  * only asks that app "signed in or not?".
  */
-export function ConnectAI({ onConnected }: { onConnected?: (p: ProviderInfo) => void }) {
-  const [active, setActive] = useState<ProviderInfo | null>(null)
-  const [key, setKey] = useState('')
-  const [showKey, setShowKey] = useState(false)
-  // Once connected, the sign-in choices fold away behind "Use a different AI…" (critique 2).
-  const [showOther, setShowOther] = useState(false)
-  const [busy, setBusy] = useState<'chatgpt' | 'claude' | 'claude-code' | null>(null)
-  const [error, setError] = useState<{ text: string; link?: string } | null>(null)
-  // The person's own Claude Code app, in its real state; `waiting` = a sign-in window is open.
+export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: ProviderInfo) => void; advanced?: boolean }) {
+  const [active, setActive] = useActiveEditor()
   const [claude, setClaude] = useState<ClaudeCodeInfo | null>(null)
+  const [busy, setBusy] = useState<'claude' | 'chatgpt' | null>(null)
+  const [claudeError, setClaudeError] = useState<string | null>(null)
+  const [chatgptError, setChatgptError] = useState<string | null>(null)
+  // a sign-in window is open
   const [waiting, setWaiting] = useState(false)
-  const [showInstall, setShowInstall] = useState(false)
+  const [install, setInstall] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const waitingRef = useRef(false)
-  const checking = useRef(false)
   waitingRef.current = waiting
+  const checking = useRef(false)
+  const announce = useRef(onConnected)
+  announce.current = onConnected
+  const box = useRef<HTMLDivElement>(null)
+  const wasBusy = useRef(busy)
 
-  const fail = (e: unknown) => setError({ text: userMessage(e), link: (e as { link?: string })?.link })
+  // The pill pressed gives way to Cancel while the check runs, and Cancel to the row's new pill when it ends: focus
+  // follows to the button in the same place, never to the page.
+  useEffect(() => {
+    const at = busy ?? wasBusy.current
+    const row = at === 'claude' ? 'claude-cli' : at
+    if (row && document.activeElement === document.body)
+      box.current?.querySelector<HTMLElement>(`[data-provider="${row}"] .pv-main > button`)?.focus({ preventScroll: true })
+    wasBusy.current = busy
+  }, [busy])
 
-  const done = useCallback(
+  const connected = useCallback(
     (p: ProviderInfo) => {
       setActive(p)
-      setError(null)
-      setShowOther(false)
-      if (p.connected && p.id !== 'none') onConnected?.(p)
+      if (p.connected && p.id !== 'none') announce.current?.(p)
     },
-    [onConnected]
+    [setActive]
   )
 
-  const useClaudeCode = useCallback(async () => {
-    setBusy('claude-code')
-    setError(null)
+  const useClaude = useCallback(async () => {
+    setBusy('claude')
+    setClaudeError(null)
     try {
       await reel.ai.setActive('claude-cli')
-      done(await reel.ai.active())
+      connected(await reel.ai.active())
     } catch (e) {
-      fail(e)
+      // Cancel: back to where it was, with nothing to explain
+      if (errorCode(e) !== 'cancelled') setClaudeError(claudeCheckFailed(e))
     } finally {
       setBusy(null)
     }
-  }, [done])
+  }, [connected])
 
   const checkClaude = useCallback(async () => {
     if (checking.current) return
@@ -78,17 +125,16 @@ export function ConnectAI({ onConnected }: { onConnected?: (p: ProviderInfo) => 
       // They started the sign-in here, so once it worked, that is their choice: use it.
       if (s.state === 'ready' && waitingRef.current) {
         setWaiting(false)
-        await useClaudeCode()
+        await useClaude()
       }
     } catch {
-      /* keep the last answer */
+      setClaude((c) => c ?? { state: 'missing' })
     } finally {
       checking.current = false
     }
-  }, [useClaudeCode])
+  }, [useClaude])
 
   useEffect(() => {
-    reel.ai.active().then(setActive).catch(() => {})
     void checkClaude()
   }, [checkClaude])
 
@@ -111,240 +157,284 @@ export function ConnectAI({ onConnected }: { onConnected?: (p: ProviderInfo) => 
 
   const chatgpt = async () => {
     setBusy('chatgpt')
-    setError(null)
+    setChatgptError(null)
     try {
-      done(await reel.ai.signInChatGPT())
+      const p = await reel.ai.signInChatGPT()
+      if (p.connected) connected(p)
+      else if (p.error && p.error.code !== 'cancelled') setChatgptError(p.error.userMessage)
     } catch (e) {
-      fail(e)
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const claudeKey = async () => {
-    setBusy('claude')
-    setError(null)
-    try {
-      done(await reel.ai.setClaudeKey(key.trim()))
-      setKey('')
-    } catch (e) {
-      fail(e)
+      if (errorCode(e) !== 'cancelled') setChatgptError(userMessage(e))
     } finally {
       setBusy(null)
     }
   }
 
   const signInClaude = async () => {
-    setError(null)
+    setClaudeError(null)
     try {
       await reel.ai.openClaudeSignIn()
       setWaiting(true)
     } catch (e) {
-      fail(e)
+      setClaudeError(userMessage(e))
     }
   }
 
-  const signOut = async () => {
-    await reel.ai.signOutChatGPT()
+  const disconnect = async () => {
+    if (active?.id === 'chatgpt') await reel.ai.signOutChatGPT()
+    else await reel.ai.setActive('none')
     setActive(await reel.ai.active())
   }
 
-  const connected = !!active && active.connected && active.id !== 'none'
-  const choices = !connected || showOther
-  const claudeReady = claude?.state === 'ready'
-  const offerClaude = choices && !!claude && active?.id !== 'claude-cli'
-  // Recommend what they already have: a ready Claude Code app goes first.
-  const claudeFirst = offerClaude && claudeReady
+  if (!claude)
+    return (
+      <p className="pv-looking" role="status">
+        <Spinner /> Looking for Claude on {HERE}…
+      </p>
+    )
 
-  const chatgptChoice = choices && (busy === 'chatgpt' ? (
-    <div className="row">
-      <Spinner />
-      <span className="muted">Finish signing in in your web browser.</span>
-      <span className="spacer" />
-      <button className="btn small ghost" onClick={() => reel.ai.cancelSignIn()}>
-        Cancel
-      </button>
-    </div>
-  ) : (
-    <>
-      <button className={`btn big${claudeFirst ? '' : ' primary'}`} onClick={chatgpt} disabled={!!busy} data-testid="signin-chatgpt">
-        Sign in with ChatGPT
-      </button>
-      {!connected && <p className="muted-sm center" style={{ marginTop: -4 }}>Uses your own ChatGPT plan. Reel Studio never sees your password.</p>}
-    </>
-  ))
-
+  const st = claude.state
+  const claudeOn = isOn(active, 'claude-cli')
+  const chatgptOn = isOn(active, 'chatgpt')
+  const otherOn = !!active && active.connected && !['none', 'claude-cli', 'chatgpt'].includes(active.id)
+  const anyOn = claudeOn || chatgptOn || otherOn
+  const claudeLeads = !chatgptOn && (claudeOn || st === 'ready')
+  // the leading row's pill is the screen's one filled button, until an editor is connected
+  const primary = (leads: boolean): string => (!anyOn && leads ? ' primary' : '')
+  const off = (
+    <button className="btn small ghost" onClick={() => void disconnect()} data-testid="use-no-ai">
+      {active?.id === 'chatgpt' ? 'Sign out' : 'Disconnect'}
+    </button>
+  )
   const checkAgain = (
     <button className="btn small" onClick={() => void checkClaude()} data-testid="claude-code-check">
       Check again
     </button>
   )
-  const installSteps = (
-    <ol className="muted-sm" style={{ margin: 0, paddingLeft: 20 }} data-testid="claude-code-install">
-      <li>
-        Open{' '}
-        <a href={CLAUDE_CODE_SETUP_URL} target="_blank" rel="noreferrer">
-          Anthropic's install page
-        </a>
-        .
-      </li>
-      <li>Follow the steps for your computer.</li>
-      <li>Come back here and click Check again.</li>
-    </ol>
-  )
 
-  let claudeChoice: ReactNode = null
-  if (offerClaude && claude.state === 'ready') {
-    claudeChoice = (
+  let claudeStatus: ReactNode
+  let claudeTone: Tone = 'plain'
+  let claudeAction: ReactNode = null
+  if (claudeOn) {
+    claudeStatus = <ConnectedMark testid="ai-connected" />
+    claudeTone = 'ok'
+    claudeAction = off
+  } else if (busy === 'claude') {
+    claudeStatus = (
       <>
-        <button className="btn primary big" onClick={useClaudeCode} disabled={!!busy} data-testid="use-claude-code">
-          {busy === 'claude-code' ? <Spinner /> : null} {USE_CLAUDE_CODE}
-        </button>
-        <p className="muted-sm center" style={{ marginTop: -4 }}>{CLAUDE_PLAN_LINE}</p>
+        <Spinner /> Checking Claude…
       </>
     )
-  } else if (offerClaude && claude.state === 'signed_out') {
-    claudeChoice = (
-      <div className="stack" style={{ gap: 6 }} data-testid="claude-code-choice" data-state="signed_out">
-        <button className="btn big" onClick={signInClaude} disabled={!!busy} data-testid="claude-code-signin">
-          Sign in to your Claude Code app
-        </button>
-        {waiting ? (
-          <div className="row" data-testid="claude-code-waiting">
-            <Spinner />
-            <span className="muted">Waiting for you to sign in in the other window.</span>
-            <span className="spacer" />
-            {checkAgain}
-          </div>
-        ) : (
-          <p className="muted-sm center" style={{ margin: 0 }}>
-            A window opens. Sign in there with your Claude account. Reel Studio never sees it. {CLAUDE_PLAN_LINE}
-          </p>
-        )}
-        {waiting && <p className="muted-sm center" style={{ margin: 0 }}>{CLAUDE_PLAN_LINE}</p>}
-        {claude.reason && !/not signed in yet/.test(claude.reason) && <p className="muted-sm center" style={{ margin: 0 }}>{claude.reason}</p>}
-        {!waiting && <div className="row" style={{ justifyContent: 'center' }}>{checkAgain}</div>}
-      </div>
-    )
-  } else if (offerClaude && claude.state === 'broken') {
-    claudeChoice = (
-      <div className="stack" style={{ gap: 6 }} data-testid="claude-code-choice" data-state="broken">
-        <p className="muted-sm">We found your Claude Code app, but it did not start. Install it again, then click Check again.</p>
-        {installSteps}
-        <div className="row">{checkAgain}</div>
-      </div>
-    )
-  } else if (offerClaude && claude.state === 'missing') {
-    claudeChoice = !showInstall ? (
-      <button className="link center" onClick={() => setShowInstall(true)} data-testid="claude-code-toggle">
-        Use Claude instead
+    claudeTone = 'busy'
+    claudeAction = (
+      <button className="btn small ghost" onClick={() => void reel.ai.cancelCheck()} data-testid="claude-check-cancel">
+        Cancel
       </button>
-    ) : (
-      <div className="stack" style={{ gap: 6 }} data-testid="claude-code-choice" data-state="missing">
-        <p className="muted-sm">
-          To use Claude, install Anthropic's Claude Code app. It needs a paid Claude plan (Pro or Max). {CLAUDE_PLAN_LINE}
-        </p>
-        {installSteps}
-        <div className="row">{checkAgain}</div>
-      </div>
+    )
+  } else if (claudeError) {
+    claudeStatus = claudeError
+    claudeTone = 'error'
+    claudeAction = (
+      <button className="btn small" onClick={() => void (st === 'ready' ? useClaude() : signInClaude())} disabled={!!busy} data-testid="claude-try-again">
+        Try again
+      </button>
+    )
+  } else if (st === 'ready') {
+    claudeStatus = `Found on ${HERE}`
+    claudeAction = (
+      <button className={`btn small${primary(claudeLeads)}`} onClick={() => void useClaude()} disabled={!!busy} aria-label={USE_CLAUDE_CODE} data-testid="use-claude-code">
+        Use Claude
+      </button>
+    )
+  } else if (st === 'signed_out' && waiting) {
+    claudeStatus = (
+      <span data-testid="claude-code-waiting">
+        <Spinner /> Sign in in the window that opened
+      </span>
+    )
+    claudeTone = 'busy'
+    claudeAction = checkAgain
+  } else if (st === 'signed_out') {
+    claudeStatus = 'Sign in with your plan'
+    claudeAction = (
+      <button className="btn small" onClick={() => void signInClaude()} disabled={!!busy} aria-label="Sign in to your Claude Code app" data-testid="claude-code-signin">
+        Sign in
+      </button>
+    )
+  } else {
+    claudeStatus = st === 'broken' ? "Your Claude Code app didn't start" : 'Not set up'
+    claudeAction = install ? null : (
+      <button className="btn small" onClick={() => setInstall(true)} data-testid="claude-code-toggle">
+        Set up
+      </button>
     )
   }
 
-  return (
-    <div className="stack">
-      {connected && (
-        <div className="banner good" data-testid="ai-connected-banner">
-          <Icon name="done" />
-          <span data-testid="ai-connected">
-            {active!.id === 'claude-cli' ? USING_CLAUDE_CODE : `Connected to ${active!.label}`}
-            {active!.id !== 'claude-cli' && active!.detail ? ` (${active!.detail})` : ''}
-            {active!.id === 'claude-cli' ? '' : '.'}
-          </span>
-          {active!.id === 'chatgpt' ? (
-            <button className="btn small" onClick={signOut} data-testid="use-no-ai">
-              Sign out
-            </button>
-          ) : (
-            <button
-              className="btn small"
-              onClick={async () => {
-                await reel.ai.setActive('none')
-                setActive(await reel.ai.active())
-              }}
-              data-testid="use-no-ai"
-            >
-              Disconnect
-            </button>
-          )}
+  const claudeRow = (
+    <ProviderRow key="claude" id="claude-cli" mark={<BrandMark name="claude" size={20} />} name="Claude" status={claudeStatus} tone={claudeTone} action={claudeAction}>
+      {install && !claudeOn && (st === 'missing' || st === 'broken') && (
+        <div className="pv-more" data-testid="claude-code-choice" data-state={st}>
+          <ol className="pv-steps" data-testid="claude-code-install">
+            <li>
+              Open{' '}
+              <a href={CLAUDE_CODE_SETUP_URL} target="_blank" rel="noreferrer">
+                Anthropic's install page
+              </a>
+              .
+            </li>
+            <li>Follow the steps for your {IS_MAC ? 'Mac' : 'PC'}. The Claude Code app needs a paid Claude plan (Pro or Max).</li>
+            <li>Come back here and click Check again.</li>
+          </ol>
+          <div>{checkAgain}</div>
         </div>
       )}
-      {connected && !showOther && (
-        <button className="link left" onClick={() => setShowOther(true)} data-testid="use-different-ai">
-          Use a different AI…
-        </button>
+    </ProviderRow>
+  )
+
+  const chatgptRow = (
+    <ProviderRow
+      key="chatgpt"
+      id="chatgpt"
+      mark={<BrandMark name="openai" size={20} />}
+      name="ChatGPT"
+      tone={chatgptOn ? 'ok' : busy === 'chatgpt' ? 'busy' : chatgptError ? 'error' : 'plain'}
+      status={
+        chatgptOn ? (
+          <ConnectedMark testid="ai-connected" />
+        ) : busy === 'chatgpt' ? (
+          <>
+            <Spinner /> Waiting for your browser…
+          </>
+        ) : (
+          (chatgptError ?? 'Sign in with your plan')
+        )
+      }
+      action={
+        chatgptOn ? (
+          off
+        ) : busy === 'chatgpt' ? (
+          <button className="btn small ghost" onClick={() => void reel.ai.cancelSignIn()}>
+            Cancel
+          </button>
+        ) : (
+          <button className={`btn small${primary(!claudeLeads)}`} onClick={() => void chatgpt()} disabled={!!busy} data-testid="signin-chatgpt">
+            Sign in
+          </button>
+        )
+      }
+    />
+  )
+
+  // Your own server or an API key, while it is the editor: first, so what's in use is never one click away.
+  const otherRow = otherOn && (
+    <ProviderRow
+      key="other"
+      id={active.id}
+      mark={<Icon name={active.id === 'claude' ? 'key' : 'server'} size={20} />}
+      name={active.id === 'claude' ? SETTINGS['api-key'].label : active.label}
+      status={<ConnectedMark testid="ai-connected" />}
+      tone="ok"
+      action={off}
+    />
+  )
+
+  return (
+    <div className="picker" ref={box}>
+      <div className="prov" role="group" aria-label="Choose your editor" data-testid="ai-picker">
+        {otherRow}
+        {claudeLeads ? [claudeRow, chatgptRow] : [chatgptRow, claudeRow]}
+      </div>
+      {active?.error && !active.connected && (
+        <p className="pv-note error" role="alert">
+          {active.error.userMessage}
+        </p>
       )}
-      {claudeFirst ? (
-        <>
-          {claudeChoice}
-          {chatgptChoice}
-        </>
-      ) : (
-        <>
-          {chatgptChoice}
-          {claudeChoice}
-        </>
+      {advanced && (
+        <Disclosure label="Advanced" open={advancedOpen} onToggle={() => setAdvancedOpen((o) => !o)} testid="ai-advanced">
+          <Connections onConnected={connected} />
+          <AnthropicKey active={active} onConnected={connected} />
+        </Disclosure>
       )}
-      {!choices ? null : !showKey ? (
-        <button className="link center" onClick={() => setShowKey(true)} data-testid="claude-key-toggle">
-          Use an Anthropic API key (advanced)
-        </button>
-      ) : (
-        <>
+      {!anyOn && (
+        <p className="noai-line" data-testid="without-ai">
+          {WITHOUT_EDITOR}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** An Anthropic API key: billed by Anthropic as it's used, separately from a Claude plan. */
+export function AnthropicKey({ active, onConnected }: { active: ProviderInfo | null; onConnected: (p: ProviderInfo) => void }) {
+  const [open, setOpen] = useState(false)
+  const [key, setKey] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const on = isOn(active, 'claude')
+
+  const save = async () => {
+    if (!key.trim() || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const p = await reel.ai.setClaudeKey(key.trim())
+      if (p.connected) {
+        setKey('')
+        setOpen(false)
+        onConnected(p)
+      } else if (p.error) setError(p.error.userMessage)
+    } catch (e) {
+      setError(userMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <ProviderRow
+      id="claude"
+      setting="api-key"
+      mark={<Icon name="key" size={20} />}
+      tone={on ? 'ok' : error ? 'error' : 'plain'}
+      status={on ? <ConnectedMark /> : (error ?? 'Billed by Anthropic as you use it')}
+      action={
+        on || open ? null : (
+          <button className="btn small" onClick={() => setOpen(true)} data-testid="claude-key-toggle">
+            Add key
+          </button>
+        )
+      }
+    >
+      {open && !on && (
+        <div className="pv-more">
           <div className="row">
             <input
               className="input"
               type="password"
               autoFocus
               placeholder="Paste your Anthropic API key"
-              aria-label="Anthropic API key"
+              aria-label={SETTINGS['api-key'].label}
               value={key}
               onChange={(e) => setKey(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && key.trim()) void claudeKey()
+                if (e.key === 'Enter') void save()
+                if (e.key === 'Escape') setOpen(false)
               }}
               data-testid="claude-key-input"
             />
-            <button className="btn" onClick={claudeKey} disabled={!key.trim() || !!busy} data-testid="use-claude-key">
-              {busy === 'claude' ? <Spinner /> : null} Use this key
+            <button className="btn small" onClick={() => void save()} disabled={!key.trim() || busy} data-testid="use-claude-key">
+              {busy && <Spinner />} Use this key
             </button>
           </div>
           <p className="muted-sm">
             No key?{' '}
             <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
-              Get one here
+              Get one from Anthropic
             </a>
-            . An API key is billed by Anthropic as you use it, separate from a Claude subscription.
+            .
           </p>
-        </>
-      )}
-      {choices && <Connections onConnected={done} />}
-      {active?.error && !error && <div className="banner error">{active.error.userMessage}</div>}
-      {error && (
-        <div className="banner error">
-          <span>{error.text}</span>
-          {error.link && (
-            <a className="btn small" href={error.link} target="_blank" rel="noreferrer">
-              Open
-            </a>
-          )}
         </div>
       )}
-      {!connected && (
-        <p className="muted" data-testid="without-ai" style={{ fontSize: 14 }}>
-          {WITHOUT_AI}
-        </p>
-      )}
-    </div>
+    </ProviderRow>
   )
 }
 
@@ -380,7 +470,7 @@ export const MODEL_FOUND = 'Found the listening model on this computer. Using it
 
 const mb = (bytes: number): number => Math.round(bytes / 1e6)
 
-function downloadLine(s: ModelStatus, verb: 'Downloading' | 'Paused at'): string {
+export function downloadLine(s: ModelStatus, verb: 'Downloading' | 'Paused at'): string {
   return s.total > 0 ? `${verb} ${mb(s.bytes)} of ${mb(s.total)} MB` : `${verb} ${s.pct}%`
 }
 
@@ -444,8 +534,8 @@ export function ModelPanel({ s, onNext, secondary }: { s: ModelStatus; onNext?: 
         <div className="banner good">The listening model is ready.</div>
         {s.checkFailed && (
           <p className="muted-sm" data-testid="model-check-failed">
-            I couldn't work out the fastest settings for this computer, so the listening model uses its usual ones.
-            Everything still works.
+            Reel Studio couldn't work out the fastest settings for this computer, so the listening model uses its usual
+            ones. Everything still works.
           </p>
         )}
         {onNext && (
@@ -467,7 +557,7 @@ export function ModelPanel({ s, onNext, secondary }: { s: ModelStatus; onNext?: 
     <div className="stack">
       {s.downloading || paused ? (
         <>
-          <Progress pct={s.pct} paused={!s.downloading} label="Downloading the listening model" />
+          <Progress pct={s.pct} label="Downloading the listening model" />
           <div className="row">
             <span className="muted" data-testid="model-progress">
               {downloadLine(s, s.downloading ? 'Downloading' : 'Paused at')}

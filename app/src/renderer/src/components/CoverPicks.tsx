@@ -72,7 +72,7 @@ export function CoverPicks({
         </div>
       ) : picks.length === 0 ? (
         <p className="muted-sm" data-testid="cover-picks-none">
-          {problem ?? 'I could not find a clear frame of your face. Pick any moment below.'}
+          {problem ?? 'No clear frame of your face was found. Pick any moment below.'}
         </p>
       ) : (
         <div className="cover-picks" role="radiogroup" aria-labelledby="cover-picks-title" onKeyDown={onKey} data-testid="cover-picks">

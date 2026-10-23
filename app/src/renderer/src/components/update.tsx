@@ -33,7 +33,7 @@ export function useUpdateState(): UpdateState | null {
   return useSyncExternalStore(subscribe, () => current)
 }
 
-const COULD_NOT_OPEN = 'I could not open the download page. Try again in a moment.'
+const COULD_NOT_OPEN = 'Reel Studio could not open the download page. Try again in a moment.'
 
 export function useUpdateActions(): { act: (s: UpdateState) => Promise<void>; pending: boolean; dialog: ReactNode } {
   const notify = useNotify()
@@ -66,7 +66,7 @@ export function useUpdateActions(): { act: (s: UpdateState) => Promise<void>; pe
     }
     return run(async () => {
       const r = await reel.update.check()
-      if (!r.checked) notify(r.state.message ?? 'I could not check for updates right now. Try again in a moment.', 'error')
+      if (!r.checked) notify(r.state.message ?? 'Reel Studio could not check for updates right now. Try again in a moment.', 'error')
     })
   }
 
@@ -75,7 +75,7 @@ export function useUpdateActions(): { act: (s: UpdateState) => Promise<void>; pe
     void run(async () => {
       const r = await reel.update.install()
       if (!r.accepted && !r.refused) notify('The update changed while checking. Choose its action again.', 'info')
-      else if (r.refused === 'exporting') notify('Your export is still saving. Restart to update when it is done.', 'error')
+      else if (r.refused === 'exporting') notify('A reel is still saving. Restart to update when it is done.', 'error')
       else if (r.accepted && r.state.status !== 'error') notify('Installing the update. Reel Studio closes and opens again in a moment.')
     })
   }

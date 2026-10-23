@@ -101,7 +101,8 @@ export function useNoteAttachments(slug: string, notify: Notify) {
   )
 
   const onDropFiles = useCallback(
-    (dt: DataTransfer) => {
+    // a live DataTransfer, or the files of a drop held for later (Reel.tsx)
+    (dt: { files: ArrayLike<File> | null; types: ArrayLike<string> | null }) => {
       const files = Array.from(dt.files ?? [])
       const types = Array.from(dt.types ?? [])
       void apply(planDrop({ files: files.map(fileLike), uriOnly: !files.length && types.includes('text/uri-list') }), files)
@@ -145,7 +146,7 @@ export function useNoteAttachments(slug: string, notify: Notify) {
 }
 
 /** Small thumbnail of one attached file: the still, plus "GIF" or the clip's length. */
-export function AttachmentThumb({ a, size = 'chip' }: { a: NoteAttachment; size?: 'chip' | 'bubble' | 'row' }) {
+export function AttachmentThumb({ a, size = 'chip' }: { a: NoteAttachment; size?: 'chip' | 'bubble' }) {
   const badge = chipBadge(a)
   return (
     <span className={`att-thumb ${size}`} title={a.name}>

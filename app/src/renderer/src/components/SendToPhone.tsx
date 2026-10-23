@@ -1,3 +1,4 @@
+import { CloudSave } from './CloudSave'
 // "Send to my phone": the finished video is on the computer, Instagram is on the phone. A QR code opens
 // the video on the phone (over the home Wi-Fi, from a temporary link only this video answers on), and
 // if the phone cannot reach it (school, work and hotel Wi-Fi often block it), plain fallbacks, best first:
@@ -7,7 +8,6 @@ import type { PhoneShare } from '../../../shared/api'
 import { fallbackOrder, PHONE_HELP, waitForPhone, type PhoneFallback } from '../../../shared/phone-help'
 import { qrSvg } from '../../../shared/qr'
 import { reel, userMessage } from '../api'
-import { CloudSave } from './CloudSave'
 import { Icon } from './icons'
 import { FOLDER_APP, IS_MAC, Spinner } from './ui'
 import './SendToPhone.css'
@@ -28,7 +28,6 @@ const G: Record<string, ReactNode> = {
       <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
     </>
   ),
-  cloud: <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />,
   cable: (
     <>
       <path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1" />
@@ -68,7 +67,7 @@ function Qr({ url }: { url: string }) {
 
 const mb = (n: number): string => `${Math.max(1, Math.round(n / 1_000_000))} MB`
 
-export function SendToPhone({ video, caption, onBack }: { video: string; caption: string; onBack: () => void }) {
+export function SendToPhone({ video, caption, onBack, onSent }: { video: string; caption: string; onBack: () => void; onSent?: () => void }) {
   const [share, setShare] = useState<PhoneShare | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
@@ -78,6 +77,8 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
   const [address, setAddress] = useState<string | undefined>(undefined)
   const [attempt, setAttempt] = useState(0)
   const sentRef = useRef(false)
+  const onSentRef = useRef(onSent)
+  onSentRef.current = onSent
   const mounted = useRef(true)
 
   // Open the link (again, on another network or after it ran out); always close it when the panel goes.
@@ -113,6 +114,7 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
     () =>
       reel.phone.onEvent((e) => {
         if (e.kind === 'page' || e.kind === 'video') {
+          if (!sentRef.current) onSentRef.current?.()
           sentRef.current = true
           setSent(true)
         } else if (e.kind === 'stopped' && e.reason === 'timeout') setStopped(true)
@@ -147,15 +149,15 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
         </button>
       </div>
     ),
-    cloud: <CloudSave video={video} icon={<Glyph name="cloud" />} />,
+    cloud: <CloudSave video={video} />,
     email: (
       <div className="phone-way">
         <Glyph name="mail" />
         <div>
           <b>Email it to yourself</b>
           <p className="muted-sm">
-            I'll start an email and open {FOLDER_APP} with your video. Drag the video into the email, send it to yourself, then open it on your phone.
-            {share && (big ? ` Your video is ${mb(share.size)}, which is probably too big for email (most allow about 20 MB). Use iCloud Drive or Google Drive instead.` : ` Your video is ${mb(share.size)}.`)}
+            Reel Studio starts an email and opens {FOLDER_APP} with your reel. Drag the file into the email, send it to yourself, then open it on your phone.
+            {share && (big ? ` Your reel is ${mb(share.size)}, which is probably too big for email (most allow about 20 MB). Use iCloud Drive or Google Drive instead.` : ` Your reel is ${mb(share.size)}.`)}
           </p>
           {emailed && (
             <p className="muted-sm" data-testid="phone-emailed">
@@ -181,7 +183,7 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
         <div>
           <b>Use a cable</b>
           <p className="muted-sm">
-            <b>Android:</b> plug the phone in, unlock it, choose "File transfer", then drag the video into its Movies folder.
+            <b>Android:</b> plug the phone in, unlock it, choose "File transfer", then drag the file into its Movies folder.
             <br />
             <b>iPhone:</b> a cable is the hard way. iCloud Drive or email is quicker.
           </p>
@@ -210,7 +212,7 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
           </div>
           <div className="stack" style={{ gap: 10, minWidth: 0 }}>
             <p className="phone-lead" data-testid="phone-lead">
-              Point your phone's camera at this code. Your video opens on your phone; tap Share, then Save Video (or open Instagram).
+              Point your phone's camera at this code. Your reel opens on your phone; tap Share, then Save Video (or open Instagram).
             </p>
             <p className="muted-sm row" style={{ gap: 6 }}>
               <Glyph name="wifi" size={16} /> Your phone needs to be on the same Wi-Fi as this computer.
@@ -222,7 +224,7 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
             )}
             {stopped ? (
               <div className="row wrap">
-                <span className="muted">This code stopped working after 15 minutes, to keep your video private.</span>
+                <span className="muted">This code stopped working after 15 minutes, to keep your reel private.</span>
                 <button className="btn small" onClick={() => setAttempt((n) => n + 1)} data-testid="phone-renew">
                   Make a new code
                 </button>
@@ -250,7 +252,7 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
             <ol>
               <li>Open the Camera and point it at the code.</li>
               <li>Tap the link that appears at the top of the camera.</li>
-              <li>Your phone then shows you how to save the video to Photos.</li>
+              <li>Your phone then shows you how to save the reel to Photos.</li>
             </ol>
           </div>
           <details className="phone-more" data-testid="phone-android">
@@ -258,7 +260,7 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
             <ol>
               <li>Open the Camera (or Google Lens) and point it at the code.</li>
               <li>Tap the link that appears.</li>
-              <li>Tap Save video. It goes to your Gallery.</li>
+              <li>Tap Save reel. It goes to your Gallery.</li>
             </ol>
           </details>
         </div>
@@ -296,25 +298,25 @@ export function SendToPhone({ video, caption, onBack }: { video: string; caption
 
       {help && (
         <div className="phone-fallbacks" data-testid="phone-fallbacks">
-          <h3>{sent || error ? PHONE_HELP.other : PHONE_HELP.title}</h3>
-          {/* The Wi-Fi advice is only true while the page has not opened; once it has, only the heading stays. */}
-          {!sent && !error && (
-            <>
-              <div className="phone-way" data-testid="phone-check-wifi">
-                <Glyph name="wifi" />
-                <div>
-                  <b>{PHONE_HELP.checkTitle}</b>
-                  <p className="muted-sm">{PHONE_HELP.check}</p>
-                </div>
-                {/* phone:start reads the addresses again, so a code made after switching Wi-Fi carries the new one. */}
-                <button className="btn small" onClick={() => setAttempt((n) => n + 1)} data-testid="phone-wifi-renew">
-                  Make a new code
-                </button>
-              </div>
+          {sent || error ? (
+            <h3>{PHONE_HELP.other}</h3>
+          ) : (
+            // The Wi-Fi reason is only true while the page has not opened; once it has, only the heading stays.
+            <div>
+              <h3>{PHONE_HELP.title}</h3>
               <p className="muted-sm" data-testid="phone-why">
                 {PHONE_HELP.why}
               </p>
-            </>
+            </div>
+          )}
+          {!sent && !error && (
+            <div className="phone-way" data-testid="phone-check-wifi">
+              <Glyph name="wifi" />
+              <div>
+                <b>{PHONE_HELP.checkTitle}</b>
+                <p className="muted-sm">{PHONE_HELP.check}</p>
+              </div>
+            </div>
           )}
           {fallbackOrder(IS_MAC).map((way) => (
             <Fragment key={way}>{ways[way]}</Fragment>
