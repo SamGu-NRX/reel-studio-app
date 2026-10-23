@@ -36,11 +36,11 @@ test('fix a word and break a line in the Subtitles list', async () => {
   await expect(page.getByLabel('Subtitle line 2')).toBeFocused()
 
   await page.getByTestId('make-version').click()
-  await expect(page.getByTestId('versions').getByText('Version 2')).toBeVisible({ timeout: 10 * 60_000 })
+  await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 })
   const cap = projectJson().captions
   expect(cap.split).toEqual(['w1'])
   expect(cap.corrections).toEqual([{ from: 'placeholder', to: 'Placeholders', at: 'w2' }])
-  await expect(page.getByTestId('bubble-editor').last()).toContainText('fixed a word, new subtitle lines')
+  await expect(page.getByTestId('chat')).toContainText('fixed a word, new subtitle lines')
 
   await page.getByTestId('edit-myself').click()
   await page.getByTestId('tab-captions').click()
@@ -51,7 +51,7 @@ test('fix a word and break a line in the Subtitles list', async () => {
   await page.getByLabel('Subtitle line 2').fill('Placeholders')
   await page.getByLabel('Subtitle line 1').click()
   await page.getByTestId('make-version').click()
-  await expect(page.getByTestId('versions').getByText('Version 3')).toBeVisible({ timeout: 10 * 60_000 })
+  await expect(page.getByTestId('log-play-3')).toBeVisible({ timeout: 10 * 60_000 })
   await page.getByTestId('edit-myself').click()
   await page.getByTestId('tab-captions').click()
   await expect(page.getByLabel('Subtitle line 2')).toHaveValue('Placeholders')
