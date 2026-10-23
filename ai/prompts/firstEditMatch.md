@@ -8,7 +8,7 @@ The project and the transcript are below; the match brief follows this task. Rea
 
 ## 2. Captions
 
-Proofread the commentary against the brief's player list. For each word in UNSURE WORDS, and for every name-like word, ask: is it a misheard name of a player the brief lists? If certain, call add_caption_correction with the whole misheard phrase and the brief's spelling. Leave everything else as heard, including names the brief does not list. Call set_caption_style only if a frame later shows a real problem.
+Proofread the commentary against the brief (its player list, its moment text, the venue). Commentary is fast and the speech model garbles it: read each sentence as the commentator meant it ("got the equalises" is "got the equaliser"). For each word in UNSURE WORDS, and for every name-like word, ask: is it a misheard name of a player the brief lists? If certain, call add_caption_correction with the whole misheard phrase and the brief's spelling. Leave everything else as heard, including names the brief does not list. Call set_caption_style only if a frame later shows a real problem.
 
 ## 3. Pictures
 
@@ -19,7 +19,7 @@ Call list_library with kind images. Its files are the brief's player photos, nam
 In ONE reply:
 - the hook title: add_broll text-pop, params.style "label", params.tilt 0, params.text 3 to 7 words stating the moment from the brief, anchored from the first word for about 2 to 4 seconds;
 - the key player's photo: add_broll card-above-head (or side-card) with the committed assetId, on the words where the commentary names them, or the words right after the moment turns; about 2 to 3 seconds; never over the key action itself;
-- at most 2 fact cards (text-pop): the minute or the score after the moment, only if the brief gives it, placed after the key action;
+- one fact card (text-pop, params.style "label"): the minute and the score after the moment in one line, only what the brief gives, placed after the key action on at least 2 seconds of words;
 - set_zoom with 1 to 3 punch-ins: one on the phrase over the key action (scale about 1.15), maybe one on the reaction or celebration; never two back to back.
 
 ## 5. Cover
