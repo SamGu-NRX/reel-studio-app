@@ -129,3 +129,23 @@
 .ins-t b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ins-n { font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: flex-end; font-weight: 620; font-size: var(--fs-md); }
 .ins-n small { font-size: var(--fs-xs); line-height: var(--lh-xs); font-weight: 500; color: var(--ink-3); }
+
+/* Library › Videos in a demo build (Sources.tsx): one row of sources over the grid. Paper tiles, no borders. */
+.src { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1.35fr) repeat(3, minmax(0, .8fr)); gap: 12px; margin: var(--space-s) 0 var(--space-m); }
+.src-tile { display: flex; gap: 12px; align-items: flex-start; min-width: 0; padding: 14px 16px; border-radius: var(--r-lg); background: var(--paper-2); }
+.src-tile.on { background: var(--surface); box-shadow: var(--e1); }
+.src-mark { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--surface); box-shadow: var(--e1); }
+.src-mono { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .02em; color: var(--ink-2); }
+.src-tile.on .src-mark { background: var(--ink); box-shadow: none; }
+.src-mono.dark { color: #fff; }
+.src-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-2); }
+.src-t b { font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 620; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.src-t > span { text-wrap: pretty; }
+.src-meta { color: var(--ink-3); margin-top: 4px; }
+.src-ok { color: var(--green-ink); font-weight: 560; }
+.src-ok::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: 1px; }
+.src-connect { align-self: flex-start; margin-top: 6px; }
+.src-later { margin-top: 6px; color: var(--ink-3); min-height: 28px; display: flex; align-items: center; }
+@starting-style { .src-later { opacity: 0; } }
+.src-later { transition: opacity 160ms ease; }
+@media (max-width: 1100px) { .src { grid-template-columns: repeat(2, minmax(0, 1fr)) repeat(3, minmax(0, .7fr)); } }

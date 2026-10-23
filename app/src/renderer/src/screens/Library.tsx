@@ -5,6 +5,7 @@ import { reel, userMessage } from '../api'
 import { Button, FOLDER_APP, PickFiles, Spinner } from '../components/ui'
 import { Icon } from '../components/icons'
 import { TitleBarSlot } from '../components/titlebar'
+import { Sources } from '../components/Sources'
 import '../components/library.css'
 
 type Tab = 'images' | 'videos' | 'music' | 'sfx'
@@ -213,7 +214,9 @@ function Clips({ files, previews }: { files: LibraryFile[]; previews: Record<str
 /** Drops anywhere on the window land here while this screen is open (App passes what they were sorted into). */
 export function Library({ added }: { added?: { results: DropResult[]; at: number } }) {
   const [bins, setBins] = useState<LibraryBin[] | null>(null)
-  const [tab, setTab] = useState<Tab>('images')
+  const [tab, setTab] = useState<Tab>('videos')
+  const [demo, setDemo] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ text: string; error?: boolean } | null>(null)
   const audition = useAudition()
@@ -240,7 +243,25 @@ export function Library({ added }: { added?: { results: DropResult[]; at: number
 
   useEffect(() => {
     void load()
+    void reel.app.info().then((i) => setDemo(i.demo))
   }, [load])
+
+  // Demo build: the club's cuts are already fetched into the library; Import reads them again and says what is there.
+  const importScorePlay = async () => {
+    setImporting(true)
+    setResult(null)
+    try {
+      const [next] = await Promise.all([reel.library.list(), new Promise((r) => window.setTimeout(r, 1400))])
+      setBins(next)
+      setTab('videos')
+      const n = next.filter((b) => b.key === 'broll' || b.key === 'raw').reduce((k, b) => k + b.files.length, 0)
+      setResult({ text: `${n} videos from Manchester United vs Spurs are in your library. Up to date with ScorePlay.` })
+    } catch (e) {
+      setResult({ text: userMessage(e), error: true })
+    } finally {
+      setImporting(false)
+    }
+  }
   // a drop from before this screen opened was already said where it was made
   const openedAt = useRef(Date.now())
   useEffect(() => {
@@ -277,7 +298,12 @@ export function Library({ added }: { added?: { results: DropResult[]; at: number
         actions={
           <>
             {busy && <Spinner />}
-            <PickFiles kind="primary" label="Add files" icon={<Icon name="plus" />} onFiles={add} />
+            <PickFiles kind={demo && tab === 'videos' ? 'secondary' : 'primary'} label="Add files" icon={<Icon name="plus" />} onFiles={add} />
+            {demo && tab === 'videos' && (
+              <Button kind="primary" onClick={() => void importScorePlay()} disabled={importing} data-testid="import-scoreplay">
+                {importing ? <Spinner /> : <Icon name="down" size={16} />} {importing ? 'Importing from ScorePlay' : 'Import from ScorePlay'}
+              </Button>
+            )}
           </>
         }
       />
@@ -302,8 +328,9 @@ export function Library({ added }: { added?: { results: DropResult[]; at: number
           </button>
         ))}
       </div>
+      {demo && tab === 'videos' && <Sources />}
       <div className="lib-sub">
-        <span>{ABOUT[tab]}</span>
+        <span>{demo && tab === 'videos' ? 'Plain cuts from ScorePlay. Your editor finds moments in them through Twelve Labs.' : ABOUT[tab]}</span>
         {folder && (
           <Button kind="tertiary" size="small" onClick={() => reel.app.openFolder(folder.dir)}>
             Show in {FOLDER_APP}
