@@ -288,6 +288,8 @@ export interface ProjectJson {
     startAt?: number
     level?: string
     automation?: unknown[]
+    /** seconds the song takes to come in and to go out (absent: the engine's 0.6 s and 1.5 s) */
+    fadeIn?: number
     fadeOut?: number
   }
   broll?: {

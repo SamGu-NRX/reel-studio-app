@@ -22,7 +22,7 @@ import { ShowMeHow, type Tab } from './ShowMeHow'
 import { useNoteAttachments } from '../components/NoteAttachments'
 import { NotesLog, useVersionRows, type FirstState } from '../components/NotesLog'
 import { Composer, region, type Chip } from '../components/Composer'
-import { Timeline, type TimelineMark } from '../components/Timeline'
+import { Timeline, type TimelineAudio, type TimelineMark } from '../components/Timeline'
 import { Outs } from '../components/Outs'
 import { PopMenu } from '../components/PopMenu'
 import { TitleBarSlot } from '../components/titlebar'
@@ -83,6 +83,10 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   // what a note's job has said it was doing, in order, for Steps
   const [steps, setSteps] = useState<string[]>([])
   const [drawer, setDrawer] = useState<Tab | null>(null)
+  // while Edit it myself is open: what the timeline draws for its Sound tab, and the sound picked there or on it
+  const [audio, setAudio] = useState<TimelineAudio | null>(null)
+  const [sound, setSound] = useState<string | null>(null)
+  const [reveal, setReveal] = useState(0)
   // the waiting hand edit Edit it myself is changing (its Edit in the log), or null for a new one
   const [handId, setHandId] = useState<string | null>(null)
   const [stage, setStage] = useState<HTMLElement | null>(null)
@@ -640,7 +644,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const actions = (
     <>
       {hasVersions && (
-        <Button kind="tertiary" className={drawer ? 'on' : undefined} aria-pressed={!!drawer} onClick={() => (drawer ? (setDrawer(null), setHandId(null), setPreview(null)) : openDrawer('cut'))} data-testid="edit-myself">
+        <Button kind="tertiary" className={drawer ? 'on' : undefined} aria-pressed={!!drawer} onClick={() => (drawer ? (setDrawer(null), setHandId(null), setPreview(null), setSound(null)) : openDrawer('cut'))} data-testid="edit-myself">
           <Icon name="sliders" size={16} /> Edit it myself
         </Button>
       )}
@@ -779,7 +783,13 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     transport={transport}
                     duration={duration}
                     words={timeline && timeline.video === shownVideo ? timeline.words : []}
-                    marks={marks}
+                    marks={drawer ? [] : marks}
+                    audio={drawer ? audio : null}
+                    selectedSound={sound}
+                    onSound={(k) => {
+                      setSound(k)
+                      setReveal((n) => n + 1)
+                    }}
                     onRange={(r) => {
                       if (!hasVersions || aiOff) return
                       setChip(r)
@@ -810,9 +820,14 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                 setDrawer(null)
                 setHandId(null)
                 setPreview(null)
+                setSound(null)
               }}
               onPreview={setPreview}
               onTab={(t) => setDrawer(t)}
+              sound={sound}
+              reveal={reveal}
+              onSound={setSound}
+              onAudio={setAudio}
             />
           ) : (
             <>

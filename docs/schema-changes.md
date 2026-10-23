@@ -205,3 +205,9 @@ Existing project shapes remain valid. New shapes can require a newer engine, as 
   at `31382f9`, reject clip items and source-time b-roll anchors with `BAD_PROJECT` because they
   require word-range fields. They must refuse rather than ignore the clips and render a different
   video. Open these projects in a build that supports multi-source cuts.
+
+## 2026-10-23 (music fade-in)
+
+- `music.fadeIn` (number, 0 to 30 seconds, absent = 0.6, or 0.05 with `level: "loud-intro"`): how long the song takes
+  to come in. Below 0.01 s it is 0.01 s, so the first sample never clicks. Until now the fade-in was fixed; `fadeOut`
+  was already a field. Set by "Edit it myself" (0 to 2 seconds there).

@@ -154,6 +154,7 @@
             }
           }
         },
+        "fadeIn": { "type": "number", "minimum": 0, "maximum": 30, "description": "seconds the song takes to come in (absent = 0.6, or 0.05 with level loud-intro)" },
         "fadeOut": { "type": "number", "minimum": 0, "maximum": 30 }
       }
     },

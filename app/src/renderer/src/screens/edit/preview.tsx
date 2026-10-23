@@ -55,11 +55,22 @@ export function SoundCues({ player, cues }: { player: PlayerHandle; cues: { at: 
   return null
 }
 
-/** One sound on its own, for the preview button beside each sound and song. Starting another stops this one. */
-export function useAudition(): { playing: string | null; play: (url: string, volume?: number, from?: number) => void; stop: () => void } {
+/**
+ * One sound on its own, for the preview button beside each sound and song. Starting another stops this one.
+ * `id` says which button is playing (default: the file), so two sounds that use the same file are told apart.
+ * Playing the one already playing stops it, unless `restart` (a level just changed: hear it at the new one).
+ */
+export function useAudition(): {
+  playing: string | null
+  play: (url: string, volume?: number, opts?: { id?: string; restart?: boolean }) => void
+  stop: () => void
+} {
   const el = useRef<HTMLAudioElement | null>(null)
   const [playing, setPlaying] = useState<string | null>(null)
+  // each play() gets a number: a start that fails or ends after another began must not clear the newer one
+  const run = useRef(0)
   const stop = () => {
+    run.current++
     el.current?.pause()
     setPlaying(null)
   }
@@ -70,16 +81,18 @@ export function useAudition(): { playing: string | null; play: (url: string, vol
   return {
     playing,
     stop,
-    play: (url, volume = 1, from = 0) => {
+    play: (url, volume = 1, { id = url, restart = false } = {}) => {
       const a = (el.current ??= new Audio())
       a.pause()
-      if (playing === url) return setPlaying(null)
+      if (playing === id && !restart) return setPlaying(null)
       a.src = url
       a.volume = volume
-      a.currentTime = from
-      a.onended = () => setPlaying(null)
-      setPlaying(url)
-      void a.play().catch(() => setPlaying(null))
+      a.currentTime = 0
+      const n = ++run.current
+      const done = () => n === run.current && setPlaying(null)
+      a.onended = done
+      setPlaying(id)
+      void a.play().catch(done)
     }
   }
 }

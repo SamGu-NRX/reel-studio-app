@@ -4,6 +4,7 @@ import type { ChatMessage, DropResult, EditFact, ProjectJson, VersionInfo, Word 
 import { keptIds } from './cut'
 import { CAPTION_PRESETS, presetOf } from './caption-presets'
 import { isMirrored } from './mirror'
+import { gainOf, levelChange, momentKey, musicFades, secondsText } from './sfx'
 
 type Style = Record<string, unknown>
 
@@ -56,7 +57,12 @@ export function describeChange(before: ProjectJson, patch: Partial<ProjectJson>,
     if (m.enabled === false || !m.track) {
       if (before.music?.enabled && before.music.track) parts.push('no music')
     } else if (m.track !== before.music?.track || before.music?.enabled === false) parts.push(`new song "${name(m.track)}"`)
-    else if (m.level && m.level !== before.music?.level) parts.push(m.level === 'quiet' ? 'quieter music' : 'music volume changed')
+    else {
+      if (m.level && m.level !== before.music?.level) parts.push(m.level === 'quiet' ? 'quieter music' : 'music volume changed')
+      const [a, b] = [musicFades(before.music), musicFades(m)]
+      if (b.fadeIn !== a.fadeIn) parts.push(b.fadeIn === 0 ? 'music starts at once' : `music fades in over ${secondsText(b.fadeIn)}`)
+      if (b.fadeOut !== a.fadeOut) parts.push(b.fadeOut === 0 ? 'music stops at the end' : `music fades out over ${secondsText(b.fadeOut)}`)
+    }
   }
   if (patch.broll) {
     const n = patch.broll.length - (before.broll?.length ?? 0)
@@ -64,10 +70,17 @@ export function describeChange(before: ProjectJson, patch: Partial<ProjectJson>,
     if (n < 0) parts.push(n === -1 ? 'removed a picture' : `removed ${-n} pictures`)
   }
   if (patch.sfx) {
-    const n = patch.sfx.length - (before.sfx?.length ?? 0)
-    if (n > 0) parts.push(n === 1 ? 'added a sound effect' : `added ${n} sound effects`)
-    else if (n < 0) parts.push(n === -1 ? 'removed a sound effect' : `removed ${-n} sound effects`)
-    else parts.push('changed the sound effects')
+    const was = new Map((before.sfx ?? []).map((x) => [momentKey(x.at), x]))
+    const now = new Set(patch.sfx.map((x) => momentKey(x.at)))
+    const added = patch.sfx.filter((x) => !was.has(momentKey(x.at))).length
+    const removed = [...was.keys()].filter((k) => !now.has(k)).length
+    const kept = patch.sfx.flatMap((x) => (was.has(momentKey(x.at)) ? [[was.get(momentKey(x.at))!, x] as const] : []))
+    const swapped = kept.filter(([a, b]) => a.sound !== b.sound).length
+    const levelled = kept.filter(([a, b]) => a.sound === b.sound && gainOf(a) !== gainOf(b))
+    if (added) parts.push(added === 1 ? 'added a sound effect' : `added ${added} sound effects`)
+    if (removed) parts.push(removed === 1 ? 'removed a sound effect' : `removed ${removed} sound effects`)
+    if (swapped) parts.push(swapped === 1 ? 'a different sound effect' : `${swapped} different sound effects`)
+    if (levelled.length) parts.push(levelled.length === 1 ? levelChange(...levelled[0]) : `${levelled.length} sound effects louder or quieter`)
   }
   if (patch.cover) {
     if ((patch.cover.text ?? null) !== (before.cover?.text ?? null)) parts.push(patch.cover.text ? 'new words on the cover' : 'no words on the cover')

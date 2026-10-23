@@ -14,7 +14,7 @@ some points" at a +13 dB gap; +19 dB passed. So the mixer:
   4. ducks under speech: the music comes up a little in the pauses and dips just before the voice
      returns, so a word is never fighting a swell
   5. applies the project's word-anchored automation (gainDb between two words)
-  6. fades in gently (never a loud first frame) and fades out at the end
+  6. fades in gently (never a loud first frame) and fades out at the end, over `fadeIn` and `fadeOut`
   7. adds the project's sound effects (sfx.py), placed and levelled against the same voice
   8. two-pass loudness: measure the mix, apply a static gain to -14 LUFS, true-peak limit
      (4x oversampled), measure again and correct the residual
@@ -54,6 +54,7 @@ LIFT_CAP = 6.0            # quiet bars lifted at most this much
 CUT_CAP = 12.0            # loud bars cut at most this much
 MUSIC_EQ = "highpass=f=90,lowshelf=f=160:g=-6"
 BEAT_MAX_SHIFT = 0.12
+DECLICK_S = 0.01          # the shortest fade-in: long enough that the first sample does not click
 
 
 # --- decoding ----------------------------------------------------------------------------------
@@ -333,6 +334,16 @@ def normalize(ctx, x: np.ndarray, work: Path, tag: str = "mix", expected_silence
     return y, {"inputLUFS": round(I0, 2), "pass1LUFS": round(I1, 2), "finalLUFS": round(I2, 2)}
 
 
+def fade_lengths(mcfg: dict) -> tuple[float, float]:
+    """(fade-in, fade-out) of the bed in seconds. Without `fadeIn` the song comes in over 0.6 s, or at once
+    under loud-intro, whose point is a loud first beat. Even `fadeIn: 0` keeps DECLICK_S: a song cut in
+    mid-waveform starts with a click."""
+    level = mcfg.get("level") or "under-voice"
+    fi = mcfg.get("fadeIn")
+    fi = (0.05 if level == "loud-intro" else 0.6) if fi is None else max(DECLICK_S, float(fi))
+    return fi, float(mcfg.get("fadeOut", 1.5) or 0.0)
+
+
 def build_audio(ctx, voice_wav) -> Path:
     """Cut voice wav (output timeline) + project.music + project.sfx -> work/audio/mix-<hash>.wav at -14 LUFS.
     Writes the measured numbers beside the mix (mix-<sig>.json)."""
@@ -401,10 +412,9 @@ def build_audio(ctx, voice_wav) -> Path:
         n = voice.shape[0]
         tb = np.arange(len(g_db)) * HOP * SR
         gain = (10 ** (np.interp(np.arange(n), tb, g_db) / 20)).astype(np.float32)
-        level = mcfg.get("level") or "under-voice"
-        fin = int((0.05 if level == "loud-intro" else 0.6) * SR)
+        fi, fo = fade_lengths(mcfg)
+        fin = min(n, int(fi * SR))
         gain[:fin] *= np.linspace(0, 1, fin, dtype=np.float32)
-        fo = float(mcfg.get("fadeOut", 1.5) or 0.0)
         if fo > 0:
             k = min(n, int(fo * SR))
             gain[n - k:] *= np.linspace(1, 0, k, dtype=np.float32)
