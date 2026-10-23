@@ -292,3 +292,54 @@ variation.create_variant(folder, 'caption', value='Interrupted caption')
     assert again['project']['post']['caption'] == 'Interrupted caption'
     assert len(project.read_json(tmp_path / 'trials.json')) == 2
     assert project.read_json(tmp_path / trials[0]['parent_snapshot']) == before
+
+
+@pytest.mark.skipif(__import__('os').name == 'nt', reason='Uses POSIX nonblocking lock probe')
+def test_trial_owner_excludes_a_second_engine_process(tmp_path):
+    import subprocess
+    import sys
+    reel(tmp_path)
+    trial_code = r"""
+import sys
+from pathlib import Path
+from reelengine import variation
+original = variation.make_variant
+def pause(parent, variable, *, value=None):
+    print('parent-loaded', flush=True)
+    sys.stdin.readline()
+    return original(parent, variable, value=value)
+variation.make_variant = pause
+variation.create_variant(Path(sys.argv[1]), 'caption', value='Serialized trial')
+"""
+    writer_code = r"""
+import fcntl, sys
+from pathlib import Path
+from reelengine import project
+original = fcntl.flock
+def no_wait(fd, operation):
+    return original(fd, operation | fcntl.LOCK_NB if operation & fcntl.LOCK_EX else operation)
+fcntl.flock = no_wait
+folder = Path(sys.argv[1])
+try:
+    p = project.load(folder)
+    p['version'] = 4
+    project.save(folder, p, touch=False)
+    print('wrote')
+except BlockingIOError:
+    print('blocked')
+"""
+    child = subprocess.Popen([sys.executable, '-c', trial_code, str(tmp_path)],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        assert child.stdout.readline().strip() == 'parent-loaded'
+        writer = subprocess.run([sys.executable, '-c', writer_code, str(tmp_path)],
+                                capture_output=True, text=True, timeout=20, check=True)
+        assert writer.stdout.strip() == 'blocked'
+    finally:
+        _, errors = child.communicate(input='continue\n', timeout=20)
+        assert child.returncode == 0, errors
+    # Once the trial commits, the renderer's version patch sees that new edit.
+    project.update_version(tmp_path, 4)
+    final = project.load(tmp_path)
+    assert final['version'] == 4
+    assert final['post']['caption'] == 'Serialized trial'
