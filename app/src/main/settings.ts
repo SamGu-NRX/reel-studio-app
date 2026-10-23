@@ -13,6 +13,11 @@ export interface Settings {
   updateLatest: RememberedRelease | null
   updateDismissed: Dismissal | null
   firstRunDone: boolean
+  /**
+   * Settings › Advanced › Reset first run: the next launch shows the first run again. firstRunDone stays true, so
+   * that launch still recovers interrupted reels; finishing the first run clears this.
+   */
+  firstRunAgain: boolean
   root: string | null
   fasterExports: boolean
   /** Written by the 0.1.0/0.1.1 local-Claude-Code builds (a one-time automatic AI pick); read once by ai-carryover.ts. */
@@ -31,6 +36,7 @@ export interface Settings {
 
 const DEFAULTS: Settings = {
   firstRunDone: false,
+  firstRunAgain: false,
   root: null,
   fasterExports: false,
   aiAutoPicked: false,
@@ -45,6 +51,12 @@ const DEFAULTS: Settings = {
   sharing: { asked: false, on: false, usage: true, quality: true, posts: true },
   phoneView: 'instagram',
   soundEffects: true
+}
+
+/** Whether this launch shows the first run. `againAtLaunch`: firstRunAgain as it was when the app started, so a
+ * reset takes effect on the next launch and never in the middle of this one. */
+export function showsFirstRun(s: Pick<Settings, 'firstRunDone' | 'firstRunAgain'>, againAtLaunch: boolean): boolean {
+  return !s.firstRunDone || (againAtLaunch && s.firstRunAgain)
 }
 
 export async function loadSettings(): Promise<Settings> {

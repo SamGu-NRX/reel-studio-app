@@ -2,6 +2,7 @@
 // This module never imports electron: index.ts calls initPaths() with the electron values,
 // and tests call it with temp folders.
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 
 export interface PathContext {
@@ -20,12 +21,14 @@ export interface PathContext {
   rootOverride?: string | null
   platform?: NodeJS.Platform
   env?: NodeJS.ProcessEnv
+  /** os.homedir() unless a test gives one */
+  homeDir?: string
 }
 
 let ctx: PathContext | null = null
 
 export function initPaths(c: PathContext): void {
-  ctx = { platform: process.platform, env: process.env, ...c }
+  ctx = { platform: process.platform, env: process.env, homeDir: homedir(), ...c }
 }
 
 export function setRootOverride(root: string | null): void {
@@ -80,6 +83,22 @@ export const stylePath = (): string => join(reelStudioRoot(), 'My style.json')
 export const settingsDir = (): string => need().userDataDir
 export const settingsFile = (): string => join(need().userDataDir, 'settings.json')
 export const modelsDir = (): string => env().REELSTUDIO_MODELS_DIR ?? join(need().userDataDir, 'models')
+export const logsDir = (): string => join(need().userDataDir, 'logs')
+
+/**
+ * The engine's cache of song analysis, logo lookups and picture credits (engine assets.cache_dir). The app passes it
+ * to every engine process, so Settings › Advanced measures and clears the folder the engine really uses. Outside an
+ * isolated profile it is the engine's own default, so an existing cache is kept.
+ */
+export function engineCacheDir(): string {
+  const e = env()
+  if (e.REELENGINE_CACHE_DIR) return resolve(e.REELENGINE_CACHE_DIR)
+  if (e.REELSTUDIO_USER_DATA) return join(settingsDir(), 'engine cache')
+  const home = need().homeDir as string
+  if (isWin()) return join(e.LOCALAPPDATA || join(home, 'AppData', 'Local'), 'ReelStudio', 'cache')
+  if (need().platform === 'darwin') return join(home, 'Library', 'Caches', 'ReelStudio')
+  return join(e.XDG_CACHE_HOME || join(home, '.cache'), 'reelstudio')
+}
 
 // ---- Bundled resources -----------------------------------------------------------------------
 
@@ -200,6 +219,7 @@ export function engineEnv(): NodeJS.ProcessEnv {
   }
   // The engine's cache default ignores Electron's isolated userData directory.
   if (out.REELENGINE_CACHE === undefined && env().REELSTUDIO_USER_DATA) out.REELENGINE_CACHE = settingsDir()
+  out.REELENGINE_CACHE_DIR = engineCacheDir()
   // Only absolute paths: a bare name means "not found", and the engine does its own PATH search.
   if (isAbsolute(ffmpegPath())) out.REELENGINE_FFMPEG = ffmpegPath()
   if (isAbsolute(ffprobePath())) out.REELENGINE_FFPROBE = ffprobePath()

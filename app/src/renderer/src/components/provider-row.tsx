@@ -2,8 +2,8 @@
 // a mark bare at 20 px, the name, one status line and one pill on the right.
 import { useContext, useEffect, useId, useRef, type ReactNode } from 'react'
 import { Icon } from './icons'
-import { SETTINGS, type SettingId } from './settings-index'
-import { SearchHits } from './settings-rows'
+import type { SettingId } from './settings-index'
+import { SearchHits, SettingLabel } from './settings-rows'
 
 export type Tone = 'plain' | 'ok' | 'busy' | 'error'
 
@@ -52,7 +52,7 @@ export function ProviderRow({
       <div className="pv-main">
         <span className="pv-mark">{mark}</span>
         <div className="pv-t">
-          <b>{name ?? (setting ? SETTINGS[setting].label : '')}</b>
+          <b>{name ?? (setting ? <SettingLabel id={setting} /> : '')}</b>
           <span className="pv-live" role={tone === 'error' ? 'alert' : 'status'}>
             <span key={tone} className={`pv-status ${tone}${mounted.current ? ' enter' : ''}`}>
               {status}
