@@ -2,6 +2,15 @@
 
 All additive (optional fields only), per docs/architecture.md section 3. Schema: `engine/reelengine/schema/project.schema.json`.
 
+## 2026-10-23 (beat accents)
+
+- `beatAccents` (boolean, optional): `true` snaps SFX hits and b-roll starts to the nearest detected
+  music beat within 0.12 s, including frame rounding. Missing or `false` preserves existing timing.
+  `cutStyle.preset: "hyper"` also enables accents when present. Disabled music or a track with no
+  detected beats leaves timing unchanged. Beat times follow the song's `startAt` in the mix.
+  A b-roll start cannot precede its anchor word by more than its `leadIn`, or the default card lead.
+  SFX tied to b-roll follow that start. Word-anchored speech cuts and word times never move.
+
 ## 2026-10-17 (engine-core, A1)
 
 - `sources[].rotation`: defined as the CLOCKWISE degrees (0/90/180/270) the stored picture must be turned

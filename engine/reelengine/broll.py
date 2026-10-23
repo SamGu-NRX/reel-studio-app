@@ -42,6 +42,7 @@ from . import placement
 from .compose_util import (EngineError, _get, any_mirrored, ffmpeg_bin, fmt_of, kind_of, layers_dir, load_font, log,
                            open_image, probe, reframe_rect, reframe_vf, report, resolve_asset, run, source_mirrored,
                            source_path, source_spans, word_end, word_ids_between, word_start)
+from .music import accent_time
 
 try:
     from .render_ctx import Layer
@@ -165,7 +166,7 @@ def plan_windows(ctx) -> list[dict]:
             log(f"broll {it.get('id', i)}: anchor {a}..{b} is not in the cut; skipped")
             continue
         lead = float(it.get("leadIn", LEAD) if it.get("leadIn") is not None else LEAD)
-        t0 = max(0.0, s - lead)
+        t0 = accent_time(ctx, max(0.0, s - lead), earliest=max(0.0, s - lead))
         params = it.get("params") or {}
         is_video = _is_video_item(ctx, it)
         hold = params.get("hold")

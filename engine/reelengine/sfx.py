@@ -33,7 +33,7 @@ from typing import Optional
 import numpy as np
 
 from .compose_util import ctx_words, fmt_of, word_start
-from .music import HOP, SR, block_power, decode, lufs, speech_mask
+from .music import HOP, SR, accent_time, block_power, decode, lufs, speech_mask
 
 PACK_DIR = Path(__file__).resolve().parent / "sfx"
 MIN_GAP = 2.0
@@ -101,7 +101,9 @@ def hit_time(ctx, at: dict) -> Optional[float]:
     if t is None:
         return None
     fps = fmt_of(ctx)[2]
-    return round(t * fps) / fps
+    t = round(t * fps) / fps
+    # B-roll has already checked its word lead; snapping again could move its sound off the card.
+    return t if at.get("broll") else accent_time(ctx, t)
 
 
 def plan(ctx) -> tuple[list, list]:
