@@ -93,7 +93,7 @@ def cmd_render(args):
     return render.run(_project(args), draft=args.draft, window=args.window,
                       root=Path(args.root) if args.root else None, verify=not args.no_verify,
                       first_look=args.first_look, music=args.music, cover=not args.no_cover,
-                      project_file=_in_work(args, "project_file"), out=_in_work(args, "out"))
+                      project_file=_in_work(args, "project_file"), out=_in_work(args, "out"), job_id=args.job_id)
 
 
 def cmd_cover(args):
@@ -120,7 +120,12 @@ def cmd_verify(args):
 def cmd_frames(args):
     from . import frames
     times = [float(t) for t in args.times.split(",") if t.strip()]
-    return frames.run(_project(args), times, file=Path(args.file) if args.file else None)
+    return frames.run(_project(args), times, render_id=args.render_id, file=Path(args.file) if args.file else None)
+
+
+def cmd_inspect_render(args):
+    from . import render_identity
+    return render_identity.inspect(_project(args), args.render_id)
 
 
 def cmd_captions(args):
@@ -367,6 +372,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--music", help="Library/... song for --first-look when the project has none")
     sp.add_argument("--project-file", help="render this project document instead of project.json")
     sp.add_argument("--out", help="folder for a draft (default versions/preview)")
+    sp.add_argument("--job-id", help="the app job this render belongs to (recorded in its receipt)")
     sp = add("cover-candidates", cmd_cover_candidates, "the best cover frame near each moment, as stills")
     sp.add_argument("--at", required=True, help="raw-take seconds t1,t2,...")
     sp.add_argument("--source")
@@ -378,9 +384,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("verify", cmd_verify, "check an mp4")
     sp.add_argument("file")
     sp.add_argument("--expect-duration", type=float)
-    sp = add("frames", cmd_frames, "extract frames from the latest render")
+    sp = add("frames", cmd_frames, "extract frames from one render")
+    sp.add_argument("--render-id")
     sp.add_argument("--times", required=True)
     sp.add_argument("--file")
+    sp = add("inspect-render", cmd_inspect_render, "one render's own reports")
+    sp.add_argument("--render-id", required=True)
     add("captions", cmd_captions, "write the caption file only (debug)")
     add("doctor", cmd_doctor, "check the install")
     sp = add("search-images", cmd_search_images, "find freely licensed pictures on the web")

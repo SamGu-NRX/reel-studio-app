@@ -48,8 +48,13 @@ export interface Broll {
 export interface Zoom { anchor: WordAnchor; scale: number; [k: string]: unknown }
 export interface Cover { atSourceTime: number; source: string; text: string | null; [k: string]: unknown }
 export interface Post { caption: string; hashtags: string[]; keywords: string[]; [k: string]: unknown }
+/** One thing an edit changed (engine project.net_changes): `kind` is the project.json path. */
+export interface EditFact { kind: string; field?: string; id?: string; before: unknown; after: unknown }
+/** What the render that made a version changed since the version before it (docs/schema-changes.md). */
+export interface EditReceipt { jobId: string | null; renderId: string; version: number; facts: EditFact[] }
 export interface NoteEntry {
-  version: number; text: string; applied: string[]; at: string;
+  /** the version this note made; absent for a note whose edit ended where it started (docs/schema-changes.md) */
+  version?: number; text: string; applied: string[]; at: string;
   /** files the user attached to this note (`work/assets/attach-*`), 0.1.2 */
   attachments?: string[];
   /** the app's job id for this note, and what the app still has to tell the user once it is saved:
@@ -58,6 +63,7 @@ export interface NoteEntry {
   reply?: string;
   styleRulesAdded?: string[];
   styleSuggestions?: string[];
+  receipt?: EditReceipt;
 }
 
 export interface Project {
@@ -218,6 +224,13 @@ export function projectBytes(p: Project): string {
   if (problems.length) throw new ProjectError(`Refusing to save invalid project: ${problems.join('; ')}`, problems);
   p.updatedAt = new Date().toISOString();
   return JSON.stringify(p, null, 2) + '\n';
+}
+
+/** Same video and same post: everything but the bookkeeping fields (engine project.edit_signature, plus `post`). */
+export function sameEdit(a: Project, b: Project): boolean {
+  const edit = ({ updatedAt: _u, createdAt: _c, version: _v, notes: _n, ...rest }: Project) => JSON.stringify(rest,
+    (_k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([x], [y]) => (x < y ? -1 : 1))) : v);
+  return edit(a) === edit(b);
 }
 
 /** Always <project>/work/transcript.json: `transcript.file` is never joined. */

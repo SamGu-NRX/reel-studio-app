@@ -220,16 +220,17 @@ async function startNote(slug: string, { id: noteId, text, attachments, moment }
   return jobs.start(
     slug,
     'note',
-    async (emit, signal, { owner }) => {
+    async (emit, signal, { id: jobId, owner }) => {
       await unstage(dir, noteStagingDir(dir), attachments)
       const before = (await readProject(slug)).version ?? 0
-      // saved under its queue entry's id (note-queue.ts); the app asks before anything goes into My style
-      const opts = { attachments: attachments.map((f) => f.asset), id: noteId, saveStyleRules: false, ...(owner ? { owner } : {}) }
+      // saved under its queue entry's id (note-queue.ts), with the job's id in its version's receipt; the app asks
+      // before anything goes into My style
+      const opts = { attachments: attachments.map((f) => f.asset), id: noteId, jobId, saveStyleRules: false, ...(owner ? { owner } : {}) }
       // the AI reads the moment in the note text: "At 0:08 (around "...", words w18, w19): cut this part"
       const r: AgentResult = await ai.applyNote(dir, aiNoteText(text, moment), (e) => emit(e), signal, opts)
       const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
       const reply = await replyAskingAboutStyle(r, r.summary + extra)
-      return { ...reply, outcome: r.version > before ? 'done' : 'failed', made: { by: 'note', summary: text } }
+      return { ...reply, outcome: (r.version ?? 0) > before ? 'done' : 'failed', made: { by: 'note', summary: text } }
     },
     { note: text || attachments.map((f) => f.name).join(', '), record }
   )
@@ -412,7 +413,7 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
 
 /** The editor's reply into the chat, then one "Remember this for next time?" per My style rule the AI
  * proposed or saved (a saved one is taken out again until the user says Yes): main/style-consent.ts. */
-async function replyAskingAboutStyle(r: AgentResult, summary: string): Promise<{ summary: string; version: number; chat: ChatLine[] }> {
+async function replyAskingAboutStyle(r: AgentResult, summary: string): Promise<{ summary: string; version?: number; chat: ChatLine[] }> {
   const c = styleConsent(summary, r.styleRulesAdded, r.styleSuggestions)
   if (c.undo.length) {
     const rules = await ai.styleRules().catch(() => [])
@@ -437,11 +438,11 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
   if (v.draft) {
     // A preview is not the full-quality file: make it first, as a normal job (progress, Stop, and
     // nothing else can run on this video meanwhile) (review 25).
-    jobs.start(slug, 'rerender', async (emit, signal, { owner }) => {
+    jobs.start(slug, 'rerender', async (emit, signal, { id, owner }) => {
       emit({ type: 'status', message: 'Making the full-quality video', pct: 1, phase: 'final' })
       const r: any = await runEngine(
         'render',
-        owned(['--project', dir], owner),
+        owned(['--project', dir, '--job-id', id], owner),
         (pr) => emit({ type: 'status', message: pr.message || 'Making the full-quality video', pct: pr.pct, phase: 'final' }),
         signal
       )
@@ -755,7 +756,7 @@ function registerIpc(): void {
   handle('projects:rerender', async (_e, slug: string, change?: string, label?: string) => {
     const dir = projectDir(slug)
     const words = typeof label === 'string' && label.trim() ? label.trim().slice(0, 60) : 'Updating your video'
-    const jobId = jobs.start(slug, 'rerender', async (emit, signal, { owner }) => {
+    const jobId = jobs.start(slug, 'rerender', async (emit, signal, { id, owner }) => {
       emit({ type: 'status', message: words, pct: 1, phase: 'final', aggregate: true })
       const look: any = await runEngine(
         'render',
@@ -768,7 +769,7 @@ function registerIpc(): void {
       emit({ type: 'render', version: Number(look?.version ?? 0), draft: true, ...(look?.file ? { file: String(look.file) } : {}) })
       const r: any = await runEngine(
         'render',
-        owned(['--project', dir], owner),
+        owned(['--project', dir, '--job-id', id], owner),
         (p) => {
           if (p.stage === 'render') emit({ type: 'status', message: words, pct: 30 + Math.round(p.pct * 0.7), phase: 'final', aggregate: true })
         },

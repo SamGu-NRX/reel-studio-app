@@ -33,6 +33,19 @@ export interface VersionInfo {
   draft: boolean
   cover: string | null
   createdAt: string
+  /** what this version changed since the one before, from `versions/vN/receipts.json`; absent for versions made before receipts existed */
+  facts?: EditFact[]
+  /** a `vN` rendered before receipts existed (its render.json has no renderId): its tooltip is the chat reply */
+  beforeReceipts?: true
+}
+
+/** One thing an edit changed (engine project.net_changes): `kind` is the project.json path. */
+export interface EditFact {
+  kind: string
+  field?: string
+  id?: string
+  before: unknown
+  after: unknown
 }
 
 export interface Word {
@@ -213,8 +226,9 @@ export interface ProjectJson {
    * (the engine searches 0.2 s around it). Neither: the engine searches 1.5 s around atSourceTime. */
   cover?: { atSourceTime: number; source: string; text: string | null; exact?: boolean | null; manual?: boolean | null }
   post?: { caption: string; hashtags: string[]; keywords: string[] }
-  /** `id`: the queued note's id (docs/schema-changes.md) */
-  notes?: { id?: string; version: number; text: string; applied: string[]; at: string }[]
+  /** `id`: the queued note's id. `version` is absent for a note that made no version: it changed nothing, or its edit
+   * ended where it started (docs/schema-changes.md) */
+  notes?: { id?: string; version?: number; text: string; applied: string[]; at: string }[]
   [k: string]: unknown
 }
 

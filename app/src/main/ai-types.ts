@@ -13,7 +13,8 @@ export interface UserFacingError {
 
 export interface AgentResult {
   summary: string
-  version: number
+  /** Absent when a note changed nothing (no edit, no saved My style rule) or its edit ended where it started: its reply belongs to no version. */
+  version?: number
   styleRulesAdded: string[]
   changed: string[]
   /** Rules the AI PROPOSES for My style, not saved (stream quality2). The app asks before saving. */
@@ -104,7 +105,7 @@ export interface AI {
     note: string,
     onEvent: (e: AgentEvent) => void,
     signal?: AbortSignal,
-    opts?: { attachments?: string[]; id?: string; saveStyleRules?: boolean; owner?: string }
+    opts?: { attachments?: string[]; id?: string; saveStyleRules?: boolean; owner?: string; jobId?: string }
   ): Promise<AgentResult>
   /** The words are a whole-reel setting applyNote does without the model ("smaller captions"). */
   wholeReelSetting(projectDir: string, note: string): Promise<boolean>

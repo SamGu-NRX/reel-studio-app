@@ -9,7 +9,7 @@ import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProo
 import { planFastNote } from './fastnote';
 import { AttachmentInfo, attachmentStills, attachmentsSection, earlierUnplaced, placedAssets, validateAttachments } from './attachments';
 import {
-  Analysis, NoteEntry, PROJECT_FILE, Project, withDefaults, Transcript, WordAnchor, hasTranscript, loadProject, normalizeAnalysis, normalizeKeep, saveProject,
+  Analysis, EditReceipt, NoteEntry, PROJECT_FILE, Project, withDefaults, Transcript, WordAnchor, hasTranscript, loadProject, normalizeAnalysis, normalizeKeep, sameEdit, saveProject,
   snapshotVersion, LIBRARY_FOLDERS, anchorText, writeFileAtomic, keptWords, projectBytes, versionDir,
 } from './project';
 import { extractJson } from './providers/cli';
@@ -297,6 +297,17 @@ export interface ApplyNoteOptions {
   /** false: a rule the note asked to remember is only returned (styleRulesAdded), the host asks
    * first; default true saves it to My style with the note */
   saveStyleRules?: boolean;
+  /** the app's job id, recorded in the receipt of the version this note makes */
+  jobId?: string;
+}
+
+/** The reply to a note whose edit ended where it started (applyNote). */
+const UNDONE_REPLY = "That left your video the same as before, so I didn't make a new version.";
+
+/** The receipt of the version a note made: only a final render made one (a failed final falls back to a draft). */
+function finalReceipt(ctx: ToolContext): EditReceipt | undefined {
+  const last = ctx.state.renders.at(-1);
+  return last && !last.draft ? last.result?.receipt : undefined;
 }
 
 /** What a note says in notes.md: its words, or what was attached when it has none. */
@@ -335,7 +346,7 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   const begin = async (): Promise<ToolContext> => {
     const file = path.join(dir, 'edit.json');
     await writeFileAtomic(file, base);
-    return { ...newCtx(deps, projectDir, provider, onEvent, signal, 2), userNote: note, note: { id, file, dir } };
+    return { ...newCtx(deps, projectDir, provider, onEvent, signal, 2), userNote: note, note: { id, file, dir }, jobId: opts.jobId };
   };
   const label = noteLabel(note, attached);
   try {
@@ -372,9 +383,17 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     // A note that stopped before finish (step limit, or replies with no tool call) is not applied, and
     // says so when that throws work away. With nothing to throw away it gets the "not sure" reply.
     if (r.stoppedBy !== 'finish' && !nothing) throw unfinished(ctx.state);
+    // An edit that ends where it started (undone, or set to what it already was) is no change: never repeat its claim
+    // and make no version. A My style rule the note saved changes no video, so it only adds its line to the reply. The
+    // note's previews went to its own folder, so the video the app shows was never touched.
+    const undone = ctx.state.changed.size > 0 && sameEdit(p0, await loadProject(projectDir, ctx.note!.file));
+    if (undone) ctx.state.changed.clear();
+    // only a reply that is nothing but a question passes: "I cut the intro. Want more?" still claims the cut
+    const question = undone && /^[^.!]*\?$/.test(r.finished?.trim() ?? '') ? r.finished : null;
     // a note that changed nothing is saved too: its id in project.json is how the app's note queue knows it ran
     const summary = nothing
       ? r.finished || 'I looked, but I was not sure what to change. Could you say it another way?'
+      : undone ? withStyleEcho(question ?? UNDONE_REPLY, ctx.state)
       : withStyleEcho(r.finished || 'I saved your preference.', ctx.state);
     // this note's files, plus files attached to an earlier note that THIS note put in the video ("when I say X")
     const placedNow = placedAssets(await loadProject(projectDir, ctx.note!.file));
@@ -413,9 +432,12 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
   const version = final?.version ?? baseVersion;
   const p = await loadProject(ctx.projectDir, ctx.note!.file);
   const { styleRulesAdded, styleSuggestions } = ctx.state;
+  // A note that made no version saves no `version`, and its reply carries none, so it never becomes a version's
+  // tooltip (docs/schema-changes.md). One that did stores its final render's receipt.
+  const receipt = final ? finalReceipt(ctx) : undefined;
   const entry: NoteEntry = {
-    version, text: n.text, applied: [...ctx.state.changed], at: new Date().toISOString(),
-    ...(n.attachments.length ? { attachments: n.attachments } : {}),
+    ...(final ? { version } : {}), text: n.text, applied: [...ctx.state.changed], at: new Date().toISOString(),
+    ...(n.attachments.length ? { attachments: n.attachments } : {}), ...(receipt ? { receipt } : {}),
     id: ctx.note!.id, reply: n.summary,
     ...(styleRulesAdded.length ? { styleRulesAdded } : {}), ...(styleSuggestions.length ? { styleSuggestions } : {}),
   };
@@ -443,7 +465,7 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
   } catch {
     // the note is saved: a My style write or a listener that fails now must not report it as failed
   }
-  return { summary: n.summary, version, styleRulesAdded, styleSuggestions, changed: [...ctx.state.changed] };
+  return { summary: n.summary, ...(final ? { version } : {}), styleRulesAdded, styleSuggestions, changed: [...ctx.state.changed] };
 }
 
 // ---------------------------------------------------------------- idea -> script
