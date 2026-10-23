@@ -131,7 +131,8 @@ export interface CreateAIOptions {
   openaiBaseURL?: string;
   anthropicBaseURL?: string;
   /** Force a specific model provider (tests). */
-  providerOverride?: ModelProvider;
+  /** Tests: the model every role uses, or one per role. */
+  providerOverride?: ModelProvider | ((role: ModelRole) => ModelProvider);
   /** The person's model per role (the app's Settings › Editor › Models), read at the start of each job. */
   roleModels?: () => RoleModels | Promise<RoleModels>;
   finalRender?: boolean;
@@ -344,7 +345,7 @@ export function createAI(opts: CreateAIOptions) {
 
   /** The active editor, asking for `role`'s model. */
   async function modelProvider(role: ModelRole = 'editor'): Promise<ModelProvider | null> {
-    if (opts.providerOverride) return opts.providerOverride;
+    if (opts.providerOverride) return typeof opts.providerOverride === 'function' ? opts.providerOverride(role) : opts.providerOverride;
     const st = await active();
     const s = await settings();
     const chosen = modelForRole(st.id, role, await roleChoices());
@@ -563,7 +564,11 @@ export function createAI(opts: CreateAIOptions) {
       }));
     },
     async applyNote(projectDir: string, note: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: editor.ApplyNoteOptions & { owner?: string } = {}): Promise<AgentResult> {
-      return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => editor.applyNote(d, await modelProvider(), projectDir, note, onEvent, signal, opts)));
+      return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => {
+        // "Double-check each edit" reviews with its own role's model
+        const checker = opts.checkEdit ? { checker: await modelProvider('checker') } : {};
+        return editor.applyNote({ ...d, ...checker }, await modelProvider(), projectDir, note, onEvent, signal, opts);
+      }));
     },
     /** True when applyNote would take the no-model fast path for these words ("smaller captions"):
      * a setting for the whole reel. The app asks before adding a moment, which would hide it. */

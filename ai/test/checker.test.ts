@@ -449,3 +449,19 @@ it.each(['e.g.', 'i.e.', 'approx.', 'etc.'])('does not count %s as a sentence en
   expect(problemTextIssue(`The photo, ${abbreviation} the flour bag, is missing. Add it back.`)).toBeNull();
   expect(problemTextIssue(`The photo, ${abbreviation} the flour bag, is missing. Add it back. Keep the cut.`)).toBe('at most 2 sentences');
 });
+
+it('fails if the check asks the editor\'s model instead of the "Checks each edit" model, or a repair asks the checker\'s', async () => {
+  const { dir, host } = await noteProject();
+  // one Roles per role: the editor's scripts no checker replies and the checker's no edits, so a call to the wrong one throws
+  const editor = new Roles([[CUT, call('render_draft')], [call('finish', { summary_for_user: 'I cut the flour part.' })], [call('set_caption_style', { size: 90 })], [call('finish', { summary_for_user: 'I cut it and fixed the subtitles.' })]], []);
+  const checking = new Roles([], [fix('The subtitles are too big', 'make the subtitles smaller'), pass()]);
+  let disposed = 0;
+  checking.dispose = () => void disposed++;
+  const ai = createAI({ host, settingsDir: tmpDir('settings '), providerOverride: (role) => (role === 'checker' ? checking : editor) });
+  await ai.applyNote(dir, NOTE, () => {}, undefined, CHECK);
+  expect(checking.checkerRequests).toHaveLength(2);
+  expect(checking.editorRequests).toHaveLength(0);
+  expect(editor.checkerRequests).toHaveLength(0);
+  expect(editor.editorRequests.length).toBeGreaterThanOrEqual(3); // the note's two turns and the repair's
+  expect(disposed).toBe(1);
+});

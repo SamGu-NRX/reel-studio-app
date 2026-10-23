@@ -377,15 +377,18 @@ async function checkAndRepair(deps: EditorDeps, provider: ModelProvider, ctx: To
   const system = deps.prompts.render('checker');
   const rounds: CheckRound[] = [];
   let tokens = 0; let repairs = 0; let summary: string | null = null;
-  const counted: ModelProvider = {
-    id: provider.id, model: provider.model, supportsImages: provider.supportsImages,
-    dispose: () => provider.dispose?.(),
+  const count = (p: ModelProvider): ModelProvider => ({
+    id: p.id, model: p.model, supportsImages: p.supportsImages,
+    dispose: () => p.dispose?.(),
     complete: async (req) => {
-      const res = await provider.complete(req);
+      const res = await p.complete(req);
       tokens += effectiveTokens(res.usage, req.system.length + JSON.stringify(req.messages).length);
       return res;
     },
-  };
+  });
+  // the review asks the "Checks each edit" model (Settings › Editor › Models); a repair is an edit, so the editor's
+  const counted = count(provider);
+  const checking = count(deps.checker ?? provider);
   const done = (verdict: CheckRecord['verdict'], error?: string) => ({
     record: { verdict, repairs, rounds, ...(error ? { error } : {}), cost: { tokens, seconds: Math.round((Date.now() - started) / 100) / 10 } },
     summary,
@@ -406,7 +409,7 @@ async function checkAndRepair(deps: EditorDeps, provider: ModelProvider, ctx: To
     }
     let asked: Awaited<ReturnType<typeof askChecker>>;
     try {
-      asked = await askChecker(counted, system, await checkerEvidence(ctx, note, candidate, attachments.assets), candidate.result?.renderId ?? null, signal);
+      asked = await askChecker(checking, system, await checkerEvidence(ctx, note, candidate, attachments.assets), candidate.result?.renderId ?? null, signal);
     } catch (e: any) {
       if (signal?.aborted) throw e;
       await undoRepair?.();
@@ -557,7 +560,9 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     const question = undone && /^[^.!]*\?$/.test(r.finished?.trim() ?? '') ? r.finished : null;
     // Settings > "Double-check each edit": a checker reviews a note that changed the edit before its final render
     const review = !opts.checkEdit || !ctx.state.changed.size ? null : await checkAndRepair(deps, provider, ctx, label, p0,
-      { files, images, assets: [...attached, ...earlier].map((a) => a.asset) }, onEvent, signal);
+      { files, images, assets: [...attached, ...earlier].map((a) => a.asset) }, onEvent, signal)
+      // a checker model of its own only asked (askChecker), so no agent run disposed of it
+      .finally(() => (deps.checker && deps.checker !== provider ? deps.checker.dispose?.() : undefined));
     const said = review?.summary ?? honestSummary(r, ctx.state) ?? 'I saved your preference.';
     // a note that changed nothing is saved too: its id in project.json is how the app's note queue knows it ran
     const summary = nothing
