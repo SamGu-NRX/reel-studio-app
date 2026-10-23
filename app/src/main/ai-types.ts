@@ -124,6 +124,8 @@ export interface AI {
   removeConnection?(id: string): Promise<void>
   setConnectionImages?(id: string, supportsImages: boolean): Promise<void>
   connectionModels?(q: { kind: ConnectionInfo['kind']; baseURL: string; key?: string; id?: string }): Promise<{ models: string[]; suggested: string | null; needsKey: boolean }>
+  /** One small-model call that rewords a version's title and summary; null when the connection has no small model. Optional: older packages lack it. */
+  rewordVersion?(text: { title: string; summary: string }, signal?: AbortSignal): Promise<{ title: string; summary: string } | null>
   /** Mock only: the sign-in window "opened" (tests flip the mock's state instead of opening a terminal). */
   mockClaudeSignInOpened?(): void
 }

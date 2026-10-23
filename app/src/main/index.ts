@@ -52,6 +52,7 @@ import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { createJobManager } from './jobs'
 import { createNoteQueue, type NoteToRun } from './note-queue'
 import { withRenderSlot } from './render-slot'
+import { titleVersion } from './version-title'
 import { createLiveVideos } from './live-video'
 import { replyChat, styleConsent, type ChatLine } from './style-consent'
 import type { AgentResult } from './ai-types'
@@ -228,6 +229,11 @@ async function startNote(slug: string, { id: noteId, text, attachments, moment }
       const opts = { attachments: attachments.map((f) => f.asset), id: noteId, jobId, saveStyleRules: false, ...(owner ? { owner } : {}) }
       // the AI reads the moment in the note text: "At 0:08 (around "...", words w18, w19): cut this part"
       const r: AgentResult = await ai.applyNote(dir, aiNoteText(text, moment), (e) => emit(e), signal, opts)
+      if (r.changed.length && r.version !== undefined && ai.rewordVersion) {
+        void titleVersion(slug, r.version, ai.rewordVersion.bind(ai), AbortSignal.timeout(60_000)).catch((e) =>
+          log(`[ai] version title: ${String(e?.message ?? e)}`)
+        )
+      }
       const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
       const reply = await replyAskingAboutStyle(r, r.summary + extra)
       return { ...reply, outcome: (r.version ?? 0) > before ? 'done' : 'failed', made: { by: 'note', summary: text } }
