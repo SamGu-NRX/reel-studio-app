@@ -169,7 +169,7 @@ def cmd_init(args: list[str]) -> dict:
         progress("init", 100 * (i - 1) / len(files), "Copying your video")
         dest = proj / "media" / f"take{i:02d}{Path(f).suffix.lower()}"
         shutil.copy2(f, dest)
-        sources.append({"id": f"s{i}", "path": f"media/{dest.name}", "duration": info["duration"],
+        sources.append({"id": f"s{i}", "path": f"media/{dest.name}", "originalName": Path(f).name, "duration": info["duration"],
                         "fps": info.get("fps", 30), "width": info.get("width"), "height": info.get("height"),
                         "rotation": info.get("rotation", 0)})
     slug = proj.name

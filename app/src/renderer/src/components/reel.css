@@ -120,7 +120,7 @@ html.kb .tl-mark:focus-visible { outline: 2px solid var(--ink); outline-offset: 
 }
 .tl-mark .n { position: absolute; top: 0; right: -1px; min-width: 12px; height: 12px; border-radius: 6px; background: var(--ink); color: #fff; font-size: 9px; font-weight: 700; line-height: 12px; padding: 0 3px; }
 .tl-tip {
-  position: absolute; bottom: calc(100% + 8px); left: 50%; translate: -50% 0; z-index: 5; display: grid; gap: 1px; text-align: left; white-space: nowrap; max-width: 260px;
+  position: absolute; bottom: calc(100% + 8px); left: 50%; translate: -50% 0; z-index: 5; width: max-content; display: grid; gap: 1px; text-align: left; white-space: nowrap; max-width: 260px;
   background: var(--surface); color: var(--ink); box-shadow: var(--e2); border-radius: 8px; padding: 6px 9px; font-size: var(--fs-sm); line-height: 16px; pointer-events: none;
 }
 .tl-tip span { overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
