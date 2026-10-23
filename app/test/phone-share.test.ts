@@ -225,3 +225,16 @@ describe('qr', () => {
     expect(svg.path.startsWith('M4 4h7v1h-7z')).toBe(true)
   })
 })
+
+// fails if a plan's link serves a file, or puts the plan's words on the page unescaped
+it('a plan link shows the plan to tick off and serves no video', async () => {
+  const plan = { topic: 'bread', hooks: ['<b>No mixer</b>', 'B'], hook: 0, beats: [{ text: 'Flour & water' }], shots: [{ text: 'Me at the counter' }] }
+  share = await startShare({ plan, caption: '', title: 'Bread', host: '127.0.0.1' })
+  expect(share.size).toBe(0)
+  const page = (await get(share.url)).body.toString()
+  expect(page).toContain('&lt;b&gt;No mixer&lt;/b&gt;')
+  expect(page).toContain('<input type="checkbox" name="beat-0"><span>Flour &amp; water</span>')
+  expect(page).toContain('Me at the counter')
+  expect((await get(`${share.url}video.mp4`)).status).toBe(404)
+  await expect(startShare({ file: video, plan, caption: '', title: 'x', host: '127.0.0.1' })).rejects.toThrow(/one video or one plan/)
+})

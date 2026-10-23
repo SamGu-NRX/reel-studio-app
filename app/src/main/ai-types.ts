@@ -1,6 +1,7 @@
 // Mirror of the @reelstudio/ai interface (docs/architecture.md section 8). The real package is loaded at
 // runtime when it exists; until then ai-mock.ts implements the same shape.
 import type { JobUpdate, StyleProposal, StyleRule } from '../shared/api'
+import type { PlanTurn } from '../shared/plan'
 
 /** What @reelstudio/ai emits: the job contract minus `heard` (main adds that one itself). */
 export type AgentEvent = Exclude<JobUpdate, { type: 'heard' }>
@@ -24,12 +25,14 @@ export interface AgentResult {
   notice?: UserFacingError
 }
 
-export interface ScriptResult {
-  hook: string
-  script: string
-  onScreenText: string[]
-  title?: string
+/** One turn of a planned reel's planning chat (ai editor.ts planTurn). `asked`: questions the editor has asked. */
+export interface PlanTurnInput {
+  turns: PlanTurn[]
+  asked: number
+  plan: { hooks: string[]; hook: number; beats: string[]; shots: string[] } | null
 }
+/** A short question back, or the whole plan: 2-3 hooks, 3-6 beats, 1-6 shots, one line each. */
+export type PlanTurnResult = { kind: 'question'; text: string } | { kind: 'plan'; say: string; title?: string; hooks: string[]; beats: string[]; shots: string[] }
 
 export interface EngineHost {
   runEngine(
@@ -118,7 +121,7 @@ export interface AI {
   ): Promise<AgentResult>
   /** The words are a whole-reel setting applyNote does without the model ("smaller captions"). */
   wholeReelSetting(projectDir: string, note: string): Promise<boolean>
-  writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult>
+  planTurn(input: PlanTurnInput, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<PlanTurnResult>
   styleRules(): Promise<StyleRule[]>
   /** The removed rule and where it was, for Undo; null when it was already gone. */
   removeStyleRule(id: string): Promise<{ rule: StyleRule; index: number } | null>

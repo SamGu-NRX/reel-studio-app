@@ -44,6 +44,7 @@ export function Composer({
   firstSteps,
   steps,
   stepsOpenFirst,
+  noSteps,
   stepNote: running,
   under,
   held,
@@ -76,6 +77,8 @@ export function Composer({
   steps: string[]
   /** Version 1 opens with its steps showing */
   stepsOpenFirst: boolean
+  /** a planning turn has one step, which the strip already names: no Steps list */
+  noSteps?: boolean
   /** the running note, so a step that quotes it shows its moment the way the log does */
   stepNote?: { text: string; moment?: NoteMoment } | null
   /** under the steps (asking about notifications during Version 1) */
@@ -149,9 +152,11 @@ export function Composer({
                   {making && current && (!stepsOpen || job.waiting) ? ` · ${current}` : ''}
                 </span>
                 <span className="sp" />
-                <button className="sbtn" aria-expanded={stepsOpen} onClick={() => setStepsToggled((t) => (t === job.jobId ? null : job.jobId))} data-testid="steps">
-                  Steps <Icon name={stepsOpen ? 'chevron-down' : 'up'} size={12} stroke={2} />
-                </button>
+                {!noSteps && (
+                  <button className="sbtn" aria-expanded={stepsOpen} onClick={() => setStepsToggled((t) => (t === job.jobId ? null : job.jobId))} data-testid="steps">
+                    Steps <Icon name={stepsOpen ? 'chevron-down' : 'up'} size={12} stroke={2} />
+                  </button>
+                )}
                 <button className="sbtn" onClick={onStop} data-testid="stop">
                   Stop
                 </button>

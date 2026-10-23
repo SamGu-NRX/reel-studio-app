@@ -4,7 +4,7 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import {
-  AgentEvent, AgentResult, AIError, EngineHost, ModelProvider, Part, ProviderId, ProviderStatus, ScriptResult, SecretStore, UserFacingError,
+  AgentEvent, AgentResult, AIError, EngineHost, ModelProvider, Part, PlanTurnInput, PlanTurnResult, ProviderId, ProviderStatus, ScriptResult, SecretStore, UserFacingError,
 } from './types';
 import { Prompts, defaultPromptsDir } from './prompts';
 import { StyleProposal, StyleRule, StyleStore } from './style';
@@ -553,6 +553,10 @@ export function createAI(opts: CreateAIOptions) {
     },
     async writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult> {
       return editor.writeScript(deps(), await modelProvider('writer'), idea, onEvent, signal);
+    },
+    /** One turn of a planned reel's planning chat: a short question back, or the whole plan (editor.ts planTurn). */
+    async planTurn(input: PlanTurnInput, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<PlanTurnResult> {
+      return editor.planTurn(deps(), await modelProvider('writer'), input, onEvent, signal);
     },
     async styleRules() { return style.list(); },
     async removeStyleRule(id: string) { return style.remove(id); },

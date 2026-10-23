@@ -66,6 +66,7 @@ import { createPauser, pauseFor, quitQuestion } from './pause'
 import { createNoteQueue, type NoteToRun, type StartHand } from './note-queue'
 import { handEditJob, HAND_MESSAGE } from './hand-edit'
 import { parseHandEdit } from '../shared/hand-edit'
+import { checkPlan, planFromEditor, planTurns, titleFromTopic } from '../shared/plan'
 import type { SoundEffect } from '../shared/sfx'
 import { mediaUrl } from './media-url'
 import { withRenderSlot } from './render-slot'
@@ -687,7 +688,19 @@ function registerIpc(): void {
     return st
   })
 
-  registerPhoneIpc({ handle, roots: () => [reelStudioRoot(), projectsDir()], send: broadcast, log, test: TEST })
+  registerPhoneIpc({
+    handle,
+    roots: () => [reelStudioRoot(), projectsDir()],
+    plan: async (slug) => {
+      const st = await readAppState(slug)
+      if (!st.plan) throw { code: 'NO_PLAN', userMessage: 'This reel has no plan to send yet.' }
+      const title = await readProject(slug).then((p) => p.title).catch(() => st.title ?? 'My reel')
+      return { title, plan: st.plan }
+    },
+    send: broadcast,
+    log,
+    test: TEST
+  })
   // pictures, GIFs and clips on a note (main/attachments.ts)
   registerAttachmentIpc({
     handle,
@@ -824,25 +837,46 @@ function registerIpc(): void {
     // refused while a script is still being written; the reel stays planned until its first edit starts
     return { jobId: startFirstEdit(slug, { title, files: videos }), skipped }
   })
-  // The editor writes a script for a planned reel. Its title becomes the reel's, unless the person named it.
-  handle('projects:script', async (_e, slug: string, idea: string) => {
-    const words = String(idea ?? '').trim()
+  // A turn of a planned reel's planning chat: the editor asks a short question or proposes the whole plan, which
+  // becomes the reel's plan (shared/plan.ts). The plan's title names the reel, unless the person named it.
+  handle('projects:planSay', async (_e, slug: string, text: string) => {
+    const words = String(text ?? '').trim()
     if (!words) throw { code: 'EMPTY', userMessage: 'Say what the reel is about in a sentence or two first.' }
+    if ((await readAppState(slug)).status !== 'planned') throw { code: 'HAS_VIDEO', userMessage: 'This reel has its video now. Leave a note for your editor instead.' }
     const active = await ai.active().catch(() => null)
-    if (!active?.connected || active.id === 'none') throw { code: 'NO_AI', userMessage: 'Connect an editor to get a script.' }
+    if (!active?.connected || active.id === 'none') throw { code: 'NO_AI', userMessage: 'Connect an editor to plan a reel together.' }
     let jobId = ''
     jobId = jobs.start(
       slug,
       'script',
       async (emit, signal) => {
-        const r = await ai.writeScript(words, emit, signal)
+        const st = await readAppState(slug)
+        const { turns, asked } = planTurns(st.chat)
+        const plan = st.plan ? { hooks: st.plan.hooks, hook: st.plan.hook, beats: st.plan.beats.map((b) => b.text), shots: st.plan.shots.map((x) => x.text) } : null
+        const r = await ai.planTurn({ turns, asked, plan }, emit, signal)
+        if (r.kind === 'question') return { summary: r.text, chat: [{ from: 'editor', text: r.text, plan: true, planTurn: 'question' }] }
+        const next = planFromEditor(st.plan?.topic || turns.find((t) => t.from === 'you')?.text || words, r)
         const title = r.title?.trim().slice(0, 80)
-        if (title) await updateAppState(slug, (s) => void (s.title === PLANNED_TITLE && (s.title = title)))
-        return { summary: r.hook, chat: [{ from: 'editor', text: r.hook, plan: true, script: r }] }
+        await updateAppState(slug, (s) => {
+          s.plan = next
+          if (title && s.title === PLANNED_TITLE) s.title = title
+        })
+        return { summary: r.say, chat: [{ from: 'editor', text: r.say, plan: true, planTurn: 'plan' }] }
       },
       { record: (s) => void s.chat.push(stamp({ from: 'you', text: words, plan: true, jobId })) }
     )
     return { jobId }
+  })
+  // An edited line, the picked hook or a ticked line in the Plan card, or the plain form's plan when no editor is
+  // connected. The form names a New reel after what it's about.
+  handle('projects:setPlan', async (_e, slug: string, plan: unknown) => {
+    const next = checkPlan(plan)
+    if (!existsSync(join(projectDir(slug), 'app.json'))) throw { code: 'NOT_FOUND', userMessage: 'That reel could not be found. It may have been moved or deleted.' }
+    if (jobs.forSlug(slug)?.kind === 'script') throw { code: 'BUSY', userMessage: 'Your editor is changing the plan. Wait for the answer, or press Stop.' }
+    await updateAppState(slug, (s) => {
+      s.plan = next
+      if (s.status === 'planned' && s.title === PLANNED_TITLE && next.topic) s.title = titleFromTopic(next.topic)
+    })
   })
   handle('projects:resume', async (_e, slug: string, basic?: boolean) => {
     const dir = projectDir(slug)

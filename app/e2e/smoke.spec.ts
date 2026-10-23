@@ -141,10 +141,10 @@ test('make a reel end to end', async () => {
   await openSettings(page)
   await expect(page.getByText('Library folder')).toBeVisible()
   await shot(page, '15-settings')
-  // a reel with no video is the place to plan; with no editor, the picker says what it is for (no grey button)
+  // a reel with no video is the place to plan; with no editor, a plain form makes the plan (plan.spec.ts)
   await page.getByTestId('new-reel').click()
   await expect(page.getByTestId('planned-stage')).toBeVisible()
-  if (aiSource === 'mock') await expect(page.getByTestId('composer-connect')).toContainText('Connect an editor to get a script')
+  if (aiSource === 'mock') await expect(page.getByTestId('plan-form')).toBeVisible()
   await shot(page, '16-plan')
 
   // ---- animation renderer: transparent layer ----

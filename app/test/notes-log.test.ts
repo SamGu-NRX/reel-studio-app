@@ -71,4 +71,30 @@ describe('notesLog', () => {
       ['video', 'version']
     ])
   })
+
+  // fails if the Plan card shows on an older proposal, goes missing for a form-made plan, or the planning chat stays
+  // above the video instead of folding into the one Plan card
+  it('shows the Plan card on the newest proposal, alone for a form plan, and folded once the video is in', () => {
+    const plan = { topic: 'sourdough', hooks: ['A', 'B'], hook: 0, beats: [{ text: 'one' }], shots: [] }
+    const planning = [
+      msg('you', 'sourdough', { plan: true, jobId: 'p1', outcome: 'done' }),
+      msg('editor', 'Who is it for?', { plan: true, planTurn: 'question' }),
+      msg('you', 'beginners', { plan: true, jobId: 'p2', outcome: 'done' }),
+      msg('editor', 'Here is a plan.', { plan: true, planTurn: 'plan' }),
+      msg('you', 'shorter hook', { plan: true, jobId: 'p3', outcome: 'done' }),
+      msg('editor', 'I made that change.', { plan: true, planTurn: 'plan' })
+    ]
+    const base = { made: [], source: null, now, versions: [], running: null }
+    expect(notesLog({ ...base, chat: planning, planned: true, plan }).map((e) => e.result)).toEqual([
+      { kind: 'question', text: 'Who is it for?' },
+      { kind: 'proposed', text: 'Here is a plan.', card: false },
+      { kind: 'proposed', text: 'I made that change.', card: true }
+    ])
+    expect(notesLog({ ...base, chat: [], planned: true, plan }).map((e) => [e.key, e.ask])).toEqual([['plan', { kind: 'plan', text: 'sourdough' }]])
+    const filmed = notesLog({ ...base, chat: [...planning, msg('editor', 'Here it is.', { version: 1 })], versions: [v(1)], plan })
+    expect(filmed.map((e) => [e.ask.kind, e.result?.kind ?? null])).toEqual([
+      ['plan', null],
+      ['video', 'version']
+    ])
+  })
 })
