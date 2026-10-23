@@ -50,7 +50,7 @@ async function probe(source: string, runEngine: RunEngine, label: string): Promi
   if (typeof video?.duration !== 'number' || !Number.isFinite(video.duration) || video.duration <= 0 ||
       typeof video.width !== 'number' || typeof video.height !== 'number' || typeof video.fps !== 'number' || typeof video.sizeBytes !== 'number' ||
       typeof video.editList !== 'boolean' || typeof video.maxKeyframeGap !== 'number') {
-    throw { code: 'EXPORT_FAILED', userMessage: `${label}I could not read the finished video. Render this version again before exporting.` }
+    throw { code: 'EXPORT_FAILED', userMessage: `${label}The finished video couldn’t be read. Make this version again, then share it.` }
   }
   return video as FinishedVideo
 }
