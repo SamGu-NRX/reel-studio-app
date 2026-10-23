@@ -6,6 +6,8 @@ import { reel } from '../api'
 import type { Go } from '../nav'
 import { Icon } from '../components/icons'
 import { YourTurn } from '../components/YourTurn'
+import { useNotify } from '../App'
+import { newReel } from './create'
 import { sawSample } from '../components/first-run/handoff'
 import '../components/home.css'
 
@@ -21,10 +23,10 @@ const needsYou = (p: ProjectSummary) => p.status === 'interrupted' || p.status =
 const making = (p: ProjectSummary) => p.status === 'working' || p.status === 'new'
 
 export function Home({ go }: { go: Go }) {
+  const notify = useNotify()
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null)
   const [live, setLive] = useState<Record<string, Live>>({})
   const [view, setView] = useState<View>(() => (localStorage.getItem(VIEW_KEY) === 'all' ? 'all' : 'activity'))
-  const opening = useRef<string | null>(null)
 
   const known = useRef(new Set<string>())
   useEffect(() => {
@@ -46,24 +48,12 @@ export function Home({ go }: { go: Go }) {
     const offQueue = reel.queue.onChange(() => void load())
     return () => {
       alive = false
-      opening.current = null
       off()
       offQueue()
     }
   }, [])
 
-  const open = (p: ProjectSummary) => {
-    opening.current = p.slug
-    const show = (name: 'reel' | 'working') => {
-      if (opening.current === p.slug) go({ name, slug: p.slug })
-    }
-    if (p.status === 'ready') go({ name: 'reel', slug: p.slug })
-    else
-      void reel.projects.get(p.slug).then(
-        (d) => show(d.job?.kind === 'note' || d.job?.kind === 'rerender' || (!d.job && d.versions.length > 0) ? 'reel' : 'working'),
-        () => show('working')
-      )
-  }
+  const open = (p: ProjectSummary) => go({ name: 'reel', slug: p.slug })
   const pick = (v: View) => {
     localStorage.setItem(VIEW_KEY, v)
     setView(v)
@@ -149,7 +139,7 @@ export function Home({ go }: { go: Go }) {
           </div>
         )}
         <span className="spacer" />
-        <button className="btn primary big" onClick={() => go({ name: 'new' })} data-testid="new-video">
+        <button className="btn primary big" onClick={() => void newReel(go, notify)} data-testid="new-video">
           <Icon name="plus" /> New video
         </button>
       </div>
@@ -187,6 +177,7 @@ function Card({ p, live, now, onOpen }: { p: ProjectSummary; live?: Live; now: D
         {waiting}
       </>
     )
+  else if (p.status === 'planned') meta = 'Waiting for your video'
   else if (p.status === 'interrupted') meta = <span className="amber">Paused · Resume</span>
   else if (p.status === 'failed') meta = <span className="red">Didn't finish · Try again</span>
   else
@@ -196,12 +187,12 @@ function Card({ p, live, now, onOpen }: { p: ProjectSummary; live?: Live; now: D
         {waiting}
       </>
     )
-  const state = busy ? 'making' : p.status === 'ready' ? 'ready' : p.status === 'interrupted' ? 'paused' : 'failed'
+  const state = busy ? 'making' : p.status === 'ready' || p.status === 'planned' ? p.status : p.status === 'interrupted' ? 'paused' : 'failed'
   return (
     <button className={`hcard st-${state}`} onClick={onOpen} title={p.title} data-testid="project-card" data-state={state}>
       <span className="im">
         {p.thumbnail ? <img src={p.thumbnail} alt="" loading="lazy" decoding="async" /> : <Icon name="video" size={30} className="placeholder" />}
-        {state !== 'ready' && (
+        {state !== 'ready' && state !== 'planned' && (
           <span className="glyph" aria-hidden>
             {state === 'making' ? <span className="spin" /> : <Icon name={state === 'paused' ? 'pause' : 'x'} size={12} stroke={2.4} />}
           </span>

@@ -2,29 +2,31 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatAction, ExportResult, NoteMoment, PlacedWord, ProjectDetail, ProviderInfo } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
 import { EMPTY_LIVE, liveFromDetail, reduceLive, type LiveState } from '../../../shared/live'
-import { noteMarks, noteMoment, sourceAt, wordsAt, type RenderSegment } from '../../../shared/moments'
-import { notesLog } from '../../../shared/notes-log'
-import { versionChanges } from '../../../shared/versions'
+import { NO_TIMELINE, noSpeech, noteMarks, noteMoment, sourceAt, wordsAt, wordsBetween, type RenderSegment } from '../../../shared/moments'
+import { notesLog, type LogEntry } from '../../../shared/notes-log'
+import type { Step } from '../../../shared/steps'
 import { reel, userMessage } from '../api'
 import type { Go } from '../nav'
-import { Confirm, FOLDER_APP, Modal, Spinner } from '../components/ui'
+import { Confirm, FOLDER_APP, Modal, PickFiles, Spinner, useFileDrop } from '../components/ui'
 import { SendToPhone } from '../components/SendToPhone'
 import { CloudSave } from '../components/CloudSave'
 import { Icon } from '../components/icons'
 import { PhonePlayer, type SubtitleLook } from '../components/Player'
 import { PhoneViewSwitch, usePhoneView } from '../components/Phone'
-import { createPlayhead } from '../components/playhead'
+import { createPlayhead, usePlayhead, type Playhead } from '../components/playhead'
+import { createTransport, useTransport, type Transport } from '../components/transport'
 import { versionOnScreen } from '../components/videoLayers'
 import { EXPORT_EVENT, NOTE_DROP_DONE, useNotify } from '../App'
 import { ShowMeHow, type Tab } from './ShowMeHow'
 import { useNoteAttachments } from '../components/NoteAttachments'
-import { NotesLog, useVersionRows } from '../components/NotesLog'
-import { Composer, type Chip } from '../components/Composer'
-import { VersionPicker } from '../components/VersionsSheet'
+import { NotesLog, useVersionRows, type FirstState } from '../components/NotesLog'
+import { Composer, region, type Chip } from '../components/Composer'
+import { Timeline, type TimelineMark } from '../components/Timeline'
 import { Outs } from '../components/Outs'
 import { PopMenu } from '../components/PopMenu'
-import { usePresence } from '../components/motion'
-import { ZoomView, region, type Pin } from '../components/ZoomView'
+import { TitleBarSlot } from '../components/titlebar'
+import { ConnectAI, ModelDownload } from '../components/connect'
+import { byKeyboard, reducedMotion } from '../components/motion'
 import '../components/reel.css'
 
 const ACTION_TAB: Partial<Record<ChatAction, Tab>> = {
@@ -48,25 +50,43 @@ const CHANGE_LABEL: Record<Tab, string> = {
 }
 
 const INSTAGRAM_URL = 'https://www.instagram.com/'
+const NOTIFY_ASKED = 'rs.notify-asked'
 const fileName = (p: string): string => p.split(/[\\/]/).pop() ?? p
 const pinsKey = (slug: string): string => `rs.pins.${slug}`
+const typing = (t: EventTarget | null): boolean => {
+  const el = t as HTMLElement | null
+  return !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)
+}
+// How long the landing crossfade (reel.css, 200 ms) stays armed: the new version fades in once it has loaded, which
+// takes a moment after its job ends. 1.5 s is a guess with no measurement behind it.
+const LANDING_MS = 1500
 
-const noWords = (at: number) =>
-  `I can't tell which words play at ${clock(at)}. Pick a moment where you're talking, or remove the time to ask about the whole reel.`
-const NO_TIMELINE = "I can't tell which words play in this version. Remove the time to ask about the whole reel, or switch to your newest version."
+/** A spot someone pointed at on the picture, kept on this computer with its note. */
+interface Pin {
+  n: number
+  at: number
+  x: number
+  y: number
+  text: string
+}
 
-export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolean }) {
+/**
+ * The reel: the video at full height on the stage with its timeline and transport under it, and the notes for the
+ * editor in a column on the right. Version 1 is made here, a reel with no video is planned here, and Edit it myself
+ * takes the column's place.
+ */
+export function Reel({ slug, go }: { slug: string; go: Go }) {
   const notify = useNotify()
   const [d, setD] = useState<ProjectDetail | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
   // A version picked to watch plays with sound. The player clears the request once it has started.
   const [playRequest, setPlayRequest] = useState<{ n: number; ask: number } | null>(null)
   const playAsks = useRef(0)
-  // Arriving from Working, the latest version plays muted, until the person picks a version.
-  const [freshPlay, setFreshPlay] = useState(!!fresh)
-  // The running job (a note, a re-render), folded from its events (shared/live.ts). null = nothing running.
+  // The running job, folded from its events (shared/live.ts). null = nothing running.
   const [job, setJob] = useState<LiveState | null>(null)
-  // what the running job has said it was doing, in order, for Steps
+  const [firstSteps, setFirstSteps] = useState<Step[] | null>(null)
+  const [heard, setHeard] = useState<string[]>([])
+  // what a note's job has said it was doing, in order, for Steps
   const [steps, setSteps] = useState<string[]>([])
   const [drawer, setDrawer] = useState<Tab | null>(null)
   const [exporting, setExporting] = useState<'busy' | ExportResult | null>(null)
@@ -77,13 +97,15 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [more, setMore] = useState(false)
   const moreBtn = useRef<HTMLButtonElement>(null)
-  const [stopAsk, setStopAsk] = useState(false)
   const [phoneView, setPhoneView] = usePhoneView()
   const [holding, setHolding] = useState(false)
   const [warmOriginal, setWarmOriginal] = useState(false)
   const [preview, setPreview] = useState<{ look: SubtitleLook; text: string; at: number } | null>(null)
   const [compare, setCompare] = useState<{ a: number; b: number } | null>(null)
-  const [zoom, setZoom] = useState(false)
+  const [landed, setLanded] = useState<number | null>(null)
+  const [unwatched, setUnwatched] = useState<number | null>(null)
+  const [landing, setLanding] = useState(false)
+  const [pointing, setPointing] = useState(false)
   const [pins, setPins] = useState<Pin[]>(() => {
     try {
       return JSON.parse(localStorage.getItem(pinsKey(slug)) ?? '[]') as Pin[]
@@ -92,13 +114,16 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     }
   })
   const [playhead] = useState(createPlayhead)
+  const [transport] = useState(createTransport)
+  const { duration } = useTransport(transport)
   const [shownSrc, setShownSrc] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [chip, setChip] = useState<Chip>(null)
   const [alert, setAlert] = useState<string | null>(null)
+  const [notifyAsk, setNotifyAsk] = useState(false)
   const noteField = useRef<HTMLTextAreaElement>(null)
   const att = useNoteAttachments(slug, notify)
-  // Files dropped on the note box before the AI check answers: attached once it does, as any drop is.
+  // Files dropped on the note box before the editor check answers: attached once it does, as any drop is.
   const heldDrops = useRef<{ files: File[]; types: string[] }[]>([])
   const [heldN, setHeldN] = useState(0)
   useEffect(() => {
@@ -111,21 +136,58 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   // one export per version: a cloud save after Export reuses the file
   const exports = useRef(new Map<number, ExportResult>())
   const lastJob = useRef<string | null>(null)
+  const nowStep = useRef(-1)
+  // read in the job listener, which is set up once
+  const watching = useRef({ compare: false, drawer: false })
+  watching.current = { compare: !!compare, drawer: !!drawer }
 
+  // Reads overlap (a job's first status and its end each ask): only the newest read may land.
+  const loads = useRef(0)
   const load = useCallback(
     async (selectLatest = false) => {
+      const n = ++loads.current
       try {
-        const next = await reel.projects.get(slug)
+        const got = await reel.projects.get(slug)
+        if (n !== loads.current) return null
+        // while Version 1 is made, its draft renders are the first look, not a version
+        const next = got.job?.kind === 'first-edit' ? { ...got, versions: got.versions.filter((v) => !v.draft) } : got
         setD(next)
-        if (next.job) setJob((cur) => (cur?.jobId === next.job!.id ? cur : liveFromDetail(next.job!)))
+        if (next.job) {
+          setJob((cur) => (cur?.jobId === next.job!.id ? cur : liveFromDetail(next.job!)))
+          if (next.job.steps) setFirstSteps(next.job.steps)
+        }
+        if (next.words.length) setHeard((h) => (h.length ? h : next.words.map((w) => w.w)))
         const latest = next.versions[next.versions.length - 1]?.n ?? null
         setSelected((cur) => (selectLatest || cur === null || !next.versions.some((v) => v.n === cur) ? latest : cur))
+        return next
       } catch (e) {
         notify(userMessage(e), 'error')
         go({ name: 'home' })
+        return null
       }
     },
     [slug, go, notify]
+  )
+
+  const play = useCallback((n: number) => setPlayRequest({ n, ask: ++playAsks.current }), [])
+
+  /** A version landed: it takes the screen and plays, unless the person is comparing or editing by hand. */
+  const land = useCallback(
+    async (n: number | undefined) => {
+      const busyElsewhere = watching.current.compare || watching.current.drawer
+      const next = await load(!busyElsewhere)
+      const v = n ?? next?.versions[next.versions.length - 1]?.n
+      if (v === undefined) return
+      setLanded(v)
+      window.setTimeout(() => setLanded((l) => (l === v ? null : l)), LANDING_MS)
+      if (busyElsewhere) return setUnwatched(v)
+      if (!byKeyboard() && !reducedMotion()) {
+        setLanding(true)
+        window.setTimeout(() => setLanding(false), LANDING_MS)
+      }
+      play(v)
+    },
+    [load, play]
   )
 
   useEffect(() => {
@@ -142,16 +204,30 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
       // a waiting note just started: its words move from the queue into the notes
       if (e.type === 'status' && lastJob.current !== e.jobId) {
         lastJob.current = e.jobId
+        nowStep.current = -1
         void load()
       }
       if (e.type === 'status' || e.type === 'reply' || e.type === 'tool') setJob((cur) => reduceLive(cur ?? EMPTY_LIVE, e))
+      if (e.type === 'status' && e.steps) {
+        setFirstSteps(e.steps)
+        // a new step: the copy, then the transcript, are on disk now
+        const at = e.steps.findIndex((s) => s.state === 'now')
+        if (at !== nowStep.current) {
+          nowStep.current = at
+          void load()
+        }
+      } else if (e.type === 'heard') setHeard(e.words)
       else if (e.type === 'render' && e.draft) {
         setJob((cur) => reduceLive(cur ?? EMPTY_LIVE, e))
         void load()
-      } else if (e.type === 'done' || e.type === 'error' || e.type === 'cancelled') {
+      } else if (e.type === 'done') {
         setJob(null)
-        setCompare(null)
-        void load(e.type === 'done')
+        setFirstSteps(null)
+        void land(e.version)
+      } else if (e.type === 'error' || e.type === 'cancelled') {
+        setJob(null)
+        setFirstSteps(null)
+        void load()
       }
     })
     return () => {
@@ -159,7 +235,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
       offQueue()
       offJobs()
     }
-  }, [slug, load])
+  }, [slug, load, land])
 
   useEffect(() => {
     if (!job?.jobId) {
@@ -170,12 +246,22 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     if (m === EMPTY_LIVE.message) return
     setSteps((s) => (s[s.length - 1] === m ? s : [...s, m]))
   }, [job?.jobId, job?.message])
+
+  const firstEditRunning = d?.job?.kind === 'first-edit'
   useEffect(() => {
-    if (!job) setStopAsk(false)
-  }, [job])
+    if (!firstEditRunning || localStorage.getItem(NOTIFY_ASKED)) return
+    let live = true
+    reel.perm
+      .status()
+      .then((s) => live && setNotifyAsk(s.notifications === 'off'))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [firstEditRunning])
 
   const version = d ? (d.versions.find((v) => v.n === selected) ?? d.versions[d.versions.length - 1]) : undefined
-  const changePreview = job?.preview?.video ?? null
+  const changePreview = job?.preview && d?.versions.length ? job.preview.video : null
   const [timeline, setTimeline] = useState<{ video: string; words: PlacedWord[]; segments: RenderSegment[] | null } | null>(null)
   const onScreen = d ? versionOnScreen(d.versions, shownSrc) : null
   const shownN = onScreen?.n
@@ -201,7 +287,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const older = version && version.n !== latestN ? version : null
 
   const exportFile = useCallback(async (): Promise<ExportResult> => {
-    if (!version) throw { userMessage: 'Wait for your first version.' }
+    if (!version) throw { userMessage: 'Wait for Version 1.' }
     const had = exports.current.get(version.n)
     if (had) return had
     const r = await reel.projects.exportVersion(slug, version.n)
@@ -230,20 +316,32 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     return () => window.removeEventListener(EXPORT_EVENT, fn)
   }, [doExport])
 
-  // N: ask about the moment on screen.
+  const aiOff = providerChecked && (!provider || !provider.connected || provider.id === 'none')
+  const canPoint = !!version && !aiOff && !compare && !drawer
+
+  // Hold O for the original; C points at a spot; Esc stops pointing, then comparing.
   useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== 'n' || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return
-      const t = e.target as HTMLElement
-      if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || document.querySelector('.modal-backdrop, .drawer')) return
-      if (!noteField.current || noteField.current.disabled) return
+    const down = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target) || document.querySelector('.modal-backdrop')) return
+      const k = e.key.toLowerCase()
+      if (k === 'o' && !e.repeat) setHolding(true)
+      else if (k === 'c' && !e.repeat && canPoint) setPointing((p) => !p)
+      else if (e.key === 'Escape' && pointing) setPointing(false)
+      else if (e.key === 'Escape' && compare) setCompare(null)
+      else return
       e.preventDefault()
-      setChip({ at: playhead.get() })
-      noteField.current.focus()
     }
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
-  }, [playhead])
+    const up = (e: KeyboardEvent) => e.key.toLowerCase() === 'o' && setHolding(false)
+    const away = () => setHolding(false)
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    window.addEventListener('blur', away)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', away)
+    }
+  }, [canPoint, pointing, compare])
 
   const entries = useMemo(
     () =>
@@ -252,15 +350,26 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
             chat: d.chat,
             made: d.versionsMade,
             versions: d.versions,
-            running: d.job ? { id: d.job.id, kind: d.job.kind === 'rerender' ? 'hand' : d.job.kind === 'first-edit' ? 'first-edit' : 'note' } : null,
+            running: d.job
+              ? { id: d.job.id, kind: d.job.kind === 'rerender' ? 'hand' : d.job.kind === 'first-edit' ? 'first-edit' : d.job.kind === 'script' ? 'script' : 'note' }
+              : null,
+            planned: d.status === 'planned',
             sourceName: d.project.sources?.[0]?.path ? fileName(d.project.sources[0].path) : null,
             now: new Date()
           })
         : [],
     [d]
   )
-  const changes = useMemo(() => (d ? versionChanges(d.versions, d.versionsMade) : new Map<number, string>()), [d])
-  const byHand = useMemo(() => new Set(d?.versionsMade.filter((m) => m.by === 'hand').map((m) => m.version) ?? []), [d])
+
+  const marks = useMemo((): TimelineMark[] => {
+    if (!d || !timeline || timeline.video !== shownVideo) return []
+    const made = new Map(entries.flatMap((e) => (e.result?.kind === 'version' ? [[e.key, e.result.v] as const] : [])))
+    const out: TimelineMark[] = noteMarks(d.chat, job?.jobId ?? null, timeline.words)
+      .filter((m) => m.state === 'making' || (m.state === 'done' && made.has(m.id)))
+      .map((m) => ({ id: m.id, at: m.at, text: m.text, ...(m.state === 'done' ? { v: made.get(m.id) } : {}) }))
+    for (const q of d.queue) if (!q.attempt && q.moment && q.moment.version === shownN) out.push({ id: q.id, at: q.moment.at, text: q.text })
+    return out
+  }, [d, timeline, shownVideo, shownN, entries, job?.jobId])
 
   if (!d)
     return (
@@ -269,9 +378,19 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
       </div>
     )
 
-  const aiOff = providerChecked && (!provider || !provider.connected || provider.id === 'none')
+  const planned = d.status === 'planned'
+  const hasVersions = d.versions.length > 0
   const connect = () => go({ name: 'connect', back: { name: 'reel', slug } })
-  const making = job && latestN !== undefined && d.job?.kind !== 'export' ? latestN + 1 : null
+  const making = job && d.job && d.job.kind !== 'export' && d.job.kind !== 'script' ? (latestN ?? 0) + 1 : null
+  const first: FirstState | null =
+    hasVersions || planned
+      ? null
+      : d.job?.kind === 'first-edit' || d.status === 'new'
+        ? { kind: 'making', heard: firstSteps?.some((s) => s.id === 'listen' && s.state === 'done') ? heard : [], editor: !aiOff }
+        : d.status === 'failed'
+          ? { kind: 'failed', why: d.lastError?.userMessage ?? 'The video could not be made.', extra: d.lastError?.code === 'MODEL_MISSING' ? <ModelDownload /> : undefined }
+          : { kind: 'paused' }
+  const firstLook = first?.kind === 'making' ? (job?.preview?.video ?? null) : null
 
   const note = async (text: string, files: string[] | undefined, moment: NoteMoment | undefined) => {
     const r = await reel.projects.note(slug, text, files, moment, version?.n)
@@ -279,14 +398,14 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     await load()
   }
 
-  /** The words on screen at `at` in the version shown, or why a note can't point there. */
-  const momentAt = async (at: number): Promise<NoteMoment | string> => {
+  /** The words on screen at the chip's moment or range in the version shown, or why a note can't point there. */
+  const momentFor = async (c: NonNullable<Chip>): Promise<NoteMoment | string> => {
     const n = onScreen?.n ?? version?.n
     const tl = n !== undefined ? await reel.projects.timeline(slug, n).catch(() => null) : null
     if (!tl || n === undefined) return NO_TIMELINE
-    if (at > tl.duration) return `There's no ${clock(at)} in this video. It's ${clock(tl.duration)} long.`
-    const words = wordsAt(tl.words, at)
-    return words.length ? noteMoment(at, n, words) : noWords(at)
+    if (c.at > tl.duration) return `There's no ${clock(c.at)} in this video. It's ${clock(tl.duration)} long.`
+    const words = c.to !== undefined ? wordsBetween(tl.words, c.at, c.to) : wordsAt(tl.words, c.at)
+    return words.length ? noteMoment(c.at, n, words, c.to) : noSpeech(c.at)
   }
 
   const send = async () => {
@@ -294,22 +413,48 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     const files = att.chips
     if ((!text && !files.length) || att.busy || !providerChecked) return
     setAlert(null)
+    if (planned) {
+      setDraft('')
+      try {
+        const r = await reel.projects.script(slug, text)
+        setJob({ ...EMPTY_LIVE, jobId: r.jobId, message: 'Writing your script' })
+        await load()
+      } catch (e) {
+        setDraft(text)
+        setAlert(userMessage(e))
+      }
+      return
+    }
     let moment: NoteMoment | undefined
     if (chip) {
-      const m = await momentAt(chip.at)
+      const m = await momentFor(chip)
       if (typeof m === 'string') return setAlert(m)
       moment = m
     }
+    const spot = chip?.spot
+    const words = spot ? `${text || 'Change this'} (${region(spot.x, spot.y) === 'the middle' ? 'in the middle' : `at the ${region(spot.x, spot.y)}`} of the picture)` : text
     setDraft('')
     setChip(null)
     att.clear()
     try {
-      await note(text || 'Put this here', files.length ? files.map((f) => f.asset) : undefined, moment)
+      await note(words || 'Put this here', files.length ? files.map((f) => f.asset) : undefined, moment)
+      if (spot && chip) {
+        const next = [...pins, { n: spot.n, at: chip.at, x: spot.x, y: spot.y, text: text || 'Change this' }]
+        localStorage.setItem(pinsKey(slug), JSON.stringify(next))
+        setPins(next)
+      }
     } catch (e) {
       setDraft(text)
+      setChip(chip)
       att.restore(files)
       setAlert(userMessage(e))
     }
+  }
+
+  const retry = (e: LogEntry) => {
+    if (e.ask.kind !== 'note') return
+    const r = planned ? reel.projects.script(slug, e.ask.text).then(() => load()) : note(e.ask.text, undefined, e.ask.moment ?? undefined)
+    void r.catch((err) => setAlert(userMessage(err)))
   }
 
   const rename = async () => {
@@ -336,6 +481,26 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     }
   }
 
+  const resume = async (basic = false) => {
+    try {
+      const r = await reel.projects.resume(slug, basic)
+      setJob({ ...EMPTY_LIVE, jobId: r.jobId })
+      await load()
+    } catch (e) {
+      notify(userMessage(e), 'error')
+    }
+  }
+
+  const addVideo = async (paths: string[]) => {
+    try {
+      const r = await reel.projects.addVideo(slug, paths)
+      setJob({ ...EMPTY_LIVE, jobId: r.jobId, message: 'Copying your video' })
+      await load()
+    } catch (e) {
+      notify(userMessage(e), 'error')
+    }
+  }
+
   const savePost = async (text: string): Promise<boolean> => {
     const caption = text.trim()
     if (caption === (d.project.post?.caption ?? '').trim()) return true
@@ -349,7 +514,6 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     }
   }
 
-  const marks = timeline && timeline.video === shownVideo ? noteMarks(d.chat, job?.jobId ?? null, timeline.words) : []
   const originalReady = !shownVideo || timeline?.video === shownVideo
   const originalAt = (t: number) => {
     if (!shownVideo) return 'start' as const
@@ -373,168 +537,93 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const openDrawer = (t: Tab) => {
     if (older && latestN !== undefined) setSelected(latestN)
     setCompare(null)
+    setPointing(false)
     setDrawer(t)
   }
   const watch = (n: number) => {
     setCompare(null)
     setSelected(n)
-    setFreshPlay(false)
-    if (!changePreview) setPlayRequest({ n, ask: ++playAsks.current })
+    if (unwatched === n) setUnwatched(null)
+    if (!changePreview) play(n)
+  }
+  const startCompare = (b: number) => {
+    const i = d.versions.findIndex((v) => v.n === b)
+    if (i < 1) return
+    setPointing(false)
+    setCompare({ a: d.versions[i - 1].n, b })
+    setSelected(b)
   }
 
-  // A note at a spot on the picture: about that moment, with where it is in words the editor reads.
-  const pinNote = async (text: string, at: number, x: number, y: number): Promise<boolean> => {
-    const m = await momentAt(at)
-    const where = region(x, y)
-    try {
-      await note(`${text} (${where === 'the middle' ? 'in the middle' : `at the ${where}`} of the picture)`, undefined, typeof m === 'string' ? undefined : m)
-    } catch (e) {
-      notify(userMessage(e), 'error')
-      return false
-    }
-    const next = [...pins, { n: (pins[pins.length - 1]?.n ?? 0) + 1, at, x, y, text }]
-    localStorage.setItem(pinsKey(slug), JSON.stringify(next))
-    setPins(next)
-    return true
-  }
-  const unzoom = (at: number) => {
-    setZoom(false)
-    playhead.set(at)
-    const phone = document.querySelector<HTMLVideoElement>('[data-testid="player"]')
-    if (phone) phone.currentTime = at
-  }
-
-  const exportLabel = version && (older || compare) ? `Export Version ${version.n}` : 'Export for Instagram'
+  const src = planned ? null : hasVersions ? (changePreview ?? version?.video ?? null) : (firstLook ?? d.sourceVideo)
+  const tag = changePreview ? 'Quick preview' : !hasVersions && !planned && src ? (firstLook ? 'First look' : 'Original') : null
   const waiting = d.queue.filter((q) => !q.attempt).length
-  const src = changePreview ?? version?.video ?? null
+  const nextSpot = Math.max(0, ...pins.map((p) => p.n)) + 1
+  const placeholder = planned
+    ? "What's this reel about?"
+    : !hasVersions
+      ? 'Notes you send now wait for Version 1…'
+      : job
+        ? 'Your next note waits for this one…'
+        : 'Tell your editor what to change…'
+  const showComposer = planned || hasVersions || first?.kind === 'making'
 
-  const notesColumn = (where: 'main' | 'zoom') => (
-    <>
-      <div className="notes-h">
-        <h2>Notes for your editor</h2>
-      </div>
-      <NotesLog
-        slug={slug}
-        entries={entries}
-        queue={d.queue}
-        held={d.queueHeld}
-        latest={latestN ?? 0}
-        shown={onScreen?.n ?? null}
-        making={making}
-        busy={!!job}
-        aiOn={!aiOff}
-        noAiCut={!d.aiEdited}
-        versionRows={versionRows}
-        onPlay={watch}
-        onAction={runAction}
-        onRetry={(text, moment) => void note(text, undefined, moment ?? undefined).catch((e) => setAlert(userMessage(e)))}
-        onError={(m) => notify(m, 'error')}
-      />
-      <div
-        className="cwrap"
-        onDragOver={(e) => {
-          if (!Array.from(e.dataTransfer.types).includes('Files')) return
-          e.preventDefault()
-          e.dataTransfer.dropEffect = 'copy'
-        }}
-        onDrop={(e) => {
-          if (!Array.from(e.dataTransfer.types).includes('Files') || aiOff) return
-          e.preventDefault()
-          e.stopPropagation()
-          window.dispatchEvent(new Event(NOTE_DROP_DONE))
-          if (!providerChecked) {
-            heldDrops.current.push({ files: Array.from(e.dataTransfer.files), types: Array.from(e.dataTransfer.types) })
-            setHeldN(heldDrops.current.length)
-            return
-          }
-          att.onDropFiles(e.dataTransfer)
-        }}
-      >
-        <StopAsk
-          open={stopAsk && (where === 'zoom') === zoom}
-          kept={latestN ?? 0}
-          waiting={waiting}
-          onStop={() => (setStopAsk(false), job?.jobId && void reel.jobs.cancel(job.jobId))}
-          onKeep={() => setStopAsk(false)}
+  const title = (
+    <span className="rt-title">
+      {renaming === null ? (
+        <h1 className="tb-h reel-title" title="Click to rename" onClick={() => setRenaming(d.title)} data-testid="title">
+          {d.title}
+        </h1>
+      ) : (
+        <input
+          className="input reel-title-input"
+          autoFocus
+          value={renaming}
+          aria-label="Reel name"
+          onChange={(e) => setRenaming(e.target.value)}
+          onBlur={() => void rename()}
+          onFocus={(e) => e.currentTarget.select()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void rename()
+            if (e.key === 'Escape') setRenaming(null)
+          }}
+          data-testid="title-input"
         />
-        <Composer
-          where={where}
-          draft={draft}
-          onDraft={setDraft}
-          chip={chip}
-          onChip={setChip}
-          playhead={playhead}
-          att={heldN ? { ...att, busy: att.busy + heldN } : att}
-          aiOn={!aiOff}
-          checking={!providerChecked}
-          job={job}
-          making={making}
-          steps={steps}
-          stepNote={job ? d.chat.find((m) => m.from === 'you' && m.jobId === job.jobId) : null}
-          held={d.queueHeld ? waiting : 0}
-          alert={alert}
-          onSend={() => void send()}
-          onStop={() => setStopAsk(true)}
-          onRunNext={() => void reel.queue.runNext(slug).catch((e) => notify(userMessage(e), 'error'))}
-          onClear={() => void reel.queue.clear(slug).catch((e) => notify(userMessage(e), 'error'))}
-          onConnect={connect}
-          inputRef={where === 'main' ? noteField : undefined}
-        />
-      </div>
-    </>
+      )}
+      {(onScreen ?? version) && (
+        <span className={`rt-ver${older ? ' older' : ''}`} data-testid="version-on-screen">
+          Version {(onScreen ?? version)!.n}
+        </span>
+      )}
+      {older && !compare && (
+        <button className="btn ghost small" onClick={() => watch(latestN!)} data-testid="version-latest">
+          Back to latest
+        </button>
+      )}
+    </span>
   )
 
-  return (
-    <div className={`reel-page${fresh ? ' fresh' : ''}`}>
-      <div className="reel-h">
-        {renaming === null ? (
-          <h1 className="reel-title" title="Click to rename" onClick={() => setRenaming(d.title)} data-testid="title">
-            {d.title}
-          </h1>
-        ) : (
-          <input
-            className="input reel-title-input"
-            autoFocus
-            value={renaming}
-            aria-label="Video name"
-            onChange={(e) => setRenaming(e.target.value)}
-            onBlur={() => void rename()}
-            onFocus={(e) => e.currentTarget.select()}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void rename()
-              if (e.key === 'Escape') setRenaming(null)
-            }}
-            data-testid="title-input"
-          />
-        )}
-        {version && (
-          <VersionPicker
-            versions={d.versions}
-            shown={version.n}
-            changes={changes}
-            byHand={byHand}
-            rows={versionRows}
-            onPick={watch}
-            onCompare={(b, a) => {
-              setCompare({ a, b })
-              setSelected(b)
-              setFreshPlay(false)
-            }}
-          />
-        )}
-        {older && !compare && (
-          <button className="btn ghost small" onClick={() => watch(latestN!)} data-testid="version-latest">
-            Back to latest
-          </button>
-        )}
-        <span className="spacer" />
-        <button className="btn ghost" onClick={() => openDrawer('cut')} disabled={!version} data-testid="edit-myself">
+  const actions = (
+    <>
+      {hasVersions && (
+        <button className={`btn ghost${drawer ? ' on' : ''}`} aria-pressed={!!drawer} onClick={() => (drawer ? setDrawer(null) : openDrawer('cut'))} data-testid="edit-myself">
           <Icon name="sliders" size={16} /> Edit it myself
         </button>
+      )}
+      {hasVersions && (
+        <Outs
+          label="Share"
+          disabled={!version || !!job}
+          why={job ? 'Wait for this version to finish' : undefined}
+          onExport={() => void doExport()}
+          onPhone={() => void doExport(true)}
+          exportFile={exportFile}
+        />
+      )}
+      <span className="rt-more">
         <button
           ref={moreBtn}
           className="icon-btn"
-          aria-label="More for this video"
+          aria-label="More for this reel"
           aria-haspopup="menu"
           aria-expanded={more}
           onClick={() => setMore((m) => !m)}
@@ -542,183 +631,263 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
         >
           <Icon name="more" />
         </button>
-        <PopMenu
-          open={more}
-          onClose={() => setMore(false)}
-          anchor={moreBtn}
-          label="More for this video"
-          style={{ right: 28, top: 52, width: 230 }}
-          origin="top right"
-        >
+        <PopMenu open={more} onClose={() => setMore(false)} anchor={moreBtn} label="More for this reel" style={{ right: 0, top: 'calc(100% + 6px)', width: 200 }} origin="top right">
           <button className="mi" role="menuitem" onClick={() => (setMore(false), setRenaming(d.title))} data-testid="rename">
             <Icon name="pencil" size={16} /> Rename
           </button>
-          <button className="mi" role="menuitem" onClick={() => (setMore(false), void reel.app.openFolder(d.dir))}>
-            <Icon name="folder" size={16} /> Show in {FOLDER_APP}
-          </button>
-          <hr />
           <button className="mi danger" role="menuitem" disabled={!!job} onClick={() => (setMore(false), setConfirmDelete(true))} data-testid="delete">
-            <Icon name="trash" size={16} /> Delete this video…
+            <Icon name="trash" size={16} /> Delete…
           </button>
         </PopMenu>
-      </div>
+      </span>
+    </>
+  )
 
-      <div className="reel-b">
-        <div className="pcol">
-          <PhonePlayer
-            src={src}
-            poster={version?.cover}
-            autoPlayMuted={!!changePreview || (freshPlay && version?.n === latestN)}
-            playRequest={!changePreview && playRequest?.n === version?.n ? playRequest?.ask : undefined}
-            onPlayRequestHandled={() => setPlayRequest(null)}
-            subtitle={drawer === 'captions' && preview ? preview : null}
-            still={drawer === 'captions' && preview && d.sourceVideo ? `${d.sourceVideo}#t=${preview.at.toFixed(2)}` : null}
-            stillMirrored={d.project.sources?.[0]?.mirror === true}
-            view={phoneView}
-            caption={d.project.post?.caption}
-            original={d.sourceVideo}
-            originalAt={originalAt}
-            originalReady={originalReady}
-            warmOriginal={warmOriginal}
-            holdingOriginal={holding}
-            dragFile={version && !version.draft ? version.videoPath : null}
-            marks={marks}
-            playhead={playhead}
-            onShown={setShownSrc}
-            keepTime={!!compare}
-            onZoom={version ? () => setZoom(true) : undefined}
-            onFailed={() => {
-              notify('I could not find that video. It may have been moved or deleted.', 'error')
-              if (onScreen) setSelected(onScreen.n)
-            }}
-            over={
-              compare && (
-                <div className="abswitch" role="group" aria-label="Compare versions" data-testid="compare">
-                  {[compare.a, compare.b].map((n) => (
-                    <button
-                      key={n}
-                      className={selected === n ? 'on' : undefined}
-                      aria-pressed={selected === n}
-                      onClick={() => setSelected(n)}
-                      data-testid={`compare-pick-${n}`}
-                    >
-                      Version {n}
-                    </button>
-                  ))}
-                </div>
-              )
-            }
-          />
-          {changePreview && (
-            <p className="muted-sm center" data-testid="change-preview">
-              Here's your change. I'm making the full-quality version.
-            </p>
-          )}
-          <div className="under">
-            {compare ? (
-              <button className="btn ghost small" onClick={() => setCompare(null)} data-testid="done-compare">
-                <Icon name="x" size={14} /> Done comparing
+  const over = (
+    <div className="reel-over">
+      {tag && (
+        <span className="reel-tag" data-testid={changePreview ? 'change-preview' : 'first-tag'}>
+          {tag}
+        </span>
+      )}
+      {compare && (
+        <div className="cmp" role="group" aria-label="Compare versions" data-testid="compare">
+          <div className="abswitch">
+            {[compare.a, compare.b].map((n) => (
+              <button key={n} className={selected === n ? 'on' : undefined} aria-pressed={selected === n} onClick={() => setSelected(n)} data-testid={`compare-pick-${n}`}>
+                Version {n}
               </button>
-            ) : (
-              <>
-                <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
-                {d.sourceVideo && (
-                  <button
-                    className={`btn ghost small${holding ? ' on' : ''}`}
-                    onPointerEnter={() => setWarmOriginal(true)}
-                    onFocus={() => setWarmOriginal(true)}
-                    onPointerDown={() => setHolding(true)}
-                    onPointerUp={() => setHolding(false)}
-                    onPointerLeave={() => setHolding(false)}
-                    onKeyDown={(e) => (e.key === ' ' || e.key === 'Enter') && setHolding(true)}
-                    onKeyUp={() => setHolding(false)}
-                    aria-label="Hold for original"
-                    data-tip="Hold to see your video before I edited it"
-                    data-testid="hold-original"
-                  >
-                    <Icon name="original" size={14} /> <span className="lbl">Original</span>
-                  </button>
-                )}
-                <button className="btn ghost small" onClick={() => setZoom(true)} disabled={!version} aria-label="Zoom in" data-tip="Zoom in" data-testid="zoom-in">
-                  <Icon name="zoom-in" size={14} /> <span className="lbl">Zoom in</span>
-                </button>
-              </>
-            )}
+            ))}
           </div>
-          <Outs
-            label={exportLabel}
-            disabled={!version || !!job}
-            why={job ? 'Wait for this version to finish' : undefined}
-            onExport={() => void doExport()}
-            onPhone={() => void doExport(true)}
-            exportFile={exportFile}
-          />
+          <button className="cmp-done" onClick={() => setCompare(null)} data-testid="done-compare">
+            Done comparing
+          </button>
         </div>
-
-        <div className="rdiv" />
-
-        <div className="ncol">{notesColumn('main')} </div>
-      </div>
-
-      {zoom && version && (
-        <ZoomView
-          title={d.title}
-          picker={
-            <VersionPicker
-              versions={d.versions}
-              shown={version.n}
-              changes={changes}
-              byHand={byHand}
-              rows={versionRows}
-              onPick={watch}
-              onCompare={(b, a) => setCompare({ a, b })}
-              testid="zoom-version-switch"
-            />
-          }
-          src={src}
-          compare={
-            compare
-              ? {
-                  a: { n: compare.a, src: d.versions.find((v) => v.n === compare.a)!.video },
-                  b: { n: compare.b, src: d.versions.find((v) => v.n === compare.b)!.video }
-                }
-              : null
-          }
+      )}
+      {!compare && <Spots pins={pins} playhead={playhead} />}
+      {chip?.spot && (
+        <span className="spot pending" style={{ left: `${chip.spot.x * 100}%`, top: `${chip.spot.y * 100}%` }} aria-hidden>
+          {chip.spot.n}
+        </span>
+      )}
+      {pointing && (
+        <Pointer
           playhead={playhead}
-          original={d.sourceVideo}
-          pins={pins}
-          notes={notesColumn('zoom')}
-          exportLabel={exportLabel}
-          disabled={!version || !!job}
-          aiOn={!aiOff}
-          onClose={unzoom}
-          onExport={() => void doExport()}
-          onPhone={() => void doExport(true)}
-          onDoneCompare={() => setCompare(null)}
-          onPin={pinNote}
-        />
-      )}
-
-      {drawer && (
-        <ShowMeHow
-          d={d}
-          initialTab={drawer}
-          version={version ?? null}
-          onClose={() => {
-            setDrawer(null)
-            setPreview(null)
+          onCancel={() => setPointing(false)}
+          onDrop={(x, y) => {
+            if (transport.get().playing) transport.toggle()
+            setPointing(false)
+            setChip({ at: Math.floor(playhead.get()), spot: { x, y, n: nextSpot } })
+            noteField.current?.focus()
           }}
-          onChanged={() => load()}
-          onRerender={(change, label) => void rerender(change, label ?? (drawer ? CHANGE_LABEL[drawer] : undefined))}
-          onPreview={setPreview}
-          onTab={(t) => setDrawer(t)}
         />
       )}
+    </div>
+  )
+
+  return (
+    <div className="reel-page">
+      <TitleBarSlot title={title} actions={actions} />
+      <div className="reel-b">
+        <section className="stage" aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
+          {planned ? (
+            <PlannedStage title={d.title} onFiles={(p) => void addVideo(p)} />
+          ) : (
+            <>
+              <div className="stage-v">
+                <PhonePlayer
+                  src={src}
+                  poster={hasVersions ? version?.cover : null}
+                  className={[landing && 'landing', tag === 'Original' && d.project.sources?.[0]?.mirror === true && 'mirrored-original'].filter(Boolean).join(' ') || undefined}
+                  autoPlayMuted={!!changePreview || !hasVersions}
+                  playRequest={!changePreview && playRequest?.n === version?.n ? playRequest?.ask : undefined}
+                  onPlayRequestHandled={() => setPlayRequest(null)}
+                  subtitle={drawer === 'captions' && preview ? preview : null}
+                  still={drawer === 'captions' && preview && d.sourceVideo ? `${d.sourceVideo}#t=${preview.at.toFixed(2)}` : null}
+                  stillMirrored={d.project.sources?.[0]?.mirror === true}
+                  view={phoneView}
+                  caption={d.project.post?.caption}
+                  original={hasVersions ? d.sourceVideo : null}
+                  originalAt={originalAt}
+                  originalReady={originalReady}
+                  warmOriginal={warmOriginal}
+                  holdingOriginal={holding}
+                  onHold={hasVersions && d.sourceVideo ? setHolding : undefined}
+                  dragFile={version && !version.draft ? version.videoPath : null}
+                  playhead={playhead}
+                  transport={transport}
+                  bare
+                  onShown={setShownSrc}
+                  keepTime={!!compare}
+                  onFailed={() => {
+                    notify('That version could not be found. It may have been moved or deleted.', 'error')
+                    if (onScreen) setSelected(onScreen.n)
+                  }}
+                  over={over}
+                >
+                  <div className="phone-empty" data-testid="copying">
+                    <Spinner /> Copying your video
+                  </div>
+                </PhonePlayer>
+              </div>
+              {src && (
+                <>
+                  <Timeline
+                    playhead={playhead}
+                    transport={transport}
+                    duration={duration}
+                    words={timeline && timeline.video === shownVideo ? timeline.words : []}
+                    marks={marks}
+                    onRange={(r) => {
+                      if (!hasVersions || aiOff) return
+                      setChip(r)
+                      noteField.current?.focus()
+                    }}
+                    onPlay={watch}
+                  />
+                  <TransportRow transport={transport} playhead={playhead}>
+                    <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
+                  </TransportRow>
+                </>
+              )}
+            </>
+          )}
+        </section>
+
+        <div className="ncol">
+          {drawer ? (
+            <ShowMeHow
+              d={d}
+              initialTab={drawer}
+              version={version ?? null}
+              onClose={() => {
+                setDrawer(null)
+                setPreview(null)
+              }}
+              onChanged={() => load()}
+              onRerender={(change, label) => void rerender(change, label ?? CHANGE_LABEL[drawer])}
+              onPreview={setPreview}
+              onTab={(t) => setDrawer(t)}
+            />
+          ) : (
+            <>
+              <div className="notes-h">
+                <h2>Notes for your editor</h2>
+              </div>
+              <NotesLog
+                slug={slug}
+                entries={entries}
+                queue={d.queue}
+                held={d.queueHeld}
+                latest={latestN ?? 0}
+                first={first}
+                shown={onScreen?.n ?? null}
+                making={making}
+                busy={!!job}
+                aiOn={!aiOff}
+                basic={!d.aiEdited}
+                landed={landed}
+                unwatched={unwatched}
+                empty={
+                  planned && (
+                    <p className="log-empty" data-testid="plan-empty">
+                      Haven't filmed it yet? Tell your editor what it's about and get a script.
+                    </p>
+                  )
+                }
+                versionRows={versionRows}
+                onPlay={watch}
+                onCompare={startCompare}
+                onAction={runAction}
+                onRetry={retry}
+                onResume={() => void resume()}
+                onBasic={() => void resume(true)}
+                onCopy={(t) => void reel.app.copyText(t).then(() => notify('Copied.'))}
+                onError={(m) => notify(m, 'error')}
+              />
+              {showComposer && (
+                <div
+                  className="cwrap"
+                  onDragOver={(e) => {
+                    if (!Array.from(e.dataTransfer.types).includes('Files')) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'copy'
+                  }}
+                  onDrop={(e) => {
+                    if (!Array.from(e.dataTransfer.types).includes('Files') || aiOff || planned) return
+                    e.preventDefault()
+                    e.stopPropagation()
+                    window.dispatchEvent(new Event(NOTE_DROP_DONE))
+                    if (!providerChecked) {
+                      heldDrops.current.push({ files: Array.from(e.dataTransfer.files), types: Array.from(e.dataTransfer.types) })
+                      setHeldN(heldDrops.current.length)
+                      return
+                    }
+                    att.onDropFiles(e.dataTransfer)
+                  }}
+                >
+                  <Composer
+                    draft={draft}
+                    onDraft={setDraft}
+                    chip={chip}
+                    onChip={setChip}
+                    onPoint={() => canPoint && setPointing(true)}
+                    plain={!hasVersions}
+                    playhead={playhead}
+                    att={heldN ? { ...att, busy: att.busy + heldN } : att}
+                    checking={!providerChecked}
+                    placeholder={placeholder}
+                    job={job}
+                    making={making}
+                    firstSteps={first?.kind === 'making' ? firstSteps : null}
+                    steps={steps}
+                    stepsOpenFirst={first?.kind === 'making'}
+                    stepNote={job ? d.chat.find((m) => m.from === 'you' && m.jobId === job.jobId) : null}
+                    under={
+                      first?.kind === 'making' &&
+                      notifyAsk && (
+                        <p className="notify-ask" data-testid="notify-ask">
+                          This takes a few minutes.{' '}
+                          <button
+                            onClick={() => {
+                              localStorage.setItem(NOTIFY_ASKED, '1')
+                              setNotifyAsk(false)
+                              void reel.perm.setNotifications(true).catch((e) => notify(userMessage(e), 'error'))
+                            }}
+                            data-testid="notify-me"
+                          >
+                            Notify me when it's ready
+                          </button>
+                        </p>
+                      )
+                    }
+                    held={d.queueHeld ? waiting : 0}
+                    alert={alert}
+                    connect={
+                      aiOff ? (
+                        <div className="connect-cin" data-testid="composer-connect">
+                          <p>{planned ? 'Connect an editor to get a script' : 'Connect an editor to leave notes'}</p>
+                          <ConnectAI onConnected={setProvider} />
+                        </div>
+                      ) : null
+                    }
+                    onSend={() => void send()}
+                    onStop={() => job?.jobId && void reel.jobs.cancel(job.jobId)}
+                    onRunNext={() => void reel.queue.runNext(slug).catch((e) => notify(userMessage(e), 'error'))}
+                    onClear={() => void reel.queue.clear(slug).catch((e) => notify(userMessage(e), 'error'))}
+                    inputRef={noteField}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
 
       {confirmDelete && (
         <Confirm
-          title="Delete this video?"
-          body="This removes all its versions from Reel Studio. Anything you exported stays in Finished videos."
+          title="Delete this reel?"
+          body="This removes the reel and all its versions from Reel Studio. Anything you shared stays where you put it."
           yes="Delete"
           no="Keep it"
           danger
@@ -735,38 +904,106 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   )
 }
 
-/** "Stop and keep Version 3?" above the note box: the safe choice has focus. */
-function StopAsk({ open, kept, waiting, onStop, onKeep }: { open: boolean; kept: number; waiting: number; onStop: () => void; onKeep: () => void }) {
-  const { mounted, leaving } = usePresence(open, 120)
-  const keep = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (!open) return
-    keep.current?.focus()
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onKeep()
-    window.addEventListener('keydown', esc)
-    return () => window.removeEventListener('keydown', esc)
-  }, [open, onKeep])
-  if (!mounted) return null
+/** Play, the time, then whatever sits at the row's end (speed, Instagram or Clean). */
+function TransportRow({ transport, playhead, children }: { transport: Transport; playhead: Playhead; children: React.ReactNode }) {
+  const { playing, duration, rate } = useTransport(transport)
+  const second = usePlayhead(playhead, Math.floor)
+  return (
+    <div className="transport">
+      <button className="pp" onClick={() => transport.toggle()} aria-label={playing ? 'Pause' : 'Play'} data-testid="play">
+        <Icon name={playing ? 'pause' : 'play'} size={14} stroke={2} />
+      </button>
+      <span className="tc" data-testid="time">
+        {clock(second)} <span>/ {clock(duration)}</span>
+      </span>
+      <span className="sp" />
+      <button className={`speed${rate !== 1 ? ' on' : ''}`} onClick={() => transport.nextRate()} aria-label={`Playback speed ${rate}×`} title="Playback speed" data-testid="speed">
+        {rate}×
+      </button>
+      {children}
+    </div>
+  )
+}
+
+/** Spots on the picture show again within 1.5 s of their moment. */
+function Spots({ pins, playhead }: { pins: Pin[]; playhead: Playhead }) {
+  const t = usePlayhead(playhead, (s) => Math.round(s * 4) / 4)
+  if (!pins.length) return null
+  return (
+    <>
+      {pins.map((p) => {
+        const near = Math.abs(t - p.at) <= 1.5
+        return (
+          <span key={p.n} className={`spot${near ? '' : ' away'}${p.x > 0.55 ? ' flip' : ''}`} style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }} aria-hidden>
+            {p.n}
+            {near && <span className="spot-lab">{p.text}</span>}
+          </span>
+        )
+      })}
+    </>
+  )
+}
+
+/** Point at a spot (C): a ring follows the pointer and a click drops the numbered spot. Arrows and Enter do the same. */
+function Pointer({ playhead, onDrop, onCancel }: { playhead: Playhead; onDrop: (x: number, y: number) => void; onCancel: () => void }) {
+  const layer = useRef<HTMLDivElement>(null)
+  const [ring, setRing] = useState<{ x: number; y: number } | null>(() => (byKeyboard() ? { x: 0.5, y: 0.4 } : null))
+  const second = usePlayhead(playhead, Math.floor)
+  useEffect(() => layer.current?.focus({ preventScroll: true }), [])
+  const at = (e: React.PointerEvent | React.MouseEvent) => {
+    const r = layer.current!.getBoundingClientRect()
+    return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }
+  }
   return (
     <div
-      className={`pop confirm${leaving ? ' leave' : ''}`}
-      role="alertdialog"
-      aria-label="Stop"
-      style={{ right: 8, bottom: 'calc(100% + 8px)', ['--o' as string]: 'bottom right' }}
-      data-testid="stop-confirm"
+      ref={layer}
+      className="pointer"
+      tabIndex={0}
+      role="application"
+      aria-label="Point at the spot you mean. The arrow keys move, Enter drops the spot, Escape stops."
+      onPointerMove={(e) => setRing(at(e))}
+      onClick={(e) => {
+        e.stopPropagation()
+        const p = at(e)
+        onDrop(p.x, p.y)
+      }}
+      onKeyDown={(e) => {
+        const d = ({ ArrowLeft: [-0.04, 0], ArrowRight: [0.04, 0], ArrowUp: [0, -0.04], ArrowDown: [0, 0.04] } as Record<string, number[]>)[e.key]
+        const r = ring ?? { x: 0.5, y: 0.4 }
+        if (d) setRing({ x: Math.min(0.96, Math.max(0.04, r.x + d[0])), y: Math.min(0.96, Math.max(0.04, r.y + d[1])) })
+        else if (e.key === 'Enter') onDrop(r.x, r.y)
+        else if (e.key === 'Escape') onCancel()
+        else return
+        e.preventDefault()
+        e.stopPropagation()
+      }}
+      data-testid="pointer"
     >
-      <h3>{kept ? `Stop and keep Version ${kept}?` : 'Stop this change?'}</h3>
-      <p>
-        Your note stays here, so you can send it again.
-        {waiting > 0 && ' The notes after it wait until you send them.'}
-      </p>
-      <div className="row">
-        <button className="btn ghost small" onClick={onStop} data-testid="stop-yes">
-          Stop
-        </button>
-        <button ref={keep} className="btn small" onClick={onKeep} data-testid="stop-no">
-          Keep going
-        </button>
+      <span className="pointer-hint">Click the spot you mean</span>
+      {ring && (
+        <span className="ring" style={{ left: `${ring.x * 100}%`, top: `${ring.y * 100}%` }} aria-hidden>
+          <span className="rt">{clock(second)}</span>
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** A reel with no video yet: its title set large where the video will be, and the one way to add it. */
+function PlannedStage({ title, onFiles }: { title: string; onFiles: (paths: string[]) => void }) {
+  const drop = useFileDrop((paths) => {
+    window.dispatchEvent(new Event(NOTE_DROP_DONE))
+    onFiles(paths)
+  })
+  return (
+    <div className={`planned${drop.over ? ' over' : ''}`} {...drop.props} data-note-drop data-testid="planned-stage">
+      <div className="planned-frame">
+        <p className="planned-title">{title}</p>
+        <div className="planned-ask">
+          <h2>Drop the video you filmed</h2>
+          <p>A few takes are fine. Retakes and pauses come out.</p>
+          <PickFiles className="btn primary" label="Choose video" accept="video/*,.mov,.mp4,.m4v" onFiles={onFiles} />
+        </div>
       </div>
     </div>
   )

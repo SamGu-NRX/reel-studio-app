@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import type { ChatAction, NoteMoment, QueuedNote, VersionRow } from '../../../shared/api'
+import type { ChatAction, QueuedNote, ScriptResult, VersionRow } from '../../../shared/api'
 import { ACTION_LABELS } from '../../../shared/notes'
-import { clock } from '../../../shared/progress'
+import { momentLabel } from '../../../shared/moments'
 import type { LogEntry, LogResult } from '../../../shared/notes-log'
 import { reel, userMessage } from '../api'
 import { Icon } from './icons'
@@ -49,25 +49,42 @@ export function VersionRows({ rows, asked }: { rows: VersionRow[] | null | undef
   )
 }
 
-function Moment({ m }: { m: NoteMoment | null }) {
-  return m ? <span className="tm">{clock(m.at)}</span> : null
-}
+/** Version 1 before it exists: being made, paused, or failed. */
+export type FirstState =
+  | { kind: 'making'; heard: string[]; editor: boolean }
+  | { kind: 'paused' }
+  | { kind: 'failed'; why: string; extra?: ReactNode }
 
+const BASIC = 'Basic version: pauses and retakes removed, subtitles and a cover'
+
+/**
+ * Notes for your editor: each thing you asked (a light bubble on the right) and what came of it (a line on the left).
+ * A version's line plays it; What changed opens its before → after rows (open on the newest only) and Compare.
+ * Older entries fold behind one line once the list is taller than its column.
+ */
 export function NotesLog({
   slug,
   entries,
   queue,
   held,
   latest,
+  first,
   shown,
   making,
   busy,
   aiOn,
-  noAiCut,
+  basic,
+  landed,
+  unwatched,
+  empty,
   versionRows,
   onPlay,
+  onCompare,
   onAction,
   onRetry,
+  onResume,
+  onBasic,
+  onCopy,
   onError
 }: {
   slug: string
@@ -75,18 +92,29 @@ export function NotesLog({
   queue: QueuedNote[]
   held: boolean
   latest: number
+  first: FirstState | null
   /** the version on screen */
   shown: number | null
   /** the version being made now, if any */
   making: number | null
   busy: boolean
   aiOn: boolean
-  /** the first cut was made without an AI editor: say so under it */
-  noAiCut: boolean
+  /** Version 1 was made without an editor */
+  basic: boolean
+  /** the version that just landed: its line enters */
+  landed: number | null
+  /** a version that landed while you compared or edited by hand */
+  unwatched: number | null
+  /** shown when there is nothing yet (a reel with no video) */
+  empty?: ReactNode
   versionRows: ReturnType<typeof useVersionRows>
   onPlay: (n: number) => void
+  onCompare: (n: number) => void
   onAction: (a: ChatAction, messageId: string) => void
-  onRetry: (text: string, moment: NoteMoment | null) => void
+  onRetry: (e: LogEntry) => void
+  onResume: () => void
+  onBasic: () => void
+  onCopy: (text: string) => void
   onError: (message: string) => void
 }) {
   const box = useRef<HTMLDivElement>(null)
@@ -104,7 +132,7 @@ export function NotesLog({
   }, [latestOpen, latest, want])
 
   // Older entries fold behind one line while the list is taller than its column; new ones are added at the bottom.
-  const size = `${entries.length}:${waiting.length}`
+  const size = `${entries.length}:${waiting.length}:${first?.kind ?? ''}`
   const lastSize = useRef(size)
   useLayoutEffect(() => {
     if (lastSize.current !== size) {
@@ -124,45 +152,112 @@ export function NotesLog({
     setOpen((o) => ({ ...o, [n]: next }))
   }
 
+  const version = (e: LogEntry, v: number, said: string) => {
+    const on = isOpen(v)
+    const text = v === 1 && basic ? BASIC : said
+    return (
+      <>
+        <div className={`nt-res${shown === v ? ' cur' : ''}${landed === v ? ' enter' : ''}`} data-v={v}>
+          <span className="nk ok">
+            <Icon name="check" size={12} stroke={2.4} />
+          </span>
+          <button className="v" onClick={() => onPlay(v)} aria-label={`Play Version ${v}`} data-testid={`log-play-${v}`}>
+            Version {v}
+          </button>
+          <span className="sep" aria-hidden>
+            ·
+          </span>
+          <span className="t" title={text}>
+            {text}
+          </span>
+          <span className="sep" aria-hidden>
+            ·
+          </span>
+          {unwatched === v ? (
+            <button className="lk" onClick={() => onPlay(v)} data-testid="log-watch">
+              Is ready · Watch
+            </button>
+          ) : (
+            <button className="lk" aria-expanded={on} onClick={() => toggle(v)} data-testid={`what-changed-${v}`}>
+              What changed
+            </button>
+          )}
+          {shown === v && shown !== latest && <span className="onscreen">On screen</span>}
+        </div>
+        <div className={`acc${on ? ' open' : ''}`} inert={!on || undefined}>
+          <div>
+            <VersionRows
+              rows={versionRows.rows.get(v)}
+              asked={text.length > 60 && <p className="said selectable">{text}</p>}
+            />
+            {v > 1 && (
+              <div className="dacts">
+                <button className="lk" onClick={() => onCompare(v)} data-testid={`compare-${v}`}>
+                  <Icon name="compare" size={14} /> Compare with Version {v - 1}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  const firstLine = (f: FirstState) => {
+    if (f.kind === 'making')
+      return (
+        <>
+          <div className="nt-res quiet" aria-busy>
+            <span className="nk">
+              <span className="spin" />
+            </span>
+            <span className="t">Making Version 1</span>
+          </div>
+          {f.heard.length > 0 && (
+            <p className="heard selectable" data-testid="heard">
+              <b>{f.editor ? 'I heard' : 'Heard'}</b> {f.heard.slice(0, 80).join(' ')}
+              {f.heard.length > 80 ? '…' : ''}
+            </p>
+          )}
+        </>
+      )
+    if (f.kind === 'paused')
+      return (
+        <div className="nt-res paused" data-testid="first-paused">
+          <span className="nk pause">
+            <Icon name="pause" size={11} stroke={2.4} />
+          </span>
+          <span className="t">Paused. Nothing is lost.</span>
+          <button className="btn primary small" onClick={onResume} data-testid="resume">
+            Resume
+          </button>
+        </div>
+      )
+    return (
+      <>
+        <div className="nt-res" role="alert" data-testid="first-failed">
+          <span className="nk err">
+            <Icon name="x" size={12} stroke={2.4} />
+          </span>
+          <span className="t wrap">Didn't finish. {f.why}</span>
+        </div>
+        <div className="nt-acts">
+          <button className="btn primary small" onClick={onResume} data-testid="retry-first">
+            Try again
+          </button>
+          <button className="btn small" onClick={onBasic} data-testid="basic-first">
+            Make a basic version
+          </button>
+        </div>
+        {f.extra}
+      </>
+    )
+  }
+
   const result = (e: LogEntry, r: LogResult) => {
     switch (r.kind) {
-      case 'version': {
-        const on = isOpen(r.v)
-        return (
-          <>
-            <div className={`nt-res${shown === r.v ? ' cur' : ''}`} data-v={r.v}>
-              <span className="nk ok">
-                <Icon name="check" size={12} stroke={2.4} />
-              </span>
-              <button className="v" onClick={() => onPlay(r.v)} aria-label={`Play Version ${r.v}`} data-testid={`log-play-${r.v}`}>
-                Version {r.v}
-              </button>
-              <span className="t" title={r.text}>
-                {r.text}
-              </span>
-              <button className="lk" aria-expanded={on} onClick={() => toggle(r.v)} data-testid={`what-changed-${r.v}`}>
-                What changed
-              </button>
-              {shown === r.v && shown !== latest && <span className="onscreen">On screen</span>}
-            </div>
-            <div className={`acc${on ? ' open' : ''}`} inert={!on || undefined}>
-              <div>
-                <VersionRows
-                  rows={versionRows.rows.get(r.v)}
-                  asked={
-                    <>
-                      {r.text.length > 60 && <p className="said selectable">{r.text}</p>}
-                      {e.key === 'video' && noAiCut && (
-                        <p className="asked">No AI editor yet, so I made a simple cut. You can still change anything under Edit it myself.</p>
-                      )}
-                    </>
-                  }
-                />
-              </div>
-            </div>
-          </>
-        )
-      }
+      case 'version':
+        return version(e, r.v, r.text)
       case 'making':
         return (
           <div className="nt-res quiet" aria-busy>
@@ -172,6 +267,17 @@ export function NotesLog({
             <span className="t">Making Version {r.v}</span>
           </div>
         )
+      case 'writing':
+        return (
+          <div className="nt-res quiet" aria-busy data-testid="script-writing">
+            <span className="nk">
+              <span className="spin" />
+            </span>
+            <span className="t">Writing your script</span>
+          </div>
+        )
+      case 'script':
+        return <Script s={r.script} onCopy={onCopy} />
       case 'failed':
         return (
           <div className="nt-res" role="alert">
@@ -180,22 +286,22 @@ export function NotesLog({
             </span>
             <span className="t wrap">{r.text}</span>
             {e.ask.kind === 'note' && aiOn && (
-              <button className="btn small" disabled={busy} onClick={() => e.ask.kind === 'note' && onRetry(e.ask.text, e.ask.moment)} data-testid="log-retry">
-                <Icon name="retry" size={14} /> Try again
+              <button className="lk" disabled={busy} onClick={() => onRetry(e)} data-testid="log-retry">
+                Try again
               </button>
             )}
           </div>
         )
       case 'stopped':
         return (
-          <div className="nt-res">
+          <div className="nt-res" data-testid="log-stopped">
             <span className="nk stop">
-              <Icon name="stop" size={12} stroke={2.4} />
+              <Icon name="stop" size={11} stroke={2.4} />
             </span>
             <span className="t">Stopped. {r.kept ? `Version ${r.kept} is unchanged.` : 'Nothing changed.'}</span>
             {e.ask.kind === 'note' && aiOn && (
-              <button className="btn small" disabled={busy} onClick={() => e.ask.kind === 'note' && onRetry(e.ask.text, e.ask.moment)} data-testid="log-retry">
-                <Icon name="retry" size={14} /> Try again
+              <button className="lk" disabled={busy} onClick={() => onRetry(e)} data-testid="log-retry">
+                Send again
               </button>
             )}
           </div>
@@ -205,25 +311,25 @@ export function NotesLog({
     }
   }
 
+  const foldedVersions = entries.slice(0, folded).filter((e) => e.result?.kind === 'version').length
   const shownEntries = unfolded ? entries : entries.slice(folded)
   return (
     <div className="log" ref={box} role="log" aria-label="Notes for your editor" data-testid="chat">
       {!unfolded && folded > 0 && (
         <button className="fold" aria-expanded={false} onClick={() => setUnfolded(true)} data-testid="log-unfold">
           <Icon name="chevron-down" size={14} />
-          {folded} earlier {folded === 1 ? 'note' : 'notes'}
+          {foldedVersions === folded ? `${folded} earlier ${folded === 1 ? 'version' : 'versions'}` : `${folded} earlier ${folded === 1 ? 'note' : 'notes'}`}
         </button>
       )}
+      {entries.length === 0 && empty}
       {shownEntries.map((e) => (
-        <article key={e.key} className={`nt${e.ask.kind === 'note' ? ' note' : ''}`} data-testid={`log-${e.ask.kind}`}>
+        <article key={e.key} className="nt" data-testid={`log-${e.ask.kind}`}>
           {e.day && <div className="nday">{e.day}</div>}
           <div className="nt-ask">
-            <span className={`nk ${e.ask.kind === 'note' ? 'dot' : 'you'}`}>
-              {e.ask.kind === 'video' && <Icon name="video" size={12} stroke={2.2} />}
-              {e.ask.kind === 'hand' && <Icon name="sliders" size={12} stroke={2.2} />}
-            </span>
-            <span className="q selectable">
-              {e.ask.kind === 'note' && <Moment m={e.ask.moment} />}
+            <p className="bubble selectable">
+              {e.ask.kind === 'video' && <Icon name="video" size={14} stroke={1.75} />}
+              {e.ask.kind === 'hand' && <Icon name="sliders" size={14} stroke={1.75} />}
+              {e.ask.kind === 'note' && e.ask.moment && <span className="tm">{momentLabel(e.ask.moment)}</span>}
               {e.ask.text}
               {e.ask.kind === 'note' && e.ask.attachments.length > 0 && (
                 <span className="q-att">
@@ -232,9 +338,9 @@ export function NotesLog({
                   ))}
                 </span>
               )}
-            </span>
+            </p>
           </div>
-          {e.result && result(e, e.result)}
+          {e.key === 'video' && first ? firstLine(first) : e.result && result(e, e.result)}
           {e.extra.map((m) => (
             <Reply key={m.id} text={m.text} actions={m.actions ?? []} id={m.id} busy={busy} onAction={onAction} />
           ))}
@@ -247,19 +353,26 @@ export function NotesLog({
   )
 }
 
-function Reply({
-  text,
-  actions,
-  id,
-  busy,
-  onAction
-}: {
-  text: string
-  actions: ChatAction[]
-  id: string
-  busy: boolean
-  onAction: (a: ChatAction, id: string) => void
-}) {
+/** The editor's script for a reel planned before it had a video: the hook, what to say, the words on screen. */
+function Script({ s, onCopy }: { s: ScriptResult; onCopy: (t: string) => void }) {
+  const all = [s.hook, s.script, ...(s.onScreenText.length ? ['', 'On screen:', ...s.onScreenText] : [])].join('\n')
+  return (
+    <div className="script" data-testid="script">
+      <p className="sc-hook selectable">{s.hook}</p>
+      <p className="sc-body selectable">{s.script}</p>
+      {s.onScreenText.length > 0 && (
+        <p className="sc-screen">
+          <span>On screen</span> {s.onScreenText.join(' · ')}
+        </p>
+      )}
+      <button className="lk" onClick={() => onCopy(all)} data-testid="script-copy">
+        <Icon name="copy" size={14} /> Copy
+      </button>
+    </div>
+  )
+}
+
+function Reply({ text, actions, id, busy, onAction }: { text: string; actions: ChatAction[]; id: string; busy: boolean; onAction: (a: ChatAction, id: string) => void }) {
   const shown = actions.filter((a) => a !== 'connect')
   return (
     <div className="nt-res quiet reply" data-testid="bubble-editor">
@@ -281,23 +394,7 @@ function Reply({
 }
 
 /** A note waiting its turn: its words can change, it can go, and with others waiting it can move (grip, or arrow keys on it). */
-function QueuedRow({
-  slug,
-  q,
-  i,
-  count,
-  held,
-  on,
-  onError
-}: {
-  slug: string
-  q: QueuedNote
-  i: number
-  count: number
-  held: boolean
-  on: number
-  onError: (m: string) => void
-}) {
+function QueuedRow({ slug, q, i, count, held, on, onError }: { slug: string; q: QueuedNote; i: number; count: number; held: boolean; on: number; onError: (m: string) => void }) {
   const [draft, setDraft] = useState<string | null>(null)
   const [over, setOver] = useState(false)
   const act = (p: Promise<unknown>) => void p.catch((e) => onError(userMessage(e)))
@@ -343,9 +440,9 @@ function QueuedRow({
       }}
     >
       <div className="nt-ask">
-        {many ? (
+        {many && (
           <button
-            className="nk grip"
+            className="grip"
             aria-label="Move this note. Use the up and down arrow keys."
             onKeyDown={(e) => {
               if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
@@ -357,14 +454,12 @@ function QueuedRow({
           >
             <Icon name="grip" size={14} />
           </button>
-        ) : (
-          <span className="nk dot" />
         )}
         {draft === null ? (
-          <span className="q">
-            <Moment m={q.moment ?? null} />
+          <p className="bubble waiting">
+            {q.moment && <span className="tm">{momentLabel(q.moment)}</span>}
             {q.text}
-          </span>
+          </p>
         ) : (
           <input
             className="input q-edit"
@@ -382,14 +477,16 @@ function QueuedRow({
         )}
       </div>
       <div className="nt-res quiet">
-        <span className="nk" />
+        <span className="nk">
+          <span className="wait-dot" />
+        </span>
         <span className="t">{held ? 'Held because you stopped' : `${i === 0 ? 'Next' : 'Then'}, on Version ${on}`}</span>
         {draft === null && (
           <>
-            <button className="btn ghost small" onClick={() => setDraft(q.text)} data-testid="queue-edit">
+            <button className="lk" onClick={() => setDraft(q.text)} data-testid="queue-edit">
               Edit
             </button>
-            <button className="btn ghost small" onClick={() => act(reel.queue.cancel(slug, q.id))} data-testid="queue-cancel">
+            <button className="lk" onClick={() => act(reel.queue.cancel(slug, q.id))} data-testid="queue-cancel">
               Cancel
             </button>
           </>

@@ -8,6 +8,7 @@ import { FOLDER_APP } from './ui'
 import { FullScreenReel } from './FullScreenReel'
 import { createPlayhead, followVideo, useFollowPlayhead, type Playhead } from './playhead'
 import { NO_LAYERS, layersReducer, type Layer } from './videoLayers'
+import type { Transport } from './transport'
 import { InstagramChrome, PhoneFill, SafeBand } from './Phone'
 import type { PhoneView } from '../../../shared/api'
 
@@ -292,7 +293,9 @@ export function PhonePlayer({
   onShown,
   onFailed,
   keepTime,
-  onZoom,
+  bare,
+  transport,
+  onHold,
   className,
   over,
   testid = 'player',
@@ -341,8 +344,11 @@ export function PhonePlayer({
   onFailed?: () => void
   /** A new `src` takes over at the same moment and keeps playing (comparing two versions). */
   keepTime?: boolean
-  /** Shows a Zoom in button in the controls. */
-  onZoom?: () => void
+  /** No play button or scrub row on the picture: `transport` drives it from outside. */
+  bare?: boolean
+  transport?: Transport
+  /** Pressing and holding the picture (a click still plays and pauses): show the original while it is held. */
+  onHold?: (holding: boolean) => void
   className?: string
   /** Drawn on the screen over the reel and Instagram's screen (the compare switch). */
   over?: ReactNode
@@ -394,7 +400,7 @@ export function PhonePlayer({
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       // defaultPrevented: the player's own keys already took it
-      if (e.code !== 'Space' || e.defaultPrevented || typing(e.target) || document.querySelector('.modal-backdrop, .zoom')) return
+      if (e.code !== 'Space' || e.defaultPrevented || typing(e.target) || document.querySelector('.modal-backdrop')) return
       e.preventDefault()
       toggle()
     }
@@ -485,6 +491,40 @@ export function PhonePlayer({
     localStorage.setItem(RATE_KEY, String(r))
     setRate(r)
   }
+  const nextRateRef = useRef(nextRate)
+  nextRateRef.current = nextRate
+  useEffect(() => transport?.attach({ toggle, seek, nextRate: () => nextRateRef.current() }), [transport, toggle, seek])
+  useEffect(() => transport?.report({ playing, duration: dur, rate }), [transport, playing, dur, rate])
+
+  // Press and hold the picture for the original. 250 ms tells a hold from a click (no measurement behind it:
+  // about when a press stops feeling like a tap); the click that ends a hold does not also play or pause.
+  const holdTimer = useRef(0)
+  const held = useRef(false)
+  const holdOff = () => {
+    window.clearTimeout(holdTimer.current)
+    if (!held.current) return
+    onHold?.(false)
+    window.setTimeout(() => (held.current = false), 0)
+  }
+  const holdProps = onHold
+    ? {
+        onPointerDown: (e: React.PointerEvent) => {
+          if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return
+          holdTimer.current = window.setTimeout(() => {
+            held.current = true
+            onHold(true)
+          }, 250)
+        },
+        onPointerUp: holdOff,
+        onPointerLeave: holdOff,
+        onPointerCancel: holdOff,
+        onClickCapture: (e: React.MouseEvent) => {
+          if (!held.current) return
+          e.stopPropagation()
+          held.current = false
+        }
+      }
+    : {}
 
   // A picked version plays with sound once its own video is on screen (it loads under the old one first).
   useEffect(() => {
@@ -615,7 +655,7 @@ export function PhonePlayer({
           <span className="draghandle-tip" aria-hidden>Drag the video into any app</span>
         </button>
       )}
-      <div className="phone-screen" ref={screenRef} tabIndex={src ? -1 : undefined} onKeyDown={src ? onKey : undefined}>
+      <div className="phone-screen" ref={screenRef} tabIndex={src ? -1 : undefined} onKeyDown={src ? onKey : undefined} {...holdProps}>
         {src ? (
           <>
             {[layers.leaving, layers.shown, layers.next].map((l: Layer | null) => {
@@ -711,7 +751,7 @@ export function PhonePlayer({
             <InstagramChrome on={view === 'instagram' && !holdingOriginal} caption={caption} playing={playing} />
             {subtitle && !holdingOriginal && <SafeBand />}
             {over}
-            {!playing && !holdingOriginal && !(still && subtitle) && (
+            {!bare && !playing && !holdingOriginal && !(still && subtitle) && (
               <button className="big-play" onClick={toggle} aria-label="Play" data-testid="play">
                 <Icon name="play" size={30} stroke={1.5} />
               </button>
@@ -728,7 +768,7 @@ export function PhonePlayer({
                 <Icon name="mute" size={16} /> Tap for sound
               </button>
             )}
-            <div className={`scrub${started || marks?.length ? ' shown' : ''}${asking || marks?.some((m) => m.state === 'making') ? ' pinned' : ''}`}>
+            {!bare && <div className={`scrub${started || marks?.length ? ' shown' : ''}${asking || marks?.some((m) => m.state === 'making') ? ' pinned' : ''}`}>
               <button className="scrub-btn" onClick={toggle} aria-label={playing ? 'Pause' : 'Play'}>
                 <Icon name={playing ? 'pause' : 'play'} size={16} stroke={2} />
               </button>
@@ -766,11 +806,6 @@ export function PhonePlayer({
                   {rate}×
                 </button>
               )}
-              {onZoom && (
-                <button className="scrub-btn" onClick={onZoom} aria-label="Zoom in" title="Zoom in" data-testid="zoom-in-player">
-                  <Icon name="zoom-in" size={15} stroke={2} />
-                </button>
-              )}
               <button
                 className="scrub-btn"
                 onClick={() => {
@@ -781,7 +816,7 @@ export function PhonePlayer({
               >
                 <Icon name={muted ? 'mute' : 'volume'} size={16} stroke={2} />
               </button>
-            </div>
+            </div>}
           </>
         ) : (
           children ?? <div className="phone-empty">Your reel will play here.</div>

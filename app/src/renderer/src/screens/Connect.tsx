@@ -5,9 +5,6 @@ import { Icon } from '../components/icons'
 
 const BACK_LABEL: Record<Exclude<Screen, { name: 'connect' }>['name'], string> = {
   home: 'My videos',
-  new: 'Back',
-  script: 'Back to my script',
-  working: 'Back to my video',
   reel: 'Back to my video',
   library: 'Library',
   style: 'My style',

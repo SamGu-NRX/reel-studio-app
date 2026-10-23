@@ -1,118 +1,151 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import type { NoteMoment } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
+import { momentLabel } from '../../../shared/moments'
 import { timeLeftWords, type LiveState } from '../../../shared/live'
+import { STEP_LABEL, stepNote, type Step } from '../../../shared/steps'
 import { Icon } from './icons'
 import { usePlayhead, type Playhead } from './playhead'
 import { AttachmentChips, type useNoteAttachments } from './NoteAttachments'
+import { PopMenu } from './PopMenu'
 import { usePresence } from './motion'
+import { Thinking } from './ui'
 
-export type Chip = { at: number } | null
+/** What a note is about: a moment or a range, and a numbered spot on the picture. */
+export type Chip = { at: number; to?: number; spot?: { x: number; y: number; n: number } } | null
+
+/** "top left", "the middle"...: where on the picture, in words the editor reads with the note. */
+export function region(x: number, y: number): string {
+  const v = y < 0.34 ? 'top' : y > 0.66 ? 'bottom' : 'middle'
+  const h = x < 0.34 ? ' left' : x > 0.66 ? ' right' : ''
+  return v === 'middle' && !h ? 'the middle' : `${v}${h}`
+}
+
+export const chipLabel = (c: NonNullable<Chip>): string => `${momentLabel(c)}${c.spot ? ` · ${region(c.spot.x, c.spot.y)}` : ''}`
 
 /**
- * The note box. Its top edge carries the progress strip while a version is being made (Steps, Stop), or
- * the held notes after Stop. A time chip offers the moment on screen; pressed, the note is about that moment.
+ * The note box. While a version is being made its top edge is the progress strip (Making Version N, the step, time
+ * left, Steps, Stop) and Steps opens the list upward; after Stop it says the notes are held. The moment chip shows
+ * the playhead and attaches it in one click; its menu points at a spot on the picture.
  */
 export function Composer({
-  where,
   draft,
   onDraft,
   chip,
   onChip,
+  onPoint,
+  plain,
   playhead,
   att,
-  aiOn,
   checking,
+  placeholder,
   job,
   making,
+  firstSteps,
   steps,
-  stepNote,
+  stepsOpenFirst,
+  stepNote: running,
+  under,
   held,
   alert,
+  connect,
   onSend,
   onStop,
   onRunNext,
   onClear,
-  onConnect,
   inputRef
 }: {
-  where: 'main' | 'zoom'
   draft: string
   onDraft: (t: string) => void
   chip: Chip
   onChip: (c: Chip) => void
+  onPoint: () => void
+  /** words only: no moment chip and no paperclip (planning, or before Version 1 exists to point at) */
+  plain: boolean
   playhead: Playhead
   att: ReturnType<typeof useNoteAttachments>
-  aiOn: boolean
   checking: boolean
+  placeholder: string
   job: LiveState | null
   /** the version the running job will make */
   making: number | null
+  /** Version 1's rows, from main */
+  firstSteps: Step[] | null
+  /** what a note's job has said it was doing, in order */
   steps: string[]
-  /** the running note, so the step that quotes it shows its moment the way the notes log does */
+  /** Version 1 opens with its steps showing */
+  stepsOpenFirst: boolean
+  /** the running note, so a step that quotes it shows its moment the way the log does */
   stepNote?: { text: string; moment?: NoteMoment } | null
+  /** under the steps (asking about notifications during Version 1) */
+  under?: ReactNode
   /** notes held after Stop or a failed note */
   held: number
   alert: string | null
+  /** the editor picker, in place of the box, when no editor is connected */
+  connect: ReactNode
   onSend: () => void
   onStop: () => void
   onRunNext: () => void
   onClear: () => void
-  onConnect: () => void
-  inputRef?: React.RefObject<HTMLTextAreaElement | null>
+  inputRef: React.RefObject<HTMLTextAreaElement | null>
 }) {
   const second = usePlayhead(playhead, Math.floor)
-  const [stepsOpen, setStepsOpen] = useState(false)
+  const [stepsToggled, setStepsToggled] = useState<string | null>(null)
   const [focus, setFocus] = useState(false)
+  const [menu, setMenu] = useState(false)
+  const caret = useRef<HTMLButtonElement>(null)
   const strip = job ? 'job' : held ? 'held' : null
   const { mounted: stripShown } = usePresence(!!strip, 200)
-  const ownRef = useRef<HTMLTextAreaElement>(null)
-  const field = inputRef ?? ownRef
   const canSend = (!!draft.trim() || att.chips.length > 0) && !att.busy && !checking
-
-  // No AI editor: a version made by hand still shows its progress strip; below it, one line to connect.
-  const noAi = !checking && !aiOn
+  // Steps opens per job: Version 1 starts open, a note starts closed
+  const stepsOpen = job ? (stepsToggled === job.jobId ? !stepsOpenFirst : stepsOpenFirst) : false
+  const now = firstSteps?.find((s) => s.state === 'now')
+  const current = firstSteps ? (now ? STEP_LABEL[now.id] : null) : job?.message
   const pct = job ? Math.min(1, job.overall / 100) : 0
   const left = job ? timeLeftWords(job) : null
+
   return (
-    <div
-      className={`cbox${focus ? ' focus' : ''}`}
-      data-note-drop={(where === 'main' && !noAi) || undefined}
-      data-testid={where === 'main' && !noAi ? 'note-drop' : undefined}
-    >
+    <div className={`cbox${focus ? ' focus' : ''}${connect ? ' bare' : ''}`} data-note-drop={!connect || undefined} data-testid={connect ? undefined : 'note-drop'}>
       <div className={`stripwrap${strip ? ' on' : ''}`}>
         <div>
           {stripShown && strip === 'job' && job && (
             <>
-              <div className={`steps${stepsOpen ? ' on' : ''}`}>
-                <ul aria-label="Steps">
-                  {steps.map((s, i) => (
-                    <li key={`${i}-${s}`} className={i === steps.length - 1 ? 'cur' : undefined}>
-                      {i < steps.length - 1 ? (
-                        <span className="ok">
-                          <Icon name="check" size={8} stroke={3} />
-                        </span>
-                      ) : (
-                        <span className="spin light" />
-                      )}
-                      <StepText s={s} note={stepNote} />
-                    </li>
-                  ))}
-                </ul>
+              <div className={`steps${stepsOpen ? ' on' : ''}`} inert={!stepsOpen || undefined}>
+                <div>
+                  <ul aria-label="Steps" data-testid="steps-list">
+                    {firstSteps
+                      ? firstSteps.map((s) => (
+                          <li key={s.id} className={`st-${s.state}`} data-state={s.state}>
+                            <StepMark state={s.state} />
+                            <span className="sl">{STEP_LABEL[s.id]}</span>
+                            {stepNote(s) ? <span className={`sr${s.state === 'skipped' ? ' amber' : ''}`}>{stepNote(s)}</span> : s.result && <span className="sr">{s.result}</span>}
+                          </li>
+                        ))
+                      : steps.map((s, i) => (
+                          <li key={`${i}-${s}`} className={i === steps.length - 1 ? 'st-now' : 'st-done'}>
+                            <StepMark state={i === steps.length - 1 ? 'now' : 'done'} />
+                            <span className="sl">
+                              <StepText s={s} note={running} />
+                            </span>
+                          </li>
+                        ))}
+                  </ul>
+                  {under}
+                </div>
               </div>
               <div className="strip" role="status" data-testid="note-progress">
                 <span className="bar" aria-hidden>
                   <i style={{ transform: `scaleX(${pct})` }} />
                 </span>
-                <span className="spin light" aria-hidden />
+                {job.thinking ? <Thinking /> : <span className="spin light" aria-hidden />}
                 <b>{making ? `Making Version ${making}` : job.message}</b>
-                {left && (
-                  <span className="m" data-testid="note-time-left">
-                    · {left}
-                  </span>
-                )}
+                <span className="m" data-testid="note-time-left">
+                  {making && current ? ` · ${current}` : ''}
+                  {left ? ` · ${left}` : ''}
+                </span>
                 <span className="sp" />
-                <button className="sbtn" aria-expanded={stepsOpen} onClick={() => setStepsOpen((o) => !o)} data-testid="steps">
+                <button className="sbtn" aria-expanded={stepsOpen} onClick={() => setStepsToggled((t) => (t === job.jobId ? null : job.jobId))} data-testid="steps">
                   Steps <Icon name={stepsOpen ? 'chevron-down' : 'up'} size={12} stroke={2} />
                 </button>
                 <button className="sbtn" onClick={onStop} data-testid="stop">
@@ -130,20 +163,13 @@ export function Composer({
                 Clear
               </button>
               <button className="sbtn" onClick={onRunNext} data-testid="queue-run-next">
-                <Icon name="play" size={11} stroke={2.5} /> Send now
+                Send now
               </button>
             </div>
           )}
         </div>
       </div>
-      {noAi ? (
-        <div className="noai-cin">
-          <span>Connect an AI editor to ask for changes.</span>
-          <button className="btn small" onClick={onConnect} data-testid="composer-connect">
-            Connect
-          </button>
-        </div>
-      ) : (
+      {connect ?? (
         <>
           <AttachmentChips chips={att.chips} busy={att.busy} onRemove={(a) => void att.remove(a)} />
           {alert && (
@@ -152,49 +178,73 @@ export function Composer({
             </p>
           )}
           <div className="cin">
-            <button
-              className="att"
-              onClick={att.choose}
-              disabled={checking}
-              aria-label="Attach a picture or a clip"
-              title="Attach a picture or a clip"
-              data-testid="note-attach"
-            >
+            {!plain && <button className="att" onClick={att.choose} disabled={checking} aria-label="Attach a picture or a clip" title="Attach a picture or a clip" data-testid="note-attach">
               <Icon name="paperclip" size={17} />
-            </button>
+            </button>}
             <div className="cfield">
-              {chip ? (
-                <span className="tchip" data-testid="moment-chip">
-                  {clock(chip.at)}
+              {plain ? null : chip ? (
+                <span className={`tchip${chip.spot ? ' spot' : ''}`} data-testid="moment-chip">
+                  {chip.spot && <span className="spot-n">{chip.spot.n}</span>}
+                  {chipLabel(chip)}
                   <button
                     className="x"
                     aria-label="Remove the moment"
                     onClick={() => {
                       onChip(null)
-                      field.current?.focus()
+                      inputRef.current?.focus()
                     }}
                   >
                     <Icon name="x" size={12} stroke={2} />
                   </button>
                 </span>
               ) : (
-                <button
-                  className="tchip suggest"
-                  onClick={() => {
-                    onChip({ at: playhead.get() })
-                    field.current?.focus()
-                  }}
-                  aria-label={`Attach the moment on screen, ${clock(second)}`}
-                  title="Ask about this moment"
-                  disabled={checking}
-                  data-testid="moment-suggest"
-                >
-                  <Icon name="plus" size={12} stroke={2} />
-                  {clock(second)}
-                </button>
+                <span className="tchip-split">
+                  <button
+                    className="tchip suggest"
+                    onClick={() => {
+                      onChip({ at: playhead.get() })
+                      inputRef.current?.focus()
+                    }}
+                    aria-label={`Attach the moment on screen, ${clock(second)}`}
+                    title="About this moment"
+                    disabled={checking}
+                    data-testid="moment-suggest"
+                  >
+                    <Icon name="plus" size={12} stroke={2} />
+                    {clock(second)}
+                  </button>
+                  <button
+                    ref={caret}
+                    className="tchip suggest caret"
+                    aria-label="More ways to say where"
+                    aria-haspopup="menu"
+                    aria-expanded={menu}
+                    disabled={checking}
+                    onClick={() => setMenu((m) => !m)}
+                    data-testid="moment-menu"
+                  >
+                    <Icon name="chevron-down" size={12} stroke={2} />
+                  </button>
+                  <PopMenu open={menu} onClose={() => setMenu(false)} anchor={caret} label="Say where" style={{ left: 0, bottom: 'calc(100% + 6px)', width: 220 }} origin="bottom left">
+                    <button
+                      className="mi"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenu(false)
+                        onPoint()
+                      }}
+                      data-testid="point-at-spot"
+                    >
+                      <Icon name="comment-plus" size={16} /> Point at a spot
+                      <span className="r">
+                        <kbd className="kbd">C</kbd>
+                      </span>
+                    </button>
+                  </PopMenu>
+                </span>
               )}
               <textarea
-                ref={field}
+                ref={inputRef}
                 rows={1}
                 value={draft}
                 onChange={(e) => onDraft(e.target.value)}
@@ -208,8 +258,8 @@ export function Composer({
                   }
                 }}
                 disabled={checking}
-                aria-label="Tell your editor what to change"
-                placeholder={checking ? 'Checking for your AI editor…' : job ? 'Your next note waits for this one…' : 'Tell your editor what to change…'}
+                aria-label={placeholder}
+                placeholder={checking ? 'Checking for your editor…' : placeholder}
                 data-testid="note-input"
               />
             </div>
@@ -223,6 +273,17 @@ export function Composer({
   )
 }
 
+function StepMark({ state }: { state: Step['state'] }) {
+  if (state === 'done')
+    return (
+      <span className="ok" aria-label="Done">
+        <Icon name="check" size={8} stroke={3} />
+      </span>
+    )
+  if (state === 'now') return <span className="spin light" aria-label="Now" />
+  return <span className={`todo${state === 'todo' ? '' : ' passed'}`} aria-label={state === 'todo' ? 'To do' : state === 'skipped' ? 'Skipped' : 'Stopped'} />
+}
+
 /** A step line; where it quotes the running note, the note's moment sits before its words. */
 function StepText({ s, note }: { s: string; note?: { text: string; moment?: NoteMoment } | null }) {
   const at = note?.moment && note.text ? s.indexOf(`"${note.text}"`) : -1
@@ -230,7 +291,7 @@ function StepText({ s, note }: { s: string; note?: { text: string; moment?: Note
   return (
     <>
       {s.slice(0, at)}
-      <span className="tm">{clock(note.moment.at)}</span> {s.slice(at)}
+      <span className="tm">{momentLabel(note.moment)}</span> {s.slice(at)}
     </>
   )
 }

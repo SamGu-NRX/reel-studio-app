@@ -5,6 +5,7 @@ import { Icon, type IconName } from './icons'
 import { UpdateButton } from './UpdateButton'
 import { byKeyboard, reducedMotion } from './motion'
 import { SIDE, sideWidth } from './side-width'
+import { IS_MAC } from './ui'
 import './shell.css'
 
 const RAIL_KEY = 'rs.sidebar-rail'
@@ -128,13 +129,35 @@ function SideResizer() {
   )
 }
 
-export function Sidebar({ section, go, provider, userName }: { section: string; go: Go; provider: ProviderInfo | null; userName: string | null }) {
+export function Sidebar({
+  section,
+  go,
+  provider,
+  userName,
+  onNewReel
+}: {
+  section: string
+  go: Go
+  provider: ProviderInfo | null
+  userName: string | null
+  onNewReel: () => void
+}) {
   const name = providerName(provider)
   const who = userName?.trim() || 'You'
   const inSettings = section === 'settings'
   return (
     <aside className="side" id="sidebar" aria-label="Sidebar">
       <nav className="nav" aria-label="Main">
+        <button
+          className="new-reel"
+          onClick={onNewReel}
+          title={`New reel (${IS_MAC ? '⌘N' : 'Ctrl+N'})`}
+          aria-keyshortcuts={IS_MAC ? 'Meta+N' : 'Control+N'}
+          data-testid="new-reel"
+        >
+          <Icon name="plus" size={16} stroke={1.75} />
+          <span className="lbl">New reel</span>
+        </button>
         {NAV.map((n) => (
           <button
             key={n.key}
