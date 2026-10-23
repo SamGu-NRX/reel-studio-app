@@ -86,7 +86,7 @@ import { createPidRegistry } from './orphans'
 import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
-import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord, PlatformExportResult, VersionInfo, LearnedRule, StyleRule } from '../shared/api'
+import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord, PlatformExportResult, VersionInfo, LearnedRule, MergeRequest, StyleRule } from '../shared/api'
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
@@ -283,7 +283,7 @@ const jobs = createJobManager(
 )
 
 /** A note job: the AI applies it as one all-or-nothing change (ai applyNote) on the newest version. */
-async function startNote(slug: string, { id: noteId, text, attachments, moment }: NoteToRun, record: (s: AppState) => void): Promise<string> {
+async function startNote(slug: string, { id: noteId, text, attachments, moment, branch }: NoteToRun, record: (s: AppState) => void): Promise<string> {
   const dir = projectDir(slug)
   const startedAt = Date.now()
   let editor: string | null = null
@@ -297,7 +297,7 @@ async function startNote(slug: string, { id: noteId, text, attachments, moment }
       // saved under its queue entry's id (note-queue.ts), with the job's id in its version's receipt; the app asks
       // before anything goes into My style
       const checkEdit = (await loadSettings()).checkEdits // Settings > "Double-check each edit"
-      const opts = { attachments: attachments.map((f) => f.asset), id: noteId, jobId, checkEdit, saveStyleRules: false, ...(owner ? { owner } : {}) }
+      const opts = { attachments: attachments.map((f) => f.asset), id: noteId, jobId, checkEdit, saveStyleRules: false, ...(branch !== undefined ? { base: branch } : {}), ...(owner ? { owner } : {}) }
       // the AI reads the moment in the note text: "At 0:08 (around "...", words w18, w19): cut this part";
       // what it says back while it works reaches the progress card in the person's own words
       const aiText = aiNoteText(text, moment)
@@ -883,11 +883,11 @@ function registerIpc(): void {
     pauser.cancel(slug)
     return { jobId: startFirstEdit(slug, null, basic === true) }
   })
-  handle('projects:note', async (_e, slug: string, text: string, attachments?: unknown, at?: unknown, onVersion?: unknown) => {
+  handle('projects:note', async (_e, slug: string, text: string, attachments?: unknown, at?: unknown, onVersion?: unknown, requestedBase?: unknown) => {
     const dir = projectDir(slug)
     // never trust the page: every attached ref is re-read from THIS project's own sidecars or its staging folder, and
     // a video kept closed refuses the note before the queue or the chat shows it (note-intake.ts)
-    const { note: typedText, files } = await takeNote(jobs, slug, text, attachments)
+    const { note: typedText, files, base } = await takeNote(jobs, slug, text, attachments, requestedBase)
     // "At 1:00: zoom in" with Just here: the typed time is the moment, and the words are the note
     const typed = at !== undefined ? typedMoment(typedText) : null
     let note = typed ? typed.rest : typedText
@@ -924,7 +924,16 @@ function registerIpc(): void {
     }
     // the queue entry carries the moment: its chat line shows it and the AI reads it (startNote)
     const seen = Number.isInteger(onVersion) ? Number(onVersion) : (moment?.version ?? (await readProject(slug)).version ?? 0)
-    return noteQueue.send(slug, { text: note, attachments: files.map(forChat), ...(moment ? { moment } : {}) }, seen)
+    // a branched note (version-tree) carries the saved version it changes: startNote passes it to applyNote as `base`
+    return noteQueue.send(slug, { text: note, attachments: files.map(forChat), ...(moment ? { moment } : {}), ...(base !== undefined ? { branch: base } : {}) }, seen)
+  })
+  // version-merge: one version's layers with another's, as a job of its own (it is not a note, so it does not queue)
+  handle('projects:mergeVersions', (_e, slug: string, request: MergeRequest) => {
+    const dir = projectDir(slug)
+    if (!ai.mergeVersions) throw { code: 'MERGE_UNAVAILABLE', userMessage: 'This editor does not support combining versions. Update Reel Studio and try again.' }
+    const merge = ai.mergeVersions.bind(ai)
+    const jobId = jobs.start(slug, 'note', (emit, signal, { id, owner }) => merge(dir, request, emit, signal, { id, ...(owner ? { owner } : {}) }))
+    return { jobId }
   })
   handle('projects:versionRows', async (_e, slug: string, n: number) => {
     if (!Number.isInteger(n) || n < 1) throw { code: 'BAD_VERSION', userMessage: 'Pick a version of this reel first.' }

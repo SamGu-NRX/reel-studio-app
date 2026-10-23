@@ -23,6 +23,7 @@ import { refuseIfOpen } from './owner';
 
 export * from './types';
 export * from './project';
+export * from './version-merge';
 export { refuseIfOpen, OWNER_LOCK } from './owner';
 export { TOOLS, TOOL_NAMES, toolSchemas, executeTool, newToolState } from './tools';
 export type { ToolContext, ToolDef } from './tools';
@@ -574,6 +575,9 @@ export function createAI(opts: CreateAIOptions) {
      * a setting for the whole reel. The app asks before adding a moment, which would hide it. */
     async wholeReelSetting(projectDir: string, note: string): Promise<boolean> {
       return !!planFastNote(note, await loadProject(projectDir));
+    },
+    async mergeVersions(projectDir: string, request: import('./version-merge').MergeRequest, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: { owner?: string; id?: string } = {}): Promise<editor.MergeEditResult> {
+      return exclusive(projectDir, opts.owner, () => edit(opts.owner, (d) => editor.saveMerge(d, projectDir, request, onEvent, signal, opts)));
     },
     async writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult> {
       return editor.writeScript(deps(opts.host), await modelProvider('writer'), idea, onEvent, signal);

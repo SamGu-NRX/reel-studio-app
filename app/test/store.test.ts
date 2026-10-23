@@ -34,6 +34,7 @@ import { binDir, projectsDir, reelStudioRoot } from '../src/main/paths'
 import { pathFromMediaUrl } from '../src/main/media-url'
 import { setupPaths } from './helpers'
 import type { Word } from '../src/shared/api'
+import { takeNote } from '../src/main/note-intake'
 
 function fakeProject(slug: string, opts: { versions?: number[]; partial?: number[] } = {}): string {
   const dir = join(projectsDir(), slug)
@@ -56,6 +57,57 @@ function fakeProject(slug: string, opts: { versions?: number[]; partial?: number
   }
   return dir
 }
+
+describe('version ancestry', () => {
+  it('carries the explicit base from note intake and refuses an unsaved base before chat', async () => {
+    setupPaths()
+    fakeProject('note-base', { versions: [1, 2, 3] })
+    // a note sent while a job runs waits in the queue: intake refuses only a reel kept closed
+    const jobs = { refuseIfKeptClosed: () => undefined }
+    expect(await takeNote(jobs, 'note-base', 'slower', undefined, 2)).toMatchObject({ note: 'slower', base: 2 })
+    await expect(takeNote(jobs, 'note-base', 'slower', undefined, 4)).rejects.toMatchObject({ code: 'BAD_NOTE_BASE' })
+  })
+  it('reads legacy parents without writing into saved folders, including the root and preview', async () => {
+    setupPaths()
+    const dir = fakeProject('legacy-tree', { versions: [1, 2, 3] })
+    expect((await listVersions(dir)).map((v) => [v.n, v.parent])).toEqual([[1, null], [2, 1], [3, 2]])
+    expect(existsSync(join(dir, 'versions/v1/version.json'))).toBe(false)
+    const preview = fakeProject('preview-tree')
+    mkdirSync(join(preview, 'versions/preview'), { recursive: true })
+    writeFileSync(join(preview, 'versions/preview/draft.mp4'), 'draft')
+    expect((await listVersions(preview)).map((v) => [v.n, v.parent])).toEqual([[0, null]])
+  })
+
+  it('returns a branch parent in the project detail sent to the renderer', async () => {
+    setupPaths()
+    const dir = fakeProject('branch-tree', { versions: [1, 2, 3, 4] })
+    writeFileSync(join(dir, 'versions/v4/version.json'), JSON.stringify({ parent: 2 }))
+    expect((await detail('branch-tree')).versions.map((v) => [v.n, v.parent])).toEqual([[1, null], [2, 1], [3, 2], [4, 2]])
+  })
+
+  it('exposes both merge parents while preserving the single-parent reader', async () => {
+    setupPaths()
+    const dir = fakeProject('merge-tree', { versions: [1, 2, 3] })
+    writeFileSync(join(dir, 'versions/v3/version.json'), JSON.stringify({ parent: 2, parents: [2, 1] }))
+    const versions = await listVersions(dir)
+    expect(versions.map((v) => v.parent)).toEqual([null, 1, 2])
+    expect(versions[2].parents).toEqual([2, 1])
+  })
+
+  it('refuses a second parent that is not an older version', async () => {
+    setupPaths()
+    const dir = fakeProject('bad-merge-tree', { versions: [1, 2, 3] })
+    writeFileSync(join(dir, 'versions/v3/version.json'), JSON.stringify({ parent: 2, parents: [2, 4] }))
+    await expect(listVersions(dir)).rejects.toThrow(/parents.*3/i)
+  })
+
+  it('refuses corrupt ancestry rather than inventing a linear parent', async () => {
+    setupPaths()
+    const dir = fakeProject('corrupt-tree', { versions: [1, 2] })
+    writeFileSync(join(dir, 'versions/v2/version.json'), JSON.stringify({ parent: 2 }))
+    await expect(listVersions(dir)).rejects.toThrow(/parent.*2/i)
+  })
+})
 
 const words = (n: number): Word[] => Array.from({ length: n }, (_, i) => ({ id: `w${i}`, w: `word${i}`, s: i, e: i + 0.5 }))
 

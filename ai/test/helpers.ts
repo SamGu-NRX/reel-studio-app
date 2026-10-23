@@ -148,12 +148,14 @@ export class FakeHost implements EngineHost {
         // version; a final of an unchanged edit returns its saved version, else starts v(N+1) afresh,
         // snapshots the edit, then patches `version` into the project file it rendered
         const draft = args.includes('--draft');
+        const mergeParent = args.includes('--merge-parent') ? Number(args[args.indexOf('--merge-parent') + 1]) : undefined;
+        const parent = args.includes('--parent') ? Number(args[args.indexOf('--parent') + 1]) : p.version || null;
         const saved = path.join(dir, 'versions', `v${p.version}`);
         const snapshot = !draft && p.version ? await fsp.readFile(path.join(saved, 'project.json'), 'utf8').catch(() => null) : null;
         // render.py asset_fingerprint: the files the edit reads must be unchanged too (here the transcript);
         // a version with no assets.json is compared by its edit alone
         const files = await fsp.readFile(path.join(saved, 'assets.json'), 'utf8').catch(() => null);
-        if (snapshot && editSignature(JSON.parse(snapshot)) === editSignature(p) && (files === null || files === await this.fingerprint(dir))) {
+        if (mergeParent === undefined && parent === p.version && snapshot && editSignature(JSON.parse(snapshot)) === editSignature(p) && (files === null || files === await this.fingerprint(dir))) {
           return { version: p.version, preview: false, draft: false, file: path.join(saved, 'export.mp4'), reused: true };
         }
         const v = (p.version ?? 0) + 1;
@@ -168,6 +170,7 @@ export class FakeHost implements EngineHost {
         await fsp.writeFile(file, 'fake');
         await fsp.writeFile(path.join(vd, 'project.json'), JSON.stringify(p, null, 2));
         if (!draft) await fsp.writeFile(path.join(vd, 'assets.json'), await this.fingerprint(dir));
+        if (!draft) await fsp.writeFile(path.join(vd, 'version.json'), JSON.stringify({ parent, ...(mergeParent === undefined ? {} : { parents: [parent, mergeParent] }) }));
         await this.afterRenderFiles?.({ draft, dir: vd });
         // like the engine: its own steps, the last one saying the video is ready
         for (const [pct, message] of [[12, 'Placing your pictures'], [90, 'Making your cover'], [100, 'Your video is ready']] as const) onProgress?.({ stage: 'render', pct, message });

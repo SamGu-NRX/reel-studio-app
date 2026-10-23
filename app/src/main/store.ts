@@ -379,6 +379,27 @@ export async function listVersions(dir: string): Promise<VersionInfo[]> {
   const push = async (n: number, d: string, video: string): Promise<void> => {
     const st = await fs.stat(video)
     const cover = join(d, 'cover.png')
+    let parent: number | null = n > 1 ? n - 1 : null
+    let parents: [number, number] | undefined
+    if (n > 0) {
+      let metadata: string | undefined
+      try { metadata = await fs.readFile(join(d, 'version.json'), 'utf8') }
+      catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e }
+      if (metadata !== undefined) {
+        const parsed = JSON.parse(metadata)
+        const value: unknown = parsed?.parent
+        if (n === 1 ? value !== null : typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value >= n) {
+          throw new Error(`Invalid parent for Version ${n}`)
+        }
+        parent = value as number | null
+        if (parsed.parents !== undefined) {
+          const pair: unknown = parsed.parents
+          if (!Array.isArray(pair) || pair.length !== 2 || pair[0] !== parent || pair[0] === pair[1]
+            || pair.some((p) => !Number.isSafeInteger(p) || p < 1 || p >= n)) throw new Error(`Invalid parents for Version ${n}`)
+          parents = pair as [number, number]
+        }
+      }
+    }
     const receipts = await readJson<{ renderId: string; facts: EditFact[] }[] | null>(join(d, 'receipts.json'), null)
     // a rewording describes the receipts up to the one it names; a later receipt in this folder makes it stale
     const titled = await readJson<{ renderId: string; title: string; summary: string } | null>(join(d, 'title.json'), null)
@@ -389,6 +410,8 @@ export async function listVersions(dir: string): Promise<VersionInfo[]> {
       ...(n > 0 && !receipts && typeof manifest?.renderId !== 'string' ? { beforeReceipts: true as const } : {}),
       ...(titled && titled.renderId === receipts?.at(-1)?.renderId ? { wording: { title: titled.title, summary: titled.summary } } : {}),
       n,
+      parent,
+      ...(parents ? { parents } : {}),
       video: mediaUrl(video, st.mtimeMs),
       videoPath: video,
       draft: basename(video) !== 'export.mp4',

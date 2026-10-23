@@ -4,7 +4,7 @@ import { notesLog } from '../src/shared/notes-log'
 
 const now = new Date('2026-10-22T15:00:00')
 const at = (h: number, day = 22) => new Date(2026, 9, day, h).toISOString()
-const v = (n: number, day = 22): VersionInfo => ({ n, video: '', videoPath: '', draft: false, cover: null, createdAt: at(9, day) })
+const v = (n: number, day = 22): VersionInfo => ({ n, parent: n > 1 ? n - 1 : null, video: '', videoPath: '', draft: false, cover: null, createdAt: at(9, day) })
 let id = 0
 const msg = (from: ChatMessage['from'], text: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({ id: `m${++id}`, from, text, at: at(10), ...extra })
 

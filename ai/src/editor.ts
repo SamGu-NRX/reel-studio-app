@@ -5,12 +5,12 @@ import { effectiveTokens, runAgent, RunAgentResult } from './agent';
 import type { LookupFn } from './safety';
 import { Prompts } from './prompts';
 import { StyleStore, StyleProposal, captionCaseProposal } from './style';
-import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProofread, doRender, unsureWords, executeTool, load, newToolState, resolveAsset, cleanSummary, renderEvent, operationStatus } from './tools';
+import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProofread, doRender, unsureWords, executeTool, load, newToolState, resolveAsset, cleanSummary, renderEvent, operationStatus, noteBase, stageMerge, ToolInputError } from './tools';
 import { planFastNote } from './fastnote';
 import { LEDGER } from './assets';
 import { AttachmentInfo, attachmentStills, attachmentsSection, earlierUnplaced, placedAssets, validateAttachments } from './attachments';
 import {
-  Analysis, EditReceipt, NoteEntry, PROJECT_FILE, Project, withDefaults, Transcript, WordAnchor, hasTranscript, loadProject, normalizeAnalysis, normalizeKeep, sameEdit, saveProject,
+  Analysis, EditReceipt, NoteEntry, PROJECT_FILE, Project, ProjectError, withDefaults, Transcript, WordAnchor, hasTranscript, loadProject, normalizeAnalysis, normalizeKeep, sameEdit, saveProject,
   snapshotVersion, LIBRARY_FOLDERS, anchorText, writeFileAtomic, keptWords, projectBytes, versionDir,
 } from './project';
 import { extractJson } from './providers/cli';
@@ -18,6 +18,7 @@ import { CheckRecord, CheckRound, MAX_REPAIRS, askChecker, checkerEvidence, repa
 import * as fsp from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { refuseIfOpen } from './owner';
+import { MergeRequest, MergeResult } from './version-merge';
 
 export interface EditorDeps {
   host: EngineHost;
@@ -345,6 +346,8 @@ ${summary}
 // ---------------------------------------------------------------- apply a note
 
 export interface ApplyNoteOptions {
+  /** saved snapshot to edit; omitted uses the live edit after acquiring the project lock */
+  base?: number;
   /** files attached to this note: `work/assets/attach-*` refs (re-checked against the project's sidecars) */
   attachments?: string[];
   /** names the note in project.json (the app passes its job id); default a new id */
@@ -501,7 +504,11 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   if (!/^[\w-]+$/.test(id)) throw new AIError('bad_note_id', 'Something went wrong starting your note. Try again.', { detail: `note id ${JSON.stringify(id)}` });
   const dir = path.join(projectDir, 'work', 'notes', id);
   const base = await fsp.readFile(path.join(projectDir, PROJECT_FILE));
-  const baseVersion = withDefaults(JSON.parse(base.toString('utf8'))).version;
+  const liveProject = withDefaults(JSON.parse(base.toString('utf8')));
+  const baseVersion = liveProject.version;
+  // a branched note (opts.base) edits that saved version's edit, and its version records that one as its parent
+  const parent = opts.base ?? baseVersion;
+  const edit = opts.base === undefined ? base : JSON.stringify(await noteBase(newCtx(deps, projectDir, provider, onEvent, signal), liveProject, opts.base));
   // A download writes its credit into work/assets/credits.json at once, outside the note's copy. null: no credits
   // file yet. undefined: it could not be read, so the note goes ahead and a failure leaves it alone.
   const creditsBefore = await fsp.readFile(path.join(projectDir, 'work', 'assets', 'credits.json'))
@@ -511,12 +518,14 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   const ledgerBefore = await ledgerBytes(projectDir);
   const begin = async (): Promise<ToolContext> => {
     const file = path.join(dir, 'edit.json');
-    await writeFileAtomic(file, base);
-    return { ...newCtx(deps, projectDir, provider, onEvent, signal, 2), userNote: note, note: { id, file, dir }, jobId: opts.jobId };
+    await writeFileAtomic(file, edit);
+    return { ...newCtx(deps, projectDir, provider, onEvent, signal, 2), userNote: note, note: { id, file, dir, parent }, jobId: opts.jobId };
   };
   const label = noteLabel(note, attached);
   let committed: EditResult;
   let started: Project;
+  // a stuck engine may still be writing in the note's folder: it is left for recovery
+  let stuck = false;
   try {
     let ctx = await begin();
     const { p: p0 } = await load(ctx);
@@ -554,7 +563,8 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     // An edit that ends where it started (undone, or set to what it already was) is no change: never repeat its claim
     // and make no version. A My style rule the note saved changes no video, so it only adds its line to the reply. The
     // note's previews went to its own folder, so the video the app shows was never touched.
-    const undone = ctx.state.changed.size > 0 && sameEdit(p0, await loadProject(projectDir, ctx.note!.file));
+    // a merge always records a new version with both parents, even one that matches the newest edit (docs/version-merge.md)
+    const undone = ctx.state.changed.size > 0 && ctx.note?.mergeParent === undefined && sameEdit(p0, await loadProject(projectDir, ctx.note!.file));
     if (undone) ctx.state.changed.clear();
     // only a reply that is nothing but a question passes: "I cut the intro. Want more?" still claims the cut
     const question = undone && /^[^.!]*\?$/.test(r.finished?.trim() ?? '') ? r.finished : null;
@@ -583,15 +593,16 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     committed = { ...result, ...(review ? { check: review.record } : {}) };
     started = p0;
   } catch (e) {
-    if (!engineStuck(e)) {
+    stuck = engineStuck(e);
+    if (!stuck) {
       await restoreCredits(projectDir, creditsBefore);
       await restoreAssets(projectDir, assetsBefore, ledgerBefore);
     }
     throw e;
   } finally {
-    // only what this note made under its own id; a final it started stays above project.json's
-    // version, never shown, and the app's job lane clears it (app store.ts cleanPartialVersions)
-    await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // Only this note's scratch. saveNote handles failed finals; crash leftovers stay unpublished
+    // until the app's job lane clears them (app store.ts cleanPartialVersions).
+    if (!stuck) await fsp.rm(dir, CLEANUP_RM).catch(() => undefined);
   }
   // read from the saved project; a failure here only skips the question, never the saved note
   const version = committed.version;
@@ -609,6 +620,39 @@ async function rememberCaptionCase(deps: EditorDeps, before: Project, after: Pro
   return captionCaseProposal({ project: after.id, title: after.title, version });
 }
 
+export interface MergeEditResult extends EditResult, MergeResult {}
+
+/** Uses the same private edit, final render, compare-and-swap, and cleanup as a note. */
+export async function saveMerge(deps: EditorDeps, projectDir: string, request: MergeRequest, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: { id?: string } = {}): Promise<MergeEditResult> {
+  const id = opts.id ?? randomUUID();
+  if (!/^[\w-]+$/.test(id)) throw new AIError('bad_note_id', 'Could not start this merge. Try again.');
+  const base = await fsp.readFile(path.join(projectDir, PROJECT_FILE));
+  const live = withDefaults(JSON.parse(base.toString('utf8')));
+  const dir = path.join(projectDir, 'work', 'notes', id);
+  const ctx = newCtx(deps, projectDir, null, onEvent, signal);
+  ctx.note = { id, dir, file: path.join(dir, 'edit.json') };
+  let stuck = false;
+  try {
+    const merged = await stageMerge(ctx, live, request);
+    const label = `Combine Version ${request.ours} and Version ${request.theirs}`;
+    const summary = `Combined Version ${request.ours} and Version ${request.theirs}.`;
+    const result = await saveNote(deps, ctx, base, live.version, { text: label, label, summary, attachments: [] }, false);
+    return { ...result, edit: ctx.project!, report: merged.report };
+  } catch (error) {
+    stuck = engineStuck(error);
+    if (error instanceof ProjectError || error instanceof ToolInputError) throw new AIError('bad_merge', error.message);
+    throw error;
+  } finally {
+    if (!stuck) await fsp.rm(dir, CLEANUP_RM).catch(() => undefined);
+  }
+}
+
+// On Windows a folder cannot be deleted while another program (a virus scanner reading a fresh export.mp4)
+// holds a file in it without delete sharing; fs.rm then fails at once with EPERM or EBUSY. Retry for about
+// 3 s (Node waits retryDelay * attempt between tries). A longer hold still leaves the unpublished folder,
+// which the next render of that number replaces and the app's cleanPartialVersions removes at startup.
+const CLEANUP_RM = { recursive: true, force: true, maxRetries: 5, retryDelay: 200 } as const;
+
 const changedElsewhere = (): AIError =>
   new AIError('project_changed', 'Your reel was changed somewhere else while I worked on your note, so I left it as it was. Send your note again.');
 
@@ -621,51 +665,68 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
   const unchanged = async (): Promise<void> => {
     if (!(await fsp.readFile(live)).equals(base)) throw changedElsewhere();
   };
-  let final: RenderInfo | null = null;
-  if (ctx.state.changed.size) {
-    ctx.emit({ type: 'status', message: 'Making the new version', pct: 90, phase: 'final' });
-    await unchanged();
-    await refreshCredits(ctx);
-    // the engine refuses that number too (render.py PROJECT_CHANGED), for a save that lands meanwhile
-    final = await doRender(ctx, false, false).catch((e) => { throw e?.code === 'PROJECT_CHANGED' ? changedElsewhere() : e; });
-  }
-  const version = final?.version ?? baseVersion;
-  const p = await loadProject(ctx.projectDir, ctx.note!.file);
-  const { styleRulesAdded, styleSuggestions } = ctx.state;
-  // A note that made no version saves no `version`, and its reply carries none, so it never becomes a version's
-  // tooltip (docs/schema-changes.md). One that did stores its final render's receipt.
-  const receipt = final ? finalReceipt(ctx) : undefined;
-  const entry: NoteEntry = {
-    ...(final ? { version } : {}), text: n.text, applied: [...ctx.state.changed], at: new Date().toISOString(),
-    ...(n.attachments.length ? { attachments: n.attachments } : {}), ...(receipt ? { receipt } : {}),
-    id: ctx.note!.id, reply: n.summary,
-    ...(styleRulesAdded.length ? { styleRulesAdded } : {}), ...(styleSuggestions.length ? { styleSuggestions } : {}),
-  };
-  p.notes = [...(p.notes ?? []), entry];
-  const bytes = projectBytes(p);
-  // a new version folder is complete, snapshot and notes included, before project.json points at it;
-  // an unchanged video keeps its version, whose folder is never rewritten
-  if (version > baseVersion) {
-    await unchanged();
-    const vdir = versionDir(ctx.projectDir, version);
-    await writeFileAtomic(path.join(vdir, PROJECT_FILE), bytes);
-    await fsp.writeFile(path.join(vdir, 'notes.md'), `# v${version}\n\nNote: ${n.label}\n\n${n.summary}\n`);
-  }
-  await writeFileAtomic(live, bytes, undefined, async () => {
-    const stuck = deps.stuck?.();
-    if (stuck) throw stuck;
-    if (!deps.owner) refuseIfOpen(ctx.projectDir);
-    await unchanged();
-    if (ctx.signal?.aborted) throw new AIError('cancelled', 'Stopped.');
-  });
+  let renderStarted = false;
+  if (ctx.note?.mergeReport?.length) n = { ...n, summary: [n.summary, ...ctx.note.mergeReport].join(' ') };
   try {
-    if (saveStyle) for (const rule of styleRulesAdded) await deps.style.add(rule);
-    if (final) ctx.emit(renderEvent(final));
-    ctx.emit({ type: 'status', message: 'Done', pct: 100 });
-  } catch {
-    // the note is saved: a My style write or a listener that fails now must not report it as failed
+    let final: RenderInfo | null = null;
+    if (ctx.state.changed.size) {
+      ctx.emit({ type: 'status', message: 'Making the new version', pct: 90, phase: 'final' });
+      await unchanged();
+      await refreshCredits(ctx);
+      // the engine refuses that number too (render.py PROJECT_CHANGED), for a save that lands meanwhile
+      renderStarted = true;
+      final = await doRender(ctx, false, false).catch((e) => { throw e?.code === 'PROJECT_CHANGED' ? changedElsewhere() : e; });
+    }
+    const version = final?.version ?? baseVersion;
+    // A preference-only note must not replace the live edit with its selected historical base.
+    const p = ctx.state.changed.size ? await loadProject(ctx.projectDir, ctx.note!.file) : withDefaults(JSON.parse(base.toString('utf8')));
+    const { styleRulesAdded, styleSuggestions } = ctx.state;
+    // A note that made no version saves no `version`, and its reply carries none, so it never becomes a version's
+    // tooltip (docs/schema-changes.md). One that did stores its final render's receipt.
+    const receipt = final ? finalReceipt(ctx) : undefined;
+    const entry: NoteEntry = {
+      ...(final ? { version } : {}), text: n.text, applied: [...ctx.state.changed], at: new Date().toISOString(),
+      ...(n.attachments.length ? { attachments: n.attachments } : {}), ...(receipt ? { receipt } : {}),
+      id: ctx.note!.id, reply: n.summary,
+      ...(styleRulesAdded.length ? { styleRulesAdded } : {}), ...(styleSuggestions.length ? { styleSuggestions } : {}),
+    };
+    p.notes = [...(p.notes ?? []), entry];
+    ctx.project = p;
+    const bytes = projectBytes(p);
+    // a new version folder is complete, snapshot and notes included, before project.json points at it;
+    // an unchanged video keeps its version, whose folder is never rewritten
+    if (version > baseVersion) {
+      await unchanged();
+      const vdir = versionDir(ctx.projectDir, version);
+      await writeFileAtomic(path.join(vdir, PROJECT_FILE), bytes);
+      await fsp.writeFile(path.join(vdir, 'notes.md'), `# v${version}\n\nNote: ${n.label}\n\n${n.summary}\n`);
+    }
+    await writeFileAtomic(live, bytes, undefined, async () => {
+      const stuck = deps.stuck?.();
+      if (stuck) throw stuck;
+      if (!deps.owner) refuseIfOpen(ctx.projectDir);
+      await unchanged();
+      if (ctx.signal?.aborted) throw new AIError('cancelled', 'Stopped.');
+    });
+    try {
+      if (saveStyle) for (const rule of styleRulesAdded) await deps.style.add(rule);
+      if (final) ctx.emit(renderEvent(final));
+      ctx.emit({ type: 'status', message: 'Done', pct: 100 });
+    } catch {
+      // the note is saved: a My style write or a listener that fails now must not report it as failed
+    }
+    return { summary: n.summary, ...(final ? { version } : {}), styleRulesAdded, styleSuggestions, changed: [...ctx.state.changed] };
+  } catch (e) {
+    // Only our next unpublished number, under the edit lock, after the engine has settled.
+    // A stuck engine may still be writing; recovery owns its files instead.
+    if (renderStarted && !engineStuck(e)) {
+      const saved = await loadProject(ctx.projectDir).catch(() => null);
+      if (saved && saved.version <= baseVersion) {
+        await fsp.rm(versionDir(ctx.projectDir, baseVersion + 1), CLEANUP_RM).catch(() => undefined);
+      }
+    }
+    throw e;
   }
-  return { summary: n.summary, ...(final ? { version } : {}), styleRulesAdded, styleSuggestions, changed: [...ctx.state.changed] };
 }
 
 // ---------------------------------------------------------------- idea -> script

@@ -25,6 +25,8 @@ export interface NoteToRun {
   attachments: NoteAttachment[]
   /** a "Just here" note's place: the AI reads it in the note text (index.ts startNote) */
   moment?: NoteMoment
+  /** the saved version it changes instead of the newest (ai applyNote `opts.base`) */
+  branch?: number
 }
 
 /** Starts a note job (index.ts). `record` goes into the app.json write that marks the job running. */

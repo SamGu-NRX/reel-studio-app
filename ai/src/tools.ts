@@ -9,8 +9,9 @@ import { readAttachment } from './attachments';
 import {
   Analysis, Broll, CaptionStyle, LIBRARY_FOLDERS, LibraryKind, MusicFrozen, MusicLevel, Project, Sfx, Transcript, TREATMENTS, Word, WordAnchor,
   anchorText, anchorWords, approxDuration, approxOutputTimes, keptWords, loadAnalysis, loadProject, loadTranscript,
-  captionsUnderInstagram, nextBrollId, normalizeKeep, captionCorrectionProblem, saveProject, validateProject, wordIndex, anchorProblem,
+  captionsUnderInstagram, nextBrollId, normalizeKeep, captionCorrectionProblem, saveProject, validateProject, wordIndex, anchorProblem, PROJECT_FILE, versionDir,
 } from './project';
+import { MERGE_FIELDS, MergeRequest, MergeResult, mergeVersions, validateMergeRequest } from './version-merge';
 import { S, JSONSchema, validate, fillNulls } from './schema';
 import { SFX_SOUNDS } from './sfx.generated';
 import { ANIMATION_IDS, ENGINE_FED, TimedWord, alignWordTimes, animationParamsSchema, cleanParams, itemTimes, phraseTime, templateSpec } from './animations';
@@ -62,7 +63,8 @@ export interface ToolContext {
   userNote?: string;
   /** A note edits `file`, its private copy of project.json, and renders its previews into `dir`;
    * project.json changes only when the whole note is done (editor.ts applyNote). */
-  note?: { id: string; file: string; dir: string };
+  /** `parent`: the saved version a branched note changes; `mergeParent`/`mergeReport`: a merge's other version and what it adjusted */
+  note?: { id: string; file: string; dir: string; parent?: number; mergeParent?: number; mergeReport?: string[] };
   /** the app job this task runs in; every render records it in its receipt */
   jobId?: string;
   /** DNS lookup used to refuse private/loopback hosts (test hook; default node:dns) */
@@ -90,6 +92,42 @@ export function newToolState(): ToolState {
   return { changed: new Set(), styleRulesAdded: [], styleSuggestions: [], styleRuleIds: [], summaries: [], renders: [], finished: null, toolCalls: 0 };
 }
 
+/** A snapshot's version counter can lag its folder. Keep allocation and history from the live
+ * project; only the edit comes from the selected version. Validate before creating note scratch. */
+export async function noteBase(ctx: ToolContext, live: Project, n: number): Promise<Project> {
+  const invalid = (detail: string) => new AIError('bad_note_base', `Version ${n} cannot be changed. Choose another saved version.`, { detail });
+  if (!Number.isSafeInteger(n) || n < 1 || n > live.version) throw invalid('The base is not a saved version number.');
+  const dir = versionDir(ctx.projectDir, n);
+  let snapshot: Project;
+  try {
+    await fsp.access(path.join(dir, 'export.mp4'));
+    try {
+      await fsp.access(path.join(dir, '.rendering'));
+      throw invalid('This version did not finish rendering.');
+    } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
+    snapshot = await loadProject(ctx.projectDir, path.join(dir, PROJECT_FILE));
+    const problems = validateProject(snapshot, await loadTranscript(ctx.projectDir, snapshot));
+    if (problems.length) throw invalid(problems.join('; '));
+    const refs = [
+      ...snapshot.sources.map((s) => s.path), snapshot.music.track,
+      ...snapshot.broll.flatMap((b) => [b.asset, ...(['post-wall', 'icon-wall'].includes(b.treatment) && Array.isArray(b.params?.items) ? b.params.items.filter((x): x is string => typeof x === 'string') : [])]),
+    ];
+    for (const ref of refs) {
+      if (!ref) continue;
+      const asset = resolveAsset(ctx, ref);
+      if (!asset) throw invalid(`The file ${ref} is missing.`);
+    }
+  } catch (e) {
+    if (e instanceof AIError) throw e;
+    throw invalid(e instanceof Error ? e.message : String(e));
+  }
+  return {
+    ...snapshot, id: live.id, slug: live.slug, title: live.title,
+    version: live.version, createdAt: live.createdAt, updatedAt: live.updatedAt,
+    notes: live.notes, handEdits: live.handEdits,
+  };
+}
+
 // ---------------------------------------------------------------- helpers
 
 export async function load(ctx: ToolContext): Promise<{ p: Project; t: Transcript }> {
@@ -108,6 +146,28 @@ async function mutate(ctx: ToolContext, field: string, fn: (p: Project, t: Trans
   await saveProject(ctx.projectDir, p, ctx.note?.file);
   ctx.state.changed.add(field);
   (ctx.state.dirty ??= new Set()).add(field);
+}
+
+/** Stage a merge inside the caller's existing note transaction; never publish from a tool. */
+export async function stageMerge(ctx: ToolContext, live: Project, request: MergeRequest): Promise<MergeResult> {
+  if (!ctx.note) throw new ToolInputError('Combine versions in a note or through the merge command.');
+  validateMergeRequest(request);
+  const ours = await noteBase(ctx, live, request.ours);
+  const theirs = await noteBase(ctx, live, request.theirs);
+  const transcript = await loadTranscript(ctx.projectDir, live);
+  const result = mergeVersions({ ours, theirs, take: request.take }, transcript);
+  if (ctx.signal?.aborted) throw new AIError('cancelled', 'Stopped.');
+  await saveProject(ctx.projectDir, result.edit, ctx.note.file);
+  ctx.note.parent = request.ours;
+  ctx.note.mergeParent = request.theirs;
+  ctx.note.mergeReport = result.report;
+  ctx.project = result.edit;
+  ctx.transcript = transcript;
+  for (const layer of Object.keys(MERGE_FIELDS)) {
+    ctx.state.changed.add(layer);
+    (ctx.state.dirty ??= new Set()).add(layer);
+  }
+  return result;
 }
 
 export class ToolInputError extends Error {
@@ -498,7 +558,9 @@ export async function doRender(ctx: ToolContext, draft: boolean, announce = true
   // a skipped preview stood for the edit as it was then: from here on only this render does
   ctx.state.previewSkipped = false;
   const out = draft && ctx.note ? ['--out', ctx.note.dir] : [];
-  const args = [...(draft ? ['--draft', ...out] : []), ...(ctx.jobId ? ['--job-id', ctx.jobId] : [])];
+  const parent = ctx.note?.parent ? ['--parent', String(ctx.note.parent)] : [];
+  if (ctx.note?.mergeParent !== undefined) parent.push('--merge-parent', String(ctx.note.mergeParent));
+  const args = [...(draft ? ['--draft', ...out] : []), ...(ctx.jobId ? ['--job-id', ctx.jobId] : []), ...parent];
   const result = await engine(ctx, 'render', args, draft ? 'Making a preview' : 'Making the final video');
   // only a render that finished shows the changes: after a failed one they are still unseen (checkAndRepair)
   ctx.state.dirty = new Set();
@@ -1122,6 +1184,20 @@ const captionLook = (st: CaptionStyle): string =>
   JSON.stringify([!!st.box, !!st.pop, !!st.highlight, st.case ?? null, st.maxWords ?? null, st.outline ?? null, st.outlineColor ?? null]);
 
 const tools: ToolDef[] = [
+  {
+    name: 'merge_versions',
+    description: 'Combine two saved versions using an explicit ours or theirs choice for every layer. Stages the edit in this note; finish saves a new version with both parents. Returns every dropped or adjusted item.',
+    parameters: S.obj({
+      ours: S.int('saved version to start from', { minimum: 1 }),
+      theirs: S.int('other saved version', { minimum: 1 }),
+      take: S.obj(Object.fromEntries(Object.keys(MERGE_FIELDS).map((layer) => [layer, S.enum(['ours', 'theirs'])]))),
+    }),
+    async run(ctx, args) {
+      const live = await loadProject(ctx.projectDir);
+      const result = await stageMerge(ctx, live, args);
+      return { content: result, summary: `Combined Version ${args.ours} and Version ${args.theirs}` };
+    },
+  },
   {
     name: 'get_project',
     description: 'Read the current edit: cut, captions, music, b-roll (with the words each sits on), zooms, cover, post, notes.',

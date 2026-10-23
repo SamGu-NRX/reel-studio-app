@@ -71,7 +71,10 @@ export function validateIpcArgs(channel: string, args: unknown[]): void {
     case 'projects:resume': ok = second === undefined || typeof second === 'boolean'; break
     case 'projects:update': ok = validPatch(second); break
     case 'projects:export': ok = finite(second) && Number.isInteger(second) && second >= 0; break
-    case 'projects:note': ok = text(second) && (third === undefined || strings(third)); break
+    // args[5]: the saved version a branched note changes (note-intake.ts checks it against project.json)
+    case 'projects:note': ok = text(second) && (third === undefined || strings(third)) && (args[5] === undefined || (finite(args[5]) && Number.isInteger(args[5]) && args[5] >= 1)); break
+    case 'projects:mergeVersions': ok = object(second) && [second.ours, second.theirs].every((n) => finite(n) && Number.isInteger(n) && n >= 1) &&
+      object(second.take) && Object.values(second.take).every((v) => v === 'ours' || v === 'theirs'); break
     case 'projects:handEdit': ok = object(second) && text(third) && finite(args[3]) && (args[4] === undefined || text(args[4])); break
     case 'notes:attachFiles': ok = paths(second); break
     case 'notes:attachData': ok = object(second) && text(second.name) && text(second.mime) && second.bytes instanceof Uint8Array; break

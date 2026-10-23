@@ -8,7 +8,7 @@ import { versionChanges } from '../src/shared/versions'
 import type { ProjectJson, VersionInfo } from '../src/shared/api'
 import { setupPaths } from './helpers'
 
-const version = (n: number): VersionInfo => ({ n, video: '', videoPath: '', draft: false, cover: null, createdAt: '' })
+const version = (n: number): VersionInfo => ({ n, parent: n > 1 ? n - 1 : null, video: '', videoPath: '', draft: false, cover: null, createdAt: '' })
 
 it('records what made a version when its final render made it, and the menu shows only that record', async () => {
   setupPaths()

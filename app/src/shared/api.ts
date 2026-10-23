@@ -48,6 +48,8 @@ export interface ProjectSummary {
 
 export interface VersionInfo {
   n: number
+  parent: number | null
+  parents?: [number, number]
   video: string
   videoPath: string
   draft: boolean
@@ -199,6 +201,8 @@ export interface QueuedNote {
   seenVersion: number
   /** a "Just here" note's place (shared/moments.ts) */
   moment?: NoteMoment
+  /** the saved version the note changes instead of the newest: its version branches from that one (docs/versions.md) */
+  branch?: number
   /** Set while its note job runs: `base` = the version it started from. */
   attempt?: { base: number }
   /** A change made in "Edit it myself" rather than a note: it runs without the editor (`text` says what it changes). */
@@ -582,6 +586,13 @@ export interface CloudDrive {
   label: 'iCloud Drive' | 'Google Drive'
 }
 
+/** version-merge: which version each layer of the new one comes from (docs/version-merge.md). */
+export interface MergeRequest {
+  ours: number
+  theirs: number
+  take: Record<'cut' | 'captions' | 'music' | 'zooms' | 'broll' | 'sfx' | 'cover', 'ours' | 'theirs'>
+}
+
 export interface ReelApi {
   app: {
     info(): Promise<AppInfo>
@@ -662,8 +673,11 @@ export interface ReelApi {
     /** jobId null = no AI connected: the note and a plain reply were added to the chat, nothing runs.
      * `attachments`: `work/assets/attach-*` refs from notes.attach* (main re-checks each one).
      * `moment`: a "Just here" note's place; main writes it into the text the AI reads. `onVersion`: the version on
-     * screen while it was written (default: the moment's). queued = it waits its turn. */
-    note(slug: string, text: string, attachments?: string[], moment?: NoteMoment, onVersion?: number): Promise<{ jobId: string | null; queued?: boolean }>
+     * screen while it was written (default: the moment's). `base`: a saved version the note changes instead of the
+     * newest, which makes the new version a branch from it (docs/versions.md). queued = it waits its turn. */
+    note(slug: string, text: string, attachments?: string[], moment?: NoteMoment, onVersion?: number, base?: number): Promise<{ jobId: string | null; queued?: boolean }>
+    /** One version's layers with another's, as a new version (docs/version-merge.md). */
+    mergeVersions(slug: string, request: MergeRequest): Promise<{ jobId: string }>
     /** Every word version `n` (0 = the Preview) plays, on its own output clock, and its length. Read
      * fresh from that render's manifest each call, with the segments it was cut from. null when the render
      * left no timeline to read. */

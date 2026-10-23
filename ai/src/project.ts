@@ -26,7 +26,7 @@ export interface CaptionStyle {
 export interface CaptionCorrection { from: string; to: string; at?: string; through?: string }
 /** vocabulary: names/jargon the user or the AI supplies; the engine respells sound-alikes to them after
  * transcription (engine/reelengine/vocab.py). */
-export interface Captions { enabled: boolean; style: CaptionStyle; corrections: CaptionCorrection[]; vocabulary?: string[]; [k: string]: unknown }
+export interface Captions { enabled: boolean; style: CaptionStyle; corrections: CaptionCorrection[]; hidden?: WordAnchor[]; vocabulary?: string[]; [k: string]: unknown }
 
 export type MusicLevel = 'under-voice' | 'quiet' | 'loud-intro';
 export interface MusicAutomation { fromWord: string; toWord: string; gainDb: number }
@@ -173,6 +173,7 @@ export function validateProject(p: unknown, transcript?: Transcript): string[] {
   if (!q.cut || !Array.isArray(q.cut.keep)) out.push('cut.keep must be an array');
   else if (!isNum(q.cut.gapCap) || q.cut.gapCap < 0) out.push('cut.gapCap must be a number >= 0');
   if (!q.captions || typeof q.captions.enabled !== 'boolean') out.push('captions.enabled must be a boolean');
+  if (q.captions?.hidden != null && !Array.isArray(q.captions.hidden)) out.push('captions.hidden must be an array');
   if (!q.music || typeof q.music.enabled !== 'boolean') out.push('music.enabled must be a boolean');
   if (!Array.isArray(q.broll)) out.push('broll must be an array');
   if (!Array.isArray(q.zooms)) out.push('zooms must be an array');
@@ -194,6 +195,7 @@ export function validateProject(p: unknown, transcript?: Transcript): string[] {
       const w = e.at?.word ?? e.at?.cut;
       if (w) check({ from: w, to: w }, `sfx[${i}]`);
     });
+    (q.captions.hidden ?? []).forEach((a: any, i: number) => check(a, `captions.hidden[${i}]`));
     const ids = new Set<string>();
     for (const b of q.broll) { if (ids.has(b.id)) out.push(`duplicate broll id ${b.id}`); ids.add(b.id); }
   }

@@ -3,17 +3,24 @@ import type { NoteAttachment } from '../shared/api'
 import { checkNoteAttachments } from './attachments'
 import type { JobManager } from './jobs'
 import { noteStagingDir } from './paths'
-import { projectDir } from './store'
+import { projectDir, readProject } from './store'
 
 /** The note's words and files, each file re-read from this project's own sidecars or its staging folder
  * (the page is never trusted). A video kept closed refuses it here in the job lane's words, so neither
  * the queue nor the chat shows a note that could not run. A note sent while a job runs is not refused:
- * it waits in the queue (note-queue.ts). */
-export async function takeNote(jobs: Pick<JobManager, 'refuseIfKeptClosed'>, slug: string, text: unknown, attachments: unknown): Promise<{ note: string; files: NoteAttachment[] }> {
+ * it waits in the queue (note-queue.ts). `base`: a saved version the note changes instead of the newest
+ * (docs/versions.md, branching). */
+export async function takeNote(jobs: Pick<JobManager, 'refuseIfKeptClosed'>, slug: string, text: unknown, attachments: unknown, base?: unknown): Promise<{ note: string; files: NoteAttachment[]; base?: number }> {
   const note = String(text ?? '').trim()
   const dir = projectDir(slug)
   const files = await checkNoteAttachments(dir, attachments, noteStagingDir(dir))
   if (!note && !files.length) throw { code: 'EMPTY', userMessage: 'Type what you would like changed first.' }
   jobs.refuseIfKeptClosed(slug)
+  if (base !== undefined) {
+    if (typeof base !== 'number' || !Number.isSafeInteger(base) || base < 1 || base > ((await readProject(slug)).version ?? 0)) {
+      throw { code: 'BAD_NOTE_BASE', userMessage: 'Choose a saved version to change.' }
+    }
+    return { note, files, base }
+  }
   return { note, files }
 }
