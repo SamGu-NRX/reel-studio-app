@@ -60,7 +60,7 @@ def asset_fingerprint(project_dir: Path, proj: dict, root: Optional[Path] = None
     the cut's timings and the burned-in subtitles."""
     refs = [s.get("path") for s in proj.get("sources") or []]
     refs.append(projmod.TRANSCRIPT_REL)
-    refs.append(((proj.get("music") or {}).get("track")))
+    refs.append(projmod.song_ref(proj.get("music") or {}))
     for b in proj.get("broll") or []:
         refs.append(b.get("asset"))
         refs += [x for x in ((b.get("params") or {}).get("items") or []) if isinstance(x, str)]

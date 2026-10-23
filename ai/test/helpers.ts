@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
 import { EngineHost, EngineProgress, Transcript, Word, withDefaults, Project, CompletionRequest, CompletionResponse, ModelProvider, ToolCall, OWNER_LOCK, approxOutputTimes, ToolContext, executeTool } from '../src';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 
 export function tmpDir(prefix = 'rs ai '): string {
   // Spaces + non-ASCII on purpose (the dev box user folder has a space).
@@ -110,6 +110,11 @@ export class FakeHost implements EngineHost {
     const t = await fsp.stat(path.join(dir, 'work', 'transcript.json')).catch(() => null);
     return JSON.stringify(t ? [t.size, t.mtimeMs] : null);
   }
+  /** --asset as the engine's safe_resolve reads it: Library/... from the root, anything else from the project */
+  private assetFile(dir: string, args: string[]): string {
+    const ref = args[args.indexOf('--asset') + 1];
+    return path.isAbsolute(ref) ? ref : ref.startsWith('Library/') ? path.join(this.root, ref) : path.join(dir, ref);
+  }
   async renderAnimation(template: string, params: Record<string, unknown>, outPath: string, fps?: number): Promise<string> {
     this.animations.push({ template, params, out: outPath, fps });
     await fsp.writeFile(outPath, 'fake animation');
@@ -193,12 +198,40 @@ export class FakeHost implements EngineHost {
         for (const t of times) { const f = path.join(fd, `f_${t}.png`); await fsp.writeFile(f, tinyPng()); frames.push({ time: t, path: f }); }
         return { frames };
       }
+      case 'inspect-video':
+      case 'inspect-audio':
       case 'inspect-image': {
-        const still = `work/thumbs/candidate-${randomUUID()}.jpg`;
+        const file = this.assetFile(dir, args);
+        const { mime } = fakeMediaKind(file, await fsp.readFile(file), command === 'inspect-video' ? 'video' : command === 'inspect-audio' ? 'music' : 'image');
+        const still = args.includes('--preview') ? args[args.indexOf('--preview') + 1] : `work/thumbs/candidate-${randomUUID()}.jpg`;
         await fsp.mkdir(path.join(dir, 'work', 'thumbs'), { recursive: true });
         await fsp.writeFile(path.join(dir, still), tinyPng());
-        return { previewPath: still, width: 8, height: 8 };
+        return { previewPath: still, width: 8, height: 8, durationSec: 2, loudnessLufs: -21, sha256: await sha256File(file), mime };
       }
+      case 'freeze-asset': {
+        // like engine/reelengine/asset_freeze.py: copy, hash the copy, reuse a frozen file with the same bytes
+        const file = this.assetFile(dir, args);
+        const kind = args[args.indexOf('--kind') + 1];
+        const bytes = await fsp.readFile(file);
+        const { ext, mime } = fakeMediaKind(file, bytes, kind);
+        const sha256 = createHash('sha256').update(bytes).digest('hex');
+        const expect = args.includes('--expect-sha256') ? args[args.indexOf('--expect-sha256') + 1] : null;
+        if (expect && expect !== sha256) throw { code: 'ASSET_CHANGED', userMessage: 'The asset changed after its preview. Resolve it again.' };
+        const frozen = path.join(dir, 'work', 'assets', 'frozen');
+        const kinds = await fsp.readdir(frozen, { withFileTypes: true }).catch(() => []);
+        for (const k of kinds.filter((d) => d.isDirectory())) {
+          for (const f of await fsp.readdir(path.join(frozen, k.name))) {
+            if (f.startsWith(`${sha256}.`) && await sha256File(path.join(frozen, k.name, f)) === sha256) {
+              return { committedPath: `work/assets/frozen/${k.name}/${f}`, sha256, mime, size: bytes.length };
+            }
+          }
+        }
+        const committedPath = `work/assets/frozen/${kind}/${sha256}.${ext}`;
+        await fsp.mkdir(path.join(frozen, kind), { recursive: true });
+        await fsp.writeFile(path.join(dir, committedPath), bytes);
+        return { committedPath, sha256, mime, size: bytes.length };
+      }
+      case 'hash-asset': return { sha256: await sha256File(this.assetFile(dir, args)) };
       case 'search-images': return { results: this.searchResults };
       case 'fetch-image': {
         if (!this.engineAssets) throw { code: 'BAD_ARGS', userMessage: 'unknown command' };
@@ -239,25 +272,49 @@ export class ScriptedModel implements ModelProvider {
   }
 }
 
+async function sha256File(file: string): Promise<string> {
+  return createHash('sha256').update(await fsp.readFile(file)).digest('hex');
+}
+/** The engine's kind check (asset_freeze.kind_of), by magic bytes and extension. */
+function fakeMediaKind(file: string, bytes: Buffer, kind: string): { ext: string; mime: string } {
+  const head = bytes.subarray(0, 16).toString('latin1');
+  if (kind === 'video' || kind === 'music') {
+    const ext = path.extname(file).toLowerCase().slice(1);
+    const table: Record<string, string> = kind === 'video' ? { mp4: 'video/mp4', mov: 'video/quicktime', mkv: 'video/x-matroska', webm: 'video/webm' }
+      : { wav: 'audio/wav', mp3: 'audio/mpeg', m4a: 'audio/mp4', flac: 'audio/flac', ogg: 'audio/ogg' };
+    const container = head.slice(4, 8) === 'ftyp' || /^(RIFF|OggS|fLaC|ID3)/.test(head) || bytes.readUInt32BE(0) === 0x1a45dfa3;
+    if (!table[ext] || !container) throw { code: 'BAD_MEDIA', userMessage: 'That file is not the requested media kind.' };
+    return { ext, mime: table[ext] };
+  }
+  if (head.startsWith('\x89PNG')) return { ext: 'png', mime: 'image/png' };
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return { ext: 'jpg', mime: 'image/jpeg' };
+  if (head.startsWith('GIF8')) return { ext: 'gif', mime: 'image/gif' };
+  if (head.startsWith('RIFF') && head.slice(8, 12) === 'WEBP') return { ext: 'webp', mime: 'image/webp' };
+  throw { code: 'BAD_MEDIA', userMessage: 'That file is not an image. Choose a PNG, JPEG, GIF or WebP.' };
+}
+
 export const call = (name: string, args: Record<string, unknown> = {}) => ({ id: undefined as any, name, args });
 
-export async function commitImage(ctx: ToolContext, ref: string): Promise<string> {
-  const staged = await executeTool(ctx, 'resolve_asset', { kind: 'image', intent: ref });
+export async function commitLocalAsset(ctx: ToolContext, ref: string, kind = 'image'): Promise<string> {
+  const staged = await executeTool(ctx, 'resolve_asset', { kind, intent: ref });
   if (staged.isError) throw new Error(staged.content);
   const candidate = JSON.parse(staged.content).candidates[0];
-  const committed = await executeTool(ctx, 'resolve_asset', { kind: 'image', intent: ref, phase: 'commit', candidateId: candidate.id });
+  const committed = await executeTool(ctx, 'resolve_asset', { kind, intent: ref, phase: 'commit', candidateId: candidate.id });
   if (committed.isError) throw new Error(committed.content);
   return JSON.parse(committed.content).asset.committedPath;
 }
-export function imageSteps(ref: string, placement: Record<string, unknown>) {
+export const commitImage = (ctx: ToolContext, ref: string) => commitLocalAsset(ctx, ref);
+export const tinyMp3 = () => Buffer.concat([Buffer.from('ID3'), Buffer.alloc(32)]);
+export const tinyMp4 = () => Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom'), Buffer.alloc(20)]);
+export function assetSteps(ref: string, placement: Record<string, unknown>, kind = 'image') {
   const result = (req: CompletionRequest) => {
     const message = req.messages.at(-1);
     if (message?.role !== 'tool' || message.results[0].isError) throw new Error('Expected a successful asset tool result');
     return JSON.parse(message.results[0].content);
   };
   return [
-    { toolCalls: [call('resolve_asset', { kind: 'image', intent: ref })] },
-    (req: CompletionRequest) => ({ toolCalls: [call('resolve_asset', { kind: 'image', intent: ref, phase: 'commit', candidateId: result(req).candidates[0].id })] }),
+    { toolCalls: [call('resolve_asset', { kind, intent: ref })] },
+    (req: CompletionRequest) => ({ toolCalls: [call('resolve_asset', { kind, intent: ref, phase: 'commit', candidateId: result(req).candidates[0].id })] }),
     (req: CompletionRequest) => ({ toolCalls: [call('add_broll', { ...placement, asset: result(req).asset.assetId })] }),
   ];
 }

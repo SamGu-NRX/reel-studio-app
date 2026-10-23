@@ -3,11 +3,11 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { createAI, loadProject, AgentEvent, AIError, ChatMessage, runAgent, newToolState, StyleStore, Prompts, pickTakes, ReplayProvider, RecordingProvider } from '../src';
 import { refsForMinted } from '../src/providers/replay';
-import { FakeHost, ScriptedModel, makeProject, call, tmpDir } from './helpers';
+import { FakeHost, ScriptedModel, makeProject, call, tmpDir, commitLocalAsset, tinyMp3 } from './helpers';
 
 const nullP = { tilt: null, scale: null, text: null };
 
-function firstEditScript() {
+function firstEditScript(track = 'Library/Music/gentle.mp3') {
   return new ScriptedModel([
     { toolCalls: [call('get_project'), call('get_transcript')] },
     (req) => {
@@ -17,7 +17,7 @@ function firstEditScript() {
       return { toolCalls: [call('set_cut', { keep: [{ from: 'w16', to: 'w26' }, { from: 'w27', to: 'w56' }] }), call('set_gap_cap', { seconds: 0.12 }), call('list_library', { kind: 'music' })] };
     },
     { toolCalls: [
-      call('choose_music', { track: 'Library/Music/gentle.mp3', startAt: 2, level: 'under-voice' }),
+      call('choose_music', { track, startAt: 2, level: 'under-voice' }),
       call('add_broll', { anchor: { from: 'w29', to: 'w30' }, treatment: 'text-pop', asset: null, animation: null, params: { ...nullP, text: '$20' } }),
       call('set_zoom', { zooms: [{ anchor: { from: 'w53', to: 'w56' }, scale: 1.1 }] }),
       call('set_cover', { atSourceTime: 8.5, source: null, text: 'Bread' }),
@@ -35,7 +35,7 @@ function firstEditScript() {
 
 async function setup() {
   const { root, dir } = await makeProject();
-  await fsp.writeFile(path.join(root, 'Library', 'Music', 'gentle.mp3'), 'x');
+  await fsp.writeFile(path.join(root, 'Library', 'Music', 'gentle.mp3'), tinyMp3());
   const host = new FakeHost(root);
   const settingsDir = tmpDir('settings ');
   return { root, dir, host, settingsDir };
@@ -44,7 +44,9 @@ async function setup() {
 describe('agent loop with a scripted model', () => {
   it('firstEdit: tools mutate project.json, draft then final render, events, summary', async () => {
     const { dir, host, settingsDir } = await setup();
-    const model = firstEditScript();
+    const ctx = { projectDir: dir, host, style: new StyleStore(() => host.reelStudioRoot()), emit: () => {}, state: newToolState(), supportsImages: true };
+    const track = await commitLocalAsset(ctx, 'Library/Music/gentle.mp3', 'music');
+    const model = firstEditScript(track);
     const ai = createAI({ host, settingsDir, providerOverride: model });
     const events: AgentEvent[] = [];
     const r = await ai.firstEdit(dir, (e) => events.push(e));
@@ -53,7 +55,8 @@ describe('agent loop with a scripted model', () => {
     expect(r.changed.sort()).toEqual(['broll', 'cover', 'cut', 'music', 'post', 'zooms']);
     const p = await loadProject(dir);
     expect(p.cut.keep[0]).toEqual({ from: 'w16', to: 'w26' });
-    expect(p.music.track).toBe('Library/Music/gentle.mp3');
+    // committed from the Library: track keeps the Library path, the engine plays the frozen copy
+    expect(p.music).toMatchObject({ track: 'Library/Music/gentle.mp3', frozen: { track: 'Library/Music/gentle.mp3', path: track } });
     expect(p.broll).toHaveLength(1);
     expect(p.post.hashtags).toHaveLength(5);
     // the no-AI first look (a preview, never saved), then the AI's preview, then the one final render

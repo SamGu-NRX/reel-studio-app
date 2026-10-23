@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { createAI, executeTool, loadProject, newToolState, RecordingProvider, ReplayProvider, runAgent, saveProject, StyleStore, ToolContext } from '../src';
 import { discardAssetCandidates } from '../src/tools';
-import { FakeHost, ScriptedModel, call, imageSteps, makeProject, tinyPng, tmpDir } from './helpers';
+import { FakeHost, ScriptedModel, call, assetSteps, makeProject, tinyPng, tmpDir } from './helpers';
 
 /** fetch-image the way the engine does it: the file, plus its search credit in credits.json. */
 class AssetHost extends FakeHost {
@@ -231,7 +231,7 @@ describe('frozen image assets', () => {
   it('fails if a recorded resolve and commit cannot replay, because each run mints new candidate and asset IDs', async () => {
     const first = await setup();
     const fixture = path.join(first.root, 'session.json');
-    const steps = [...imageSteps(first.local, place('')), { toolCalls: [call('finish', { summary_for_user: 'ok' })] }];
+    const steps = [...assetSteps(first.local, place('')), { toolCalls: [call('finish', { summary_for_user: 'ok' })] }];
     await runAgent({ provider: new RecordingProvider(new ScriptedModel(steps), fixture, 'resolve'), system: 's', task: 't', ctx: first.ctx, onEvent: () => undefined });
     const again = await setup();
     const replay = new ReplayProvider(fixture);
@@ -274,11 +274,14 @@ describe('frozen image assets', () => {
     expect(candidate).toMatchObject({ sourceUrl: url, license: 'CC BY 4.0', rightsConfidence: 'verified-metadata' });
   });
 
-  it('fails if an existing local video needs the still-image resolver', async () => {
+  it('fails if adjusting a legacy video needs a new asset commit', async () => {
     const { ctx, dir } = await setup();
     const ref = 'work/clip.mkv';
     await fs.writeFile(path.join(dir, ref), 'local clip');
-    const r = await executeTool(ctx, 'add_broll', place(ref));
+    const p = await loadProject(dir);
+    p.broll = [{ ...place(ref), id: 'b1', leadIn: 0.13, treatment: 'side-card' }];
+    await saveProject(dir, p);
+    const r = await executeTool(ctx, 'update_broll', { id: 'b1', anchor: { from: 'w33', to: 'w34' } });
     expect(r.isError, r.content).toBe(false);
     expect((await loadProject(dir)).broll[0].asset).toBe(ref);
   });

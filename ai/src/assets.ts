@@ -1,10 +1,11 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
-import { safeResolve, sniffImage } from './safety';
+import { randomUUID } from 'node:crypto';
+import { safeResolve } from './safety';
 
 export const STILL_KINDS = ['image', 'logo', 'icon', 'website_screenshot'] as const;
-export type AssetKind = typeof STILL_KINDS[number];
+export const ASSET_KINDS = [...STILL_KINDS, 'video', 'music'] as const;
+export type AssetKind = typeof ASSET_KINDS[number];
 export interface AssetCandidate {
   id: string;
   kind: AssetKind;
@@ -15,6 +16,8 @@ export interface AssetCandidate {
   sourceUrl?: string;
   localPath: string;
   previewPath: string;
+  durationSec?: number;
+  loudnessLufs?: number;
   width?: number;
   height?: number;
   mime: string;
@@ -45,26 +48,20 @@ export interface PendingAsset {
   requestId: string;
   intent: string;
   retrievedAt: string;
-  /** files resolve_asset downloaded or captured for this candidate (the picture and the engine's still
-   * of it): deleted once the picture is frozen or the run ends */
+  /** Downloads owned by this candidate, deleted once frozen or when the run ends. */
   made: string[];
 }
 export interface AssetStore { projectDir: string; root: string }
-const MAX_BYTES = 40 * 1024 * 1024;
+/** The AI package never reads media (CONTRIBUTING): the engine hashes and copies it. */
+export interface MediaEngine {
+  /** engine freeze-asset: copies `ref` into work/assets/frozen (or reuses a file with the same bytes) */
+  freeze(ref: string, kind: AssetKind, expectSha256?: string): Promise<{ committedPath: string; sha256: string; mime: string }>;
+  /** engine hash-asset */
+  hash(ref: string): Promise<{ sha256: string }>;
+}
 export const LEDGER = 'work/assets/manifest.jsonl';
-const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
 function file(store: AssetStore, ref: string, write = false): string {
   return safeResolve(store.projectDir, store.root, ref, write ? 'write' : 'read').abs;
-}
-async function imageBytes(store: AssetStore, ref: string): Promise<{ bytes: Buffer; ext: keyof typeof MIME; sha256: string }> {
-  const handle = await fs.open(file(store, ref), 'r');
-  try {
-    if ((await handle.stat()).size > MAX_BYTES) throw new Error('The picture is too large (over 40 MB).');
-    const bytes = await handle.readFile();
-    const ext = sniffImage(bytes);
-    if (!ext) throw new Error('That file is not an image. Choose a PNG, JPEG, GIF or WebP.');
-    return { bytes, ext, sha256: createHash('sha256').update(bytes).digest('hex') };
-  } finally { await handle.close(); }
 }
 async function atomicWrite(store: AssetStore, ref: string, data: string | Buffer): Promise<void> {
   const dest = file(store, ref, true);
@@ -85,15 +82,11 @@ async function atomicWrite(store: AssetStore, ref: string, data: string | Buffer
     }
   } finally { await fs.rm(tmp, { force: true }); }
 }
-export async function hashImage(store: AssetStore, ref: string): Promise<{ sha256: string; mime: string }> {
-  const { ext, sha256 } = await imageBytes(store, ref);
-  return { sha256, mime: MIME[ext] };
-}
 /** Commit writes to a record's committedPath, so only the frozen shape is trusted. */
-const FROZEN_PATH = /^work\/assets\/frozen\/(image|logo|icon|website_screenshot)\/([0-9a-f]{64})\.(png|jpg|gif|webp)$/;
+const FROZEN_PATH = /^work\/assets\/frozen\/(image|logo|icon|website_screenshot|video|music)\/([0-9a-f]{64})\.(png|jpg|gif|webp|mp4|mov|m4v|webm|mkv|avi|wav|mp3|m4a|aac|flac|ogg|opus)$/;
 function isRecord(v: any): v is FrozenAsset {
   return !!v && typeof v === 'object' && typeof v.assetId === 'string' && typeof v.committedPath === 'string'
-    && FROZEN_PATH.exec(v.committedPath)?.[2] === v.sha256 && STILL_KINDS.includes(v.kind) && typeof v.provenance?.intent === 'string';
+    && FROZEN_PATH.exec(v.committedPath)?.[2] === v.sha256 && ASSET_KINDS.includes(v.kind) && typeof v.provenance?.intent === 'string';
 }
 /** Lines that do not parse are skipped wherever they are: a crash mid-append leaves a torn line,
  * and the next append (which starts on a fresh line) turns it into a middle line. */
@@ -115,46 +108,53 @@ async function appendRecord(store: AssetStore, asset: FrozenAsset): Promise<void
     await handle.sync();
   } finally { await handle.close(); }
 }
-/** Copies the bytes to their frozen path (reusing an intact file with the same hash) and appends the record. */
-async function freeze(store: AssetStore, candidate: Omit<AssetCandidate, 'previewPath'> & { previewPath?: string },
-  read: Awaited<ReturnType<typeof imageBytes>>, intent: string, retrievedAt: string): Promise<FrozenAsset> {
-  const { bytes, ext, sha256 } = read;
-  const existing = (await readAssets(store)).find((r) => r.sha256 === sha256);
-  const committedPath = existing?.committedPath ?? `work/assets/frozen/${candidate.kind}/${sha256}${ext}`;
-  const intact = existing && await imageBytes(store, committedPath).then((f) => f.sha256 === sha256, () => false);
-  if (!intact) await atomicWrite(store, committedPath, bytes);
+/** The engine copies the bytes to their frozen path (reusing a frozen file with the same hash); this appends the record. */
+async function freeze(store: AssetStore, media: MediaEngine, candidate: Omit<AssetCandidate, 'previewPath'> & { previewPath?: string },
+  intent: string, retrievedAt: string, expectSha256?: string): Promise<FrozenAsset> {
+  const frozen = await media.freeze(candidate.localPath, candidate.kind, expectSha256);
   const asset: FrozenAsset = {
-    ...candidate, localPath: committedPath, committedPath, assetId: `asset_${randomUUID()}`,
+    ...candidate, sha256: frozen.sha256, mime: frozen.mime, localPath: frozen.committedPath, committedPath: frozen.committedPath,
+    assetId: `asset_${randomUUID()}`,
     provenance: { intent, retrievedAt, provider: candidate.provider,
       ...(candidate.sourceUrl ? { sourceUrl: candidate.sourceUrl } : {}), ...(candidate.landingUrl ? { landingUrl: candidate.landingUrl } : {}) },
   };
+  if (!isRecord(asset)) throw new Error(`The engine froze ${candidate.localPath} at an unexpected path: ${frozen.committedPath}`);
   await appendRecord(store, asset);
   return asset;
 }
-export async function commitAsset(store: AssetStore, pending: PendingAsset): Promise<FrozenAsset> {
-  const read = await imageBytes(store, pending.candidate.localPath);
-  if (read.sha256 !== pending.candidate.sha256) throw new Error('The picture changed after its preview. Resolve it again.');
-  const asset = await freeze(store, pending.candidate, read, pending.intent, pending.retrievedAt);
+export async function commitAsset(store: AssetStore, media: MediaEngine, pending: PendingAsset): Promise<FrozenAsset> {
+  const asset = await freeze(store, media, pending.candidate, pending.intent, pending.retrievedAt, pending.candidate.sha256);
   await removeFiles(store, pending.made);
   return asset;
 }
-/** The user's own Library picture, placed by its path: frozen and recorded in the same call, with no
- * candidate turn. `ref` must already be a resolved `Library/...` path. */
-export async function freezeLibraryPicture(store: AssetStore, ref: string, kind: AssetKind): Promise<FrozenAsset> {
-  if (!ref.startsWith('Library/')) throw new Error(`Only a Library picture is frozen by its path: ${ref}`);
-  const read = await imageBytes(store, ref);
-  return freeze(store, { id: randomUUID(), kind, source: 'library', provider: 'library', title: path.basename(ref), localPath: ref,
-    mime: MIME[read.ext], sha256: read.sha256, rightsConfidence: 'user-owned', attributionRequired: false }, read, ref, new Date().toISOString());
+/** The user's own Library file (a picture, a clip or a song) placed by its path: frozen and recorded in
+ * the same call, with no candidate turn. `ref` must already be a resolved `Library/...` path. */
+export async function freezeLibraryFile(store: AssetStore, media: MediaEngine, ref: string, kind: AssetKind): Promise<FrozenAsset> {
+  if (!ref.startsWith('Library/')) throw new Error(`Only a Library file is frozen by its path: ${ref}`);
+  return freeze(store, media, { id: randomUUID(), kind, source: 'library', provider: 'library', title: path.basename(ref), localPath: ref,
+    mime: '', sha256: '', rightsConfidence: 'user-owned', attributionRequired: false }, ref, new Date().toISOString());
 }
 export async function removeFiles(store: AssetStore, refs: string[]): Promise<void> {
   await Promise.allSettled(refs.map(async (ref) => fs.rm(file(store, ref, true), { force: true })));
 }
-export async function committedAsset(store: AssetStore, ref: string): Promise<FrozenAsset> {
+/** sha256 the engine last read for a frozen file, by path, kept while its size and mtime stay the same:
+ * a placement re-checks a frozen file without reading it again. */
+const verified = new Map<string, { size: number; mtimeMs: number; sha256: string }>();
+async function frozenSha(store: AssetStore, media: MediaEngine, ref: string): Promise<string> {
+  const abs = file(store, ref);
+  const { size, mtimeMs } = await fs.stat(abs);
+  const known = verified.get(abs);
+  if (known && known.size === size && known.mtimeMs === mtimeMs) return known.sha256;
+  const { sha256 } = await media.hash(ref);
+  verified.set(abs, { size, mtimeMs, sha256 });
+  return sha256;
+}
+export async function committedAsset(store: AssetStore, media: MediaEngine, ref: string): Promise<FrozenAsset> {
   const records = await readAssets(store);
   const asset = records.find((r) => r.assetId === ref)
     ?? records.find((r) => file(store, r.committedPath) === file(store, ref));
   if (!asset) throw new Error('Resolve and commit this asset with resolve_asset before adding it to the edit.');
-  if ((await imageBytes(store, asset.committedPath)).sha256 !== asset.sha256) throw new Error('The committed asset changed. Resolve it again.');
+  if (await frozenSha(store, media, asset.committedPath) !== asset.sha256) throw new Error('The committed asset changed. Resolve it again.');
   return asset;
 }
 export async function exportCredits(store: AssetStore, format: 'json' | 'text', output?: string): Promise<{ path: string; count: number }> {

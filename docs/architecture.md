@@ -107,6 +107,8 @@ anchors to output time at render.
   "music": {
     "enabled": true,
     "track": "Library/Music/my-song.mp3",     // path relative to the Reel Studio root, or null
+    "frozen": { "track": "Library/Music/my-song.mp3", "path": "work/assets/frozen/music/<sha256>.mp3" },
+                                              // optional: the AI's frozen copy, played while its track matches
     "startAt": 0.0,                           // offset into the track
     "level": "under-voice",                   // "under-voice" | "quiet" | "loud-intro"
     "automation": [ { "fromWord": "w0", "toWord": "w30", "gainDb": -6 } ],
@@ -326,12 +328,25 @@ With no provider connected, `firstEdit` still runs the deterministic path (engin
 music if a track is in the Library, a cover and a render) and returns a summary saying the AI is not connected.
 See `ai/README.md` for the extra methods beyond this list.
 
-### Frozen image assets
+### Frozen assets (pictures, clips and songs)
 
-Web and found pictures reach the edit through `resolve_asset`. It offers candidates, each with a still,
-read where they are (an attachment or a fresh download), and only a committed candidate can be placed.
-Commit copies the bytes to `work/assets/frozen/<kind>/<sha256>.<ext>` (reusing a file with the same hash)
-and appends one record of source, licence, credit and intent to `work/assets/manifest.jsonl`. The user's
-own Library pictures skip the candidate turn: `add_broll`, `update_broll` and `logo-pop` take a
-`Library/...` path and freeze it with its record in the same call, unseen by the model. `add_broll` also
-takes a committed picture's `assetId` or path; video clips and animations are placed as before.
+Web and found pictures, and clips or songs that are not in the Library (an attachment, a download), reach
+the edit through `resolve_asset`. It offers candidates read where they are, each with a preview: a still for
+a picture, a 3x3 contact sheet for a clip, a waveform with duration and loudness (LUFS) for a song. Only a
+committed candidate can be placed. The user's own Library pictures, clips and songs skip the candidate
+turn: `add_broll`, `update_broll`, `choose_music` and `logo-pop` take a `Library/...` path and freeze it
+with its record in the same call, unseen by the model. A Library song keeps its `Library/...` path in
+`music.track`, whether it was placed by its path or committed through `resolve_asset`, and its frozen copy
+goes in `music.frozen`, which the engine plays. A song from anywhere else keeps its frozen path in
+`music.track`, and the app names it by its ledger title.
+
+Freezing happens in the engine, because the AI package never reads media. `freeze-asset` copies the file to
+`work/assets/frozen/<kind>/<sha256>.<ext>`, or reuses a frozen file with the same bytes. It clones where
+the disk supports it (APFS `clonefile`, Linux `FICLONE`), so a frozen copy of a Library clip costs no extra
+disk on a Mac, and makes a plain copy elsewhere. It hashes the copy in chunks, never holding a whole file
+in memory. Clips and songs may be up to 200 MB (clips match the app's attachment limit); pictures up to 40 MB. The AI
+then appends one record of source, licence, credit and intent to `work/assets/manifest.jsonl`. Before a
+placement the AI checks that a frozen file still has its recorded hash: `hash-asset` reads it once, and
+the AI reuses that hash while the file's size and modification time stay the same. A failed note deletes
+the frozen files that were not on disk when it started and truncates the ledger back. Animations made in
+the same run are placed as they are.
