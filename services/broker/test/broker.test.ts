@@ -214,6 +214,7 @@ describe('authenticated deletion and cleanup', () => {
   it('rejects forged and stale Meta deletion requests', async () => {
     const { broker } = make()
     expect((await broker(req('/api/meta/data-deletion', { signed_request: 'forged.payload' }))).status).toBe(401)
+    expect((await broker(req('/api/meta/data-deletion', { signed_request: `${'é'.repeat(43)}.payload` }))).status).toBe(401)
     expect((await broker(req('/api/meta/data-deletion', metaRequest(Date.now() - 2 * 86400_000)))).status).toBe(401)
   })
   it('authenticates TikTok deauthorization over the exact body and revokes refresh records', async () => {

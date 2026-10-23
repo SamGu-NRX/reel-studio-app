@@ -34,7 +34,11 @@ const deletionReceipt = z.object({ confirmation_code: z.string(), status: z.enum
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const random = () => randomBytes(32).toString('base64url')
 const ownerKey = (p: z.infer<typeof platform>, account: string) => `${p}:${hash(account)}`
-const secureEqual = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
+const secureEqual = (a: string, b: string) => {
+  const left = Buffer.from(a)
+  const right = Buffer.from(b)
+  return left.length === right.length && timingSafeEqual(left, right)
+}
 const noStore = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff' }
 class HttpError extends Error {
   constructor(readonly status: number, readonly code: number | string) { super('Broker request rejected') }
