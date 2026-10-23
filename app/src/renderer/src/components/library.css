@@ -80,7 +80,10 @@
 .style-empty p { max-width: 44ch; color: var(--ink-2); }
 .style-note { margin: 0 0 12px; font-size: var(--fs-base); color: var(--pencil); }
 
-.mem-rows { list-style: none; margin: 0; padding: 0; box-shadow: inset 0 -1px 0 var(--line); }
+.mem-rows { list-style: none; margin: 0; padding: 0; }
+/* the closing hairline belongs to the last row, so it moves with the rows when a lapsed Undo slides them up */
+.mem-rows > li:last-child { box-shadow: inset 0 -1px 0 var(--line); }
+.mem-rows > li.mem:last-child { box-shadow: inset 0 1px 0 var(--line), inset 0 -1px 0 var(--line); }
 /* Paused keeps the right edge, so actions appear beside it without moving it.
    The first row of every column is 28 px, the height of a small button, so icon, line, state and actions share a centre */
 .mem {
@@ -114,16 +117,16 @@
   .mem .mem-acts { opacity: 0; transition: opacity 150ms cubic-bezier(.2, .8, .2, 1); }
   .mem:hover .mem-acts, .mem:focus-within .mem-acts { opacity: 1; }
 }
-/* Forget leaves Undo in the rule's place; when Undo runs out the row folds away (MyStyle.tsx lapse) */
+/* Forget leaves Undo in the rule's place; when Undo runs out the row fades and goes (MyStyle.tsx lapse) */
 .mem.forgot {
-  display: flex; align-items: center; gap: 12px; padding-left: 36px; overflow: hidden; color: var(--ink-3);
+  display: flex; align-items: center; gap: 12px; padding-left: 36px; color: var(--ink-3);
   transition: opacity 180ms cubic-bezier(.2, .8, .2, 1);
   @starting-style { opacity: 0; }
 }
 .mem-said { min-width: 0; overflow-wrap: anywhere; }
 html.kb .mem-line, html.kb .mem-more, html.kb .mem.forgot, html.kb .mem .mem-acts { transition: none; }
 @media (prefers-reduced-motion: reduce) {
-  .mem-more { transition: opacity 160ms ease; @starting-style { transform: none; } }
+  .mem-more { transition: opacity 160ms cubic-bezier(.2, .8, .2, 1); @starting-style { transform: none; } }
 }
 
 /* What "Learn from my past edits" read, before anything is saved: one sheet you keep or cancel as a whole. */

@@ -5,7 +5,7 @@
 //
 // Run: npm run build && npx playwright test e2e/memory-panel.spec.ts
 import { test, expect } from '@playwright/test'
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BASE, launch, makeMedia, makeReel, openSettings, passFirstRun, shot } from './helpers'
 
@@ -73,8 +73,9 @@ test('a rule from a note goes to the top of My style, and pauses, forgets and co
 
     // Forget leaves Undo in its place
     await page.getByRole('button', { name: 'Forget "Keep the music quieter when I talk"' }).click()
-    const forgot = page.getByRole('status').filter({ hasText: 'Forgot “Keep the music quieter when I talk”.' })
+    const forgot = page.getByRole('listitem').filter({ hasText: 'Forgot “Keep the music quieter when I talk”.' })
     await expect(forgot).toBeVisible()
+    await expect(page.getByTestId('style-said')).toHaveText('Forgot “Keep the music quieter when I talk”.')
     await expect(page.getByRole('button', { name: 'Undo' })).toBeFocused()
     await expect(rows).toHaveCount(1)
     expect((await page.evaluate(() => window.reel.style.rules())).map((r) => r.text)).toEqual(['Always use big subtitles.'])
@@ -88,6 +89,55 @@ test('a rule from a note goes to the top of My style, and pauses, forgets and co
     await expect(page.getByRole('button', { name: 'Forget "Keep the music quieter when I talk"' })).toBeFocused()
     const back = (await page.evaluate(() => window.reel.style.rules())).find((r) => r.text.startsWith('Always keep the music'))
     expect(back).toMatchObject({ paused: true, source: { note: 'always keep the music quieter when I talk' } })
+  } finally {
+    await app.close().catch(() => {})
+  }
+})
+
+test('Undo waits while keyboard focus is on it, then goes at once with nothing animated', async () => {
+  test.setTimeout(3 * 60_000)
+  const root = join(MINE, 'keyboard', 'Documents', 'Reel Studio')
+  mkdirSync(root, { recursive: true })
+  const at = (hours: number) => new Date(Date.now() - hours * 3600_000).toISOString()
+  const rules = [
+    { id: 'a', text: 'Cut the ums.', createdAt: at(48) },
+    { id: 'b', text: 'Keep the music quiet.', createdAt: at(24) },
+    { id: 'c', text: 'Use big subtitles.', createdAt: at(1) }
+  ]
+  writeFileSync(join(root, 'My style.json'), JSON.stringify({ version: 1, rules }))
+  const { app, page } = await launch({ REELSTUDIO_ROOT: root, REELSTUDIO_USER_DATA: join(MINE, 'keyboard', 'user data') })
+  try {
+    await passFirstRun(page)
+    await page.getByTestId('nav-style').click()
+    const rows = page.getByTestId('style-rule')
+    await expect(rows).toHaveCount(3)
+    // every Web Animation the page starts from here on
+    await page.evaluate(() => {
+      const w = window as unknown as { started: number }
+      w.started = 0
+      const animate = Element.prototype.animate
+      Element.prototype.animate = function (...args: Parameters<Element['animate']>) {
+        w.started++
+        return animate.apply(this, args)
+      }
+    })
+
+    await page.getByRole('button', { name: 'Forget "Keep the music quiet"' }).focus()
+    await page.keyboard.press('Enter')
+    const undo = page.getByTestId('style-undo')
+    await expect(undo).toBeFocused()
+    await expect(page.getByTestId('style-said')).toHaveText('Forgot “Keep the music quiet”.')
+
+    // past the 8 s it would have had: focus on Undo holds it
+    await page.waitForTimeout(9_000)
+    await expect(undo).toBeVisible()
+
+    // focus leaves the row: the time left runs out and the row goes without a fade or a slide
+    await page.keyboard.press('Tab')
+    await expect(undo).toHaveCount(0, { timeout: 12_000 })
+    await expect(rows).toHaveCount(2)
+    await expect(page.getByTestId('style-said')).toHaveText('')
+    expect(await page.evaluate(() => (window as unknown as { started: number }).started)).toBe(0)
   } finally {
     await app.close().catch(() => {})
   }

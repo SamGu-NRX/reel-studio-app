@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import type { StyleLesson, StyleRule } from '../../../shared/api'
 import { classifyKind, KIND_NAME, newestFirst, shortLine, sourceDetail, sourceLine, type MemoryKind } from '../../../shared/memory'
 import { reel, userMessage } from '../api'
 import { Spinner } from '../components/ui'
 import { Icon, type IconName } from '../components/icons'
-import { reducedMotion } from '../components/motion'
+import { byKeyboard, reducedMotion } from '../components/motion'
 import { TitleBarSlot } from '../components/titlebar'
 import '../components/library.css'
 
@@ -46,16 +46,26 @@ export function MyStyle() {
   const editButtons = useRef(new Map<string, HTMLButtonElement>())
   const forgetButtons = useRef(new Map<string, HTMLButtonElement>())
   const addButton = useRef<HTMLButtonElement>(null)
-  const undoTimer = useRef<number | undefined>(undefined)
+  // Undo's countdown: `due` while it runs, `left` while the pointer or keyboard focus holds it
+  const expiry = useRef<{ timer?: number; due: number; left: number; hover: boolean; focus: boolean } | null>(null)
   const undoButton = useRef<HTMLButtonElement>(null)
   const forgotRow = useRef<HTMLLIElement>(null)
-  const collapse = useRef<Animation | null>(null)
+  const fade = useRef<Animation | null>(null)
+  // the rows below a lapsed Undo, and how far they move up when it goes
+  const slide = useRef<{ rows: Element[]; by: number } | null>(null)
+  const [said, setSaid] = useState('')
   const list = useRef<HTMLUListElement>(null)
   const load = () => reel.style.rules().then(setRules)
   useEffect(() => {
     void load()
-    return () => window.clearTimeout(undoTimer.current)
+    return () => window.clearTimeout(expiry.current?.timer)
   }, [])
+  useLayoutEffect(() => {
+    const s = slide.current
+    if (forgot || !s) return
+    slide.current = null
+    for (const row of s.rows) row.animate([{ transform: `translateY(${s.by}px)` }, { transform: 'none' }], { duration: 200, easing: EASE })
+  }, [forgot])
 
   // the forgotten row's Undo takes the focus its Forget button had, and Undo gives it back
   useEffect(() => {
@@ -95,35 +105,60 @@ export function MyStyle() {
     if (await run(() => reel.style.add(adding))) setAdding(null)
   }
   const settle = () => {
-    window.clearTimeout(undoTimer.current)
-    collapse.current?.cancel()
-    collapse.current = null
+    window.clearTimeout(expiry.current?.timer)
+    expiry.current = null
+    fade.current?.cancel()
+    fade.current = null
   }
-  // When Undo runs out, its line folds away instead of the rows below jumping up. If Undo had the focus, the
-  // row that takes its place gets it, so the keyboard is not sent back to the top of the window.
+  // The Undo row leaves in one step. If it had the focus, the next row's first control gets it, else the row
+  // before, else Add a rule, so the keyboard is not sent back to the top of the window. The rows below move up
+  // by its height, which they cover with a transform (not in keyboard mode, and not under reduced motion).
+  const gone = (el: HTMLLIElement | null) => {
+    fade.current = null
+    const near = el && (el.nextElementSibling ?? el.previousElementSibling)
+    const target = el?.contains(document.activeElement) ? (near?.querySelector<HTMLElement>('button, input') ?? addButton.current) : null
+    const rows: Element[] = []
+    for (let n = el?.nextElementSibling; n; n = n.nextElementSibling) rows.push(n)
+    slide.current = el && rows.length && !byKeyboard() && !reducedMotion() ? { rows, by: el.offsetHeight } : null
+    setForgot(null)
+    setSaid('')
+    if (target) requestAnimationFrame(() => target.focus())
+  }
+  // When Undo runs out, its row fades and goes; in keyboard mode it goes at once (keyboard actions never animate)
   const lapse = () => {
+    expiry.current = null
     const el = forgotRow.current
-    const gone = () => {
-      const hadFocus = !!el?.contains(document.activeElement)
-      const at = el ? Array.from(list.current?.children ?? []).indexOf(el) : -1
-      setForgot(null)
-      if (hadFocus)
-        requestAnimationFrame(() => {
-          const rows = list.current?.querySelectorAll<HTMLButtonElement>('.mem-line')
-          ;(rows?.[Math.min(at, rows.length - 1)] ?? addButton.current)?.focus()
-        })
-    }
-    if (!el) return gone()
-    const frames = reducedMotion() ? [{ opacity: 1 }, { opacity: 0 }] : [{ height: `${el.offsetHeight}px`, opacity: 1 }, { height: '0px', opacity: 0 }]
-    collapse.current = el.animate(frames, { duration: 200, easing: reducedMotion() ? 'ease' : EASE, fill: 'forwards' })
-    collapse.current.finished.then(gone, () => undefined)
+    if (!el || byKeyboard()) return gone(el)
+    fade.current = el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: EASE, fill: 'forwards' })
+    fade.current.finished.then(() => gone(el), () => undefined)
+  }
+  const countdown = (ms: number) => {
+    const x = expiry.current
+    if (!x) return
+    x.due = Date.now() + ms
+    x.timer = window.setTimeout(lapse, ms)
+  }
+  // Undo waits while the pointer rests on its row or keyboard focus is in it, and the time left runs on after
+  // (WCAG 2.2.1). Focus put there by the app after a click does not hold it, or Undo would stay until the next click.
+  const hold = (part: 'hover' | 'focus', on: boolean) => {
+    const x = expiry.current
+    if (!x) return
+    x[part] = on
+    if (x.hover || x.focus) {
+      if (x.timer === undefined) return
+      window.clearTimeout(x.timer)
+      x.timer = undefined
+      x.left = Math.max(0, x.due - Date.now())
+    } else if (x.timer === undefined) countdown(x.left)
   }
   const forget = async (r: StyleRule, at: number) => {
     if (!(await run(() => reel.style.remove(r.id)))) return
     settle()
     if (open === r.id) setOpen(null)
     setForgot({ rule: r, at })
-    undoTimer.current = window.setTimeout(lapse, UNDO_MS)
+    setSaid(`Forgot “${shortLine(r.text)}”.`)
+    expiry.current = { due: 0, left: UNDO_MS, hover: false, focus: false }
+    countdown(UNDO_MS)
   }
   const undo = async () => {
     if (!forgot) return
@@ -131,6 +166,7 @@ export function MyStyle() {
     const id = forgot.rule.id
     if (await run(() => reel.style.restore(id))) {
       setForgot(null)
+      setSaid('')
       setRefocus(id)
     }
   }
@@ -186,6 +222,10 @@ export function MyStyle() {
       {shown.length > 0 && (
         <p className="style-intro">Your editor follows these on every new reel, newest first. A note that starts with “always” can add one.</p>
       )}
+      {/* Forget's message, read out by screen readers; always mounted so a change to its text is announced */}
+      <p className="sr-only" role="status" data-testid="style-said">
+        {said}
+      </p>
       {error && (
         <p className="style-note" role="alert">
           {error}
@@ -276,7 +316,15 @@ export function MyStyle() {
           {shown.map((r, at) => {
             if (r === 'forgot') {
               return (
-                <li key="forgot" ref={forgotRow} className="mem forgot" role="status">
+                <li
+                  key="forgot"
+                  ref={forgotRow}
+                  className="mem forgot"
+                  onPointerEnter={() => hold('hover', true)}
+                  onPointerLeave={() => hold('hover', false)}
+                  onFocus={() => hold('focus', byKeyboard())}
+                  onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && hold('focus', false)}
+                >
                   <span className="mem-said">Forgot “{shortLine(forgot!.rule.text)}”.</span>
                   <button ref={undoButton} className="btn small" onClick={() => void undo()} data-testid="style-undo">
                     <Icon name="undo" size={14} />
@@ -362,7 +410,7 @@ export function MyStyle() {
                         onClick={() => setEditing({ id: r.id, text: r.text })}
                         aria-label={`Edit "${line}"`}
                       >
-                        <Icon name="pencil" size={13} />
+                        <Icon name="pencil" size={14} />
                         Edit
                       </button>
                     </p>
