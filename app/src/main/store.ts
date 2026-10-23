@@ -24,6 +24,7 @@ import { mediaUrl } from './media-url'
 import { libraryMediaUrl } from './library'
 import { replyChat, styleConsent, type ChatLine } from './style-consent'
 import { keptIds } from '../shared/cut'
+import { readCaptionLines } from '../shared/subtitle-lines'
 export { keptIds, rangesFromKept, rangesKeepingOrder } from '../shared/cut'
 
 export interface AppState {
@@ -586,6 +587,7 @@ export async function detail(slug: string): Promise<ProjectDetail> {
   const words = await readWords(dir, project)
   const kept = keptIds(words, project.cut?.keep)
   const st = await readAppState(slug)
+  const captionLines = readCaptionLines(await readJson<unknown>(join(dir, 'work', 'captions.json'), null))
   const brollThumbs: Record<string, string> = {}
   for (const b of project.broll ?? []) {
     const a = typeof b.asset === 'string' ? b.asset : ''
@@ -615,6 +617,7 @@ export async function detail(slug: string): Promise<ProjectDetail> {
     versions,
     words,
     keptIds: kept,
+    captionLines,
     brollThumbs,
     checklist: checklist(project, words, kept, versions, !!st.aiEdited),
     versionsMade: st.versionsMade ?? [],

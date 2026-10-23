@@ -132,6 +132,20 @@ describe('tool implementations', () => {
     expect(await fsp.readFile(path.join(dir, 'project.json'))).toEqual(before);
   });
 
+  it('fails if the correction check treats a one-place fix as a whole-reel correction', async () => {
+    const { ctx, dir } = await ctxFor();
+    await executeTool(ctx, 'set_cut', { keep: [{ from: 'w16', to: 'w56' }] });
+    const seeded = await loadProject(dir);
+    seeded.captions.corrections = [{ from: 'and', to: '', at: 'w35' }];
+    await saveProject(dir, seeded);
+    expect((await executeTool(ctx, 'add_caption_correction', { from: 'and', to: 'plus' })).isError).toBe(false);
+    seeded.captions.corrections = [{ from: 'flour', to: 'Flour', at: 'w34' }];
+    await saveProject(dir, seeded);
+    const result = await executeTool(ctx, 'add_caption_correction', { from: 'flour', to: 'flower' });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content).error).toMatch(/no matches after existing corrections: "flour"/);
+  });
+
   it('fails if unrelated missing assets block b-roll removal', async () => {
     const { ctx, dir } = await ctxFor();
     const p = await loadProject(dir);
@@ -343,7 +357,13 @@ describe('tool implementations', () => {
     expect((await executeTool(ctx, 'set_cover', { atSourceTime: 6.2, source: 's9', text: null })).isError).toBe(true);
     expect((await executeTool(ctx, 'set_caption_style', { size: 70, maxWords: 2, case: 'title', color: '#AABBCC88', position: 0.72 })).isError).toBe(false);
     expect((await loadProject(dir)).captions.style).toMatchObject({ size: 70, maxWords: 2, case: 'title', color: '#AABBCC88', position: 0.72 });
-    expect((await executeTool(ctx, 'add_caption_correction', { from: 'flour', to: 'flower' })).isError).toBe(false);
+    const seeded = await loadProject(dir);
+    seeded.captions.corrections = [{ from: 'and', to: 'And', at: 'w35' }];
+    await saveProject(dir, seeded);
+    expect((await executeTool(ctx, 'add_caption_correction', { from: 'and', to: 'plus' })).isError).toBe(false);
+    await executeTool(ctx, 'remove_caption_correction', { from: 'and' });
+    // the person's fix of one word in the Subtitles list outlives the editor's whole-reel corrections
+    expect((await loadProject(dir)).captions.corrections).toEqual([{ from: 'and', to: 'And', at: 'w35' }]);
     // no note asking to remember: proposed once (deduped), nothing saved
     await executeTool(ctx, 'add_style_rule', { rule: 'keep music quieter under talking' });
     const again = await executeTool(ctx, 'add_style_rule', { rule: 'Keep music quieter under talking.' });
