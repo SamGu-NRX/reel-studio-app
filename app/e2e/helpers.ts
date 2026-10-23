@@ -1,14 +1,16 @@
 // Shared helpers for the Electron end-to-end tests.
 import { expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 export const APP_DIR = resolve(__dirname, '..')
 export const SHOTS = join(APP_DIR, 'e2e', 'screenshots')
-// The cleanup reporter owns the run folder and keeps files from failed workers.
 export const BASE = mkdtempSync(join(process.env.REELSTUDIO_E2E_TMP ?? tmpdir(), `rs-e2e-${process.env.TEST_WORKER_INDEX ?? 'loader'}-`))
+// Each worker removes its own folder (about 500 MB of renders) as it exits, passed or failed, whichever reporter ran;
+// KEEP_E2E_TMP=1 keeps them for debugging.
+if (process.env.KEEP_E2E_TMP !== '1') process.once('exit', () => rmSync(BASE, { recursive: true, force: true }))
 // Spaces and non-ASCII on purpose: real users have them.
 export const HOME = join(BASE, 'Zoë Müller', 'Documents')
 export const ROOT = join(HOME, 'Reel Studio')

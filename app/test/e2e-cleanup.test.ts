@@ -4,8 +4,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-for (const [keep, fail] of [['0', false], ['1', false], ['0', true]] as const) {
-  it(`cleans up passed runs and keeps debugging files (keep=${keep}, fail=${fail})`, () => {
+for (const [keep, fail, withReporter] of [['0', false, true], ['1', false, true], ['0', true, true], ['0', true, false]] as const) {
+  it(`fails if a run's files outlive it, passed or failed, unless KEEP_E2E_TMP=1 (keep=${keep}, fail=${fail}, cleanup reporter=${withReporter})`, () => {
     const dir = mkdtempSync(join(tmpdir(), 'e2e-cleanup-'))
     const config = join(dir, 'playwright.config.ts')
     // Scratch files are outside the repo, so resolve their imports here.
@@ -14,7 +14,7 @@ for (const [keep, fail] of [['0', false], ['1', false], ['0', true]] as const) {
     const reporter = resolve(__dirname, '../e2e/cleanup-reporter.ts')
     let base: string | undefined
     try {
-      writeFileSync(config, `export default { testDir: '.', outputDir: './results', workers: 1, reporter: [['list'], [${JSON.stringify(reporter)}]] }`)
+      writeFileSync(config, `export default { testDir: '.', outputDir: './results', workers: 1, reporter: [['list']${withReporter ? `, [${JSON.stringify(reporter)}]` : ''}] }`)
       writeFileSync(join(dir, 'a-pass.spec.ts'), `
         import { test } from ${playwright}
         import ${helpers}
@@ -39,11 +39,11 @@ for (const [keep, fail] of [['0', false], ['1', false], ['0', true]] as const) {
       expect(result.status, result.stdout + result.stderr).toBe(fail ? 1 : 0)
       expect(base).toBeDefined()
       if (!base) throw new Error('test worker did not report its temp folder')
-      const retained = keep === '1' || fail
+      const retained = keep === '1'
       expect(existsSync(base)).toBe(retained)
       if (retained) {
         expect(readFileSync(join(base, 'main.log'), 'utf8')).toBe('debug evidence')
-        expect(result.stdout).toContain(`Kept e2e files: ${base}`)
+        expect(result.stdout).toContain('Kept e2e files: ')
       }
     } finally {
       if (base) rmSync(base, { recursive: true, force: true })
