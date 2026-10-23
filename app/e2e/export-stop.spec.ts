@@ -30,7 +30,6 @@ test('Stop while a preview is made full quality for a platform export ends quiet
     await page.getByTestId('share-platforms-toggle').click()
     const platforms = page.getByTestId('share-platforms')
     await platforms.getByRole('checkbox', { name: /^TikTok\b/ }).check()
-    await platforms.getByRole('checkbox', { name: /I checked the edges/ }).check()
     await platforms.getByTestId('export-selected').click()
     await platforms.getByRole('button', { name: 'Cancel' }).click()
     await expect(platforms.getByTestId('export-selected')).toBeEnabled()

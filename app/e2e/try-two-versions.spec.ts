@@ -25,7 +25,6 @@ test('fails if the Saved screen leaves out Instagram\'s Trial steps or offers Tr
   await platforms.getByTestId('try-two').check()
   await expect(platforms.getByTestId('try-two-status')).toHaveText('Try 2 is the same as Try 1. Pick another version, cover or caption.')
   await platforms.locator('#platform-caption-2').fill('Open with the result')
-  await platforms.getByRole('checkbox', { name: /I checked the edges/ }).check()
   await platforms.getByTestId('export-selected').click()
 
   await expect(platforms.getByTestId('export-saved')).toBeVisible({ timeout: 120_000 })

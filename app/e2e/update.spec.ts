@@ -104,7 +104,7 @@ test('fails if a prerelease update cannot be downloaded, declined or snoozed', a
     await row.scrollIntoViewIfNeeded()
     const button = page.getByTestId('update-button')
     await expect(button).toContainText('Download update')
-    await expect(button).toContainText('Version 0.1.3')
+    await expect(button).toContainText('Reel Studio 0.1.3') // #76's words: "Version N" is a reel's version
     await page.getByTestId('nav-home').click()
     await page.getByTestId('nav-style').focus() // the last nav row (Insights shows only once a reel is posted): Tab goes on to the update button
     await page.keyboard.press('Tab')
@@ -149,7 +149,8 @@ test('fails if a prerelease update cannot be downloaded, declined or snoozed', a
     await expect(page.getByTestId('update-settings-button')).toHaveText('Restart to update')
     const project = join(ROOT, 'Projects', 'update-export')
     mkdirSync(join(project, 'versions', 'v1'), { recursive: true })
-    writeFileSync(join(project, 'project.json'), JSON.stringify({ title: 'Update export', sources: [] }))
+    // version 1: a vN above project.json's version is a render no note saved, not a version (#87)
+    writeFileSync(join(project, 'project.json'), JSON.stringify({ title: 'Update export', version: 1, sources: [] }))
     writeFileSync(join(project, 'versions', 'v1', 'export.mp4'), 'completed export fixture')
     await page.evaluate(() => window.reel.projects.exportVersion('update-export', 1))
     const exportError = await page.evaluate(async () => {
