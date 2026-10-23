@@ -50,6 +50,9 @@ export interface Broll {
   asset: string | null; assets?: string[]; params: BrollParams; [k: string]: unknown;
 }
 export interface Zoom { anchor: WordAnchor; scale: number; style?: 'snap'; [k: string]: unknown }
+/** A built-in sound effect (engine/reelengine/sfx) whose hit lands on one moment: a word's start, a b-roll's
+ * appearance, or the cut into the kept range that starts with that word. */
+export interface Sfx { at: { word: string } | { broll: string } | { cut: string }; sound: string; gainDb?: number }
 export interface Cover { atSourceTime: number; source: string; text: string | null; [k: string]: unknown }
 export interface Post { caption: string; hashtags: string[]; keywords: string[]; [k: string]: unknown }
 /** One thing an edit changed (engine project.net_changes): `kind` is the project.json path. */
@@ -81,6 +84,8 @@ export interface Project {
   music: Music;
   broll: Broll[];
   zooms: Zoom[];
+  /** absent = no sound effects */
+  sfx?: Sfx[];
   cover: Cover;
   post: Post;
   notes: NoteEntry[];
@@ -185,6 +190,10 @@ export function validateProject(p: unknown, transcript?: Transcript): string[] {
     q.broll.forEach((b: any, i: number) => check(b.anchor, `broll[${i}] (${b.id})`));
     q.zooms.forEach((z: any, i: number) => check(z.anchor, `zooms[${i}]`));
     (q.music?.automation ?? []).forEach((m: any, i: number) => check({ from: m.fromWord, to: m.toWord }, `music.automation[${i}]`));
+    (q.sfx ?? []).forEach((e: any, i: number) => {
+      const w = e.at?.word ?? e.at?.cut;
+      if (w) check({ from: w, to: w }, `sfx[${i}]`);
+    });
     const ids = new Set<string>();
     for (const b of q.broll) { if (ids.has(b.id)) out.push(`duplicate broll id ${b.id}`); ids.add(b.id); }
   }

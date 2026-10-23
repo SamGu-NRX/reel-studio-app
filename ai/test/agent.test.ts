@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
-import { createAI, loadProject, AgentEvent, AIError, ChatMessage, runAgent, newToolState, StyleStore, Prompts, pickTakes, ReplayProvider, RecordingProvider } from '../src';
+import { createAI, loadProject, AgentEvent, AIError, ChatMessage, runAgent, newToolState, StyleStore, Prompts, pickTakes, ReplayProvider, RecordingProvider, TOOLS } from '../src';
 import { refsForMinted } from '../src/providers/replay';
 import { FakeHost, ScriptedModel, makeProject, call, tmpDir, commitLocalAsset, tinyMp3 } from './helpers';
 
@@ -72,7 +72,7 @@ describe('agent loop with a scripted model', () => {
     // system prompt carries doctrine + style placeholder filled
     expect(model.requests[0].system).toMatch(/red thread/i);
     expect(model.requests[0].system).not.toMatch(/\{\{styleRules\}\}/);
-    expect(model.requests[0].tools.length).toBe(30);   // docs/architecture.md section 6 + set_mirror
+    expect(model.requests[0].tools.length).toBe(31);   // docs/architecture.md section 6 + set_mirror
     await fsp.access(path.join(dir, 'versions', 'v1', 'project.json'));
     await fsp.access(path.join(dir, 'versions', 'preview', 'draft.mp4'));
     expect((await fsp.readdir(path.join(dir, 'versions'))).sort()).toEqual(['preview', 'v1']);
@@ -275,6 +275,14 @@ describe('record + replay', () => {
 });
 
 describe('prompts', () => {
+  it('first-edit instructions and the tool do not invite unrequested sound effects', () => {
+    const firstEdit = new Prompts().raw('firstEdit');
+    expect(firstEdit).not.toMatch(/set_sfx|sound effects/i);
+    const description = TOOLS.find((t) => t.name === 'set_sfx')!.description;
+    expect(description).toMatch(/only when the user's note asks for sound effects/i);
+    expect(description).not.toMatch(/or on a few clear visual moments/i);
+  });
+
   it('load from ai/prompts and contain no em dashes or source-specific content', () => {
     const pr = new Prompts();
     for (const n of ['system', 'firstEdit', 'applyNote', 'writeScript', 'pickTakes', 'review'] as const) {
