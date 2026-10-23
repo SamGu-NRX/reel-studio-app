@@ -7,11 +7,12 @@ import { dirname, join, resolve } from 'node:path'
 import { isStrictlyInsideFolder } from './inside-folder'
 import type { AppCommand, JobEvent } from '../shared/api'
 import { RELEASES_REPO } from '../shared/config'
+import { TITLEBAR_HEIGHT } from '../shared/chrome'
 
-export const PAPER = '#f7f5f1'
-export const INK = '#1d1b18'
-/** Height of the Windows title bar overlay (window buttons). The renderer leaves this much room at the top. */
-export const WIN_TITLEBAR_HEIGHT = 40
+export const PAPER = '#F1F2EF'
+export const INK = '#161917'
+/** Height of the Windows title bar overlay (window buttons): the title-bar row the renderer leaves room for. */
+export const WIN_TITLEBAR_HEIGHT = TITLEBAR_HEIGHT
 /** The modal scrim, as in styles.css `.modal-backdrop`: INK at 30 %. */
 export const SCRIM_ALPHA = 0.3
 
@@ -28,6 +29,11 @@ export function blendHex(base: string, top: string, alpha: number): string {
 export function titleBarOverlay(dimmed: boolean): { color: string; symbolColor: string; height: number } {
   return { color: dimmed ? blendHex(PAPER, INK, SCRIM_ALPHA) : PAPER, symbolColor: INK, height: WIN_TITLEBAR_HEIGHT }
 }
+/**
+ * macOS 26 draws each window button in a 14 x 14 frame that its circle fills, and Electron puts the frame's top `y`
+ * below the window's top (window_buttons_proxy.mm), so this `y` centres the lights on the title-bar row.
+ */
+const MAC_BUTTON = 14
 
 export type { AppCommand }
 
@@ -39,7 +45,7 @@ interface Bounds {
   maximized?: boolean
 }
 
-const MIN = { width: 1024, height: 700 }
+const MIN = { width: 1100, height: 720 }
 const DEFAULT: Bounds = { width: 1280, height: 820 }
 
 function readBounds(file: string): Bounds {
@@ -80,7 +86,7 @@ export function createMainWindow(opts: { preload: string; stateFile: string; tes
     // system's window buttons drawn on top, so there is no grey strip and no stray menu bar.
     titleBarStyle: 'hidden',
     ...(mac
-      ? { trafficLightPosition: { x: 16, y: 14 } }
+      ? { trafficLightPosition: { x: 16, y: (TITLEBAR_HEIGHT - MAC_BUTTON) / 2 } }
       : { titleBarOverlay: titleBarOverlay(false) }),
     webPreferences: {
       preload: opts.preload,

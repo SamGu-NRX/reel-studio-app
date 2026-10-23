@@ -113,7 +113,7 @@ test('fails if a prerelease update cannot be downloaded, declined or snoozed, or
     const button = page.getByTestId('update-button')
     await expect(button).toContainText('Download update')
     await page.getByTestId('nav-home').click()
-    await page.getByTestId('nav-style').focus()
+    await page.getByTestId('nav-insights').focus() // the last nav row: Tab goes on to the update button
     await page.keyboard.press('Tab')
     const pop = page.getByTestId('update-popover')
     await expect(pop).toHaveAttribute('data-open', 'true')
@@ -148,7 +148,7 @@ test('fails if a prerelease update cannot be downloaded, declined or snoozed, or
     await expect(row).toContainText('Reel Studio 0.1.3 is downloaded.')
     await expect(page.getByTestId('update-settings-button')).toHaveText('Restart to update')
     await row.scrollIntoViewIfNeeded()
-    await page.getByTestId('nav-style').focus()
+    await page.getByTestId('nav-insights').focus() // the last nav row: Tab goes on to the update button
     await page.keyboard.press('Tab') // keyboard focus opens the popover
     await expect(pop).toHaveAttribute('data-open', 'true')
     await page.getByTestId('update-not-now').click()
