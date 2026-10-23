@@ -80,22 +80,22 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
   }, [slug, version.n, seconds])
 
   const testing = selected.filter((p) => platformRule(p).tryTwo)
-  // Asked once per version and thing, when the section shows with a platform that can test two versions.
+  // Asked once per version and thing, when the section shows with a platform that can test two versions. An answer
+  // lands even if the section closed meanwhile, and only while it is still for the thing asked about; a failed ask is
+  // tried again the next time the section shows.
   const askKey = `${version.n}|${variable ?? ''}`
   const wanted = open && testing.length > 0
   useEffect(() => {
-    if (!wanted || ask?.key === askKey) return
-    let live = true
-    setAsk({ key: askKey, kind: 'asking' })
+    if (!wanted || (ask?.key === askKey && ask.kind !== 'failed')) return
+    const key = askKey
+    setAsk({ key, kind: 'asking' })
     reel.projects.proposeTry(slug, version.n, { caption, ...(variable ? { variable } : {}) }).then(
       (r) => {
-        if (!live) return
-        setAsk({ key: askKey, kind: 'ready', proposal: r.proposal, notice: r.notice })
+        setAsk((a) => (a?.key === key ? { key, kind: 'ready', proposal: r.proposal, notice: r.notice } : a))
         setEditor(r.proposal.reason !== null || !!r.notice)
       },
-      (e) => live && setAsk({ key: askKey, kind: 'failed', message: userMessage(e) })
+      (e) => setAsk((a) => (a?.key === key ? { key, kind: 'failed', message: userMessage(e) } : a))
     )
-    return () => { live = false }
   }, [wanted, askKey]) // eslint-disable-line react-hooks/exhaustive-deps -- the caption at the time of asking; Try 2 is joined with the caption as it is at export
 
   // Saving starts below a long list: bring the bar and Stop into view.
@@ -130,16 +130,18 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
   const words = proposed && isText(proposed) ? (own?.key === askKey ? own.text : proposed.value) : null
   const shown: TryProposal | null = proposed && isText(proposed) && words !== null ? { ...proposed, value: words.trim() } : proposed
   const toggle = (p: Platform) => setSelected((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]))
+  // The thing Try 2 changes: the answer's, or while an answer is on its way, the one asked about.
+  const active = shown?.variable ?? variable
   const swap = (v: TryVariable) => {
-    if (v === shown?.variable) return
+    if (v === active) return
     setVariable(v)
     setConfirmed(false)
   }
   const pickKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
-    if (!step || !shown) return
+    if (!step) return
     e.preventDefault()
-    const i = (TRY_VARIABLES.indexOf(shown.variable) + step + TRY_VARIABLES.length) % TRY_VARIABLES.length
+    const i = (TRY_VARIABLES.indexOf(active ?? TRY_VARIABLES[0]) + step + TRY_VARIABLES.length) % TRY_VARIABLES.length
     swap(TRY_VARIABLES[i])
     e.currentTarget.querySelectorAll<HTMLElement>('[role=radio]')[i]?.focus()
   }
@@ -155,7 +157,9 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
   const tryIssues = second ? secondPlatforms.flatMap((p) => checkPlatform(p, second.caption, length).filter((i) => i.kind !== 'duration').map((i) => `${platformRule(p).label}: ${i.message}`)) : []
   const blocked = selected.some((p) => issuesFor(p).some((i) => i.blocking)) || (second !== null && secondPlatforms.some((p) => checkPlatform(p, second.caption, length).some((i) => i.blocking)))
   const ready = selected.length > 0 && !blocked && !problem && !disabled
-  const edges = selected.filter((p) => p !== 'instagram').map((p) => platformRule(p).label)
+  // Instagram is the phone preview's own overlay, so only the other platforms' buttons are unknown at the edges.
+  const edgy = (p: Platform) => p !== 'instagram' && selected.includes(p)
+  const edges = selected.filter(edgy).map((p) => platformRule(p).label)
   const asking = `${variable ? `Asking your editor for a new ${THING[variable].toLowerCase()}` : 'Choosing what Try 2 changes'}…`
   // Built from the editor's answer, not the field, so typing in the field is never read out.
   const said = !current || current.kind === 'asking' ? asking
@@ -192,7 +196,12 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
           return (
             <div key={rule.id} className="sp-check-row">
               <label className="sp-check">
-                <input type="checkbox" checked={selected.includes(rule.id)} onChange={() => toggle(rule.id)} aria-describedby={issues.length ? `sp-warn-${rule.id}` : undefined} />
+                <input
+                  type="checkbox"
+                  checked={selected.includes(rule.id)}
+                  onChange={() => toggle(rule.id)}
+                  aria-describedby={[issues.length ? `sp-warn-${rule.id}` : '', edgy(rule.id) ? 'sp-edges' : ''].filter(Boolean).join(' ') || undefined}
+                />
                 <span>{rule.label}</span>
               </label>
               {issues.length > 0 && (
@@ -205,7 +214,7 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
         })}
       </fieldset>
       {edges.length > 0 && (
-        <p className="sp-warn sp-warn-gap" data-testid="edges-warning">
+        <p id="sp-edges" className="sp-warn sp-warn-gap" role="status" data-testid="edges-warning">
           {andList(edges)} {edges.length === 1 ? 'puts' : 'put'} buttons near the edges that can cover subtitles. Check them before you post.
         </p>
       )}
@@ -216,9 +225,9 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
           {editor && (
             <div className="sp-things" role="radiogroup" aria-label="What Try 2 changes" onKeyDown={pickKey}>
               {TRY_VARIABLES.map((v) => {
-                const on = (shown?.variable ?? variable) === v
+                const on = active === v
                 return (
-                  <button key={v} type="button" role="radio" aria-checked={on} tabIndex={on ? 0 : -1} className={`sp-thing${on ? ' on' : ''}`} disabled={saving} onClick={() => swap(v)}>
+                  <button key={v} type="button" role="radio" aria-checked={on} tabIndex={(active ?? TRY_VARIABLES[0]) === v ? 0 : -1} className={`sp-thing${on ? ' on' : ''}`} disabled={saving} onClick={() => swap(v)}>
                     {THING[v]}
                   </button>
                 )
@@ -245,6 +254,7 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
                     disabled={saving}
                     aria-label="Try 2’s hook line"
                     aria-invalid={!!wordsProblem || undefined}
+                    aria-describedby={wordsProblem ? 'try-two-warning' : undefined}
                     onChange={(e) => setOwn({ key: askKey, text: e.target.value })}
                     data-testid="try-two-value"
                   />
@@ -256,6 +266,7 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
                     disabled={saving}
                     aria-label="Try 2’s caption after the hook line"
                     aria-invalid={!!wordsProblem || undefined}
+                    aria-describedby={wordsProblem ? 'try-two-warning' : undefined}
                     onChange={(e) => setOwn({ key: askKey, text: e.target.value })}
                     data-testid="try-two-value"
                   />
@@ -276,7 +287,7 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
           ) : (
             <button type="button" className="btn small sp-use" disabled={saving} onClick={() => setConfirmed(true)} data-testid="try-two-use">Use Try 2</button>
           ))}
-          {(problem || wordsProblem || tryIssues.length > 0) && <p className="sp-warn" data-testid="try-two-warning">{[problem ?? wordsProblem, ...tryIssues].filter(Boolean).join(' ')}</p>}
+          {(problem || wordsProblem || tryIssues.length > 0) && <p id="try-two-warning" className="sp-warn" data-testid="try-two-warning">{[problem ?? wordsProblem, ...tryIssues].filter(Boolean).join(' ')}</p>}
         </section>
       )}
 

@@ -22,6 +22,11 @@ test('fails if the editor\'s Try 2 is not proposed, the creator can\'t change it
   await page.getByTestId('share').click()
   await page.getByTestId('share-caption').fill('Hi everyone, quick one today\nOne bowl, two folds.\n\n#sourdough')
   await page.getByTestId('share-platforms-toggle').click()
+  // Closed while the editor is still answering (the practice editor takes 600 ms), then opened again: the answer is
+  // there, not a wait that never ends.
+  await page.getByTestId('share-platforms-toggle').click()
+  await page.waitForTimeout(1000)
+  await page.getByTestId('share-platforms-toggle').click()
   const platforms = page.getByTestId('share-platforms')
   await expect(platforms.getByRole('checkbox', { name: 'Instagram Reels' })).toBeChecked()
 
