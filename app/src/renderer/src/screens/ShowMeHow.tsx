@@ -7,8 +7,9 @@ import { reel, userMessage } from '../api'
 import { useNotify } from '../App'
 import { IS_MAC } from '../components/ui'
 import { Icon } from '../components/icons'
-import { SubtitleSample } from '../components/Player'
-import { CAPTION_PRESETS, applyPreset, lookFromStyle, lookPosition, presetOf, sampleLine, sampleLook, type SubtitleLook } from '../../../shared/caption-presets'
+import { SubtitleSample, lookFromStyle, type SubtitleLook } from '../components/Player'
+import { SubtitleLines } from '../components/SubtitleLines'
+import { previewText, subtitleLines } from '../../../shared/subtitle-lines'
 
 export type Tab = 'cut' | 'captions' | 'music' | 'broll' | 'cover' | 'post'
 const TABS: { key: Tab; label: string }[] = [
@@ -45,7 +46,8 @@ function brollDetail(b: NonNullable<ProjectJson['broll']>[number]): string {
   return [kind, text].filter(Boolean).join(' · ')
 }
 
-// Caption fine-tuning in plain words, on top of the look picked (shared/caption-presets.ts).
+// Caption controls in plain words. Defaults = the proven look (engine DEFAULT_CAPTION_STYLE):
+// 105 px, line centre at 0.75 of the height (just under the chin), white with a solid black outline.
 type CapStyle = Record<string, unknown>
 const SIZES = [
   { key: 'small', label: 'Small', size: 84 },
@@ -54,15 +56,12 @@ const SIZES = [
 ]
 const POSITIONS = [
   { key: 'higher', label: 'Higher', position: 0.66 },
-  { key: 'lower', label: 'Lower', position: 0.75 } // picking it writes the look's own position (lookPosition)
+  { key: 'lower', label: 'Lower', position: 0.75 }
 ]
-const COLORS = [
-  { key: 'white', label: 'White', color: '#FFFFFF' },
-  { key: 'yellow', label: 'Yellow', color: '#FFD60A' }
-]
-const HIGHLIGHTS = [
-  { key: 'yellow', label: 'Yellow', color: '#FFD60A' },
-  { key: 'green', label: 'Green', color: '#30D158' }
+const LOOKS: { key: string; label: string; style: CapStyle }[] = [
+  { key: 'white', label: 'Plain', style: { color: '#FFFFFF', outlineColor: '#000000', box: false } },
+  { key: 'yellow', label: 'Yellow', style: { color: '#FFD60A', outlineColor: '#000000', box: false } },
+  { key: 'box', label: 'Black box', style: { color: '#FFFFFF', outlineColor: '#000000', box: true } }
 ]
 function sizeKey(st: CapStyle): string {
   const n = Number(st.size ?? 105)
@@ -71,41 +70,16 @@ function sizeKey(st: CapStyle): string {
 function positionKey(st: CapStyle): string {
   return Number(st.position ?? 0.75) < 0.69 ? 'higher' : 'lower'
 }
-function colorKey(st: CapStyle): string {
-  return COLORS.find((x) => x.color === String(st.color ?? '#FFFFFF').toUpperCase())?.key ?? ''
-}
-function highlightKey(st: CapStyle): string {
-  return HIGHLIGHTS.find((x) => x.color === String(st.highlight).toUpperCase())?.key ?? ''
+function lookKey(st: CapStyle): string {
+  if (st.box) return 'box'
+  return String(st.color ?? '#FFFFFF').toUpperCase() === '#FFFFFF' ? 'white' : 'yellow'
 }
 
-/** A radio group is one Tab stop; the arrow keys move the choice (WAI-ARIA radio group). */
-function arrowPick(e: React.KeyboardEvent<HTMLElement>, keys: string[], value: string | null, onPick: (k: string) => void) {
-  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
-  if (!step) return
-  e.preventDefault()
-  const next = keys[(keys.indexOf(focusKey(keys, value)) + step + keys.length) % keys.length]
-  onPick(next)
-  e.currentTarget.querySelector<HTMLElement>(`[data-key="${next}"]`)?.focus()
-}
-// With nothing checked (a colour the AI picked that is neither option), the first button holds the Tab stop.
-const focusKey = (keys: string[], value: string | null): string => (value != null && keys.includes(value) ? value : keys[0])
-const tabStop = (key: string, value: string | null, keys: string[]): number => (key === focusKey(keys, value) ? 0 : -1)
-
-function Seg({ value, options, onPick, testid, label }: { value: string; options: { key: string; label: string }[]; onPick: (k: string) => void; testid: string; label: string }) {
-  const keys = options.map((o) => o.key)
+function Seg({ value, options, onPick, testid }: { value: string; options: { key: string; label: string }[]; onPick: (k: string) => void; testid: string }) {
   return (
-    <div className="seg" role="radiogroup" aria-label={label} data-testid={testid} onKeyDown={(e) => arrowPick(e, keys, value, onPick)}>
+    <div className="seg" role="radiogroup" data-testid={testid}>
       {options.map((o) => (
-        <button
-          key={o.key}
-          role="radio"
-          aria-checked={o.key === value}
-          tabIndex={tabStop(o.key, value, keys)}
-          data-key={o.key}
-          className={o.key === value ? 'on' : ''}
-          onClick={() => onPick(o.key)}
-          data-testid={`${testid}-${o.key}`}
-        >
+        <button key={o.key} role="radio" aria-checked={o.key === value} className={o.key === value ? 'on' : ''} onClick={() => onPick(o.key)} data-testid={`${testid}-${o.key}`}>
           {o.label}
         </button>
       ))}
@@ -113,31 +87,29 @@ function Seg({ value, options, onPick, testid, label }: { value: string; options
   )
 }
 
-const SWATCH_WIDTH = 74
-const LOOK_KEYS = CAPTION_PRESETS.map((p) => p.key)
-
-/** The looks to start from, each drawn on a tiny phone frame with the sample line (delight 3). */
-function Swatches({ value, text, onPick }: { value: string | null; text: string; onPick: (k: string) => void }) {
+/** Style swatches: a tiny phone frame with a sample line in each look (delight 3). */
+function Swatches({ value, style, text, onPick }: { value: string; style: CapStyle; text: string; onPick: (k: string) => void }) {
   return (
-    <div className="swatches" role="radiogroup" aria-label="Subtitle look" data-testid="cap-look" onKeyDown={(e) => arrowPick(e, LOOK_KEYS, value, onPick)}>
-      {CAPTION_PRESETS.map((o) => (
-        <button
-          key={o.key}
-          role="radio"
-          aria-checked={o.key === value}
-          tabIndex={tabStop(o.key, value, LOOK_KEYS)}
-          data-key={o.key}
-          className={`swatch${o.key === value ? ' on' : ''}`}
-          onClick={() => onPick(o.key)}
-          data-testid={`cap-look-${o.key}`}
-        >
-          {/* the name first: under the picture it fell below the drawer's footer (grandma3 #15) */}
-          <span className="swatch-label">{o.label}</span>
-          <span className="swatch-frame">
-            <SubtitleSample look={{ ...lookFromStyle(o.style), position: 0.5 }} text={text} width={SWATCH_WIDTH} />
-          </span>
-        </button>
-      ))}
+    <div className="swatches" role="radiogroup" aria-label="Subtitle style" data-testid="cap-look">
+      {LOOKS.map((o) => {
+        const look: SubtitleLook = { ...lookFromStyle({ ...style, ...o.style }), position: 0.5 }
+        return (
+          <button
+            key={o.key}
+            role="radio"
+            aria-checked={o.key === value}
+            className={`swatch${o.key === value ? ' on' : ''}`}
+            onClick={() => onPick(o.key)}
+            data-testid={`cap-look-${o.key}`}
+          >
+            {/* the name first: under the picture it fell below the drawer's footer (grandma3 #15) */}
+            <span className="swatch-label">{o.label}</span>
+            <span className="swatch-frame">
+              <SubtitleSample look={{ ...look, size: Math.min(look.size, 105) }} text={text} width={92} />
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -157,6 +129,15 @@ function takes(words: Word[]): Word[][] {
   }
   if (cur.length) out.push(cur)
   return out
+}
+
+/** A short sample line for the subtitle preview: three kept words, like the engine's maxWords. */
+export function sampleLine(words: Word[], kept: Set<string>): { text: string; at: number } {
+  const k = words.filter((w) => kept.has(w.id) && /\w/.test(w.w))
+  const start = k.length > 6 ? 2 : 0
+  const pick = k.slice(start, start + 3)
+  if (!pick.length) return { text: 'Your words here', at: 0.5 }
+  return { text: pick.map((w) => w.w.replace(/[.,!?;:]+$/, '')).join(' '), at: pick[0].s + 0.15 }
 }
 
 const LEVELS: { key: string; label: string }[] = [
@@ -315,15 +296,20 @@ export function ShowMeHow({
     notify(`${what} copied.`)
   }
 
-  const maxWords = Number(capStyle.maxWords ?? 3)
-  const sample = useMemo(() => sampleLine(d.words, kept, maxWords), [d.words, kept, maxWords])
+  // A line clicked or typed in the Subtitles list shows on the phone instead of the sample.
+  const [shown, setShown] = useState<{ text: string; at: number } | null>(null)
+  const sample = useMemo(() => sampleLine(d.words, kept), [d.words, kept])
+  const line = shown ?? sample
   const subsOn = p.captions?.enabled !== false
   const lookJson = JSON.stringify(capStyle)
   useEffect(() => {
     if (!onPreview) return
-    onPreview(tab === 'captions' && subsOn ? { look: sampleLook(capStyle, sample), text: sample.text, at: sample.at } : null)
+    onPreview(tab === 'captions' && subsOn ? { look: lookFromStyle(capStyle), text: line.text, at: line.at } : null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, subsOn, lookJson, sample.text, sample.at, sample.words])
+  }, [tab, subsOn, lookJson, line.text, line.at])
+  const lines = useMemo(() => subtitleLines(d.captionLines, kept, d.project.captions, p.captions, wordText), [d.captionLines, kept, d.project.captions, p.captions, wordText])
+  const firstSource = d.project.sources?.[0]?.id
+  const wordById = useMemo(() => new Map(d.words.map((w) => [w.id, w])), [d.words])
 
   const coverTime = Number(p.cover?.atSourceTime ?? 0) || 0
   const sourceDuration = d.project.sources?.[0]?.duration ?? 60
@@ -440,48 +426,59 @@ export function ShowMeHow({
               </label>
               {p.captions?.enabled !== false && (
                 <div className="stack" data-testid="caption-controls">
-                  <h3 style={{ marginTop: 6 }}>Look</h3>
-                  {/* two words: a whole line shrinks to fit 74 px and can't be read */}
-                  <Swatches value={presetOf(capStyle)} text={sample.text.split(' ').slice(0, 2).join(' ')} onPick={(k) => set('captions', { ...(p.captions ?? { enabled: true }), style: applyPreset(k, capStyle) })} />
-                  <h3>Size</h3>
+                  <h3 style={{ marginTop: 6 }}>Size</h3>
                   <Seg
                     testid="cap-size"
-                    label="Size"
                     value={sizeKey(capStyle)}
                     options={SIZES}
-                    onPick={(k) => setCapStyle({ size: SIZES.find((x) => x.key === k)!.size, sizePicked: true })}
+                    onPick={(k) => setCapStyle({ size: SIZES.find((x) => x.key === k)!.size })}
                   />
                   <h3>Position</h3>
                   <Seg
                     testid="cap-pos"
-                    label="Position"
                     value={positionKey(capStyle)}
                     options={POSITIONS}
-                    onPick={(k) => setCapStyle({ position: k === 'lower' ? lookPosition(capStyle) : POSITIONS.find((x) => x.key === k)!.position })}
+                    onPick={(k) => setCapStyle({ position: POSITIONS.find((x) => x.key === k)!.position })}
                   />
-                  <h3>Colour</h3>
-                  <Seg testid="cap-color" label="Colour" value={colorKey(capStyle)} options={COLORS} onPick={(k) => setCapStyle({ color: COLORS.find((x) => x.key === k)!.color })} />
-                  {capStyle.highlight ? (
-                    <>
-                      <h3>Spoken word</h3>
-                      <Seg
-                        testid="cap-highlight"
-                        label="Spoken word colour"
-                        value={highlightKey(capStyle)}
-                        options={HIGHLIGHTS}
-                        onPick={(k) => setCapStyle({ highlight: HIGHLIGHTS.find((x) => x.key === k)!.color })}
-                      />
-                    </>
-                  ) : null}
+                  <h3>Style</h3>
+                  <Swatches value={lookKey(capStyle)} style={capStyle} text={sample.text} onPick={(k) => setCapStyle(LOOKS.find((x) => x.key === k)!.style)} />
                   <p className="muted-sm">The phone on the left shows the new look. Press "Make a new version" to use it.</p>
                 </div>
               )}
+              {p.captions?.enabled !== false && (
+                <div className="stack" data-testid="subtitle-lines">
+                  <h3 style={{ marginTop: 10 }}>Your subtitles</h3>
+                  {lines.length ? (
+                    <>
+                      <p className="muted-sm">
+                        Click a word to see it on the phone, or type to fix it. Enter starts a new line; Backspace at the start of a line joins it to the
+                        one above.
+                      </p>
+                      <SubtitleLines
+                        lines={lines}
+                        saved={d.project.captions?.corrections ?? []}
+                        corrections={p.captions?.corrections ?? []}
+                        heard={wordText}
+                        onEdit={(edit) => setPatch((x) => ({ ...x, captions: edit({ enabled: true, ...d.project.captions, ...x.captions }) }))}
+                        onShow={(text, token) => {
+                          const w = wordById.get(token.ids[0])
+                          const at = w && (!w.source || w.source === firstSource) ? w.s + 0.05 : line.at
+                          setShown({ text: previewText(text), at })
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <p className="muted-sm">Your subtitle lines show here once your next version is made.</p>
+                  )}
+                </div>
+              )}
               <h3 style={{ marginTop: 10 }}>Fix a word</h3>
-              <p className="muted-sm">If I spelled something wrong, tell me the right spelling.</p>
+              <p className="muted-sm">If I spelled something wrong everywhere you say it, tell me the right spelling.</p>
               <div className="list">
                 {(p.captions?.corrections ?? []).map((c, i) => (
                   <div key={i} className="list-item">
-                    <span>"{c.from}" becomes "{c.to}"</span>
+                    {/* a fix from the Subtitles list is for one place; Remove brings the word back as heard */}
+                    <span>{!c.at ? `"${c.from}" becomes "${c.to}"` : c.to ? `"${c.from}" becomes "${c.to}" in one place` : `"${c.from}" is off the subtitles in one place`}</span>
                     <span className="spacer" />
                     <button
                       className="btn small ghost"
