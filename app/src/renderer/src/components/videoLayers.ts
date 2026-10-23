@@ -63,3 +63,15 @@ export function layersReducer(s: Layers, e: LayerEvent): Layers {
 export function versionOnScreen<V extends { video?: string | null }>(versions: V[], shownSrc: string | null): V | null {
   return (shownSrc && versions.find((v) => v.video === shownSrc)) || null
 }
+
+/**
+ * The versions the Reel screen offers. A preview (a draft render) is a first look, not a version, while the first
+ * edit runs or has not finished (Version 1 is still to come); during any other job (a note, a hand edit, making the
+ * preview full quality for Share) a reel whose only version is a preview keeps it, or the screen would lose its
+ * player, Share and notes mid-job.
+ */
+export function versionsShown<V extends { draft: boolean }>(d: { status: string; job: { kind: string } | null; versions: V[] }): V[] {
+  const firstEditUnfinished = d.job ? d.job.kind === 'first-edit' : d.status !== 'ready'
+  return firstEditUnfinished ? d.versions.filter((v) => !v.draft) : d.versions
+}
+

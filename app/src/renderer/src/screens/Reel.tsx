@@ -16,7 +16,7 @@ import type { SubtitleLook } from '../../../shared/caption-presets'
 import { PhoneViewSwitch, usePhoneView } from '../components/Phone'
 import { createPlayhead, usePlayhead, type Playhead } from '../components/playhead'
 import { createTransport, useTransport, type Transport } from '../components/transport'
-import { versionOnScreen } from '../components/videoLayers'
+import { versionOnScreen, versionsShown } from '../components/videoLayers'
 import { EXPORT_EVENT, NOTE_DROP_DONE, useNotify } from '../App'
 import { ShowMeHow, type Tab } from './ShowMeHow'
 import { useNoteAttachments } from '../components/NoteAttachments'
@@ -158,10 +158,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       try {
         const got = await reel.projects.get(slug)
         if (n !== loads.current) return null
-        // Until a reel is ready, a draft render is a first look, not a version: Version 1 is still to come. Making a
-        // preview full quality for Share (an export job) leaves it the reel's version while it runs, or Share and its
-        // Stop would vanish from the title bar mid-export.
-        const next = got.status === 'ready' || got.job?.kind === 'export' ? got : { ...got, versions: got.versions.filter((v) => !v.draft) }
+        // a preview is a first look until the first edit is done, and the reel's version during any other job
+        const next = { ...got, versions: versionsShown(got) }
         selectLatest = wantLatest.current
         wantLatest.current = false
         setD(next)

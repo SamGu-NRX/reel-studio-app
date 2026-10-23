@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { NO_LAYERS, layersReducer, versionOnScreen, type LayerEvent, type Layers } from '../src/renderer/src/components/videoLayers'
+import { NO_LAYERS, layersReducer, versionOnScreen, versionsShown, type LayerEvent, type Layers } from '../src/renderer/src/components/videoLayers'
 
 const run = (...events: LayerEvent[]): Layers => events.reduce(layersReducer, NO_LAYERS)
 const want = (src: string): LayerEvent => ({ type: 'want', src, poster: null })
@@ -27,3 +27,18 @@ describe('player source switching', () => {
     expect(versionOnScreen(versions, layersReducer(picked2, { type: 'ready', id: 2 }).shown?.src ?? null)?.n).toBe(2)
   })
 })
+
+describe('versionsShown', () => {
+  const preview = { n: 0, draft: true }
+  const reel = (status: string, kind: string | null) => ({ status, job: kind ? { kind } : null, versions: [preview] })
+  // a reel whose only version is a preview, with a job running on it: the Reel screen must keep its version
+  it('fails if a note, a hand edit or an export on a preview-only reel hides the preview', () => {
+    for (const kind of ['note', 'rerender', 'export']) expect([kind, versionsShown(reel('interrupted', kind))]).toEqual([kind, [preview]])
+    expect(versionsShown(reel('ready', null))).toEqual([preview])
+  })
+  it('fails if a preview shows as a version while the first edit runs or has not finished', () => {
+    expect(versionsShown(reel('working', 'first-edit'))).toEqual([])
+    for (const status of ['new', 'failed', 'interrupted']) expect([status, versionsShown(reel(status, null))]).toEqual([status, []])
+  })
+})
+
