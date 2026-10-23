@@ -2,6 +2,7 @@
 // Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
 import type { TikTokApi } from './tiktok'
 import type { InstagramApi } from './instagram'
+import type { InsightsOptions, InsightsSummary } from './insights'
 // Types shared by the main process, the preload bridge and the renderer.
 // Keep this file free of Node and DOM imports.
 import type { ChatAction } from './notes'
@@ -306,6 +307,7 @@ export interface UserError {
 }
 
 export interface ReelApi {
+  insights: { get(options?: InsightsOptions): Promise<InsightsSummary> }
   tiktok: TikTokApi
   instagram: InstagramApi
   app: {

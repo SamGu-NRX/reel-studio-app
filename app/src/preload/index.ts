@@ -19,6 +19,7 @@ function on<T>(channel: string, cb: (v: T) => void): () => void {
 }
 
 const api: ReelApi = {
+  insights: { get: (options) => call('insights:get', options) },
   tiktok: {
     configure: (settings) => call('tiktok:configure', settings),
     session: () => call('tiktok:session'),

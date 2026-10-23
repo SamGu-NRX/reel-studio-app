@@ -50,6 +50,7 @@ import { TikTokService } from './tiktok'
 import { registerTikTokIpc } from './tiktok-ipc'
 import { InstagramService } from './instagram'
 import { registerInstagramIpc } from './instagram-ipc'
+import { registerInsightsIpc } from './insights-ipc'
 import { InstagramError } from './instagram-http'
 import { createPidRegistry } from './orphans'
 import { openSignInWindow, publicInfo } from './claude-signin'
@@ -334,6 +335,7 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
 
 // ---- IPC ----------------------------------------------------------------------------------------
 function registerIpc(): void {
+  registerInsightsIpc({ handle, projectsRoot: projectsDir })
   const tiktok = new TikTokService({
     dev: DEV_PROVIDERS && !TEST, settings: loadSettings, settingsDir: settingsDir(), projectsDir,
     secrets: safeStorage, fetch: (url, init) => fetch(url, init), openExternal: (url) => shell.openExternal(url)
