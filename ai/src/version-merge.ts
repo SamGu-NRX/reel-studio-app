@@ -1,4 +1,4 @@
-import { Project, ProjectError, Transcript, WordAnchor, anchorProblem, keptWords, normalizeKeep, validateProject, wordIndex } from './project';
+import { CutRange, Project, ProjectError, Transcript, WordAnchor, anchorProblem, keptWords, normalizeKeep, validateProject, wordIndex } from './project';
 
 /** Complete field ownership, including fields outside the seven selectable layers, is in docs/version-merge.md. */
 export const MERGE_FIELDS = {
@@ -47,7 +47,8 @@ export function mergeVersions(input: { ours: Project; theirs: Project; take: Mer
     }
   }
   const problems = validateProject(edit, transcript);
-  problems.push(...normalizeKeep(transcript, edit.cut.keep).problems);
+  // clips (multi-source) are checked by validateProject; normalizeKeep checks the word ranges
+  problems.push(...normalizeKeep(transcript, edit.cut.keep.filter((a): a is CutRange => !('clip' in a))).problems);
   if (problems.length) throw new ProjectError(problems.join('; '));
   const idx = wordIndex(transcript);
   const output = keptWords(transcript, edit.cut.keep);

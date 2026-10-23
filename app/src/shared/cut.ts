@@ -1,6 +1,16 @@
 // Pure helpers for cut.keep (word-id ranges, inclusive, output order). Used by main and renderer.
 import type { Word } from './api'
 
+type WordRange = { from: string; to: string }
+type CutItem = WordRange | { clip: string; source: string; in: number; out: number }
+
+/** A word-only rewrite would remove silent clips, so refuse it until manual cuts preserve both shapes. */
+export function assertWordCutEditable(keep: CutItem[] | undefined): asserts keep is WordRange[] | undefined {
+  if (keep?.some((item) => 'clip' in item)) {
+    throw { code: 'CLIP_CUT', userMessage: 'Use an editor note to change the clips in this reel. Manual word cuts are not available for clip timelines yet.' }
+  }
+}
+
 /** Expands keep ranges into kept word ids, in output order. */
 export function keptIds(words: Word[], keep: { from: string; to: string }[] | undefined): string[] {
   if (!keep) return []
@@ -44,9 +54,10 @@ export function rangesFromKept(words: Word[], kept: Set<string>): { from: string
  */
 export function rangesKeepingOrder(
   words: Word[],
-  oldKeep: { from: string; to: string }[] | undefined,
+  oldKeep: CutItem[] | undefined,
   kept: Set<string>
 ): { from: string; to: string }[] {
+  assertWordCutEditable(oldKeep)
   const index = new Map(words.map((w, i) => [w.id, i]))
   const runs: [number, number][] = [] // [start, end] word indexes, in output order
   const placed = new Set<number>()

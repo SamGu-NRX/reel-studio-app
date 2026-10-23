@@ -6,6 +6,8 @@ import { executeTool, operationStatus, toolSchemas, ToolContext, discardAssetCan
 export const STAGE: Record<string, { message: string; pct: number }> = {
   get_project: { message: 'Reading your video', pct: 8 },
   get_transcript: { message: 'Reading your video', pct: 10 },
+  list_sources: { message: 'Looking through your clips', pct: 12 },
+  set_clips: { message: 'Putting your clips in order', pct: 25 },
   set_cut: { message: 'Picking your best takes', pct: 25 },
   set_gap_cap: { message: 'Tightening the pauses', pct: 28 },
   set_caption_style: { message: 'Adding captions', pct: 33 },
@@ -104,7 +106,7 @@ export function thinkingMessage(messages: ChatMessage[]): string {
   if (names.includes('look_at_frames')) return 'Checking the preview frame by frame';
   if (names.includes('render_draft')) return 'Looking over the preview';
   if (names.some((n) => n === 'search_images' || n === 'fetch_image' || n === 'resolve_asset' || n === 'list_library')) return 'Choosing pictures and music';
-  if (names.some((n) => n === 'set_cut' || n === 'set_gap_cap')) return 'Planning captions, music and pictures';
+  if (names.some((n) => n === 'set_cut' || n === 'set_clips' || n === 'set_gap_cap')) return 'Planning captions, music and pictures';
   return 'Deciding what to do next';
 }
 

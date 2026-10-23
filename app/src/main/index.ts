@@ -95,6 +95,7 @@ import { parsePlatformExportRequest, secondTryPlatforms, type Platform, type Pla
 import { exportPlatforms, sweepExportStaging, type ExportTry } from './platform-export'
 import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
+import { assertWordCutEditable } from '../shared/cut'
 import { displayPath } from '../shared/display-path'
 import { RELEASES_REPO } from '../shared/config'
 import { registerPhoneIpc, stopPhoneShare, cloudSavesRunning, cloudSavesSettled } from './phone-ipc'
@@ -952,6 +953,8 @@ function registerIpc(): void {
     }
     return jobs.hold(slug, async () => {
       const p = await readProject(slug)
+      // a cut with clips from other sources (multi-source) is the AI's to change, not Edit it myself's word list
+      if (patch?.cut !== undefined) assertWordCutEditable(p.cut?.keep)
       for (const k of Object.keys(patch ?? {}) as (keyof ProjectJson)[]) {
         // the "Flip picture" toggle: only each take's mirror flag, never its path or size
         if (k === 'sources') {
