@@ -15,6 +15,10 @@ const INK = '#161917'
  * below the window's top (window_buttons_proxy.mm), so this `y` centres the lights on the title-bar row.
  */
 const MAC_BUTTON = 14
+/** The row scales with page zoom; the native buttons don't, so their place is recomputed per zoom factor (T3 Code does the same). */
+const lightsAt = (zoom: number) => ({ x: 16, y: Math.round((titlebarHeight('darwin') * zoom - MAC_BUTTON) / 2) })
+/** Fully transparent overlays draw wrong on Linux, so T3 Code uses alpha 1/255; this lets every surface show through. */
+const OVERLAY = '#01000000'
 
 export type { AppCommand }
 
@@ -67,8 +71,8 @@ export function createMainWindow(opts: { preload: string; stateFile: string; tes
     // system's window buttons drawn on top, so there is no grey strip and no stray menu bar.
     titleBarStyle: 'hidden',
     ...(mac
-      ? { trafficLightPosition: { x: 16, y: (titlebarHeight('darwin') - MAC_BUTTON) / 2 } }
-      : { titleBarOverlay: { color: PAPER, symbolColor: INK, height: titlebarHeight(process.platform) } }),
+      ? { trafficLightPosition: lightsAt(1) }
+      : { titleBarOverlay: { color: OVERLAY, symbolColor: INK, height: titlebarHeight(process.platform) } }),
     webPreferences: {
       preload: opts.preload,
       contextIsolation: true,
@@ -82,6 +86,13 @@ export function createMainWindow(opts: { preload: string; stateFile: string; tes
     win.on('close', () => saveBounds(opts.stateFile, win))
   }
   return win
+}
+
+function zoom(w: Electron.BaseWindow | undefined, step: -1 | 0 | 1): void {
+  if (!(w instanceof BrowserWindow)) return
+  const wc = w.webContents
+  wc.setZoomLevel(step === 0 ? 0 : wc.getZoomLevel() + step * 0.5)
+  if (!w.isFullScreen()) w.setWindowButtonPosition(lightsAt(wc.getZoomFactor()))
 }
 
 /**
@@ -142,9 +153,9 @@ export function installMenu(send: (c: AppCommand) => void, dev: boolean, checkFo
       label: 'View',
       submenu: [
         ...(dev ? ([{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }] as MenuItemConstructorOptions[]) : []),
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        { label: 'Actual Size', accelerator: 'Cmd+0', click: (_i, w) => zoom(w, 0) },
+        { label: 'Zoom In', accelerator: 'Cmd+Plus', click: (_i, w) => zoom(w, 1) },
+        { label: 'Zoom Out', accelerator: 'Cmd+-', click: (_i, w) => zoom(w, -1) },
         { type: 'separator' },
         { role: 'togglefullscreen' }
       ]

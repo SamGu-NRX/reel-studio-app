@@ -6,7 +6,7 @@
 .phone-fill > .phone { width: var(--phone-w); max-width: 100%; }
 .phone {
   position: relative; flex: none; border-radius: 6.5% / 3.66%;
-  box-shadow: 0 0 0 3px #141614, 0 30px 44px -30px rgba(10, 20, 15, .5), 0 14px 22px -16px rgba(10, 20, 15, .3);
+  box-shadow: 0 0 0 3px var(--bezel), 0 30px 44px -30px rgba(10, 20, 15, .5), 0 14px 22px -16px rgba(10, 20, 15, .3);
 }
 .phone-screen {
   width: 100%; aspect-ratio: 9 / 16; border-radius: inherit; overflow: hidden; background: #000; position: relative;

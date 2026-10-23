@@ -48,8 +48,6 @@ export function FirstRun({ onDone, platform }: { onDone: () => void; platform: s
   const welcome = useRef<HTMLDivElement>(null)
   const [from, setFrom] = useState<DOMRect | null>(null)
 
-  useEffect(() => go.current?.focus({ preventScroll: true }), [])
-
   const start = () => {
     sound.unlock()
     setFrom(canFly() ? (center.current?.getBoundingClientRect() ?? null) : null)

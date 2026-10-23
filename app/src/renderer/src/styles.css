@@ -83,10 +83,8 @@ a { color: inherit; }
 .icon { flex: none; display: block; }
 ::placeholder { color: var(--ink-3); opacity: 1; }
 
-/* Focus: a ring only for someone driving the app from the keyboard (motion.ts sets html.kb), so a button
-   focused for them on arrival does not wear a ring for a mouse user. */
 :focus { outline: none; }
-html.kb :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+:where(:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* Thin scrollbars on both systems (no Windows arrows). Only the ::-webkit-scrollbar rules: setting the
    standard scrollbar-width/-color makes Chromium ignore these and draw its own (with arrows on Windows). */
@@ -99,7 +97,7 @@ html.kb :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 /* ---- title bar ----
    The window has no system title bar. The row across the top is the drag handle; on macOS the traffic lights sit
    in it over the sidebar, on Windows the system draws its buttons on the right (components/shell.css lays it out). */
-.titlebar { position: fixed; top: 0; left: 0; right: 0; height: var(--titlebar); -webkit-app-region: drag; z-index: 15; pointer-events: none; }
+.titlebar { position: fixed; top: 0; left: 0; right: 0; height: var(--titlebar); -webkit-app-region: drag; pointer-events: none; }
 .platform-darwin .titlebar, .platform-win32 .titlebar { pointer-events: auto; }
 .first-shell { height: 100%; }
 
@@ -381,7 +379,6 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
 .banner.good { color: var(--green-ink); }
 .banner > span { flex: 1; min-width: 0; }
 .banner > .icon-btn { color: inherit; }
-.folder-line { display: flex; align-items: center; gap: 10px; margin: 12px 0; font-weight: 600; }
 
 /* ---- Working's column: as tall as the window (top 10px sticky offset, 24px page bottom, 6px to spare), and the
    phone (Phone.tsx PhoneFill) takes the height its first-look line leaves. ---- */
