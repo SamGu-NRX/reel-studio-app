@@ -2,7 +2,8 @@
 import { AgentEvent, AIError, ChatMessage, ImagePart, ModelProvider, TokenUsage, ToolCall, ToolResultMsg, WaitSignal, CompletionResponse } from './types';
 import { executeTool, operationStatus, toolSchemas, ToolContext, discardAssetCandidates } from './tools';
 
-const STAGE: Record<string, { message: string; pct: number }> = {
+/** What the person sees while a tool runs. */
+export const STAGE: Record<string, { message: string; pct: number }> = {
   get_project: { message: 'Reading your video', pct: 8 },
   get_transcript: { message: 'Reading your video', pct: 10 },
   set_cut: { message: 'Picking your best takes', pct: 25 },
@@ -153,7 +154,7 @@ export function turnTrace(t: NonNullable<CompletionResponse['timing']>): string 
 export const MAX_CONSECUTIVE_MISSES = 4;
 export const PARALLEL_LIMIT = 4;
 
-const KEEP_GOING = 'Keep going: act only through the tools. When everything is done, call finish with your summary for the user.';
+export const KEEP_GOING = 'Keep going: act only through the tools. When everything is done, call finish with your summary for the user.';
 const FORMAT_CORRECTION = 'Your last reply could not be read, so nothing ran. Reply again with ONE JSON object and nothing else: '
   + '{"thought": "<one short sentence>", "tool_calls": [{"name": "<tool>", "arguments": {...}}]}. No XML, no <invoke> tags, no prose.';
 

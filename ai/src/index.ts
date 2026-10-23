@@ -17,6 +17,8 @@ import { ClaudeCliProvider, CodexCliProvider, extractJson } from './providers/cl
 import { ReplayProvider } from './providers/replay';
 import { CONNECTION_KINDS, ConnectionKind, listConnectionModels, noRedirectFetch, normalizeBaseURL, suggestedModel } from './providers/connection';
 import { OpenAICompatibleProvider } from './providers/openaiCompatible';
+import { ClaudeCodeHarness } from './mcp/claudeCode';
+import type { Harness } from './harness';
 import { detectLocalClaude, DetectOptions, LocalClaude } from './providers/localClaude';
 import * as editor from './editor';
 import { refuseIfOpen } from './owner';
@@ -28,6 +30,9 @@ export { refuseIfOpen, OWNER_LOCK } from './owner';
 export { TOOLS, TOOL_NAMES, toolSchemas, executeTool, newToolState } from './tools';
 export type { ToolContext, ToolDef } from './tools';
 export { runAgent } from './agent';
+export { loopHarness } from './harness';
+export type { Harness, HarnessRun } from './harness';
+export { ClaudeCodeHarness } from './mcp/claudeCode';
 export { Prompts } from './prompts';
 export { StyleStore } from './style';
 export { AnthropicProvider, DEFAULT_CLAUDE_MODEL } from './providers/anthropic';
@@ -76,6 +81,9 @@ export interface AISettings {
   /** each connection's key is its own encrypted file, never in here */
   connections?: CustomConnection[];
   activeConnection?: string;
+  /** dev only: 'claude-code' runs a note's AI turns inside `claude -p`, its tools over MCP, while
+   * claude-cli is the active provider (mcp/claudeCode.ts); otherwise our own loop */
+  harness?: 'claude-code';
 }
 
 export interface CustomConnection {
@@ -136,6 +144,8 @@ export interface CreateAIOptions {
   providerOverride?: ModelProvider | ((role: ModelRole) => ModelProvider);
   /** The person's model per role (the app's Settings › Editor › Models), read at the start of each job. */
   roleModels?: () => RoleModels | Promise<RoleModels>;
+  /** Force the harness a note runs in (tests, the dev CLI). */
+  harnessOverride?: Harness;
   finalRender?: boolean;
   maxSteps?: number;
 }
@@ -444,6 +454,16 @@ export function createAI(opts: CreateAIOptions) {
     }
   }
 
+  /** What runs a note's AI turns: Claude Code over MCP behind the dev flag, else our own loop (undefined). */
+  async function noteHarness(): Promise<Harness | undefined> {
+    if (opts.harnessOverride) return opts.harnessOverride;
+    if (!opts.dev || opts.providerOverride) return undefined;
+    const s = await settings();
+    if (s.harness !== 'claude-code' || (await active()).id !== 'claude-cli') return undefined;
+    const bin = (await localClaude()).bin;
+    return new ClaudeCodeHarness({ model: s.cliModel, ...(bin ? { bin } : {}) });
+  }
+
   return {
     providers,
     active,
@@ -568,7 +588,7 @@ export function createAI(opts: CreateAIOptions) {
       return exclusive(projectDir, opts.owner, () => edit(opts.owner, async (d) => {
         // "Double-check each edit" reviews with its own role's model
         const checker = opts.checkEdit ? { checker: await modelProvider('checker') } : {};
-        return editor.applyNote({ ...d, ...checker }, await modelProvider(), projectDir, note, onEvent, signal, opts);
+        return editor.applyNote({ ...d, ...checker, harness: await noteHarness() }, await modelProvider(), projectDir, note, onEvent, signal, opts);
       }));
     },
     /** True when applyNote would take the no-model fast path for these words ("smaller captions"):

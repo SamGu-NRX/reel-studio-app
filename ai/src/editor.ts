@@ -5,7 +5,8 @@ import { effectiveTokens, runAgent, RunAgentResult } from './agent';
 import type { LookupFn } from './safety';
 import { Prompts } from './prompts';
 import { StyleStore, StyleProposal, captionCaseProposal } from './style';
-import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProofread, doRender, unsureWords, executeTool, load, newToolState, resolveAsset, cleanSummary, renderEvent, operationStatus, noteBase, stageMerge, ToolInputError } from './tools';
+import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProofread, doRender, unsureWords, executeTool, load, newToolState, resolveAsset, cleanSummary, renderEvent, operationStatus, noteBase, stageMerge, ToolInputError, TOOL_NAMES } from './tools';
+import { Harness, loopHarness } from './harness';
 import { planFastNote } from './fastnote';
 import { LEDGER } from './assets';
 import { AttachmentInfo, attachmentStills, attachmentsSection, earlierUnplaced, placedAssets, validateAttachments } from './attachments';
@@ -48,6 +49,8 @@ export interface EditorDeps {
   /** An AI failure the host pauses on (a plan at its limit, no internet): Version 1 is not made without the editor
    * then, it waits to continue (the app's Paused without you). Default: none, so a basic version stands in. */
   pauseOn?: (e: AIError) => boolean;
+  /** what runs a note's AI turns (default our own loop over the provider) */
+  harness?: Harness;
 }
 
 export interface EditResult extends AgentResult {
@@ -516,10 +519,12 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   // what it froze and the records it appended (restoreAssets)
   const assetsBefore = await listAssets(projectDir);
   const ledgerBefore = await ledgerBytes(projectDir);
+  // what runs the note's AI turns: our own loop, or Claude Code over MCP behind the dev setting (mcp-harness)
+  const harness = deps.harness ?? loopHarness(provider);
   const begin = async (): Promise<ToolContext> => {
     const file = path.join(dir, 'edit.json');
     await writeFileAtomic(file, edit);
-    return { ...newCtx(deps, projectDir, provider, onEvent, signal, 2), userNote: note, note: { id, file, dir, parent }, jobId: opts.jobId };
+    return { ...newCtx(deps, projectDir, provider, onEvent, signal, 2), supportsImages: harness.supportsImages, userNote: note, note: { id, file, dir, parent }, jobId: opts.jobId };
   };
   const label = noteLabel(note, attached);
   let committed: EditResult;
@@ -552,10 +557,10 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     // the attached files (and earlier ones still not in the video): listed in the task, one still each
     const earlier = await earlierUnplaced(projectDir, ctx.project ?? p0, attached);
     const { images, stills } = await attachmentStills(projectDir, [...attached, ...earlier]);
-    const files = attachmentsSection(attached, earlier, provider.supportsImages ? stills : new Map());
+    const files = attachmentsSection(attached, earlier, harness.supportsImages ? stills : new Map());
     const noteText = note.trim() || '(no words: the user only attached the file(s) below)';
     const task = deps.prompts.render('applyNote', { note: noteText }) + (files ? `\n\n${files}` : '');
-    const r = await runAgent({ provider, system: await systemPrompt(deps), task, taskImages: images, ctx, onEvent, signal, maxSteps: deps.maxSteps ?? 25, tokenBudget: deps.tokenBudget, preload: ['get_project', 'get_transcript'] });
+    const r = await harness.run({ system: await systemPrompt(deps), task, taskImages: images, ctx, onEvent, signal, tools: TOOL_NAMES, maxSteps: deps.maxSteps ?? 25, tokenBudget: deps.tokenBudget, preload: ['get_project', 'get_transcript'] });
     const nothing = !ctx.state.changed.size && !ctx.state.styleRulesAdded.length && !ctx.state.styleSuggestions.length;
     // A note that stopped before finish (step limit, or replies with no tool call) is not applied, and
     // says so when that throws work away. With nothing to throw away it gets the "not sure" reply.
