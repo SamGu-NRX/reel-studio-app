@@ -75,8 +75,8 @@ import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { displayPath } from '../shared/display-path'
 import { RELEASES_REPO } from '../shared/config'
-import { registerPhoneIpc, stopPhoneShare } from './phone-ipc'
-import { forChat, pickClipboardType, registerAttachmentIpc, unstage } from './attachments'
+import { registerPhoneIpc, stopPhoneShare, cloudSavesRunning, cloudSavesSettled } from './phone-ipc'
+import { forChat, pickClipboardType, registerAttachmentIpc, unstage, checkNoteAttachments } from './attachments'
 import { RELEASES_API, releasePageBackend, type FetchLike, createUpdateService } from './update-check'
 import { createPermissions, notificationsWanted, parseFakes, type NotifyResult, type Permissions } from './permissions'
 import { helperInstruction, MAC_PANES } from './mac-permission'
@@ -1033,6 +1033,9 @@ const gotLock = TEST || SELF_TEST.selfTest || app.requestSingleInstanceLock()
 if (!gotLock) app.quit()
 app.on('second-instance', (_event, argv, cwd) => {
   queueOpenFiles(filesFromArgv(argv, cwd, !!process.defaultApp))
+  // The window is destroyed but the app still running when it was closed on macOS, or when closing it on Windows
+  // or Linux started a quit that is waiting for a drive save. A null window means startup has not opened it yet.
+  if (win?.isDestroyed()) return createWindow()
   if (win) {
     if (win.isMinimized()) win.restore()
     win.focus()
@@ -1118,18 +1121,16 @@ let quitting = false
 app.on('before-quit', (e) => {
   void stopPhoneShare() // the "Send to my phone" link never outlives the app
   permissionHelper.close()
-  if (quitting || !jobs.runningCount()) {
+  if (quitting || (!jobs.runningCount() && !cloudSavesRunning())) {
     void killAllEngines()
     return
   }
-  // Stop running work cleanly so the next start finds a tidy project.
+  // Stop running work cleanly so the next start finds a tidy project, and give drive saves time to finish so
+  // the synced folder is not left with a temporary file. Both waits are capped (jobs.ts, phone-ipc.ts).
   e.preventDefault()
   quitting = true
   noteQueue.quit()
-  void jobs
-    .cancelAll()
-    .then(() => killAllEngines())
-    .finally(() => app.quit())
+  void Promise.allSettled([jobs.cancelAll().then(() => killAllEngines()), cloudSavesSettled()]).finally(() => app.quit())
 })
 
 app.on('window-all-closed', () => {

@@ -93,6 +93,10 @@ const api: ReelApi = {
     clear: (slug) => call('queue:clear', slug),
     onChange: (cb) => on<string>('queue:change', cb)
   },
+  cloud: {
+    drives: () => call('cloud:drives'),
+    save: (video, folder) => call('cloud:save', video, folder)
+  },
   phone: {
     start: (video, caption, address) => call('phone:start', video, caption, address),
     stop: () => call('phone:stop'),
