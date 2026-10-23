@@ -71,7 +71,7 @@ import { helperInstruction, MAC_PANES } from './mac-permission'
 import { MacPermissionHelper } from './mac-permission-helper'
 import { createUpdater, menuCheckForUpdates } from './updater'
 import { autoUpdater } from 'electron-updater'
-import { electronUpdaterBackend, macBundleCheck } from './updater-electron'
+import { electronUpdaterBackend, macBundleCheck, windowsInstaller } from './updater-electron'
 import { disabledReason, updateMode } from './update-machine'
 import { createJobFeedback, createMainWindow, feedbackLog, installMenu, startDragOut, windowStateFile, type AppCommand } from './window'
 
@@ -250,7 +250,7 @@ const updates = createUpdater({
           log,
           devFeedFile: TEST_FEED ? updateFeed ?? undefined : undefined,
           onError: (e) => updates.installFailed(e),
-          verifyDownload: macBundleCheck(app.getVersion())
+          install: process.platform === 'win32' ? windowsInstaller : macBundleCheck(app.getVersion())
         })
       : releasePageBackend(githubFetch, app.getVersion()),
   load: loadSettings,
