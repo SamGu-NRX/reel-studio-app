@@ -16,11 +16,12 @@ class LintTimeline:
     zooms: list = field(default_factory=list)
     snaps: list = field(default_factory=list)
     captions: list = field(default_factory=list)
+    event_times: list | None = None
 
 
 def snap_crosses(start, end, events):
-    """A snap may land on a boundary, but must not pass one or leave a cut behind."""
-    return start != end and any(min(start, end) < t < max(start, end) for t in events)
+    """Keep an event on its side of neighbouring event times."""
+    return start != end and any(min(start, end) <= t <= max(start, end) and t != start for t in events)
 
 
 def lint_edit(edit: dict, timeline: LintTimeline) -> dict:
@@ -46,11 +47,18 @@ def lint_edit(edit: dict, timeline: LintTimeline) -> dict:
                               ramp_in=entrance, ramp_out=min(z.ramp_out, available - entrance)))
 
     cuts = [s.out_start for s in timeline.segments[1:]]
-    events = sorted(set(cuts + [v['t0'] for v in timeline.visuals] + [z.t0 for z in timeline.zooms]
-                        + [s['original'] for s in timeline.snaps]))
+    events = timeline.event_times if timeline.event_times is not None else sorted(set(
+        cuts + [v['t0'] for v in timeline.visuals] + [z.t0 for z in timeline.zooms]
+        + [s['original'] for s in timeline.snaps]))
     accepted = []
     for i, snap in enumerate(timeline.snaps):
-        if snap_crosses(snap['original'], snap['snapped'], events):
+        a, b = snap['original'], snap['snapped']
+        gap = snap.get('min_gap', 0)
+        previous, following = snap.get('previous'), snap.get('following')
+        crosses_cut = any(a < c <= b or b < c <= a for c in cuts)
+        crowds_event = ((previous is not None and b - previous <= gap)
+                        or (following is not None and following - b <= gap))
+        if crosses_cut or crowds_event or snap_crosses(a, b, events):
             fixed.append(dict(rule='beat-snap', at_seconds=round(snap['original'], 3), target=i,
                               seconds=snap['original']))
         else:
@@ -69,9 +77,10 @@ def lint_edit(edit: dict, timeline: LintTimeline) -> dict:
         if 0 < b - a < 2 - 1e-6:
             issue('framing-dwell', a, 'This framing lasts under about 2 seconds.', 'Hold the framing for at least 2 seconds.')
 
-    changes = sorted({*cuts, *(v['t0'] for v in timeline.visuals), *(z.t0 for z in timeline.zooms)})
+    changes = sorted({*cuts, *(v['t0'] for v in timeline.visuals), *(z.t0 for z in timeline.zooms),
+                      *(z.t1 for z in timeline.zooms)})
     for a, b in zip(timeline.zooms, timeline.zooms[1:]):
-        if not any(a.t0 < t < b.t0 for t in cuts + [v['t0'] for v in timeline.visuals]):
+        if not any(a.t0 < t <= b.t0 for t in cuts + [v['t0'] for v in timeline.visuals]):
             issue('successive-zooms', b.t0, 'Two zooms start with no other change between them.', 'Keep one zoom or use another kind of visual change.')
 
     height = edit['format']['height']
@@ -109,6 +118,9 @@ def prepare(ctx, tl):
     from . import broll, captions, music, sfx, zoom
     ctx._lint_snap_requests = []
     ctx._lint_events = [s.out_start for s in tl.segments[1:]]
+    # Seeded framing is visible even without an authored zoom.
+    if ctx.variation:
+        ctx._lint_events.extend(row['t0'] for row in ctx.variation['framing'][1:])
     for group in ('broll', 'zooms'):
         for item in ctx.project.get(group, []):
             anchor = item.get('anchor') or {}
@@ -127,7 +139,8 @@ def prepare(ctx, tl):
     cues = []
     if (ctx.project.get('captions') or {}).get('enabled', True):
         _, cues, *_ = captions.build_for_timeline(tl, ctx.project, ctx.fmt['width'], ctx.fmt['height'])
-    plan = LintTimeline(tl.segments, tl.duration, visuals, zooms, ctx._lint_snap_requests, cues)
+    # Compare against unsnapped events so an event cannot collide with its own target.
+    plan = LintTimeline(tl.segments, tl.duration, visuals, zooms, ctx._lint_snap_requests, cues, ctx._lint_events)
     result = lint_edit(ctx.project, plan)
     for fix in result['fixed']:
         if fix['rule'] == 'zoom-ramp':

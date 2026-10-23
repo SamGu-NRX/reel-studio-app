@@ -173,3 +173,66 @@ def test_prepare_applies_repairs_before_rendering(tmp_path):
     assert any(f['rule'] == 'zoom-ramp' for f in result['fixed'])
     [span] = ctx.lint_zooms
     assert span.ramp_in + span.ramp_out <= round((span.t1 - span.t0) * 30) - 1
+
+
+def test_lint_backstop_records_snaps_already_stopped_by_engine_bounds(tmp_path, monkeypatch):
+    from reelengine import broll, music, project, render
+    from reelengine.lint_edit import prepare
+    from conftest import mkwords
+    p = project.new_project('Bounded beats')
+    p.update(beatAccents=True, sources=[{'id': 's1', 'path': 'media/take.mp4', 'duration': 6, 'fps': 30}])
+    p['cut'] = {'keep': [{'from': 'w0', 'to': 'w3'}], 'gapCap': 5}
+    p['captions']['enabled'] = False
+    words = mkwords([(.1, .4, 'One'), (1.2, 1.25, 'two'), (1.3, 1.4, 'three'), (3, 3.3, 'four.')])
+    p['broll'] = [{'id': f'b{i}', 'anchor': {'from': f'w{i}', 'to': f'w{i}'}, 'treatment': 'text-pop',
+                   'leadIn': 4/30, 'params': {}} for i in (1, 2)]
+    monkeypatch.setattr(music, 'accent_beats', lambda ctx: [35/30])
+    tl = project.timeline(tmp_path, p, words)
+    ctx = render.make_ctx(tmp_path, p, tl, True, tmp_path, tmp_path)
+    lint = prepare(ctx, tl)
+    windows = broll.plan_windows(ctx)
+    assert [v['id'] for v in windows] == ['b1', 'b2']
+    assert windows[0]['t0'] == pytest.approx(32/30)
+    assert any(f['rule'] == 'beat-snap' for f in lint['fixed'])
+    # A legal candidate remains snapped and does not produce a redundant repair.
+    ctx.project['broll'] = ctx.project['broll'][:1]
+    monkeypatch.setattr(music, 'accent_beats', lambda ctx: [33/30])
+    safe = prepare(ctx, tl)
+    assert broll.plan_windows(ctx)[0]['t0'] == pytest.approx(33/30)
+    assert not any(f['rule'] == 'beat-snap' for f in safe['fixed'])
+
+
+def test_seeded_framing_boundaries_also_bound_beat_snaps(tmp_path, monkeypatch):
+    from reelengine import broll, music, project, render, variation
+    from reelengine.lint_edit import prepare
+    from conftest import mkwords
+    p = project.new_project('Framing beat boundary')
+    p.update(beatAccents=True, cutStyle={'preset': 'standard', 'seed': 0},
+             sources=[{'id': 's1', 'path': 'media/take.mp4', 'duration': 32, 'fps': 30}])
+    p['cut'] = {'keep': [{'from': 'w0', 'to': 'w60'}], 'gapCap': 5}
+    p['captions']['enabled'] = False
+    words = mkwords([(i * .5 + .1, i * .5 + .4, 'word') for i in range(61)])
+    tl = project.timeline(tmp_path, p, words)
+    _, decisions = variation.resolve(p, tl)
+    boundary = decisions['framing'][1]['t0']
+    word = min(tl.words_out, key=lambda w: abs(w['s'] - boundary))['id']
+    p['broll'] = [{'id': 'b1', 'anchor': {'from': word, 'to': word}, 'treatment': 'text-pop', 'params': {}}]
+    ctx = render.make_ctx(tmp_path, p, tl, True, tmp_path, tmp_path)
+    original = ctx.word_out_time(word) - ctx.project['broll'][0]['leadIn']
+    monkeypatch.setattr(music, 'accent_beats', lambda ctx: [boundary])
+    result = prepare(ctx, tl)
+    assert broll.plan_windows(ctx)[0]['t0'] == pytest.approx(original)
+    assert any(f['rule'] == 'beat-snap' for f in result['fixed'])
+
+
+def test_cadence_counts_releases_back_to_wide_framing():
+    tl = plan(24)
+    tl.zooms = [z(4, 8), z(12, 16), z(20, 24)]
+    assert 'cadence' not in rules(lint_edit(edit('standard'), tl))
+
+
+def test_cut_at_second_zoom_start_is_another_visual_change():
+    tl = plan()
+    tl.segments.append(Segment('s2', 0, 6, 6))
+    tl.zooms = [z(2, 4), z(6, 8)]
+    assert 'successive-zooms' not in rules(lint_edit(edit(), tl))

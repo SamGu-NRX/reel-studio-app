@@ -5,7 +5,7 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomInt } from 'node:crypto';
 import {
-  Analysis, Broll, LIBRARY_FOLDERS, LibraryKind, MusicLevel, Project, Sfx, Transcript, TREATMENTS, Word, WordAnchor,
+  Analysis, Broll, LIBRARY_FOLDERS, LibraryKind, MusicLevel, Project, Sfx, Transcript, TREATMENTS, Word, WordAnchor, Zoom,
   anchorText, anchorWords, approxDuration, approxOutputTimes, keptWords, loadAnalysis, loadProject, loadTranscript,
   nextBrollId, normalizeKeep, saveProject, validateProject, wordIndex, anchorProblem,
 } from './project';
@@ -1151,8 +1151,8 @@ const tools: ToolDef[] = [
       accentGroup: S.opt(S.str('same group for equally good candidate moments')) })) }),
     async run(ctx, args) {
       const { t } = await load(ctx);
-      args.zooms.forEach((z: any, i: number) => checkAnchor(t, z.anchor, `zooms[${i}]`));
-      await mutate(ctx, 'zooms', (p) => { p.zooms = args.zooms.filter((z: any) => z.scale == null || z.scale > 1.001).map((z: any) => ({ anchor: z.anchor, ...(z.scale == null ? {} : { scale: z.scale }), ...(z.kind ? { kind: z.kind } : {}), ...(z.style ? { style: z.style } : {}), ...(z.accentGroup ? { accentGroup: z.accentGroup } : {}) })); });
+      args.zooms.forEach((z: Zoom, i: number) => checkAnchor(t, z.anchor, `zooms[${i}]`));
+      await mutate(ctx, 'zooms', (p) => { p.zooms = args.zooms.filter((z: Zoom) => z.scale == null || z.scale > 1.001).map((z: Zoom) => ({ anchor: z.anchor, ...(z.scale == null ? {} : { scale: z.scale }), ...(z.kind ? { kind: z.kind } : {}), ...(z.style ? { style: z.style } : {}), ...(z.accentGroup ? { accentGroup: z.accentGroup } : {}) })); });
       return { content: { ok: true, count: ctx.project!.zooms.length }, summary: args.zooms.length ? 'Added a few zoom-ins on the big moments' : 'Took out the zooms' };
     },
   },

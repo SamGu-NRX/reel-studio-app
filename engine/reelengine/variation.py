@@ -50,7 +50,7 @@ def resolve(project: dict, timeline) -> tuple[dict, dict | None]:
         b["leadIn"] = lead
     for i, keep in enumerate((p.get("cut") or {}).get("keep") or []):
         join = keep.get("join")
-        if isinstance(join, dict) and join.get("transition") in ("j", "l") :
+        if isinstance(join, dict) and join.get("transition") in ("j", "l"):
             join["frames"] = rng.randint(6, 12)
             offsets.append({"join": i, "frames": join["frames"]})
     band = settings["secondsPerVisualChange"]

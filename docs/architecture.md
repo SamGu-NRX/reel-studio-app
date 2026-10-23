@@ -206,7 +206,7 @@ backwards in the frames it looks at, or when a note says the video is mirrored),
 `set_sfx` (built-in sound effects, each hitting on a word, a b-roll's appearance or a cut; the engine plays at
 most one every 2 seconds, under the voice),
 `set_cover(atSourceTime, text)`, `write_post(caption, hashtags[5], keywords)`, `add_style_rule(rule)`,
-`render_draft`, `look_at_frames(times)` (returns images for vision models), `finish(summary_for_user)`.
+`lint_edit` (deterministic repairs and issues, see `docs/edit-lint.md`), `render_draft` (runs the same lint before encoding), `look_at_frames(times)` (returns images for vision models), `finish(summary_for_user)`.
 
 `make_variant(variable, hook?, cover?, caption?, brightness?)` saves a trial changing one of
 `seed`, `hook`, `cover`, `caption`, or `brightness`. The editor supplies the alternative hook word

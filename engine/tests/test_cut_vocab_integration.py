@@ -6,12 +6,12 @@ import numpy as np
 import pytest
 
 from conftest import mkwords
-from reelengine import captions, music, project, render, sfx, tools, zoom
+from reelengine import music, project, render, sfx, tools
 from reelengine.lint_edit import prepare
 
 
 def test_seeded_vocabulary_renders_in_sync_with_expected_duration(tmp_path, monkeypatch):
-    monkeypatch.setenv('REELENGINE_RENDER_ENCODER', 'libx264')
+    monkeypatch.setenv('REELENGINE_DRAFT_ENCODER', 'libx264')
     p = project.new_project('Cut vocabulary')
     p['format'] = {'width': 160, 'height': 284, 'fps': 30}
     p['cutStyle'] = {'preset': 'hyper', 'seed': 42}
@@ -43,6 +43,10 @@ def test_seeded_vocabulary_renders_in_sync_with_expected_duration(tmp_path, monk
                     '-ac', '2', str(song)], check=True)
     p['music'].update({'track': 'media/click.flac', 'enabled': True, 'level': 'quiet'})
     p['sfx'] = [{'at': {'word': 'w4'}, 'sound': 'pop-soft'}]
+    # Put a detected beat two frames after the effect, within the incoming shot.
+    target = project.timeline(tmp_path, p, words).word_out_time('w4') + 2/30
+    beats = music.analyze_track_cached(song)['beats']
+    p['music']['startAt'] = next(b for b in beats if b > target) - target
     project.save(tmp_path, p)
     project.write_json(tmp_path / 'work' / 'transcript.json', {'words': words})
     before = project.timeline(tmp_path, p, words)
@@ -58,6 +62,10 @@ def test_seeded_vocabulary_renders_in_sync_with_expected_duration(tmp_path, monk
     assert music.accent_beats(ctx)
     placed, _ = sfx.plan(ctx)
     assert any(x['at'].get('cut') == 'w7' for x in placed)
+    accent = next(x for x in placed if x['at'].get('word') == 'w4')
+    original = sfx.hit_time(ctx, {'word': 'w4'})
+    assert 1/30 <= abs(accent['t'] - original) <= .12
+    assert min(abs(accent['t'] - b) for b in music.accent_beats(ctx)) <= 1/30
     rendered = render.run(tmp_path, draft=True, root=tmp_path, cover=False)
     assert rendered['duration'] == pytest.approx(expected_duration, abs=1/30)
     assert 'issues' in rendered and 'fixed' in rendered
