@@ -4,7 +4,7 @@
 //
 // Run: npm run e2e (or `npx playwright test e2e/ux.spec.ts` after a build). Same env as smoke.spec.ts.
 import { test, expect, type ElectronApplication } from '@playwright/test'
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BASE, CLAUDE_CODE_LABEL, CLAUDE_CODE_MISNAMED, USE_CLAUDE_CODE, launch, makeMedia, makeReel, passFirstRun, shot, openSettings } from './helpers'
 
@@ -124,6 +124,30 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await page.getByTestId('project-card').first().click()
   await expect(page.getByTestId('version-on-screen')).toHaveText('Version 2')
   await expect(page.getByTestId('version-title')).toHaveText('Bigger subtitles')
+
+  // A song the editor found outside the Library (#71): music.track is its frozen copy, and the Music tab names it
+  // by its asset-ledger title, never the hash. The stand-in AI never freezes one, so put it there as resolve_asset does.
+  const reelDir = join(ROOT, 'Projects', projectSlug())
+  const frozen = `work/assets/frozen/music/${'ab'.repeat(32)}.mp3`
+  mkdirSync(join(reelDir, 'work', 'assets', 'frozen', 'music'), { recursive: true })
+  copyFileSync(media.song, join(reelDir, frozen))
+  writeFileSync(
+    join(reelDir, 'work', 'assets', 'manifest.jsonl'),
+    JSON.stringify({ committedPath: frozen, title: 'beach walk', provenance: { intent: 'work/downloads/beach walk.mp3' } }) + '\n'
+  )
+  const withSong = projectJson()
+  withSong.music = { enabled: true, track: frozen, level: 'under-voice' }
+  writeFileSync(join(reelDir, 'project.json'), JSON.stringify(withSong, null, 2))
+  await page.getByTestId('nav-home').click()
+  await page.getByTestId('project-card').first().click()
+  await page.getByTestId('edit-myself').click()
+  await page.getByTestId('tab-music').click()
+  await expect(page.getByTestId('music-elsewhere')).toHaveText('beach walk')
+  await expect(page.getByRole('radio', { name: 'beach walk' })).toBeChecked()
+  await page.getByRole('radio', { name: 'No music' }).check()
+  await page.getByRole('radio', { name: 'beach walk' }).check() // still there to go back to
+  await expect(page.getByRole('radio', { name: 'beach walk' })).toBeChecked()
+  await page.getByTestId('edit-myself').click()
 
   // ---- 5. a song: Music under Edit it myself, the picker, a new version with the song ----
   await answerFilePicker(app, media.song)

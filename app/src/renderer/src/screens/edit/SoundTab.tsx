@@ -27,9 +27,9 @@ export const sfxVolume = (s: Sfx): number => Math.min(1, 0.5 * 10 ** (Number(s.g
 
 const keyOf = (s: Sfx): string => JSON.stringify(s.at)
 
-export function SoundTab({ d, now, change, player, placed }: TabProps) {
+export function SoundTab({ d, base, now, change, player, placed }: TabProps) {
   const notify = useNotify()
-  const [songs, setSongs] = useState<LibraryFile[]>([])
+  const [songs, setSongs] = useState<LibraryFile[] | null>(null)
   const [pack, setPack] = useState<SoundEffect[]>([])
   const hear = useAudition()
   const music = now.p.music
@@ -87,6 +87,12 @@ export function SoundTab({ d, now, change, player, placed }: TabProps) {
   }
 
   const noMusic = !music?.track || music.enabled === false
+  // The saved song when it is not one of the Library's below (the editor found it elsewhere, or it left the
+  // Library): its own row, named as the checklist names it, by its asset-ledger title and never the file's hash (#71).
+  const saved = base.p.music?.track
+  // until the Library is listed, a Library path counts as listed, so its row never flashes here
+  const listed = (t: string): boolean => songs?.some((m) => t === `Library/Music/${m.name}`) ?? t.startsWith('Library/')
+  const elsewhere = saved && !listed(saved) ? saved : null
   return (
     <div className="edit-stack">
       <section className="edit-field" aria-labelledby="music-h">
@@ -98,7 +104,15 @@ export function SoundTab({ d, now, change, player, placed }: TabProps) {
             <input type="radio" name="track" checked={noMusic} onChange={() => setMusic({ enabled: false, track: null })} />
             <span className="edit-row-main">No music</span>
           </label>
-          {songs.map((m) => {
+          {elsewhere && (
+            <label className={`edit-row radio${!noMusic && music?.track === elsewhere ? ' on' : ''}`} data-testid="music-elsewhere">
+              <input type="radio" name="track" checked={!noMusic && music?.track === elsewhere} onChange={() => setMusic({ enabled: true, track: elsewhere })} />
+              <span className="edit-row-main">
+                <span className="edit-row-title">{d.checklist.find((c) => c.key === 'music')?.detail}</span>
+              </span>
+            </label>
+          )}
+          {songs?.map((m) => {
             const rel = `Library/Music/${m.name}`
             const on = !noMusic && music?.track === rel
             return (
