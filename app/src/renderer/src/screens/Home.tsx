@@ -1,32 +1,89 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { ProjectSummary } from '../../../shared/api'
-import { timeLeftWords } from '../../../shared/live'
+import { STILL_WORKING } from '../../../shared/live'
 import { dayLabel } from '../../../shared/notes-log'
-import { reel } from '../api'
+import { reel, userMessage } from '../api'
+import { useNotify } from '../App'
 import type { Go } from '../nav'
+import { isNew } from '../seen'
 import { Icon } from '../components/icons'
-import { YourTurn } from '../components/YourTurn'
-import { sawSample } from '../components/first-run/handoff'
+import { TitleBarSlot } from '../components/titlebar'
+import { byKeyboard, reducedMotion } from '../components/motion'
+import { SampleReel } from '../components/SampleReel'
+import { PickFiles } from '../components/ui'
+import { useModelStatus } from '../components/connect'
+import { createFromFiles } from './create'
 import '../components/home.css'
 
 type View = 'activity' | 'all'
 const VIEW_KEY = 'rs.home-view'
-/** "Recent" on Activity: finished reels touched in the last two weeks. */
+/** "Recent" on Activity: reels with a version touched in the last two weeks. */
 const RECENT_DAYS = 14
+/** Series chips only help once there are this many reels (spec.md section 4). */
+const SERIES_FROM = 12
+const CARD_MIN = 140
+const GAP = 18
 
-/** A first cut or a new version being made: how far along, from the job's own events. */
-type Live = { overall: number; left: string | null }
+/** A version being made, from the job's own events. */
+type Live = { overall: number; secondsLeft: number | null; overdue: boolean }
+type State = 'novideo' | 'making' | 'paused' | 'failed' | 'ready'
 
-const needsYou = (p: ProjectSummary) => p.status === 'interrupted' || p.status === 'failed'
-const making = (p: ProjectSummary) => p.status === 'working' || p.status === 'new'
+/** ux-foundation-b.md section 3.4: a reel's one state. A planned reel waits for its video whatever app.json says. */
+const stateOf = (p: ProjectSummary): State =>
+  p.noVideo ? 'novideo' : p.status === 'working' || p.status === 'new' ? 'making' : p.status === 'interrupted' ? 'paused' : p.status === 'failed' ? 'failed' : 'ready'
+/** The reel can't move without you (Activity's first group). A pause that continues on its own is still Making. */
+const needsYou = (p: ProjectSummary): boolean => {
+  const s = stateOf(p)
+  return s === 'novideo' || s === 'failed' || (s === 'paused' && !p.continuesAt)
+}
+const inMaking = (p: ProjectSummary): boolean => stateOf(p) === 'making' || (stateOf(p) === 'paused' && !!p.continuesAt)
+
+function leftWords(l: Live): string | null {
+  if (l.overdue) return STILL_WORKING
+  if (l.secondsLeft === null || l.secondsLeft < 0) return null
+  if (l.secondsLeft < 20) return 'Almost done'
+  return `About ${Math.max(1, Math.round(l.secondsLeft / 60))} min left`
+}
+
+/** "Continues at 3:40 PM" today; on a later day just the day, which fits the card's one line. */
+function continuesWords(iso: string, now: Date): string {
+  const d = new Date(iso)
+  const days = Math.round((new Date(d.toDateString()).getTime() - new Date(now.toDateString()).getTime()) / 86_400_000)
+  if (days <= 0) return `Continues at ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+  return `Continues ${days === 1 ? 'tomorrow' : d.toLocaleDateString([], { weekday: 'long' })}`
+}
+
+/** How many card columns fit: every grid on the page shares them, so Activity's groups line up. */
+function useColumns(ref: React.RefObject<HTMLElement | null>): number {
+  const [cols, setCols] = useState(4)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => {
+      const pad = parseFloat(getComputedStyle(el).paddingLeft) + parseFloat(getComputedStyle(el).paddingRight)
+      setCols(Math.max(2, Math.floor((el.clientWidth - pad + GAP) / (CARD_MIN + GAP))))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref])
+  return cols
+}
 
 export function Home({ go }: { go: Go }) {
+  const notify = useNotify()
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null)
   const [live, setLive] = useState<Record<string, Live>>({})
   const [view, setView] = useState<View>(() => (localStorage.getItem(VIEW_KEY) === 'all' ? 'all' : 'activity'))
+  const [series, setSeries] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [found, setFound] = useState<Set<string> | null>(null)
+  const page = useRef<HTMLDivElement>(null)
+  const cols = useColumns(page)
   const opening = useRef<string | null>(null)
-
   const known = useRef(new Set<string>())
+
   useEffect(() => {
     let alive = true
     const load = () =>
@@ -39,7 +96,7 @@ export function Home({ go }: { go: Go }) {
     const off = reel.jobs.onEvent((e) => {
       if (e.type !== 'status' || !e.slug) return void load()
       const slug = e.slug
-      setLive((m) => ({ ...m, [slug]: { overall: e.overall, left: timeLeftWords(e) } }))
+      setLive((m) => ({ ...m, [slug]: { overall: e.overall, secondsLeft: e.secondsLeft, overdue: e.overdue } }))
       // a reel started somewhere else (a drop, a paste, a file opened with Reel Studio)
       if (!known.current.has(slug)) void load()
     })
@@ -52,170 +109,329 @@ export function Home({ go }: { go: Go }) {
     }
   }, [])
 
+  // Search across titles and what was said, a beat after typing stops.
+  useEffect(() => {
+    const q = query.trim()
+    if (!q) return setFound(null)
+    let alive = true
+    const t = window.setTimeout(() => {
+      reel.projects.search(q).then(
+        (slugs) => alive && setFound(new Set(slugs)),
+        (e) => notify(userMessage(e), 'error')
+      )
+    }, 140)
+    return () => {
+      alive = false
+      window.clearTimeout(t)
+    }
+  }, [query, notify])
+
   const open = (p: ProjectSummary) => {
     opening.current = p.slug
     const show = (name: 'reel' | 'working') => {
       if (opening.current === p.slug) go({ name, slug: p.slug })
     }
-    if (p.status === 'ready') go({ name: 'reel', slug: p.slug })
+    if (stateOf(p) === 'ready' || p.noVideo) go({ name: 'reel', slug: p.slug })
     else
       void reel.projects.get(p.slug).then(
         (d) => show(d.job?.kind === 'note' || d.job?.kind === 'rerender' || (!d.job && d.versions.length > 0) ? 'reel' : 'working'),
         () => show('working')
       )
   }
+  // Resume and Try again start the job here; the card moves to Making.
+  const resume = (p: ProjectSummary) =>
+    void reel.projects.resume(p.slug).then(
+      () => reel.projects.list().then(setProjects),
+      (e) => notify(userMessage(e), 'error')
+    )
   const pick = (v: View) => {
     localStorage.setItem(VIEW_KEY, v)
     setView(v)
   }
 
-  const now = new Date()
   const list = projects ?? []
-  const card = (p: ProjectSummary) => <Card key={p.slug} p={p} live={live[p.slug]} now={now} onOpen={() => open(p)} />
+  const now = new Date()
+  const allSeries = [...new Set(list.map((p) => p.series).filter((s): s is string => !!s))].sort((a, b) => a.localeCompare(b))
+  const chips = list.length >= SERIES_FROM && allSeries.length > 0
+  useFlip(page, `${view}|${series}|${found ? [...found].join() : ''}`, list)
+
+  const card = (p: ProjectSummary) => (
+    <Card key={p.slug} p={p} live={live[p.slug]} now={now} onOpen={() => open(p)} onResume={() => resume(p)} />
+  )
+  const grid = (items: ProjectSummary[]) => <div className="grid">{items.map(card)}</div>
   const section = (title: string, items: ProjectSummary[]) =>
     items.length > 0 && (
       <section key={title} aria-label={title}>
         <h2 className="sec-h">{title}</h2>
-        <div className="grid">{items.map(card)}</div>
+        {grid(items)}
       </section>
     )
 
-  let body = null
-  if (view === 'activity') {
-    const now_ = list.filter(making)
+  let body: ReactNode = null
+  if (projects && list.length === 0) body = <Empty go={go} />
+  else if (view === 'activity') {
     const needs = list.filter(needsYou)
-    const recent = list.filter((p) => p.status === 'ready' && now.getTime() - new Date(p.updatedAt).getTime() < RECENT_DAYS * 86_400_000)
-    // Making now and Needs you are usually one to three cards each: they share one row instead of two mostly empty ones.
-    const top =
-      now_.length && needs.length && now_.length + needs.length <= 5 ? (
-        <div className="grid top">
-          <h2 className="sec-h" style={{ gridColumn: `1 / span ${now_.length}` }}>
-            Making now
-          </h2>
-          <h2 className="sec-h" style={{ gridColumn: `${now_.length + 1} / span ${needs.length}` }}>
-            Needs you
-          </h2>
-          {now_.map(card)}
-          {needs.map(card)}
-        </div>
-      ) : (
-        <>
-          {section('Making now', now_)}
-          {section('Needs you', needs)}
-        </>
-      )
+    const making = list.filter(inMaking)
+    const recent = list.filter((p) => stateOf(p) === 'ready' && now.getTime() - new Date(p.versionAt ?? p.updatedAt).getTime() < RECENT_DAYS * 86_400_000)
+    // Needs you and Making are usually one to three cards each: they share a row rather than leave two mostly empty.
+    const shared = needs.length > 0 && making.length > 0 && needs.length + making.length <= cols
     body = (
       <>
-        {top}
+        {shared ? (
+          <div className="grid top">
+            <h2 className="sec-h" style={{ gridColumn: `1 / span ${needs.length}` }}>
+              Needs you
+            </h2>
+            <h2 className="sec-h" style={{ gridColumn: `${needs.length + 1} / span ${making.length}` }}>
+              Making
+            </h2>
+            {needs.map(card)}
+            {making.map(card)}
+          </div>
+        ) : (
+          <>
+            {section('Needs you', needs)}
+            {section('Making', making)}
+          </>
+        )}
         {section('Recent', recent)}
-        {!now_.length && !needs.length && !recent.length && (
-          <p className="muted home-quiet">
+        {!needs.length && !making.length && !recent.length && (
+          <p className="home-quiet">
             Nothing new in the last two weeks.{' '}
             <button className="link inline" onClick={() => pick('all')}>
-              See all your videos
+              See all reels
             </button>
           </p>
         )}
       </>
     )
-  } else body = <div className="grid">{list.map(card)}</div>
-
-  return (
-    <div className="page home">
-      <div className="page-h">
-        <h1>Your videos</h1>
-        {list.length > 0 && (
-          <div className="seg2" role="radiogroup" aria-label="Show">
-            {(['activity', 'all'] as const).map((v) => (
-              <button
-                key={v}
-                role="radio"
-                aria-checked={view === v}
-                tabIndex={view === v ? 0 : -1}
-                onClick={() => pick(v)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
-                  e.preventDefault()
-                  const next = v === 'activity' ? 'all' : 'activity'
-                  pick(next)
-                  ;(e.currentTarget.parentElement?.querySelector(`[data-view="${next}"]`) as HTMLElement | null)?.focus()
-                }}
-                data-view={v}
-                data-testid={`home-${v}`}
-              >
-                {v === 'activity' ? 'Activity' : 'All videos'}
+  } else {
+    const shown = list.filter((p) => (!chips || !series || p.series === series) && (!found || found.has(p.slug)))
+    body = (
+      <>
+        {chips && (
+          <div className="series" role="toolbar" aria-label="Series">
+            {[null, ...allSeries].map((s) => (
+              <button key={s ?? ''} className="schip" aria-pressed={series === s} onClick={() => setSeries(s)} data-testid="series-chip">
+                {s ?? 'All'} <span className="n">{s ? list.filter((p) => p.series === s).length : list.length}</span>
               </button>
             ))}
           </div>
         )}
-        <span className="spacer" />
-        <button className="btn primary big" onClick={() => go({ name: 'new' })} data-testid="new-video">
-          <Icon name="plus" /> New video
-        </button>
-      </div>
-
-      {projects &&
-        projects.length === 0 &&
-        (sawSample() ? (
-          <YourTurn go={go} />
+        {shown.length > 0 ? (
+          grid(shown)
         ) : (
-          <div className="drop tall">
-            <div className="drop-icon">
-              <Icon name="video" size={28} />
-            </div>
-            <h2>Make your first reel</h2>
-            <p className="muted">Drag your video anywhere onto this window, or click New video.</p>
-          </div>
-        ))}
-      {list.length > 0 && body}
+          <p className="home-quiet" data-testid="search-empty">
+            {found ? `No reels say “${query.trim()}”.` : 'No reels in this series.'}{' '}
+            <button className="link inline" onClick={() => (found ? setQuery('') : setSeries(null))}>
+              {found ? 'Clear search' : 'See all reels'}
+            </button>
+          </p>
+        )}
+      </>
+    )
+  }
+
+  return (
+    <div className="page home" ref={page} style={{ '--cols': cols } as React.CSSProperties} data-testid="reels">
+      <TitleBarSlot
+        title={
+          <>
+            <h1 className="tb-h">Reels</h1>
+            {list.length > 0 && <ViewSwitch view={view} onPick={pick} />}
+          </>
+        }
+        actions={
+          view === 'all' && list.length > 0 ? (
+            <label className="rsearch">
+              <Icon name="search" size={14} />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
+                placeholder="Search titles and words"
+                aria-label="Search reels by title or by what was said"
+                spellCheck={false}
+                data-testid="reel-search"
+              />
+            </label>
+          ) : undefined
+        }
+      />
+      {body}
     </div>
   )
 }
 
-/** A cover, a title on up to two lines, and one line saying what state it is in. Only a state that wants
- * something changes the picture: a corner mark, and dimming when it needs you. */
-function Card({ p, live, now, onOpen }: { p: ProjectSummary; live?: Live; now: Date; onOpen: () => void }) {
-  const busy = making(p)
-  const first = busy && p.version === 0
-  const waiting = p.waiting > 0 ? ` · ${p.waiting} ${p.waiting === 1 ? 'note' : 'notes'} waiting` : ''
-  let meta: React.ReactNode
-  if (busy)
-    meta = (
-      <>
-        {first ? 'Making' : `Making Version ${p.version + 1}`}
-        {live?.left ? ` · ${live.left}` : ''}
-        {waiting}
-      </>
-    )
-  else if (p.status === 'interrupted') meta = <span className="amber">Paused · Resume</span>
-  else if (p.status === 'failed') meta = <span className="red">Didn't finish · Try again</span>
-  else
-    meta = (
-      <>
-        {`Version ${p.version} · ${dayLabel(p.updatedAt, now)}`}
-        {waiting}
-      </>
-    )
-  const state = busy ? 'making' : p.status === 'ready' ? 'ready' : p.status === 'interrupted' ? 'paused' : 'failed'
+function ViewSwitch({ view, onPick }: { view: View; onPick: (v: View) => void }) {
   return (
-    <button className={`hcard st-${state}`} onClick={onOpen} title={p.title} data-testid="project-card" data-state={state}>
-      <span className="im">
-        {p.thumbnail ? <img src={p.thumbnail} alt="" loading="lazy" decoding="async" /> : <Icon name="video" size={30} className="placeholder" />}
-        {state !== 'ready' && (
-          <span className="glyph" aria-hidden>
-            {state === 'making' ? <span className="spin" /> : <Icon name={state === 'paused' ? 'pause' : 'x'} size={12} stroke={2.4} />}
+    <div className="seg2" role="radiogroup" aria-label="Show">
+      {(['activity', 'all'] as const).map((v) => (
+        <button
+          key={v}
+          role="radio"
+          aria-checked={view === v}
+          tabIndex={view === v ? 0 : -1}
+          onClick={() => onPick(v)}
+          onKeyDown={(e) => {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+            e.preventDefault()
+            const next = v === 'activity' ? 'all' : 'activity'
+            onPick(next)
+            ;(e.currentTarget.parentElement?.querySelector(`[data-view="${next}"]`) as HTMLElement | null)?.focus()
+          }}
+          data-view={v}
+          data-testid={`home-${v}`}
+        >
+          {v === 'activity' ? 'Activity' : 'All reels'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Cards that changed place after the reels changed (Resume moved one to Making, a version landed) slide from where they
+ * were, 200 ms, transform only; with reduced motion they fade in place. Switching the view, the series or the search
+ * re-lays the grid and does not animate.
+ */
+function useFlip(page: React.RefObject<HTMLElement | null>, layoutKey: string, list: ProjectSummary[]): void {
+  const rects = useRef(new Map<string, DOMRect>())
+  const lastKey = useRef(layoutKey)
+  useLayoutEffect(() => {
+    const el = page.current
+    if (!el) return
+    const cards = Array.from(el.querySelectorAll<HTMLElement>('[data-slug]'))
+    const animate = lastKey.current === layoutKey && !byKeyboard()
+    lastKey.current = layoutKey
+    const next = new Map<string, DOMRect>()
+    for (const c of cards) {
+      const r = c.getBoundingClientRect()
+      next.set(c.dataset.slug!, r)
+      const was = rects.current.get(c.dataset.slug!)
+      if (!animate || !was) continue
+      const dx = was.left - r.left
+      const dy = was.top - r.top
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue
+      if (reducedMotion()) c.animate([{ opacity: 0.3 }, { opacity: 1 }], { duration: 150, easing: 'ease-out' })
+      else c.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 200, easing: 'cubic-bezier(.2, .8, .2, 1)' })
+    }
+    rects.current = next
+  }, [page, layoutKey, list])
+  // a window resize moves every card: take the new places without animating them
+  useEffect(() => {
+    const el = page.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      for (const c of el.querySelectorAll<HTMLElement>('[data-slug]')) rects.current.set(c.dataset.slug!, c.getBoundingClientRect())
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [page])
+}
+
+/**
+ * A reel: its picture, a title on up to two lines, and one line saying where it is (ux-foundation-b.md section 3.4).
+ * Only a state that isn't Ready changes the picture.
+ */
+function Card({ p, live, now, onOpen, onResume }: { p: ProjectSummary; live?: Live; now: Date; onOpen: () => void; onResume: () => void }) {
+  const state = stateOf(p)
+  const left = state === 'making' && live ? leftWords(live) : null
+  const fresh = state === 'ready' && isNew(p.slug, p.versionAt)
+  let meta: ReactNode
+  let label = p.title
+  if (state === 'novideo') {
+    meta = 'Waiting for your video'
+    label += ', waiting for your video'
+  } else if (state === 'making') {
+    meta = `Making Version ${p.version + 1}`
+    label += `, making Version ${p.version + 1}${left ? `, ${left.toLowerCase()}` : ''}`
+  } else if (state === 'paused') {
+    // continuing on its own, the pause mark on the picture says Paused and the line says when (it doesn't fit both)
+    meta = p.continuesAt ? (
+      <span className="amber">{continuesWords(p.continuesAt, now)}</span>
+    ) : (
+      <span className="amber">
+        Paused ·{' '}
+        <button className="act" onClick={onResume} data-testid="card-resume">
+          Resume
+        </button>
+      </span>
+    )
+    label += ', paused'
+  } else if (state === 'failed') {
+    meta = (
+      <span className="red">
+        Didn’t finish ·{' '}
+        <button className="act" onClick={onResume} data-testid="card-retry">
+          Try again
+        </button>
+      </span>
+    )
+    label += ', didn’t finish'
+  } else {
+    meta = fresh ? (
+      <>
+        <i className="dot" aria-hidden />
+        Version {p.version} · New
+      </>
+    ) : (
+      `Version ${p.version} · ${dayLabel(p.versionAt ?? p.updatedAt, now)}`
+    )
+    if (fresh) label += `, Version ${p.version} is new`
+  }
+  return (
+    <div className={`rcard st-${state}`} data-slug={p.slug}>
+      <button className="hit" onClick={onOpen} title={p.title} aria-label={label} data-testid="project-card" data-state={state} />
+      <div className="im" aria-hidden>
+        {state === 'novideo' ? (
+          <span className="paper-t">{p.title}</span>
+        ) : p.thumbnail ? (
+          <img src={p.thumbnail} alt="" loading="lazy" decoding="async" />
+        ) : (
+          p.take && <video src={`${p.take}#t=1`} muted playsInline preload="metadata" />
+        )}
+        {state === 'paused' && (
+          <span className="glyph">
+            <Icon name="pause" size={12} stroke={2.4} />
           </span>
         )}
-        {busy && (
-          <span className="pb" aria-hidden>
+        {left && <span className="left">{left}</span>}
+        {state === 'making' && (
+          <span className="pb">
             <i style={{ transform: `scaleX(${Math.max(0.03, (live?.overall ?? 0) / 100)})` }} />
           </span>
         )}
-      </span>
-      <span className="ttl">{p.title}</span>
-      <span className="cm" data-testid="card-status">
+      </div>
+      <div className="ttl">{p.title}</div>
+      <div className="cm" data-testid="card-status">
         {meta}
-      </span>
-    </button>
+      </div>
+    </div>
+  )
+}
+
+/** No reels yet: the sample, and one invitation with its two ways in (spec.md section 4). */
+function Empty({ go }: { go: Go }) {
+  const notify = useNotify()
+  const { s: model } = useModelStatus()
+  const mb = (n: number) => Math.round(n / 1e6)
+  return (
+    <div className="home-empty" data-testid="reels-empty">
+      <SampleReel />
+      <h2>Drop a video of you talking anywhere in this window, or start with an idea.</h2>
+      <div className="row">
+        <PickFiles label="Choose video" accept="video/*" className="btn primary" onFiles={(paths) => void createFromFiles(paths, go, notify)} />
+        <button className="btn" onClick={() => go({ name: 'new' })} data-testid="plan-reel">
+          Plan a reel
+        </button>
+      </div>
+      {model && !model.installed && model.downloading && model.total > 0 && (
+        <p className="faint tnum" data-testid="empty-model">
+          Getting the listening model · {mb(model.bytes)} of {mb(model.total)} MB
+        </p>
+      )}
+    </div>
   )
 }
