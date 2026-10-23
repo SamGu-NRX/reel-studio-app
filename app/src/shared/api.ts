@@ -1,6 +1,7 @@
 // Types shared by the main process, the preload bridge and the renderer.
 // Keep this file free of Node and DOM imports.
 import type { ChatAction } from './notes'
+import type { UpdateActionResult, UpdateBusy, UpdateState } from './update'
 export type { ChatAction } from './notes'
 
 export type AppCommand = { type: 'new-video' | 'settings' | 'export' | 'library' } | { type: 'open-reel'; slug: string }
@@ -449,17 +450,18 @@ export interface ReelApi {
     /** macOS: the System Settings page for this, with the helper on it. */
     openSettings(pane: SettingsPane): Promise<void>
   }
-  /** "Update available" notice (main/update-check.ts). Tells, never installs. */
+  /** Updates (main/updater.ts). Downloads and installs only when the person clicks. */
   update: {
-    status(): Promise<UpdateStatus>
-    /** Settings > "Check for updates". Turning it on checks at once (still at most once a day). */
-    setEnabled(on: boolean): Promise<UpdateStatus>
-    /** Open the release page in the browser. Main opens only our GitHub releases pages. */
-    open(url: string): Promise<void>
-    /** "Not now": hide it until a newer version comes out, or until tomorrow. */
-    dismiss(version: string): Promise<void>
-    /** A notice to show, or null to hide it (checks switched off). */
-    onChange(cb: (n: UpdateNotice | null) => void): () => void
+    state(): Promise<UpdateState>
+    onState(cb: (s: UpdateState) => void): () => void
+    check(): Promise<{ checked: boolean; state: UpdateState }>
+    download(): Promise<UpdateActionResult>
+    install(): Promise<UpdateActionResult>
+    /** The offered release's page, or a listed release's page when `version` is given. */
+    openRelease(version?: string): Promise<void>
+    busy(): Promise<UpdateBusy>
+    dismiss(version: string): Promise<UpdateState>
+    setEnabled(on: boolean): Promise<void>
   }
 }
 
@@ -482,15 +484,3 @@ export interface PermissionStatus {
 }
 
 export type SettingsPane = 'folder' | 'notifications'
-
-/** A newer Reel Studio is out. `url` is its release page on GitHub. */
-export interface UpdateNotice {
-  version: string
-  url: string
-}
-
-export interface UpdateStatus {
-  enabled: boolean
-  /** What to show now; null = nothing (up to date, not checked yet, off, or "Not now"). */
-  notice: UpdateNotice | null
-}

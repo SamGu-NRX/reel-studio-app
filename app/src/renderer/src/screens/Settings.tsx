@@ -7,23 +7,17 @@ import { ConnectAI, DevProviders, ModelDownload, USING_CLAUDE_CODE } from '../co
 import { usePermissionStatus } from '../components/permissions'
 import { FOLDER_APP } from '../components/ui'
 import { Icon } from '../components/icons'
+import { useUpdateState } from '../components/update'
+import { UpdateSettingsRow } from '../components/UpdateSettings'
 import { useNotify } from '../App'
 
 export function Settings({ info, onInfo }: { info: AppInfo; onInfo: (i: AppInfo) => void; go?: Go }) {
   const notify = useNotify()
-  const [checkUpdates, setCheckUpdates] = useState<boolean | null>(null)
-  useEffect(() => {
-    reel.update
-      .status()
-      .then((st) => setCheckUpdates(st.enabled))
-      .catch(() => {})
-  }, [])
+  const update = useUpdateState()
   const toggleUpdates = async (on: boolean) => {
-    setCheckUpdates(on)
     try {
-      setCheckUpdates((await reel.update.setEnabled(on)).enabled)
+      await reel.update.setEnabled(on)
     } catch (e) {
-      setCheckUpdates(!on)
       notify(userMessage(e), 'error')
     }
   }
@@ -166,10 +160,10 @@ export function Settings({ info, onInfo }: { info: AppInfo; onInfo: (i: AppInfo)
         <p className="muted" style={{ marginTop: 6 }}>
           Reel Studio {info.version}. Free and open source (MIT). No accounts, no tracking.
         </p>
-        {checkUpdates !== null && (
+        {update !== null && (
           <>
             <label className="toggle" style={{ marginTop: 12 }}>
-              <input type="checkbox" checked={checkUpdates} onChange={(e) => void toggleUpdates(e.target.checked)} data-testid="check-updates" />
+              <input type="checkbox" checked={update.autoCheck} onChange={(e) => void toggleUpdates(e.target.checked)} data-testid="check-updates" />
               Check for updates
             </label>
             <p className="muted-sm" style={{ margin: '2px 0 0 30px' }}>
@@ -177,12 +171,7 @@ export function Settings({ info, onInfo }: { info: AppInfo; onInfo: (i: AppInfo)
             </p>
           </>
         )}
-        <div className="row" style={{ marginTop: 12 }}>
-          {/* Opens the releases page in the browser (window open handler). The automatic check is main/update-check.ts. */}
-          <a className="btn ghost" href={RELEASES_URL} target="_blank" rel="noreferrer">
-            <Icon name="external" size={16} /> Check for a newer version
-          </a>
-        </div>
+        <UpdateSettingsRow />
         {info.engine.mode === 'fake' && (
           <p className="muted-sm" style={{ marginTop: 6 }}>
             Test engine in use.

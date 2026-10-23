@@ -42,7 +42,9 @@ export function createJobManager(
   log: (s: string) => void,
   progress?: ProgressDeps,
   toVideo?: ToVideo,
-  gate?: WorkGate
+  gate?: WorkGate,
+  /** The updater refuses new work while it restarts to install (main/updater.ts). */
+  assertCanStart: () => void = () => {}
 ) {
   const jobs = new Map<string, Running>()
 
@@ -51,6 +53,7 @@ export function createJobManager(
   }
 
   function start(slug: string | null, kind: JobKind, fn: JobFn, opts: { note?: string } = {}): string {
+    assertCanStart()
     if (slug && forSlug(slug)) {
       throw { code: 'BUSY', userMessage: 'I am still working on this video. Give me a moment, or press Stop.' }
     }
