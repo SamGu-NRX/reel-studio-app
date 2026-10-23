@@ -22,6 +22,8 @@ export interface InstagramCredentials {
   username: string
   appId: string
   brokerUrl: string
+  // Legacy credential files have no broker credential and must reconnect.
+  installToken?: string
 }
 
 export type PublishReceipt =
@@ -60,7 +62,8 @@ export class InstagramTokenStore {
       const c = object(JSON.parse(this.secrets.decryptString(bytes)))
       return {
         accessToken: text(c.accessToken), expiresAt: positive(c.expiresAt), issuedAt: positive(c.issuedAt),
-        accountId: id(c.accountId), username: text(c.username), appId: id(c.appId), brokerUrl: text(c.brokerUrl)
+        accountId: id(c.accountId), username: text(c.username), appId: id(c.appId), brokerUrl: text(c.brokerUrl),
+        ...(c.installToken === undefined ? {} : { installToken: text(c.installToken) })
       }
     } catch { return localDataError() }
   }

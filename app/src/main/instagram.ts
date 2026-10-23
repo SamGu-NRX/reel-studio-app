@@ -92,17 +92,23 @@ export class InstagramService {
   private async credentials(): Promise<InstagramCredentials> {
     const c = await this.config()
     const saved = await this.tokens.load()
-    if (!saved || saved.appId !== c.instagramAppId || saved.brokerUrl !== c.instagramBrokerUrl)
+    if (!saved || !saved.installToken || saved.appId !== c.instagramAppId || saved.brokerUrl !== c.instagramBrokerUrl)
       throw new InstagramError('IG_TOKEN', 'Connect Instagram again in Settings.')
     return saved
+  }
+  private async broker(c: InstagramCredentials, path: '/api/instagram/uploads' | '/api/instagram/oauth/refresh' | '/api/install/revoke', body: unknown, signal: AbortSignal): Promise<unknown> {
+    const config = await this.config()
+    if (!c.installToken || c.brokerUrl !== config.instagramBrokerUrl || c.appId !== config.instagramAppId)
+      throw new InstagramError('IG_TOKEN', 'Connect Instagram again in Settings.')
+    return request(this.o.fetch, `${config.instagramBrokerUrl}${path}`, {
+      ...jsonPost(body), headers: { 'content-type': 'application/json', 'X-Reel-Install-Token': c.installToken }
+    }, signal)
   }
   private async refresh(c: InstagramCredentials, signal: AbortSignal): Promise<InstagramCredentials> {
     // Meta cannot refresh an expired token or one less than 24 hours old.
     if (c.expiresAt <= this.now() || c.issuedAt + DAY > this.now())
       throw new InstagramError('IG_TOKEN', 'Your Instagram connection has expired. Connect Instagram again in Settings.')
-    const url = new URL('https://graph.instagram.com/refresh_access_token')
-    url.search = new URLSearchParams({ grant_type: 'ig_refresh_token', access_token: c.accessToken }).toString()
-    const data = object(await request(this.o.fetch, url.toString(), { method: 'GET' }, signal))
+    const data = object(await this.broker(c, '/api/instagram/oauth/refresh', { access_token: c.accessToken }, signal))
     if (String(data.token_type).toLowerCase() !== 'bearer') return invalidResponse()
     const next = { ...c, accessToken: text(data.access_token), issuedAt: this.now(), expiresAt: this.now() + positive(data.expires_in) * 1000 }
     signal.throwIfAborted()
@@ -126,7 +132,7 @@ export class InstagramService {
     return this.run(async () => {
       const settings = await this.config()
       const c = await this.tokens.load()
-      if (!c || c.appId !== settings.instagramAppId || c.brokerUrl !== settings.instagramBrokerUrl || c.expiresAt <= this.now()) return { connected: false }
+      if (!c || !c.installToken || c.appId !== settings.instagramAppId || c.brokerUrl !== settings.instagramBrokerUrl || c.expiresAt <= this.now()) return { connected: false }
       return { connected: true, accountId: c.accountId, username: c.username, expiresAt: c.expiresAt }
     })
   }
@@ -157,12 +163,13 @@ export class InstagramService {
         if (String(data.token_type).toLowerCase() !== 'bearer' || !Array.isArray(permissions) || !INSTAGRAM_SCOPES.every((s) => permissions.includes(s)))
           throw new InstagramError('IG_PERMISSION', 'Allow publishing and insights when connecting your Instagram account.')
         const accessToken = text(data.access_token)
+        const installToken = text(data.install_token)
         const expiresAt = this.now() + positive(data.expires_in) * 1000
         const account = await this.profile(accessToken, signal)
         signal.throwIfAborted()
         const previous = await this.tokens.load()
         signal.throwIfAborted()
-        await this.tokens.save({ accessToken, expiresAt, issuedAt: this.now(), ...account, appId: config.instagramAppId, brokerUrl: config.instagramBrokerUrl })
+        await this.tokens.save({ accessToken, installToken, expiresAt, issuedAt: this.now(), ...account, appId: config.instagramAppId, brokerUrl: config.instagramBrokerUrl })
         if (signal.aborted) {
           if (previous) await this.tokens.save(previous)
           else await this.tokens.clear()
@@ -180,7 +187,11 @@ export class InstagramService {
   async disconnect(): Promise<void> {
     this.stop()
     this.connection = new AbortController()
-    const clear = () => this.tokens.clear()
+    const clear = async () => {
+      const saved = await this.tokens.load()
+      if (saved?.installToken) await this.broker(saved, '/api/install/revoke', {}, new AbortController().signal)
+      await this.tokens.clear()
+    }
     const result = this.queue.then(clear, clear)
     this.queue = result.catch(() => undefined)
     return result
@@ -231,10 +242,7 @@ export class InstagramService {
         if (!cover.length || cover.length > 8_000_000) throw new InstagramError('IG_COVER', 'The JPEG cover must be smaller than 8 MB.')
       }
       const credentials = await this.credentials()
-      const upload = object(await request(this.o.fetch, `${config.instagramBrokerUrl}/api/instagram/uploads`, {
-        ...jsonPost({ video_size: video.size, cover_size: cover?.length ?? null }),
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${credentials.accessToken}` }
-      }, signal))
+      const upload = object(await this.broker(credentials, '/api/instagram/uploads', { video_size: video.size, cover_size: cover?.length ?? null }, signal))
       const parseUpload = (value: unknown) => {
         const part = object(value)
         const put = httpsUrl(part.upload_url)
