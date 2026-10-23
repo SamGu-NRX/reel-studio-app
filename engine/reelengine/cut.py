@@ -1,6 +1,6 @@
-"""The cut: word-id ranges -> source segments on the output clock, and every time mapping.
+"""The cut: word-id ranges and clips -> source segments on the output clock.
 
-`cut.keep` is a list of inclusive word-id ranges in OUTPUT order. A range covers every transcript
+`cut.keep` holds inclusive word-id ranges and source-time clips in output order. A range covers every transcript
 word between its two ends (by position in transcript.words). This module turns that into
 Segments (source, src_start, src_end, out_start) and answers "where does word wN land in the
 output?" -- the one mapping that b-roll, zooms, music automation and captions all go through, so a
@@ -149,11 +149,13 @@ def run_bounds(words: list, i0: int, i1: int, src_dur: float, tail_cap: float) -
             nxt["s"] if nxt else (src_dur or words[i1]["e"] + tail_cap))
 
 
-def join_runs(words: list, keep: list) -> list:
+def join_runs(words: list, keep: list, first: int = 0) -> list:
     """Merge the same runs as hard cuts, retaining each declared boundary's occurrence.
 
     Markers travel with runs rather than word ids: reordered and repeated ranges may
-    refer to the same word at different output times.
+    refer to the same word at different output times. `first`: where `keep` starts in
+    cut.keep (the ranges after a clip, multi-source); a join on the range right after a
+    clip has no spoken range before it to bridge, so it plays as a hard cut.
     """
     runs = []
     previous_end = None
@@ -162,17 +164,18 @@ def join_runs(words: list, keep: list) -> list:
     for k, rng in enumerate(keep or []):
         join = rng.get("join")
         if join is not None:
-            if (k == 0 or not isinstance(join, dict)
+            if (first + k == 0 or not isinstance(join, dict)
                     or join.get("transition") not in ("hard", "j", "l", "smash")
                     or type(join.get("frames")) is not int or join["frames"] < 0):
-                raise EngineError("BAD_JOIN", f"cut.keep[{k}].join needs a transition and non-negative integer frames after the first range",
+                raise EngineError("BAD_JOIN", f"cut.keep[{first + k}].join needs a transition and non-negative integer frames after the first range",
                                   "Choose a join after the first range, with a whole number of frames.")
         parts = [next(resolved)]
         end = max(index[rng["from"]], index[rng["to"]])
         while parts[-1][1] != end:
             parts.append(next(resolved))
         for j, (i0, i1) in enumerate(parts):
-            markers = [(i0, previous_end, join)] if j == 0 and join and join["transition"] != "hard" else []
+            markers = ([(i0, previous_end, join)]
+                       if j == 0 and join and join["transition"] != "hard" and previous_end is not None else [])
             if runs and i0 == runs[-1][1] + 1 and words[i0]["source"] == words[runs[-1][1]]["source"]:
                 old0, _, old_markers = runs[-1]
                 runs[-1] = (old0, i1, old_markers + markers)
@@ -236,19 +239,68 @@ def plan_run(words: list, i0: int, i1: int, gap_cap: float, min_saving: float, f
     return [(round(s, 6), round(e, 6)) for s, e in out]
 
 
+def clip_span(item: dict, sources: dict) -> tuple[float, float]:
+    """Validate a clip and snap its bounds to the source frame grid without removing silence."""
+    src = item["source"]
+    if src not in sources:
+        raise EngineError("BAD_CUT", f"clip {item['clip']}: unknown source {src!r}",
+                          "A clip points at a source that is no longer in this project.")
+    start, end = float(item["in"]), float(item["out"])
+    meta = sources[src]
+    duration = float(meta.get("duration") or 0.0)
+    fps = float(meta.get("fps") or 30.0)
+    if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start or (duration and end > duration + EPS):
+        raise EngineError("BAD_CUT", f"clip {item['clip']}: invalid bounds {start}..{end}",
+                          "A clip's start and end must be inside its source video.")
+    start, end = snap(start, fps), snap(end, fps)
+    if duration:
+        end = min(end, math.floor(duration * fps + EPS) / fps)
+    if end - start < 1 / fps - EPS:
+        raise EngineError("BAD_CUT", f"clip {item['clip']}: shorter than one source frame",
+                          "A clip must contain at least one frame.")
+    return round(start, 6), round(end, 6)
+
+
 def build_timeline(words: list, keep: list, sources: dict, gap_cap: float = GAP_CAP,
                    min_saving: float = MIN_SAVING, join_fps: float = 30.0) -> Timeline:
-    """sources: {sid: {"duration": float, "fps": float}}."""
-    runs = join_runs(words, keep)
+    """sources: {sid: {"duration": float, "fps": float}}. A keep item with `clip` plays that source span
+    whole (multi-source); the word ranges between clips are merged and joined as before."""
+    runs, pending, first = [], [], 0
+    clip_ids = set()
+    for k, item in enumerate(keep or []):
+        if "clip" in item:
+            runs.extend(join_runs(words, pending, first))
+            pending = []
+            if item["clip"] in clip_ids:
+                raise EngineError("BAD_CUT", f"duplicate clip id {item['clip']!r}",
+                                  "Each clip in the edit needs its own id.")
+            clip_ids.add(item["clip"])
+            runs.append(item)
+        else:
+            if not pending:
+                first = k
+            pending.append(item)
+    runs.extend(join_runs(words, pending, first))
     segments, words_out, first_pos = [], [], {}
     joins = []
     out = 0.0
-    for n, (i0, i1, markers) in enumerate(runs):
-        src = words[i0]["source"]
-        meta = sources.get(src) or {}
-        fps = float(meta.get("fps") or 30.0)
-        pieces = plan_run(words, i0, i1, gap_cap, min_saving, fps, float(meta.get("duration") or 0.0),
-                          is_first=(n == 0), is_last=(n == len(runs) - 1))
+    for n, run in enumerate(runs):
+        if isinstance(run, dict):
+            # a clip: its whole span, and the words heard in it
+            src = run["source"]
+            pieces = [clip_span(run, sources)]
+            s, e = pieces[0]
+            positions = [i for i, w in enumerate(words)
+                         if w["source"] == src and w["s"] < e and w["e"] > s]
+            markers = []
+        else:
+            i0, i1, markers = run
+            src = words[i0]["source"]
+            meta = sources.get(src) or {}
+            fps = float(meta.get("fps") or 30.0)
+            pieces = plan_run(words, i0, i1, gap_cap, min_saving, fps, float(meta.get("duration") or 0.0),
+                              is_first=(n == 0), is_last=(n == len(runs) - 1))
+            positions = range(i0, i1 + 1)
         run_segs = []
         for s, e in pieces:
             seg = Segment(source=src, src_start=s, src_end=e, out_start=round(out, 6))
@@ -265,15 +317,16 @@ def build_timeline(words: list, keep: list, sources: dict, gap_cap: float = GAP_
                     return seg.out_start + (t - seg.src_start)
             return run_segs[-1].out_end
 
-        for i in range(i0, i1 + 1):
+        for i in positions:
             w = words[i]
             os_, oe = map_t(w["s"]), map_t(w["e"])
             oe = max(oe, os_ + 0.01)
             words_out.append({"id": w["id"], "w": w["w"], "s": round(os_, 4), "e": round(oe, 4),
                               "source": src})
             first_pos.setdefault(w["id"], (round(os_, 4), round(oe, 4)))
-        run_segs[0].first_word = words[i0]["id"]
-        run_segs[-1].last_word = words[i1]["id"]
+        if positions:
+            run_segs[0].first_word = words[positions[0]]["id"]
+            run_segs[-1].last_word = words[positions[-1]]["id"]
         # Split a merged contiguous range only at a declared join. The two pieces
         # still show exactly the same source frames and have the same total length.
         for wi, previous_end, join in markers:

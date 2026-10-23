@@ -67,9 +67,9 @@ def test_rendered_join_source_offset_duration_and_captions(tmp_path, kind):
     p, words, tl, ctx = fixture_project(tmp_path, kind)
     _, _, hard, hard_ctx = fixture_project(tmp_path)
     paths, signals = tones(tmp_path)
-    voice = render.render_voice(ctx, tl.segments, paths, tmp_path / "voice.wav")
+    voice = render.render_voice(ctx, tl.segments, paths, tmp_path / "voice.wav", render.probe_source_audio(ctx, tl.segments, paths))
     pcm = read_pcm(voice)[:, 0]
-    old_pcm = read_pcm(render.render_voice(hard_ctx, hard.segments, paths, tmp_path / "hard.wav"))[:, 0]
+    old_pcm = read_pcm(render.render_voice(hard_ctx, hard.segments, paths, tmp_path / "hard.wav", render.probe_source_audio(hard_ctx, hard.segments, paths)))[:, 0]
     join = hard.segments[1].out_start
     t = join - 0.12 if kind == "j" else join + 0.08
     a = round(t * SR)
@@ -102,7 +102,7 @@ def test_rendered_join_source_offset_duration_and_captions(tmp_path, kind):
         assert word_t == hard.word_out_time(wid)
         assert tl.word_out_end(wid) == hard.word_out_end(wid)
     # Changing to hard at the same cache destination must not reuse the overlap audio.
-    render.render_voice(hard_ctx, hard.segments, paths, voice)
+    render.render_voice(hard_ctx, hard.segments, paths, voice, render.probe_source_audio(hard_ctx, hard.segments, paths))
     np.testing.assert_array_equal(read_pcm(voice)[:, 0], old_pcm)
 
 
@@ -127,8 +127,8 @@ def test_handles_clamp_to_removed_words_and_zero_room(tmp_path, kind):
     p["cut"]["keep"][1].pop("join")
     hard = project.timeline(tmp_path, p, words)
     hard_ctx = render.make_ctx(tmp_path, p, hard, False, tmp_path, tmp_path)
-    a = render.render_voice(no_room_ctx, no_room.segments, paths, tmp_path / "clamped.wav")
-    b = render.render_voice(hard_ctx, hard.segments, paths, tmp_path / "hard.wav")
+    a = render.render_voice(no_room_ctx, no_room.segments, paths, tmp_path / "clamped.wav", render.probe_source_audio(no_room_ctx, no_room.segments, paths))
+    b = render.render_voice(hard_ctx, hard.segments, paths, tmp_path / "hard.wav", render.probe_source_audio(hard_ctx, hard.segments, paths))
     np.testing.assert_array_equal(read_pcm(a), read_pcm(b))
 
 
@@ -176,7 +176,7 @@ def test_smash_renders_hit_and_short_music_dip_without_mutating_project(tmp_path
     p, words, tl, ctx = fixture_project(tmp_path, "smash")
     saved = copy.deepcopy(p)
     paths, _ = tones(tmp_path)
-    voice = render.render_voice(ctx, tl.segments, paths, tmp_path / "voice.wav")
+    voice = render.render_voice(ctx, tl.segments, paths, tmp_path / "voice.wav", render.probe_source_audio(ctx, tl.segments, paths))
     placed, skipped = sfx.plan(ctx)
     assert not skipped and len(placed) == 1
     assert placed[0]["at"] == {"cut": "w4"}
@@ -213,13 +213,14 @@ def test_legacy_and_explicit_hard_pcm_match_pre_join_engine(tmp_path):
     """Fails if adding join support changes an existing project's decoded voice samples."""
     _, _, tl, ctx = fixture_project(tmp_path)
     paths, _ = tones(tmp_path)
-    pcm = read_pcm(render.render_voice(ctx, tl.segments, paths, tmp_path / "legacy.wav"))
-    # Measured from this fixture on 4fe77be before join support, not the implementation under test.
+    pcm = read_pcm(render.render_voice(ctx, tl.segments, paths, tmp_path / "legacy.wav", render.probe_source_audio(ctx, tl.segments, paths)))
+    # Measured from this fixture on multi-source eccb384, which has no join support, not the implementation under
+    # test. (4fe77be's digest, 89de48d4..., predates multi-source's sample-exact, source-clocked voice graph.)
     digest = hashlib.sha256((pcm * 32768).astype("<i2").tobytes()).hexdigest()
-    assert digest == "89de48d4be4518470f3962220f9c965fdbf83acbdce3b492a01421b57172fdcc"
+    assert digest == "0bbccbec01c308995e9ed6ab7453602e4daf4a3d899edda09fe9382b6a1e1188"
     assert tl.duration == 2.666667
     _, _, hard, hard_ctx = fixture_project(tmp_path, "hard", frames=12)
-    explicit = render.render_voice(hard_ctx, hard.segments, paths, tmp_path / "hard.wav")
+    explicit = render.render_voice(hard_ctx, hard.segments, paths, tmp_path / "hard.wav", render.probe_source_audio(hard_ctx, hard.segments, paths))
     np.testing.assert_array_equal(read_pcm(explicit), pcm)
 
 
@@ -233,7 +234,7 @@ def test_two_seeds_change_rendered_bridge_timing_without_moving_words(tmp_path, 
     hard['cut']['keep'][1].pop('join')
     hard_tl = project.timeline(tmp_path, hard, words)
     hard_ctx = render.make_ctx(tmp_path, hard, hard_tl, False, tmp_path, tmp_path)
-    baseline = read_pcm(render.render_voice(hard_ctx, hard_tl.segments, paths, tmp_path / 'seed_hard.wav'))[:, 0]
+    baseline = read_pcm(render.render_voice(hard_ctx, hard_tl.segments, paths, tmp_path / 'seed_hard.wav', render.probe_source_audio(hard_ctx, hard_tl.segments, paths)))[:, 0]
     join = hard_tl.segments[1].out_start
     regions = []
     outputs = []
@@ -241,7 +242,7 @@ def test_two_seeds_change_rendered_bridge_timing_without_moving_words(tmp_path, 
         p['cutStyle']['seed'] = seed
         tl = project.timeline(tmp_path, p, words)
         ctx = render.make_ctx(tmp_path, p, tl, False, tmp_path, tmp_path)
-        pcm = read_pcm(render.render_voice(ctx, tl.segments, paths, tmp_path / f'seed_{seed}.wav'))[:, 0]
+        pcm = read_pcm(render.render_voice(ctx, tl.segments, paths, tmp_path / f'seed_{seed}.wav', render.probe_source_audio(ctx, tl.segments, paths)))[:, 0]
         changed = np.flatnonzero(abs(pcm - baseline) > .0002)
         assert changed.size
         regions.append((changed[0] / SR, changed[-1] / SR))
@@ -262,3 +263,20 @@ def test_two_seeds_change_rendered_bridge_timing_without_moving_words(tmp_path, 
         assert all(b <= join + .007 for a, b in regions)
     else:
         assert all(a >= join - .007 for a, b in regions)
+
+
+def test_a_clip_can_open_the_cut_and_a_join_after_a_clip_plays_hard(tmp_path):
+    """Fails if multi-source clips and per-join transitions do not combine: the schema must take a clip as
+    the first item and a join on a later range, and a join with no spoken range before it must not crash."""
+    p, words, _, _ = fixture_project(tmp_path)
+    p["cut"]["keep"] = [{"clip": "c1", "source": "s2", "in": 0.5, "out": 1.5},
+                        {"from": "w1", "to": "w1", "join": {"transition": "l", "frames": 6}},
+                        {"from": "w4", "to": "w4", "join": {"transition": "j", "frames": 6}}]
+    assert project.validate(p) == []
+    tl = project.timeline(tmp_path, p, words)
+    assert [s.source for s in tl.segments] == ["s2", "s1", "s2"]
+    # after the clip: no spoken range to bridge, so a hard cut; between the two word ranges: the J handle
+    assert tl.segments[1].join_transition is None and tl.segments[1].audio_lead == 0
+    assert tl.segments[2].join_transition == "j" and tl.segments[2].audio_lead > 0
+    first_join = dict(p, cut=dict(p["cut"], keep=[{"from": "w1", "to": "w1", "join": {"transition": "j", "frames": 6}}]))
+    assert project.validate(first_join)

@@ -104,7 +104,7 @@ def caption_report(captions: list, fmt: tuple) -> tuple:
 
 def check(path: Path, expect_duration: Optional[float] = None, expect_w: int = 1080,
           expect_h: int = 1920, expect_fps: float = 30.0, captions: Optional[list] = None,
-          fmt: Optional[tuple] = None, draft: bool = False) -> dict:
+          fmt: Optional[tuple] = None, draft: bool = False, expected_silence: bool = False) -> dict:
     path = Path(path)
     if not path.exists():
         raise EngineError("NOT_FOUND", f"no such file {path}", "I couldn't find that video file.")
@@ -180,7 +180,12 @@ def check(path: Path, expect_duration: Optional[float] = None, expect_w: int = 1
         add("FAIL", "full decode", f"ffmpeg could not decode the whole file: {av['decodeFailed']}")
     if a is not None:
         lufs = av.get("lufs")
-        if lufs is None or lufs == float("-inf"):
+        if expected_silence:
+            if av.get("peak") == float("-inf"):
+                add("PASS", "loudness", "silent as planned: no source audio or music")
+            else:
+                add("FAIL", "loudness", "expected silence, but silence was not confirmed")
+        elif lufs is None or lufs == float("-inf"):
             add("FAIL", "loudness", "no loudness reading (silent?)")
         else:
             delta = lufs - TARGET_LUFS
@@ -213,7 +218,9 @@ def run(path: Path, expect_duration: Optional[float] = None, project_dir: Option
     man = bound["manifest"]
     progress("verify", 5, "Checking your video", force=True)
     rep = check(bound["video"], expect_duration if expect_duration is not None else man["duration"],
-                *man["size"], man["fps"], man["captionsReport"], tuple(man["format"]), man["draft"])
+                *man["size"], man["fps"], man["captionsReport"], tuple(man["format"]), man["draft"],
+                # a render whose sources have no sound and no song is silent on purpose (multi-source)
+                expected_silence=man.get("expectedSilence") is True)
     rep.update(renderId=man["renderId"], inputFingerprint=man["inputFingerprint"])
     progress("verify", 100, "Checked", force=True)
     return rep

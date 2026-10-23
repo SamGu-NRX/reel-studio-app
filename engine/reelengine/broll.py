@@ -38,7 +38,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from . import placement
+from . import placement, project as projmod
 from .compose_util import (EngineError, _get, any_mirrored, ffmpeg_bin, fmt_of, kind_of, layers_dir, load_font, log,
                            open_image, probe, reframe_rect, reframe_vf, report, resolve_asset, run, source_mirrored,
                            source_path, source_spans, word_end, word_ids_between, word_start)
@@ -161,8 +161,16 @@ def plan_windows(ctx) -> list[dict]:
     for i, it in enumerate(items):
         anc = it.get("anchor") or {}
         a, b = anc.get("from"), anc.get("to") or anc.get("from")
-        s = word_start(ctx, a) if a else None
-        e = word_end(ctx, b) if b else None
+        if "source" in anc:
+            if getattr(ctx, "src_to_out", None) is None:
+                raise EngineError("BAD_ANCHOR", "source-time b-roll needs a source-time mapping",
+                                  "This edit needs a newer video engine.")
+            s, e = projmod.anchor_span(ctx, anc)
+            if e <= s:
+                continue
+        else:
+            s = word_start(ctx, a) if a else None
+            e = word_end(ctx, b) if b else None
         if s is None or e is None:
             log(f"broll {it.get('id', i)}: anchor {a}..{b} is not in the cut; skipped")
             continue

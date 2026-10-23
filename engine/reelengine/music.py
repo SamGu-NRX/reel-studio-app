@@ -316,8 +316,10 @@ def _limit(ctx, x: np.ndarray, work: Path, tag: str) -> np.ndarray:
     return y
 
 
-def normalize(ctx, x: np.ndarray, work: Path, tag: str = "mix") -> tuple[np.ndarray, dict]:
+def normalize(ctx, x: np.ndarray, work: Path, tag: str = "mix", expected_silence: bool = False) -> tuple[np.ndarray, dict]:
     """Two-pass loudness to TARGET_LUFS with a true-peak ceiling. Returns (audio, readings)."""
+    if expected_silence and not np.any(x):
+        return x, {"expectedSilence": True, "inputLUFS": None, "pass1LUFS": None, "finalLUFS": None}
     I0 = integrated(x)
     if not math.isfinite(I0):
         raise EngineError("SILENT", "mix is silent", "Your video seems to have no sound. Check the microphone and try again.")
@@ -364,7 +366,9 @@ def build_audio(ctx, voice_wav) -> Path:
         except Exception as exc:    # noqa: BLE001 -- a broken sound effect must never cost the music
             effects = None
             log(f"# sound effects skipped: {exc!r}")
-    key = [3, str(voice_wav), voice_wav.stat().st_size, voice_wav.stat().st_mtime_ns,
+    # a mix that is silent on purpose (no sound in any source, no song; multi-source) is normalized differently
+    expected_silence = getattr(ctx, "expected_silence", False)
+    key = [4, expected_silence, str(voice_wav), voice_wav.stat().st_size, voice_wav.stat().st_mtime_ns,
            mcfg, str(track) if track else None, track.stat().st_mtime_ns if track else None, offset]
     if smash_times:
         key.append(["smash", smash_times, fmt_of(ctx)[2]])
@@ -420,7 +424,7 @@ def build_audio(ctx, voice_wav) -> Path:
         mix = mix + effects
         rep["sfx"] = rows
     report(ctx, "music", 70, "Balancing the sound")
-    mix, lrep = normalize(ctx, mix, work)
+    mix, lrep = normalize(ctx, mix, work, expected_silence=expected_silence)
     rep.update(lrep)
     write_wav(out, mix, ctx=ctx)
     # every render writes a fresh voice wav (new mtime -> new hash): keep only the latest mixes,

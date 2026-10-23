@@ -109,6 +109,9 @@ class RenderCtx:
     variation: Optional[dict] = None                       # resolved once for the full reel
     sfx_mixed: Optional[list] = None                        # sound effects music.build_audio put in the mix
 
+    src_to_out: Optional[Callable[[str, float], Optional[float]]] = None
+    expected_silence: bool = False
+
     def resolve_path(self, p: str) -> Path:
         """Resolve a project.json asset path: 'Library/...' against root, else project-relative.
         Raises EngineError UNSAFE_PATH for anything outside media/, work/ or root/Library."""

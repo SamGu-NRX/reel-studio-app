@@ -279,15 +279,18 @@ def voice_signature(segments: list, src_paths: dict) -> str:
             return [str(p), s.st_size, s.st_mtime_ns]
         except OSError:
             return [str(p), None, None]
-    data = [1, [[s.source, round(s.src_start, 6), round(s.src_end, 6)] for s in segments],
+    # Version 3 handles audio EOF before trimming and fixes concat's sample format and layout.
+    data = [3, [[s.source, round(s.src_start, 6), round(s.src_end, 6)] for s in segments],
             {k: st(v) for k, v in sorted(src_paths.items())}]
     if any(s.audio_lead or s.audio_tail for s in segments):
         data.append([[s.out_start, s.audio_lead, s.audio_tail] for s in segments])
     return hashlib.sha1(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path) -> Path:
-    """48 kHz stereo voice. J/L mix source handles across an unchanged picture clock.
+def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path, source_audio: dict) -> Path:
+    """The cut voice, 48 kHz stereo wav: exactly the picture's segments, each padded to its planned length
+    (a source with no sound, or sound that ends early, is silence there; multi-source). J/L joins mix source
+    handles across an unchanged picture clock.
     Kept (same file, same mtime) when the segments and sources are unchanged, so music.build_audio's
     mix cache, keyed on this file's mtime, hits on every render that did not change the cut."""
     sig = voice_signature(segments, src_paths)
@@ -306,23 +309,54 @@ def render_voice(ctx: RenderCtx, segments: list, src_paths: dict, out: Path) -> 
     cmd = [ctx.ffmpeg, "-y", "-nostdin", "-hide_banner", "-loglevel", "error"]
     seg_input = {}
     chains, labels = [], []
+    input_index = 0
     for li, lane in enumerate(lanes):
+        source = lane["source"]
+        bounds = source_audio[source]
+        # Do not send an empty atrim into aresample/apad. Some ffmpeg builds cannot establish
+        # its format at EOF, and fail when concat requests the first audio frame.
+        audible = [si for si in lane["segs"] if bounds is not None
+                   and segments[si].src_start < bounds[1] and segments[si].src_end > bounds[0]]
+        if not audible:
+            continue
         if lane["seek"] > 0:
             cmd += ["-ss", _f(lane["seek"])]
-        cmd += ["-vn", "-i", str(src_paths[lane["source"]])]
-        n = len(lane["segs"])
+        cmd += ["-vn", "-i", str(src_paths[source])]
+        n = len(audible)
+        head = f"[{input_index}:a]"
+        unknown_end = math.isinf(bounds[1])
+        if unknown_end:
+            # Some containers omit stream duration. Pad before atrim in that case, so a trim
+            # beyond the unreported EOF still receives frames with a known audio format.
+            head += ("aresample=48000:async=1:first_pts=0,"
+                     "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                     f"apad=whole_dur={_f(lane['last'] - lane['seek'])},")
         if n > 1:
-            chains.append(f"[{li}:a]asplit={n}" + "".join(f"[A{li}s{si}]" for si in lane["segs"]))
-        for si in lane["segs"]:
-            seg_input[si] = (f"A{li}s{si}" if n > 1 else f"{li}:a", lane["seek"])
+            chains.append(head + f"asplit={n}" + "".join(f"[A{li}s{si}]" for si in audible))
+        elif unknown_end:
+            chains.append(head + f"anull[A{li}s{audible[0]}]")
+        for si in audible:
+            seg_input[si] = (f"A{li}s{si}" if n > 1 or unknown_end else f"{input_index}:a", lane["seek"])
+        input_index += 1
     fade = 0.006
     for i, seg in enumerate(segments):
-        pad, seek = seg_input[i]
         d = seg.src_end - seg.src_start
         f = min(fade, d / 4)
-        chains.append(f"[{pad}]atrim=start={_f(seg.src_start - seek)}:end={_f(seg.src_end - seek)},"
-                      f"asetpts=PTS-STARTPTS,aresample=48000,"
-                      f"afade=t=in:d={_f(f)},afade=t=out:st={_f(max(0.0, d - f))}:d={_f(f)}"
+        samples = round(d * 48000)
+        if i not in seg_input:
+            chain = f"anullsrc=r=48000:cl=stereo:d={_f(d)},"
+        else:
+            pad, seek = seg_input[i]
+            end = min(seg.src_end, source_audio[seg.source][1])
+            # Preserve the source clock for late audio, then pad the real audio tail to the
+            # planned clip length. Set the format before padding as well as before concat.
+            chain = (f"[{pad}]atrim=start={_f(seg.src_start - seek)}:end={_f(end - seek)},"
+                     f"asetpts=PTS-{_f(seg.src_start - seek)}/TB,aresample=48000:async=1:first_pts=0,"
+                     f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                     f"apad=whole_dur={_f(d)},")
+        chains.append(chain + f"atrim=end_sample={samples},asetpts=N/SR/TB,"
+                      f"afade=t=in:d={_f(f)},afade=t=out:st={_f(max(0.0, d - f))}:d={_f(f)},"
+                      f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"
                       + (f",adelay={round(seg.out_start * 48000)}S:all=1" if overlap else "") + f"[a{i}]")
         labels.append(f"[a{i}]")
     if overlap:
@@ -378,9 +412,11 @@ def measure_lufs(ffmpeg: str, wav: Path) -> Optional[float]:
     return v if v is not None and v > -70 else None
 
 
-def normalize_voice(ctx: RenderCtx, voice: Path, out: Path) -> Path:
+def normalize_voice(ctx: RenderCtx, voice: Path, out: Path, expected_silence: bool = False) -> Path:
     """Voice only (no music module): measured gain to -14 LUFS, then a peak limiter at ~-1.9 dBFS.
     loudnorm resamples to 192 kHz and costs ~7 s a pass; this is two fast decodes."""
+    if expected_silence:
+        return voice
     gain = 0.0
     lufs = measure_lufs(ctx.ffmpeg, voice)
     if lufs is not None:
@@ -398,8 +434,33 @@ def normalize_voice(ctx: RenderCtx, voice: Path, out: Path) -> Path:
     return out
 
 
+def probe_source_audio(ctx: RenderCtx, segments: list, src_paths: dict) -> dict:
+    """{source id: (start, end) of its audio stream in source seconds, or None with no audio stream}."""
+    source_audio = {}
+    for sid in sorted({seg.source for seg in segments}):
+        probe = tools.text_run([ctx.ffprobe, "-v", "error", "-select_streams", "a:0",
+                                "-show_entries", "stream=start_time,duration:format=start_time", "-of", "json", str(src_paths[sid])],
+                               30, "audio probe")
+        info = json.loads(probe.stdout)
+        stream = next(iter(info.get("streams") or []), None)
+        if stream is None:
+            source_audio[sid] = None
+        else:
+            origin = float((info.get("format") or {}).get("start_time") or 0.0)
+            start = float(stream.get("start_time") or origin) - origin
+            # Unknown stream duration must not be replaced with the VIDEO duration.
+            end = start + float(stream["duration"]) if stream.get("duration") else float("inf")
+            source_audio[sid] = (start, end)
+    return source_audio
+
+
 def build_audio(ctx: RenderCtx, segments: list, src_paths: dict, rwork: Path, warnings: list) -> Path:
-    voice = render_voice(ctx, segments, src_paths, rwork / "voice.wav")
+    source_audio = probe_source_audio(ctx, segments, src_paths)
+    mcfg = ctx.project.get("music") or {}
+    # Silence is intentional only when every kept source lacks audio and no music is requested.
+    # An unexpectedly silent recording or failed music mix must still fail loudness verification.
+    ctx.expected_silence = not any(source_audio.values()) and not (mcfg.get("enabled", True) and mcfg.get("track"))
+    voice = render_voice(ctx, segments, src_paths, rwork / "voice.wav", source_audio)
     music = _opt_module("music")
     if music is not None and hasattr(music, "build_audio"):
         try:
@@ -413,7 +474,7 @@ def build_audio(ctx: RenderCtx, segments: list, src_paths: dict, rwork: Path, wa
         except Exception as exc:    # noqa: BLE001 -- music must never cost the render
             warnings.append(f"music skipped: {type(exc).__name__}: {exc}")
             log(f"# music.build_audio crashed: {exc!r}")
-    return normalize_voice(ctx, voice, rwork / "voice_norm.wav")
+    return normalize_voice(ctx, voice, rwork / "voice_norm.wav", expected_silence=ctx.expected_silence)
 
 
 # --- video graph --------------------------------------------------------------------------------
@@ -774,7 +835,7 @@ def make_ctx(project_dir: Path, proj: dict, tl, draft: bool, root: Path, rwork: 
                      word_out_time=tl.word_out_time, duration=tl.duration, fmt=dict(proj["format"]),
                      draft=draft, work=project_dir / "work", ffmpeg=tools.ffmpeg(),
                      ffprobe=tools.ffprobe(), progress=_progress, word_out_end=tl.word_out_end, is_kept=tl.is_kept,
-                     words=tl.words)
+                     words=tl.words, src_to_out=tl.src_to_out)
 
 
 GONE_WORDS = "it sits on words that are no longer in the transcript, so it was left out"
@@ -789,6 +850,8 @@ def unknown_anchor_skips(proj: dict, tl) -> tuple:
     for i, b in enumerate(proj.get("broll") or []):
         anc = b.get("anchor") or {}
         ids = [x for x in (anc.get("from"), anc.get("to")) if x]
+        if "source" in anc:
+            continue
         if not ids or any(x not in known for x in ids):
             rows.append({"id": b.get("id", f"b{i + 1}"), "treatment": b.get("treatment"),
                          "skipped": GONE_WORDS})
@@ -879,8 +942,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
         proj = first_look_project(project_dir, proj, music)
     root = tools.root_dir(str(root) if root else None)
     progress(STAGE, 1, "Getting your video ready", force=True)
-    words = projmod.load_transcript(project_dir, proj)["words"]
-    tl = projmod.timeline(project_dir, proj, words)
+    tl = projmod.timeline(project_dir, proj)
     if tl.duration < 0.3 or not tl.segments:
         raise EngineError("EMPTY_CUT", "the cut is empty", "There's nothing left in the edit. Undo the last change.")
     win = parse_window(window, tl.duration)
@@ -927,11 +989,11 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
     warnings: list = []
     render_id = "r_" + uuid.uuid4().hex
     input_fp = render_identity.fingerprint({
-        "edit": projmod.edit_signature(proj), "words": words, "assets": asset_fingerprint(project_dir, proj, root),
+        "edit": projmod.edit_signature(proj), "words": tl.words, "assets": asset_fingerprint(project_dir, proj, root),
         "draft": draft, "window": win})
 
     src_meta = {s["id"]: s for s in proj["sources"]}
-    src_paths = {s["id"]: projmod.source_path(project_dir, s) for s in proj["sources"]}
+    src_paths = {s["id"]: projmod.source_path(project_dir, s, root=root) for s in proj["sources"]}
     for sid, p in src_paths.items():
         if not p.exists():
             raise EngineError("SOURCE_MISSING", f"missing source {p}",
@@ -1095,6 +1157,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
               "duration": round(dur, 3), "segments": len(segments), "encoder": encoder,
               "size": [out_w, out_h], "layers": len(layers), "zooms": len(zooms),
               "captions": len(cap_report), "warnings": warnings, "visualChanges": visual_changes,
+              "expectedSilence": ctx.expected_silence,
               "broll": [r for r in broll_report if r.get("fallback") or r.get("skipped") or r.get("remake")]}
     result.update(lint)
     if ctx.variation is not None:
@@ -1115,7 +1178,7 @@ def run(project_dir: Path, draft: bool = False, window: Optional[str] = None,
         from . import verify as verifymod
         rep = verifymod.check(out, expect_duration=dur, expect_w=out_w, expect_h=out_h, expect_fps=fps,
                               captions=cap_report if not win else None, fmt=(W, H),
-                              draft=draft)
+                              draft=draft, expected_silence=ctx.expected_silence)
         rep.update(renderId=render_id, inputFingerprint=input_fp)
         projmod.write_json(vdir / ("verify.json" if not win else f"verify_{name[:-4]}.json"), rep)
         result["verify"] = {"ok": rep["ok"], "fails": rep["fails"], "warns": rep["warns"]}
@@ -1286,7 +1349,7 @@ def cover_only(project_dir: Path, root: Optional[Path] = None) -> dict:
     ctx = make_ctx(project_dir, proj, tl, False, tools.root_dir(str(root) if root else None),
                    project_dir / "work" / "render")
     src_meta = {s["id"]: s for s in proj["sources"]}
-    src_paths = {s["id"]: projmod.source_path(project_dir, s) for s in proj["sources"]}
+    src_paths = {s["id"]: projmod.source_path(project_dir, s, root=root) for s in proj["sources"]}
     warnings: list = []
     progress("cover", 10, "Making your cover", force=True)
     p = render_cover(ctx, proj, tl, src_meta, src_paths, source_faces(project_dir, proj),
