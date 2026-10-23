@@ -222,6 +222,7 @@ export function createJobManager(
             const video = slug && toVideo ? toVideo(slug, r).catch(() => null) : Promise.resolve(null)
             pending.push(video.then((v) => { if (open) send({ jobId: id, slug, type: 'render', version: r.version, draft: r.draft, firstLook: !!r.firstLook, video: v }) }))
           } else if (e.type === 'reply') send({ jobId: id, slug, type: 'reply', text: e.text })
+          else if (e.type === 'trace') log(`[job ${kind}] ${e.text}`)
           else {
             if (rows) {
               rows.result('listen', `${e.words.length} words`)

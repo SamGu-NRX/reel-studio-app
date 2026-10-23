@@ -1,5 +1,5 @@
 // The provider-neutral agent loop: model -> tool calls -> results -> model ... until `finish`.
-import { AgentEvent, AIError, ChatMessage, ImagePart, ModelProvider, TokenUsage, ToolCall, ToolResultMsg, WaitSignal } from './types';
+import { AgentEvent, AIError, ChatMessage, ImagePart, ModelProvider, TokenUsage, ToolCall, ToolResultMsg, WaitSignal, CompletionResponse } from './types';
 import { executeTool, operationStatus, toolSchemas, ToolContext, discardAssetCandidates } from './tools';
 
 const STAGE: Record<string, { message: string; pct: number }> = {
@@ -107,33 +107,47 @@ export function thinkingMessage(messages: ChatMessage[]): string {
   return 'Deciding what to do next';
 }
 
-/** Silence longer than this before an answer starts is a wait, and the status says so. */
+/** A turn quiet this long, or thinking this long, says so instead of the step's words. */
 export const QUIET_MS = 20_000;
 
 /**
- * The words while a reply is awaited, from a provider that reports its waits (ModelProvider.reportsWaits): the step's
- * own words while the answer arrives; "Waiting for Claude to answer" once it has been quiet for QUIET_MS (one note
- * once waited 543 s while saying "Watching your video"); the retry when the service refused. Others keep the step's words.
+ * The words while a reply is awaited, from a provider that reports its waits (ModelProvider.reportsWaits). The step's
+ * own words while the answer is on its way; after QUIET_MS with nothing back, "Waiting for Claude to answer"; after
+ * QUIET_MS of the model reasoning, "Claude is thinking it through"; a retry when the service refused. One real note
+ * waited 543 s, and another 380 s, while the screen said "Watching your video and planning the edit". Providers that
+ * don't report keep the step's words.
  */
 export function waitWords(provider: Pick<ModelProvider, 'id' | 'reportsWaits'>, say: (message: string, waiting: boolean) => void, thinking: string, quietMs = QUIET_MS): { onWait?: (w: WaitSignal) => void; end: () => void } {
   if (!provider.reportsWaits) return { end: () => undefined };
-  const who = provider.id === 'claude-cli' || provider.id === 'claude' ? 'Claude' : 'your editor';
-  let quiet: ReturnType<typeof setTimeout> | null = null;
-  const listen = () => {
-    if (quiet) clearTimeout(quiet);
-    quiet = setTimeout(() => say(`Waiting for ${who} to answer`, true), quietMs);
-    quiet.unref?.();
+  const who = provider.id === 'claude-cli' || provider.id === 'claude' ? 'Claude' : 'Your editor';
+  const waitFor = `Waiting for ${who === 'Claude' ? 'Claude' : 'your editor'} to answer`;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let shown = false;
+  const clear = () => { if (timer) clearTimeout(timer); timer = null; };
+  const later = (message: string) => {
+    clear();
+    timer = setTimeout(() => { shown = true; say(message, true); }, quietMs);
+    timer.unref?.();
   };
-  const stop = () => { if (quiet) clearTimeout(quiet); quiet = null; };
-  listen();
+  const back = () => { if (shown) say(thinking, false); shown = false; };
+  later(waitFor);
   return {
     onWait: (w) => {
-      if (w.kind === 'answering') { stop(); say(thinking, false); return; }
-      say(`${who === 'Claude' ? 'Claude' : 'Your editor'} is busy. Trying again${w.max ? ` (${w.attempt} of ${w.max})` : ''}`, true);
-      listen();
+      if (w.kind === 'answering') { clear(); back(); return; }
+      if (w.kind === 'thinking') { back(); later(`${who} is thinking it through`); return; }
+      shown = true;
+      say(`${who} is busy. Trying again${w.max ? ` (${w.attempt} of ${w.max})` : ''}`, true);
+      later(waitFor);
     },
-    end: stop,
+    end: clear,
   };
+}
+
+/** A model turn's time, for the host's log (a slow edit can be traced to the model or to the wait for it). */
+export function turnTrace(t: NonNullable<CompletionResponse['timing']>): string {
+  const s = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+  const parts = [t.thinkingMs !== null ? `thinking from ${s(t.thinkingMs)}` : null, t.answerMs !== null ? `answer from ${s(t.answerMs)}` : 'no answer streamed', t.retries ? `${t.retries} retr${t.retries === 1 ? 'y' : 'ies'}` : null];
+  return `model turn ${s(t.totalMs)}: ${parts.filter(Boolean).join(', ')}`;
 }
 
 export const MAX_CONSECUTIVE_MISSES = 4;
@@ -221,6 +235,7 @@ async function agentLoop(o: RunAgentOptions): Promise<RunAgentResult> {
         res = await o.provider.complete({ system: o.system, messages: sent, tools, signal: o.signal, onWait: wait.onWait });
         tokens += effectiveTokens(res.usage, o.system.length + JSON.stringify(sent).length);
         wait.end();
+        if (res.timing) o.onEvent({ type: 'trace', text: turnTrace(res.timing) });
         break;
       } catch (e: any) {
         wait.end();

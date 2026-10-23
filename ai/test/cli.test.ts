@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ClaudeCliProvider, toolSchemas } from '../src';
-import { waitWords } from '../src/agent';
+import { turnTrace, waitWords } from '../src/agent';
 import type { WaitSignal } from '../src/types';
-import { extractJson, limitResetsAt, parseProtocolReply, renderConversation } from '../src/providers/cli';
+import { extractJson, limitResetsAt, parseProtocolReply, renderConversation, runawayAnswer } from '../src/providers/cli';
 import { tmpDir } from './helpers';
 
 describe('CLI JSON protocol', () => {
@@ -45,35 +45,46 @@ describe('CLI JSON protocol', () => {
 });
 
 describe('waiting for Claude, said as it is', () => {
-  // fails if the CLI's own retries and the start of its answer stay invisible (a note once waited 543 s on one call)
-  it('passes on each retry the CLI reports, and the first piece of the answer once', async () => {
+  // fails if the CLI's retries, its thinking and the start of its answer stay invisible (notes waited 543 s and 544 s
+  // on one call while the screen said "Watching your video and planning the edit")
+  it('passes on each retry, the start of thinking and the start of the answer once each, and times the turn', async () => {
     const dir = tmpDir();
     const script = path.join(dir, 'fake-claude.js');
+    const ev = (event: object) => ({ type: 'stream_event', event });
     const lines = [
       { type: 'system', subtype: 'init' },
       { type: 'system', subtype: 'api_retry', attempt: 1, max_retries: 10, retry_delay_ms: 500, error_status: 529, error: 'overloaded' },
-      { type: 'stream_event', event: { type: 'message_start' } },
-      { type: 'stream_event', event: { type: 'content_block_delta' } },
+      ev({ type: 'message_start' }),
+      ev({ type: 'content_block_start', index: 0, content_block: { type: 'thinking' } }),
+      ev({ type: 'content_block_delta', index: 0 }),
+      ev({ type: 'content_block_start', index: 1, content_block: { type: 'text' } }),
+      ev({ type: 'content_block_start', index: 2, content_block: { type: 'text' } }),
       { type: 'result', is_error: false, result: '{"tool_calls":[{"name":"finish","arguments":{"summary_for_user":"hi"}}]}' },
     ];
     fs.writeFileSync(script, `process.stdin.resume();process.stdin.on('end',()=>{process.stdout.write(${JSON.stringify(lines.map((l) => JSON.stringify(l)).join('\n') + '\n')})})`);
     const seen: WaitSignal[] = [];
     const p = new ClaudeCliProvider({ bin: process.execPath, binArgs: [script] });
-    await p.complete({ system: 'SYS', tools: toolSchemas(['finish']), messages: [{ role: 'user', content: [{ type: 'text', text: 'go' }] }], onWait: (w) => seen.push(w) });
-    expect(seen).toEqual([{ kind: 'retrying', attempt: 1, max: 10, delayMs: 500, status: 529 }, { kind: 'answering' }]);
+    const r = await p.complete({ system: 'SYS', tools: toolSchemas(['finish']), messages: [{ role: 'user', content: [{ type: 'text', text: 'go' }] }], onWait: (w) => seen.push(w) });
+    expect(seen).toEqual([{ kind: 'retrying', attempt: 1, max: 10, delayMs: 500, status: 529 }, { kind: 'thinking' }, { kind: 'answering' }]);
+    expect(r.timing).toMatchObject({ retries: 1, thinkingMs: expect.any(Number), answerMs: expect.any(Number) });
   });
 
-  it('says it is waiting after a quiet spell, names a retry, and goes back to the step once the answer starts', async () => {
+  it('says it waits after a quiet spell, that Claude is thinking after a long think, names a retry, and goes back to the step', async () => {
     const said: [string, boolean][] = [];
+    const tick = () => new Promise((r) => setTimeout(r, 60));
     const w = waitWords({ id: 'claude-cli', reportsWaits: true }, (m, waiting) => said.push([m, waiting]), 'Picking your pictures', 30);
-    await new Promise((r) => setTimeout(r, 60));
+    await tick();
     w.onWait!({ kind: 'retrying', attempt: 2, max: 10, delayMs: 1000, status: 529 });
+    w.onWait!({ kind: 'thinking' });
+    await tick();
     w.onWait!({ kind: 'answering' });
-    await new Promise((r) => setTimeout(r, 60));
+    await tick();
     w.end();
     expect(said).toEqual([
       ['Waiting for Claude to answer', true],
       ['Claude is busy. Trying again (2 of 10)', true],
+      ['Picking your pictures', false],
+      ['Claude is thinking it through', true],
       ['Picking your pictures', false],
     ]);
     const quiet: string[] = [];
@@ -81,6 +92,11 @@ describe('waiting for Claude, said as it is', () => {
     await new Promise((r) => setTimeout(r, 40));
     other.end();
     expect([other.onWait, quiet]).toEqual([undefined, []]);
+  });
+
+  it('logs where a turn went', () => {
+    expect(turnTrace({ thinkingMs: 2100, answerMs: 540_300, totalMs: 544_000, retries: 0 })).toBe('model turn 544.0 s: thinking from 2.1 s, answer from 540.3 s');
+    expect(turnTrace({ thinkingMs: null, answerMs: null, totalMs: 30_000, retries: 2 })).toBe('model turn 30.0 s: no answer streamed, 2 retries');
   });
 });
 
@@ -94,6 +110,33 @@ describe('a plan at its limit: when it resets', () => {
     // a time already gone today is tomorrow's
     expect(limitResetsAt('limit reached, resets 9am', now)).toBe(new Date(2026, 9, 24, 9, 0).toISOString());
     expect(limitResetsAt('Claude usage limit reached', now)).toBeNull();
+  });
+});
+
+describe('a runaway answer', () => {
+  it('is empty placeholder tags repeating, or far longer than any real answer', () => {
+    const tag = '\n<invoke name="placeholder">\n</invoke>\n'
+    expect(runawayAnswer(tag.repeat(2))).toBe(false);
+    expect(runawayAnswer(tag.repeat(3))).toBe(true);
+    expect(runawayAnswer('{"thought":"cut","tool_calls":[]}')).toBe(false);
+    expect(runawayAnswer('x'.repeat(40_001))).toBe(true);
+  });
+
+  // fails if a model that loops on placeholder tags is left to run to its output limit (551 s and $1.65 in a real run)
+  it('is stopped as it streams, in a live session and in a one-off call, and reported so the loop asks again', async () => {
+    const dir = tmpDir();
+    const script = path.join(dir, 'fake-claude.js');
+    const delta = JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '<invoke name="placeholder">\n</invoke>\n' } } });
+    // answers with the loop, then never ends on its own
+    fs.writeFileSync(script, `process.stdin.once('data',()=>{let n=0;const t=setInterval(()=>{process.stdout.write(${JSON.stringify(delta)}+'\\n');if(++n>50)clearInterval(t)},20)});setInterval(()=>{},1000)`);
+    const req = { system: 'SYS', tools: toolSchemas(['finish']), messages: [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'go' }] }] };
+    for (const session of [true, false]) {
+      const p = new ClaudeCliProvider({ bin: process.execPath, binArgs: [script], session });
+      const t0 = Date.now();
+      await expect(p.complete(req)).rejects.toMatchObject({ code: 'cli_runaway', retryable: true });
+      expect(Date.now() - t0).toBeLessThan(5000);
+      await p.dispose();
+    }
   });
 });
 
