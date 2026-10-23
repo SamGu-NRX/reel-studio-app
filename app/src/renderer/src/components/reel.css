@@ -12,7 +12,8 @@
 .rt-ver { flex: none; font-size: var(--fs-base); color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rt-ver.older { color: var(--ink-2); font-weight: 600; }
 /* the on-screen version's name, after its number: a caption, cut short before it crowds the title */
-.rt-ver-name { flex: 0 1 auto; min-width: 0; max-width: 32ch; font-size: var(--fs-base); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* out of the drag region, as .reel-title is, so hovering a cut-short name shows it whole */
+.rt-ver-name { -webkit-app-region: no-drag; pointer-events: auto; margin-left: -6px; flex: 0 1 auto; min-width: 0; max-width: 32ch; font-size: var(--fs-base); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rt-ver-name::before { content: '·\00a0' / ''; color: var(--ink-4); }
 .rt-title .btn.ghost.small { flex: none; }
 .tb-actions .btn.ghost.on { color: var(--ink); text-decoration-color: currentColor; }

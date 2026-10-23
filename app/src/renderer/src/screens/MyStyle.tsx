@@ -137,11 +137,14 @@ export function MyStyle() {
         }
       />
       <p className="style-intro">Your editor follows these on every reel. A note that starts with “always” adds one.</p>
-      {damaged && (
-        <p className="banner" role="status" data-testid="style-damaged">
-          Your saved style file was damaged, so a new one was started. The old one is kept next to it.
-        </p>
-      )}
+      {/* the status region is there before the line is, so a screen reader announces the line when it arrives */}
+      <div role="status" className="style-status">
+        {damaged && (
+          <p className="banner" data-testid="style-damaged">
+            Your saved style file was damaged, so a new one was started. The old one is kept next to it.
+          </p>
+        )}
+      </div>
       {error && (
         <p className="style-note" role="alert">
           {error}

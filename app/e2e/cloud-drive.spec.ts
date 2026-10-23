@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, makeReel, passFirstRun } from './helpers'
+import { BASE, launch, makeMedia, makeReel, passFirstRun, shot } from './helpers'
 import { basename } from 'node:path'
 
 test('fails if cloud save copies the wrong export, uses the wrong drive, or fails without saying why', async () => {
@@ -88,6 +88,7 @@ test("fails if Send to my phone's drive way loses its web links, names two Googl
     await expect(cloud.getByTestId('phone-icloud')).toHaveAttribute('href', 'https://www.icloud.com/iclouddrive/')
     await expect(cloud.getByTestId('phone-gdrive')).toHaveAttribute('href', 'https://drive.google.com/drive/my-drive')
     await expect(cloud.getByRole('button', { name: /^Save to / })).toHaveCount(0)
+    await shot(page, 'phone-drive-websites')
 
     const iCloud = join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs')
     mkdirSync(iCloud, { recursive: true })
@@ -104,6 +105,7 @@ test("fails if Send to my phone's drive way loses its web links, names two Googl
     const status = cloud.getByTestId('cloud-status')
     await expect(status).toContainText('Saved to iCloud Drive. It shows up on your phone once your drive finishes syncing.')
     await expect(status).toContainText('Files app, then iCloud Drive › Reel Studio')
+    await shot(page, 'phone-drive-saved')
     const exports = join(dir, 'Reel Studio', 'Library', 'Exports')
     const exported = readdirSync(exports).filter((f) => f.endsWith('.mp4'))
     expect(readdirSync(join(iCloud, 'Reel Studio'))).toEqual([basename(exported[0])])

@@ -124,6 +124,7 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await page.getByTestId('project-card').first().click()
   await expect(page.getByTestId('version-on-screen')).toHaveText('Version 2')
   await expect(page.getByTestId('version-title')).toHaveText('Bigger subtitles')
+  await shot(page, 'ux-version-name')
 
   // A song the editor found outside the Library (#71): music.track is its frozen copy, and the Music tab names it
   // by its asset-ledger title, never the hash. The stand-in AI never freezes one, so put it there as resolve_asset does.
@@ -144,6 +145,7 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await page.getByTestId('tab-music').click()
   await expect(page.getByTestId('music-elsewhere')).toHaveText('beach walk')
   await expect(page.getByRole('radio', { name: 'beach walk' })).toBeChecked()
+  await shot(page, 'ux-music-elsewhere')
   await page.getByRole('radio', { name: 'No music' }).check()
   await page.getByRole('radio', { name: 'beach walk' }).check() // still there to go back to
   await expect(page.getByRole('radio', { name: 'beach walk' })).toBeChecked()
