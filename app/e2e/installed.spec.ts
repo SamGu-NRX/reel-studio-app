@@ -20,7 +20,7 @@ import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, dirname } from 'node:path'
-import { attachMemeFlow, chooseClaudeCode, dropFiles, passMacStage, passSample, openSettings, newReel } from './helpers'
+import { attachMemeFlow, chooseClaudeCode, dropFiles, passSample, openSettings, newReel } from './helpers'
 import { installedRuntime } from './runtime'
 
 const EXE = process.env.REELSTUDIO_E2E_INSTALLED
@@ -114,23 +114,23 @@ test('first run: speech model + AI', async () => {
     if (info.freshProfile) {
       const t0 = Date.now()
       await passSample(page)
-      await passMacStage(page)
       await snap(page, '01-download')
-      const ready = page.getByTestId('model-line').getByText('Listening model ready')
-      while (!(await ready.isVisible())) {
+      const ready = () => page.evaluate(() => window.reel.model.status().then((s) => s.installed))
+      while (!(await ready())) {
         if (Date.now() - t0 > 25 * 60_000) throw new Error('model download took over 25 minutes')
         await page.waitForTimeout(1000)
       }
       info.modelSec = Math.round((Date.now() - t0) / 1000)
       await page.waitForTimeout(2000)
       await snap(page, '02-connect')
-      info.connectButtons = await page.locator('.fr-pane button').allInnerTexts()
+      info.connectButtons = await page.locator('.fr-col button').allInnerTexts()
       // Nothing picks the Claude Code app on its own: this run chooses it, like a person would.
       const picked = EXPECT_AI === 'claude-cli' && (await chooseClaudeCode(page))
       const c = page.getByTestId('ai-connected')
       info.connectAi = picked ? 'claude-cli' : (await c.isVisible()) ? await c.innerText() : 'none'
-      if (!picked) await page.getByTestId('skip').click()
-      await page.getByTestId('share-no').click()
+      await page.getByTestId(picked ? 'editor-continue' : 'not-now').click()
+      await expect(page.getByTestId('planned-stage')).toBeVisible()
+      await page.getByTestId('nav-home').click()
     }
     await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
     await openSettings(page)

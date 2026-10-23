@@ -34,96 +34,76 @@ async function helperWindow(app: ElectronApplication, title: string): Promise<Pa
   throw new Error(`no helper window "${title}"`)
 }
 
-test('a fresh first run walks every step, and the folder waits for Allow', async () => {
+test('a fresh first run goes welcome, sample, editor, and ends on a new reel with no video', async () => {
   const d = fresh('walk')
   const { app, page } = await launch(d.env)
   try {
     await expect(page.getByTestId('get-started')).toBeVisible()
-    // Nothing is made before setup has said why.
     expect(existsSync(d.root)).toBe(false)
     await page.getByTestId('get-started').click()
 
-    await expect(page.locator('.fr-steps li')).toHaveText(MAC ? ['The sample', 'Your Mac', 'AI editor'] : ['The sample', 'AI editor'])
-    await expect(page.getByTestId('setup-step-sample')).toHaveAttribute('aria-current', 'step')
-    // the listening model gets ready beside every step and never holds one up
-    await expect(page.getByTestId('model-line')).toBeVisible()
+    // the sample is made with Version 1's own rows, one for each thing the welcome promised
+    await expect(page.getByTestId('steps-list').locator('.sl')).toHaveText([
+      'Listening to your video',
+      'Cutting pauses and repeated starts',
+      'Picking your best takes and pictures',
+      'Adding subtitles',
+      'Making your cover'
+    ])
     await page.getByTestId('demo-skip').click()
+    // with no editor, the takes-and-pictures row says it was skipped, and the steps fold into Version 1's line
+    await expect(page.getByTestId('sample-v1')).toContainText(/Version 1.*0:24 down to 0:12/)
+    await expect(page.getByTestId('steps-list')).toHaveCount(0)
     await page.getByTestId('demo-next').click()
-    if (MAC) {
-      await expect(page.getByRole('heading', { name: 'Get your Mac ready' })).toBeFocused() // a screen reader starts at the new step
-      await expect(page.getByTestId('perm-folder')).toContainText('Movies › Reel Studio')
-      await expect(page.getByTestId('perm-notifications')).toHaveAttribute('data-state', 'todo') // one card at a time
-      // The status poll re-checks every 1.5 s; none of those checks may touch the folder before Allow.
-      await page.waitForTimeout(3200)
-      expect(existsSync(d.root)).toBe(false)
 
-      await page.getByTestId('perm-folder-allow').click()
-      await expect(page.getByTestId('perm-folder')).toHaveAttribute('data-state', 'allowed')
-      expect(existsSync(join(d.root, 'Projects'))).toBe(true)
-      await page.getByTestId('perm-notifications-allow').click()
-      await expect(page.getByTestId('perm-notifications')).toHaveAttribute('data-state', 'allowed')
-      expect(await opened(app)).toEqual([]) // nothing was refused, so System Settings never opened
-    }
+    await expect(page.getByRole('heading', { name: 'Choose your editor' })).toBeFocused() // a screen reader starts at the new step
+    await expect(page.getByTestId('without-ai')).toContainText('Without an editor, Reel Studio makes a basic version')
+    await page.getByTestId('not-now').click()
 
-    await expect(page.getByRole('heading', { name: 'Connect your AI editor' })).toBeVisible()
-    await expect(page.getByTestId('setup-step-ai')).toHaveAttribute('aria-current', 'step')
-    await page.getByTestId('skip').click()
-    await page.getByTestId('share-no').click()
+    // Your turn: the reel slice's planning space, in the app's own window
+    await expect(page.getByTestId('planned-stage')).toContainText('Drop the video you filmed')
+    await expect(page.getByTestId('plan-empty')).toBeVisible()
+    await expect(page.getByTestId('nav-home')).toBeVisible()
+    const list = await page.evaluate(() => window.reel.projects.list())
+    expect(list.map((p) => p.noVideo)).toEqual([true])
 
-    await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
-    await expect(page.getByTestId('reels-empty')).toContainText('Drop a video of you talking anywhere in this window, or start with an idea.')
-    await expect(page.getByTestId('sample-card')).toBeVisible()
     const settings = JSON.parse(readFileSync(join(d.userData, 'settings.json'), 'utf8'))
     expect(settings.firstRunDone).toBe(true)
-    // asked once, nothing preselected: Don't share stores exactly that, and nothing is on
-    expect(settings.sharing).toMatchObject({ asked: true, on: false })
-    expect(settings.notifications).toBe(MAC ? true : null)
+    // Help improve is asked after the first Share, never here (ux-foundation-b.md section 4)
+    expect(settings.sharing).toMatchObject({ asked: false, on: false })
+    // a Mac's notifications are asked during the first Version 1, so they start off
+    expect(settings.notifications).toBe(MAC ? false : null)
+    // the library is made in Movies without a question
     expect(existsSync(join(d.root, 'Projects'))).toBe(true)
+    expect(await opened(app)).toEqual([])
   } finally {
     await app.close()
   }
 })
 
-test('a "no" from the Mac says what to do, and the card updates once it is allowed', async () => {
-  test.skip(!MAC, 'the Your Mac step is macOS only')
-  const d = fresh('denied')
-  const { app, page } = await launch({ ...d.env, REELSTUDIO_TEST_PERMISSIONS: 'folder=denied,notifications=failed' })
+test('fails if connecting Claude does not upgrade the sample, or the sound switch is not remembered', async () => {
+  const d = fresh('claude')
+  const { app, page } = await launch({ ...d.env, REELSTUDIO_MOCK_CLAUDE: 'ready', REELSTUDIO_MOCK_CLAUDE_CHECK: '600' })
   try {
     await page.getByTestId('get-started').click()
+    await expect(page.getByTestId('sound-effects')).toHaveText('Sound effects: on')
+    await page.getByTestId('sound-effects').click()
+    await expect(page.getByTestId('sound-effects')).toHaveText('Sound effects: off')
+    await expect.poll(() => page.evaluate(() => window.reel.app.info().then((i) => i.soundEffects))).toBe(false)
+
     await page.getByTestId('demo-skip').click()
     await page.getByTestId('demo-next').click()
-
-    // The folder: the "no" opens Files and Folders, and the helper names the switch.
-    await page.getByTestId('perm-folder-allow').click()
-    await expect(page.getByTestId('perm-folder-problem')).toHaveText('Your Mac said no. Press Allow to turn it on in System Settings.')
-    await expect(page.getByTestId('perm-folder-choose')).toBeVisible()
-    await expect.poll(() => opened(app)).toEqual(['x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders'])
-    const folder = await helperWindow(app, 'Set up Files and Folders')
-    await expect(folder.locator('header')).toHaveText('↑ Turn on Reel Studio in the list above')
-    await expect(folder.locator('#done')).toHaveCount(0) // it closes by itself once the folder can be used
-
-    // The person turns it on in System Settings: the helper sees it within a second, closes itself, and the
-    // folder is made. Nothing else to click.
-    await app.evaluate(() => {
-      delete (globalThis as { __reelPermFakes?: { folder?: string } }).__reelPermFakes!.folder
-    })
-    await expect.poll(() => app.windows().length, { timeout: 5000 }).toBe(1)
-    await expect(page.getByTestId('perm-folder')).toHaveAttribute('data-state', 'allowed', { timeout: 5000 })
-    expect(existsSync(join(d.root, 'Projects'))).toBe(true)
-    await expect(page.getByTestId('perm-folder-problem')).toHaveCount(0)
-
-    // Notifications open next: macOS said no, so its page opens with a helper that has Done (Reel Studio cannot read it).
-    await page.getByTestId('perm-notifications-allow').click()
-    await expect(page.getByTestId('perm-notifications-problem')).toHaveText('Your Mac said no. Press Allow to turn it on in System Settings.')
-    await expect.poll(async () => (await opened(app))[1]).toBe('x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=dev.reelstudio.app')
-    const notes = await helperWindow(app, 'Set up Notifications')
-    await expect(notes.locator('header')).toHaveText('↑ Turn on Allow notifications')
-    await notes.locator('#done').click()
-    await expect.poll(() => app.windows().length).toBe(1)
-    // Notifications are optional: still off, and setup goes on.
-    await page.getByTestId('perm-notifications-skip').click()
-    await expect(page.getByTestId('perm-notifications')).toHaveAttribute('data-state', 'skipped')
-    await expect(page.getByRole('heading', { name: 'Connect your AI editor' })).toBeVisible()
+    // a signed-in Claude Code leads, with the one filled button; nothing is connected until the check answers
+    await expect(page.getByTestId('use-claude-code')).toHaveClass(/primary/)
+    await page.getByTestId('use-claude-code').click()
+    await expect(page.getByTestId('ai-connected')).toBeVisible()
+    await expect(page.getByTestId('sample-v2')).toContainText(/Version 2.*What an editor adds: a better take and two pictures/)
+    await expect(page.getByTestId('version-on-screen')).toHaveText('Version 2')
+    await expect(page.getByTestId('time')).toContainText('/ 0:09')
+    await page.getByTestId('editor-continue').click()
+    await expect(page.getByTestId('planned-stage')).toBeVisible()
+    expect(await page.evaluate(() => window.reel.ai.active().then((p) => p.id))).toBe('claude-cli')
+    expect(JSON.parse(readFileSync(join(d.userData, 'settings.json'), 'utf8')).soundEffects).toBe(false)
   } finally {
     await app.close()
   }

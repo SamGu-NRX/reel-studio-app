@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { APP_DIR, BASE, dropFiles, launch, makeMedia, passFirstRun, passMacStage, passSample } from './helpers'
+import { APP_DIR, BASE, dropFiles, launch, makeMedia, passFirstRun, passSample } from './helpers'
 
 const media = makeMedia()
 function profile() {
@@ -41,9 +41,7 @@ for (const source of ['paste', 'open-file before ready', 'second-instance argv']
         await expect(page.getByTestId('get-started')).toBeVisible()
         expect(await page.evaluate(() => window.reel.projects.list())).toEqual([])
         await passSample(page)
-        await passMacStage(page)
-        await page.getByTestId('skip').click()
-        await page.getByTestId('share-no').click()
+        await page.getByTestId('not-now').click()
       } else await passFirstRun(page)
       if (source === 'paste') {
         // the app's stand-in clipboard under test (main/index.ts testClipboard): the system clipboard is never read or written
@@ -56,7 +54,8 @@ for (const source of ['paste', 'open-file before ready', 'second-instance argv']
       }
       // a file opened with Reel Studio starts a reel at once, like a drop or a paste, and opens it
       await expect(page.getByTestId('log-video')).toBeVisible({ timeout: 8000 })
-      const projects = await page.evaluate(() => window.reel.projects.list())
+      // (the first run's own new reel, still waiting for its video, is not this one)
+      const projects = (await page.evaluate(() => window.reel.projects.list())).filter((p) => !p.noVideo)
       expect(projects).toHaveLength(1)
       expect(projects[0].title).toBe('My first take')
     } finally {

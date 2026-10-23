@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch } from './helpers'
+import { BASE, launch, modelReady, openSettings, passFirstRun } from './helpers'
 
 function fresh(name: string) {
   const dir = mkdtempSync(join(BASE, `listening-${name}-`))
@@ -27,7 +27,7 @@ function cachedModel(dir: string): { env: Record<string, string>; files: Record<
   return { env: { HF_HUB_CACHE: join(dir, 'hf'), REELSTUDIO_TEST_SPEECH_PINS: pins }, files, snapshot }
 }
 
-/** The model is looked up the moment the first run starts; its line sits under every setup step. */
+/** The model is looked up the moment the first run starts; its line sits in the footer while it is on its way. */
 async function toStage(page: Page): Promise<void> {
   await page.getByTestId('get-started').click()
 }
@@ -45,8 +45,9 @@ test('a listening model already on this computer is used without a download; the
   const { app, page } = await launch({ REELSTUDIO_USER_DATA: d.userData, REELSTUDIO_MODELS_DIR: d.models, ...cache.env })
   try {
     await toStage(page)
-    await expect(line(page)).toContainText('Listening model ready')
-    await expect(line(page)).toContainText(`Found one already on this ${process.platform === 'darwin' ? 'Mac' : 'PC'}, so nothing to download.`)
+    await modelReady(page)
+    // nothing was downloaded, so nothing is said
+    await expect(line(page)).toHaveCount(0)
     for (const [n, b] of Object.entries(cache.files)) expect(readFileSync(join(d.models, 'small.en', n)).equals(b)).toBe(true)
     expect(existsSync(join(cache.snapshot, 'model.bin'))).toBe(true) // copied, never moved out of the cache
 
@@ -67,7 +68,8 @@ test('without one it downloads by itself with MB progress while setup goes on, a
     // the download never holds a step up
     await page.getByTestId('demo-skip').click()
     await page.getByTestId('demo-next').click()
-    await expect(line(page)).toContainText('Listening model ready', { timeout: 20_000 })
+    await expect(line(page)).toHaveCount(0, { timeout: 20_000 })
+    await modelReady(page)
     await expect.poll(savedCheck(d.userData), { timeout: 10_000 }).toMatchObject({ threads: 4 })
   } finally {
     await app.close()
@@ -86,16 +88,17 @@ test('without one it downloads by itself with MB progress while setup goes on, a
   }
 })
 
-test('a failed timing check keeps the usual thread count and says so, once', async () => {
+test('a failed timing check keeps the usual thread count, and Settings says so', async () => {
   const d = fresh('failed')
   const cache = cachedModel(d.dir)
   const { app, page } = await launch({ REELSTUDIO_USER_DATA: d.userData, REELSTUDIO_MODELS_DIR: d.models, ...cache.env, FAKE_ENGINE_FAIL: 'speech-check' })
   try {
-    await toStage(page)
+    await passFirstRun(page)
+    await expect.poll(savedCheck(d.userData), { timeout: 10_000 }).toMatchObject({ threads: null }) // main's rule, and no second try on this computer
+    await openSettings(page)
     await expect(page.getByTestId('model-check-failed')).toHaveText(
-      "I couldn't work out the fastest settings for this computer, so the listening model uses its usual ones. Everything still works."
+      "Reel Studio couldn't work out the fastest settings for this computer, so the listening model uses its usual ones. Everything still works."
     )
-    expect(savedCheck(d.userData)()).toMatchObject({ threads: null }) // main's rule, and no second try on this computer
   } finally {
     await app.close()
   }
