@@ -1,6 +1,7 @@
 """`probe <file>`: what is this file? Duration, fps, size, rotation, audio, and a kind guess."""
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
 from pathlib import Path
@@ -70,11 +71,24 @@ def probe(path: Path, quick: bool = False) -> dict:
               and not (s.get("disposition") or {}).get("attached_pic")), None)
     a = next((s for s in streams if s.get("codec_type") == "audio"), None)
     duration = float(fmt.get("duration") or 0.0)
+    captured = None
+    for tags in (fmt.get("tags") or {}, (v or {}).get("tags") or {}):
+        for key in ("com.apple.quicktime.creationdate", "creation_time"):
+            try:
+                value = dt.datetime.fromisoformat(str(tags.get(key, "")).replace("Z", "+00:00"))
+                if value.tzinfo is not None:
+                    captured = value.astimezone(dt.timezone.utc).isoformat()
+                    break
+            except ValueError:
+                pass
+        if captured:
+            break
     out = {
         "path": str(path),
         "duration": round(duration, 3),
         "hasVideo": v is not None,
         "hasAudio": a is not None,
+        "capturedAt": captured,
         "fps": _fps(v) if v else 0.0,
         "width": int(v.get("width") or 0) if v else 0,
         "height": int(v.get("height") or 0) if v else 0,

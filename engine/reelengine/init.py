@@ -31,6 +31,10 @@ def run(project_dir: Path, title: str, files: list, slug: str = None) -> dict:
                               f"\"{f.name}\" is too short to make a video from.")
         infos.append((f, info))
 
+    # Partial dates cannot order the undated files, so preserve the whole drop order in that case.
+    if all(info.get("capturedAt") for _, info in infos):
+        infos.sort(key=lambda entry: entry[1]["capturedAt"])
+
     proj = projmod.new_project(title, slug=slug or projmod.slugify(project_dir.name, projmod.slugify(title)))
     media = project_dir / "media"
     (project_dir / "work").mkdir(parents=True, exist_ok=True)
@@ -43,7 +47,8 @@ def run(project_dir: Path, title: str, files: list, slug: str = None) -> dict:
             "id": f"s{i}", "path": f"media/{dst.name}", "originalName": f.name,
             "duration": info["duration"], "fps": info["fps"] or 30.0,
             "width": info["width"], "height": info["height"], "rotation": info["rotation"],
-            "hdr": bool(info.get("hdr")),
+            "hdr": bool(info.get("hdr")), "hasAudio": info["hasAudio"],
+            **({"capturedAt": info["capturedAt"]} if info.get("capturedAt") else {}),
         })
     proj["cover"]["source"] = "s1"
     projmod.save(project_dir, proj)

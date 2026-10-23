@@ -4,9 +4,9 @@ import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import {
-  Analysis, Broll, LIBRARY_FOLDERS, LibraryKind, MusicLevel, Project, Transcript, TREATMENTS, Word, WordAnchor,
+  Analysis, Broll, CutItem, ClipItem, LIBRARY_FOLDERS, LibraryKind, MusicLevel, Project, Transcript, TREATMENTS, Word, WordAnchor,
   anchorText, anchorWords, approxDuration, approxOutputTimes, keptWords, loadAnalysis, loadProject, loadTranscript,
-  nextBrollId, normalizeKeep, saveProject, validateProject, wordIndex, anchorProblem,
+  nextBrollId, clipProblem, normalizeKeep, saveProject, validateProject, wordIndex, anchorProblem,
 } from './project';
 import { S, JSONSchema, validate, fillNulls } from './schema';
 import { ANIMATION_IDS, ENGINE_FED, TimedWord, alignWordTimes, animationParamsSchema, cleanParams, itemTimes, phraseTime, templateSpec } from './animations';
@@ -102,7 +102,7 @@ function checkAnchor(t: Transcript, a: WordAnchor, what = 'anchor'): void {
   if (pr) throw new ToolInputError(`${what}: ${pr}`);
 }
 
-const quote = (t: Transcript, a: WordAnchor, max = 6) => {
+const quote = (t: Transcript, a: CutItem, max = 6) => {
   const words = asData(anchorText(t, a)).split(' ');           // spoken text is data
   return words.length > max ? `${words.slice(0, max).join(' ')}...` : words.join(' ');
 };
@@ -218,14 +218,14 @@ function formatTranscript(t: Transcript, p: Project, a: Analysis | null): string
   return out;
 }
 
-function cutSummary(t: Transcript, p: Project): unknown {
-  const times = approxOutputTimes(t, p.cut.keep, p.cut.gapCap);
+function cutSummary(t: Transcript, p: Project) {
   return {
     gapCap: p.cut.gapCap,
     approxDurationSec: approxDuration(t, p.cut.keep, p.cut.gapCap),
     keptWords: keptWords(t, p.cut.keep).length,
     totalWords: t.words.length,
-    keep: p.cut.keep.map((a) => ({ ...a, outStartSec: times.get(a.from)?.s ?? null, text: quote(t, a, 10) })),
+    keep: p.cut.keep.map((a, i) => ({ ...a, kind: 'clip' in a ? 'clip' : 'words',
+      seconds: approxDuration(t, [a], p.cut.gapCap), outStartSec: approxDuration(t, p.cut.keep.slice(0, i), p.cut.gapCap), text: quote(t, a, 10) })),
   };
 }
 
@@ -287,7 +287,8 @@ export function faceOnlyStretches(p: Project, t: Transcript, min = 4.5, countZoo
 
 /** B-roll moments in the edit, the opening hook title not counted. */
 export function brollMoments(p: Project): number {
-  const first = p.cut.keep[0]?.from;
+  const firstItem = p.cut.keep[0];
+  const first = firstItem && 'from' in firstItem ? firstItem.from : undefined;
   return p.broll.filter((b) => !(b.treatment === 'text-pop' && b.anchor.from === first)).length;
 }
 
@@ -734,6 +735,64 @@ const tools: ToolDef[] = [
     async run(ctx) {
       const { p, t } = await load(ctx);
       return { content: `${formatTranscript(t, p, ctx.analysis ?? null)}\n\nCURRENT CUT\n${JSON.stringify(cutSummary(t, p))}` };
+    },
+  },
+  {
+    name: 'list_sources',
+    description: 'Read all sources in intake order: id, duration, hasVoice from recognized speech, a short transcript head, and three source-time keyframe thumbnails each. These are the available clips, not the output timeline.',
+    parameters: S.obj({}),
+    async run(ctx) {
+      const { p, t } = await load(ctx);
+      const images: ImagePart[] = [];
+      const sources = [];
+      for (const source of p.sources) {
+        const file = safeResolve(ctx.projectDir, ctx.host.reelStudioRoot(), source.path, 'read');
+        const duration = source.duration ?? 0;
+        if (!Number.isFinite(duration) || duration <= 0) throw new ToolInputError(`source ${source.id} has no valid duration`);
+        const times = [0.1, 0.5, 0.9].map((fraction) => Math.round(duration * fraction * 1000) / 1000);
+        const result = await engine(ctx, 'frames', ['--file', file.abs, '--times', times.join(',')]);
+        const keyframes = [];
+        for (const [i, frame] of result.frames.entries()) {
+          const thumbnail = safeResolve(ctx.projectDir, ctx.host.reelStudioRoot(), frame.file ?? frame.path, 'read');
+          const buffer = await fsp.readFile(thumbnail.abs);
+          const imageIndex = images.length;
+          images.push({ type: 'image', mime: 'image/png', base64: buffer.toString('base64'), path: thumbnail.abs });
+          keyframes.push({ at: frame.t ?? frame.time ?? times[i], thumbnail: thumbnail.ref, imageIndex });
+        }
+        const words = t.words.filter((w) => w.source === source.id);
+        sources.push({ id: source.id, duration, hasVoice: words.length > 0,
+          transcriptHead: asData(words.slice(0, 30).map((w) => w.w).join(' ')), keyframes });
+      }
+      return { content: { sources, note: ctx.supportsImages ? 'Images are attached in source order, three per source.' : 'This model cannot see images; use the transcript and source metadata.' },
+        images: ctx.supportsImages ? images : undefined };
+    },
+  },
+  {
+    name: 'set_clips',
+    description: 'Replace the ordered timeline with source-time clips {source,in,out} and inclusive word ranges {from,to}. Mix both shapes in items. Clips keep their silence; use word ranges to cut speech on words. Bounds must be inside the source and include at least one frame.',
+    parameters: S.obj({ items: S.arr({ anyOf: [S.obj({ source: S.str('source id from list_sources'), in: S.num('source seconds, inclusive', { minimum: 0 }), out: S.num('source seconds, exclusive', { minimum: 0 }) }), ANCHOR] }, 'items in playback order', { minItems: 1 }) }),
+    async run(ctx, args: { items: (Omit<ClipItem, 'clip'> | WordAnchor)[] }) {
+      const { p, t } = await load(ctx);
+      const ranges = args.items.filter((item): item is WordAnchor => 'from' in item);
+      const { problems } = normalizeKeep(t, ranges);
+      if (problems.length) throw new ToolInputError(problems.join('; '));
+      const previous = p.cut.keep.filter((item): item is ClipItem => 'clip' in item);
+      let next = Math.max(0, ...previous.map((item) => Number(item.clip.slice(1))));
+      const used = new Set<string>();
+      const keep: CutItem[] = args.items.map((item, i) => {
+        if ('from' in item) {
+          if (!anchorWords(t, item).some((word) => word.e > word.s)) throw new ToolInputError(`items[${i}] has zero length`);
+          return { from: item.from, to: item.to };
+        }
+        const problem = clipProblem(p.sources, item);
+        if (problem) throw new ToolInputError(`items[${i}]: ${problem}`);
+        const existing = previous.find((clip) => !used.has(clip.clip) && clip.source === item.source && clip.in === item.in && clip.out === item.out);
+        const clip = existing?.clip ?? `c${++next}`;
+        used.add(clip);
+        return { clip, source: item.source, in: item.in, out: item.out };
+      });
+      await mutate(ctx, 'cut', (project) => { project.cut.keep = keep; });
+      return { content: { ok: true, ...cutSummary(t, ctx.project!) }, summary: 'Put your clips in story order' };
     },
   },
   {
@@ -1232,10 +1291,10 @@ const tools: ToolDef[] = [
         return { id: b.id, problem: b.remake, covers: b.clash ?? [],
           fix: item ? { tool: 'update_broll', args: { id: b.id, anchor: { from: item.anchor.from, to: item.anchor.to } } } : null };
       });
-      const bare = ctx.transcript ? faceOnlyStretches(p, ctx.transcript) : [];
+      const bare = p.sources.length < 2 && ctx.transcript ? faceOnlyStretches(p, ctx.transcript) : [];
       if (bare.length) notes.push(`${bare.length} stretch${bare.length > 1 ? 'es' : ''} of plain face over 4 s (see faceOnly): the screen should change every 3 to 5 s. Fill each now: first a picture, an animation or a label for something said there (search for it in this same reply); a zoom on a whole line in its MIDDLE only where nothing there can be shown (set_zoom replaces the list: send every zoom).`);
       // pictures clumped in one half: a long run held up by zooms alone reads as unedited
-      const noPicture = ctx.transcript ? faceOnlyStretches(p, ctx.transcript, 10, false) : [];
+      const noPicture = p.sources.length < 2 && ctx.transcript ? faceOnlyStretches(p, ctx.transcript, 10, false) : [];
       if (noPicture.length) notes.push(`${noPicture.length === 1 ? 'One stretch has' : `${noPicture.length} stretches have`} no picture for over 10 s (see noPicture; zooms alone): the pictures are clumped. Put a picture or an animation on something said in the middle of each (a word card does not count: a real thing, place, number, list or quote).`);
       const perMin = (p.zooms.length * 60) / Math.max(20, typeof r.duration === 'number' ? r.duration : 60);
       if (perMin > 10) notes.push(`${p.zooms.length} zooms is about ${Math.round(perMin)} a minute, which reads as constant: keep 4 to 8 a minute, on punchlines and in the middle of bare stretches (set_zoom replaces the list).`);
@@ -1246,7 +1305,7 @@ const tools: ToolDef[] = [
       const names = ctx.transcript ? unshownNames(p, ctx.transcript) : [];
       if (names.length) notes.push(`Named things the viewer hears but never sees (see namedNotShown). A brand, app, product, company or show: search_images "<name> logo" and place it on its words; a place or event: "<name> photo". Skip people the viewer would not know and anything that is not really a name.`);
       const moments = brollMoments(p);
-      const want = Math.round((typeof r.duration === 'number' ? r.duration : 60) / 6);
+      const want = p.sources.length > 1 ? 0 : Math.round((typeof r.duration === 'number' ? r.duration : 60) / 6);
       if (moments < Math.round(want * 0.75)) notes.push(`Only ${moments} b-roll moments (pictures, animations, labels; the hook title not counted) for a ${Math.round(r.duration ?? 60)} s video: hand edits carry about ${want}. Before finishing, add pictures or animations for the named things, places, numbers and examples still bare: search_images for them now, all in one reply.`);
       if (remakeAnimations.length) notes.push(`Animation${remakeAnimations.length > 1 ? 's' : ''} ${remakeAnimations.map((a: any) => a.id).join(', ')} now cover${remakeAnimations.length > 1 ? '' : 's'} the face or captions because the edit changed after ${remakeAnimations.length > 1 ? 'they were' : 'it was'} made. Remake each one now with its "fix" call (update_broll with the same anchor re-renders it into the free space), then render_draft again.`);
       return { content: { ok: true, version: info.version, duration: r.duration ?? null, verify: r.verify ?? null, warnings: r.warnings ?? null,

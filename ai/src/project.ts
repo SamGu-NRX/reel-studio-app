@@ -11,9 +11,13 @@ export interface Source {
   id: string; path: string; duration?: number; fps?: number; width?: number; height?: number; rotation?: number;
   /** the take is mirrored (front camera: on-screen text reads backwards); the engine flips the picture. Absent = false */
   mirror?: boolean;
+  hasAudio?: boolean;
+  capturedAt?: string;
   [k: string]: unknown;
 }
 export interface WordAnchor { from: string; to: string }
+export interface ClipItem { clip: string; source: string; in: number; out: number }
+export type CutItem = WordAnchor | ClipItem;
 export interface Word { id: string; source: string; s: number; e: number; w: string; [k: string]: unknown }
 export interface Transcript { words: Word[]; language?: string; [k: string]: unknown }
 
@@ -60,7 +64,7 @@ export interface Project {
   format: Format;
   sources: Source[];
   transcript: { file: string; language?: string };
-  cut: { keep: WordAnchor[]; gapCap: number; minSaving?: number; [k: string]: unknown };
+  cut: { keep: CutItem[]; gapCap: number; minSaving?: number; [k: string]: unknown };
   captions: Captions;
   music: Music;
   broll: Broll[];
@@ -144,7 +148,15 @@ export function validateProject(p: unknown, transcript?: Transcript): string[] {
       const problem = anchorProblem(idx, a);
       if (problem) out.push(`${where}: ${problem}`);
     };
-    q.cut.keep.forEach((a: any, i: number) => check(a, `cut.keep[${i}]`));
+    const clipIds = new Set<string>();
+    q.cut.keep.forEach((a: CutItem, i: number) => {
+      if ('clip' in a) {
+        const problem = clipProblem(q.sources, a);
+        if (problem) out.push(`cut.keep[${i}]: ${problem}`);
+        if (!/^c[0-9]+$/.test(a.clip) || clipIds.has(a.clip)) out.push(`cut.keep[${i}]: invalid or duplicate clip id`);
+        clipIds.add(a.clip);
+      } else check(a, `cut.keep[${i}]`);
+    });
     q.broll.forEach((b: any, i: number) => check(b.anchor, `broll[${i}] (${b.id})`));
     q.zooms.forEach((z: any, i: number) => check(z.anchor, `zooms[${i}]`));
     (q.music?.automation ?? []).forEach((m: any, i: number) => check({ from: m.fromWord, to: m.toWord }, `music.automation[${i}]`));
@@ -212,7 +224,12 @@ export function transcriptPath(projectDir: string, _p?: Project): string {
 }
 
 export async function loadTranscript(projectDir: string, p: Project): Promise<Transcript> {
-  const t = await readJson<Transcript>(transcriptPath(projectDir, p));
+  let t: Transcript;
+  try { t = await readJson<Transcript>(transcriptPath(projectDir, p)); }
+  catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT' && p.cut.keep.every((item) => 'clip' in item)) return { words: [] };
+    throw err;
+  }
   if (!t || !Array.isArray(t.words)) throw new ProjectError('transcript.json has no words array');
   return t;
 }
@@ -285,23 +302,24 @@ export function anchorProblem(idx: WordIndex, a: any): string | null {
 }
 
 /** Words covered by an inclusive anchor (transcript order). */
-export function anchorWords(t: Transcript, a: WordAnchor): Word[] {
+export function anchorWords(t: Transcript, a: CutItem): Word[] {
+  if ('clip' in a) return t.words.filter((w) => w.source === a.source && w.s < a.out && w.e > a.in);
   const idx = wordIndex(t);
   const i = idx.byId.get(a.from); const j = idx.byId.get(a.to);
   if (i === undefined || j === undefined || j < i) return [];
   return idx.words.slice(i, j + 1);
 }
 
-export function anchorText(t: Transcript, a: WordAnchor): string {
+export function anchorText(t: Transcript, a: CutItem): string {
   return anchorWords(t, a).map((w) => w.w.trim()).join(' ');
 }
 
 /** Kept words in output order. */
-export function keptWords(t: Transcript, keep: WordAnchor[]): Word[] {
+export function keptWords(t: Transcript, keep: CutItem[]): Word[] {
   return keep.flatMap((a) => anchorWords(t, a));
 }
 
-export function isKept(t: Transcript, keep: WordAnchor[], wordId: string): boolean {
+export function isKept(t: Transcript, keep: CutItem[], wordId: string): boolean {
   return keep.some((a) => anchorWords(t, a).some((w) => w.id === wordId));
 }
 
@@ -327,11 +345,19 @@ export function findPhrase(t: Transcript, phrase: string, keep?: WordAnchor[]): 
  * concatenate kept ranges, inter-word gaps capped at gapCap. The engine is authoritative;
  * this is used for planning (look_at_frames times, summaries) only.
  */
-export function approxOutputTimes(t: Transcript, keep: WordAnchor[], gapCap: number): Map<string, { s: number; e: number }> {
+export function approxOutputTimes(t: Transcript, keep: CutItem[], gapCap: number): Map<string, { s: number; e: number }> {
   const out = new Map<string, { s: number; e: number }>();
   let clock = 0;
   let prev: Word | null = null;
   for (const a of keep) {
+    if ('clip' in a) {
+      for (const w of anchorWords(t, a)) {
+        if (!out.has(w.id)) out.set(w.id, { s: round(clock + Math.max(0, w.s - a.in)), e: round(clock + Math.min(a.out, w.e) - a.in) });
+      }
+      clock += a.out - a.in;
+      prev = null;
+      continue;
+    }
     const words = anchorWords(t, a);
     words.forEach((w, k) => {
       const contiguous = k > 0 && prev && prev.source === w.source;
@@ -346,13 +372,43 @@ export function approxOutputTimes(t: Transcript, keep: WordAnchor[], gapCap: num
   return out;
 }
 
-export function approxDuration(t: Transcript, keep: WordAnchor[], gapCap: number): number {
-  let d = 0;
-  for (const v of approxOutputTimes(t, keep, gapCap).values()) d = Math.max(d, v.e);
-  return round(d);
+export function approxDuration(t: Transcript, keep: CutItem[], gapCap: number): number {
+  let duration = 0;
+  let words: WordAnchor[] = [];
+  const flush = () => {
+    let end = 0;
+    for (const value of approxOutputTimes(t, words, gapCap).values()) end = Math.max(end, value.e);
+    duration += end;
+    words = [];
+  };
+  for (const item of keep) {
+    if ('clip' in item) { flush(); duration += item.out - item.in; }
+    else words.push(item);
+  }
+  flush();
+  return round(duration);
 }
 
 const round = (x: number) => Math.round(x * 1000) / 1000;
+
+// Python round() chooses the even frame at an exact half-frame, unlike Math.round().
+function sourceFrame(seconds: number, fps: number): number {
+  const frame = seconds * fps;
+  const lower = Math.floor(frame);
+  return frame - lower === 0.5 ? lower + lower % 2 : Math.round(frame);
+}
+
+/** Reject bounds the engine cannot turn into at least one source frame. */
+export function clipProblem(sources: Source[], item: Pick<ClipItem, 'source' | 'in' | 'out'>): string | null {
+  const source = sources.find((s) => s.id === item.source);
+  if (!source) return `unknown source ${item.source}`;
+  if (!Number.isFinite(source.duration) || !source.duration || !Number.isFinite(item.in) || !Number.isFinite(item.out)
+      || item.in < 0 || item.out <= item.in || item.out > source.duration) return 'clip in/out must be inside the source and have positive length';
+  const fps = source.fps || 30;
+  const end = Math.min(sourceFrame(item.out, fps), Math.floor(source.duration * fps + 1e-6));
+  if (end - sourceFrame(item.in, fps) < 1) return 'clip must contain at least one source frame';
+  return null;
+}
 
 /** Merge adjacent/overlapping ranges in transcript order is NOT done: keep is output order. Normalize = drop empties. */
 export function normalizeKeep(t: Transcript, keep: WordAnchor[]): { keep: WordAnchor[]; problems: string[] } {

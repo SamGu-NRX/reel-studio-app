@@ -269,3 +269,35 @@ def test_old_word_range_project_renders_unchanged(tmp_path, media):
     # Existing gap/lead/tail behavior on main, measured on the source frame grid.
     assert result["duration"] == pytest.approx(1.8)
     assert_signals(result["file"], [("s1", 0.3, 1.266667), ("s1", 3.033333, 3.866667)])
+
+
+def test_batch_intake_orders_capture_times_and_transcribes_only_audio(tmp_path, media, monkeypatch):
+    files = [tmp_path / name for name in ("late.mov", "silent.mov", "early.mov")]
+    for file, original, captured in zip(files, (media["s1"], media["silent"], media["s2"]),
+                                        ("2026-10-22T12:00:03Z", "2026-10-22T12:00:02Z", "2026-10-22T12:00:01Z")):
+        subprocess.run([tools.ffmpeg(), "-y", "-v", "error", "-i", str(original), "-c", "copy",
+                        "-metadata", f"creation_time={captured}", str(file)], check=True, capture_output=True)
+    pdir = tmp_path / "batch"
+    init.run(pdir, "Three clips", files)
+    p = project.load(pdir)
+    assert [s["originalName"] for s in p["sources"]] == ["early.mov", "silent.mov", "late.mov"]
+    assert [s["hasAudio"] for s in p["sources"]] == [True, False, True]
+    assert [s["id"] for s in p["sources"]] == ["s1", "s2", "s3"]
+
+    def recognize(model, wav, language, prompt, dur, p0, p1, hotwords=None):
+        return ([{"s": 0.1, "e": 0.4, "w": "Goal", "p": 0.99}],
+                [{"s": 0.1, "e": 0.4, "text": "Goal", "n": 1}], "en")
+
+    monkeypatch.setattr(transcribe, "require_model", lambda name: tmp_path)
+    monkeypatch.setattr(transcribe, "load_model", lambda name, prefer=None: (object(), "cpu", "int8"))
+    monkeypatch.setattr(transcribe, "_transcribe_one", recognize)
+    monkeypatch.setenv("REELENGINE_HINTS", "0")
+    monkeypatch.setenv("REELENGINE_VOCAB", "0")
+    transcribe.run(pdir)
+    assert [w["source"] for w in project.load_transcript(pdir, project.load(pdir))["words"]] == ["s1", "s3"]
+    assert not transcribe.audio_path(pdir, "s2").exists()
+
+    # A missing capture date preserves the complete drop order instead of inventing a timestamp.
+    unsorted = tmp_path / "drop-order"
+    init.run(unsorted, "Drop order", [files[0], media["silent"], files[2]])
+    assert [s["originalName"] for s in project.load(unsorted)["sources"]] == ["late.mov", "silent.mp4", "early.mov"]

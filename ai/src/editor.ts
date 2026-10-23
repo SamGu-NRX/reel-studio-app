@@ -56,19 +56,25 @@ export async function ensureAnalyzed(deps: EditorDeps, projectDir: string, onEve
   const p = await loadProject(projectDir);
   const mediaSec = mediaSeconds(p);
   if (!hasTranscript(projectDir, p)) {
+    if (p.sources.length > 1 && p.sources.every((source) => source.hasAudio === false)) return;
     onEvent({ type: 'status', message: 'Listening to your video', pct: 2, phase: 'listen' });
     // fails soft: an engine without --faces-only, or a failed detector, just leaves it to analyze
     const faces = deps.host.runEngine('analyze', engineArgs(projectDir, ['--faces-only']), undefined, signal).catch(() => null);
     try {
       await deps.host.runEngine('transcribe', engineArgs(projectDir), progress(onEvent, 'listen'), signal);
+    } catch (error) {
+      // Several clips can form a reel even when their audio contains no recognized speech.
+      if (signal?.aborted || p.sources.length < 2 || !error || typeof error !== 'object' || !('code' in error) || error.code !== 'NO_SPEECH') throw error;
+      await writeFileAtomic(path.join(projectDir, 'work/transcript.json'), JSON.stringify({ words: [] }));
     } finally { await faces; }
+    if (p.sources.length > 1) return;
     onEvent({ type: 'status', message: 'Finding your retakes', pct: 6, phase: 'analyze' });
     const a = await deps.host.runEngine('analyze', engineArgs(projectDir), progress(onEvent, 'analyze'), signal);
     await cacheAnalysis(projectDir, a);
   } else {
     const fs = await import('node:fs');
     const has = ['work/analysis.json', 'work/analyze.json'].some((f) => fs.existsSync(path.join(projectDir, f)));
-    if (!has) {
+    if (!has && p.sources.length < 2) {
       onEvent({ type: 'status', message: 'Finding your retakes', pct: 6 });
       try {
         const a = await deps.host.runEngine('analyze', engineArgs(projectDir), progress(onEvent), signal);
@@ -242,10 +248,10 @@ export async function firstEdit(deps: EditorDeps, provider: ModelProvider | null
   if (!provider) return deterministicEdit(deps, projectDir, onEvent, signal);
   const ctx = newCtx(deps, projectDir, provider, onEvent, signal, 3);
   const { p } = await load(ctx);
-  if (deps.firstLook !== false) {
+  if (deps.firstLook !== false && p.sources.length < 2) {
     ctx.renderGate = firstLook(deps, ctx, onEvent);
   }
-  const task = `${deps.prompts.render('firstEdit')}\n\nVideo title: ${p.title}`;
+  const task = `${deps.prompts.render(p.sources.length > 1 ? 'multiClipEdit' : 'firstEdit')}\n\nVideo title: ${p.title}`;
   let run: Pick<RunAgentResult, 'finished' | 'stoppedBy'> = { finished: null, stoppedBy: null };
   try {
     run = await runAgent({ provider, system: await systemPrompt(deps), task, ctx, onEvent, signal, maxSteps: deps.maxSteps ?? 45, tokenBudget: deps.tokenBudget, preload: ['get_project', 'get_transcript'] });
@@ -447,9 +453,16 @@ export async function pickTakes(transcript: PickTakesInput, provider: ModelProvi
 export async function deterministicEdit(deps: EditorDeps, projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, why?: string): Promise<EditResult> {
   const changed: string[] = [];
   onEvent({ type: 'status', message: 'Cutting out the pauses', pct: 20 });
-  await deps.host.runEngine('autocut', engineArgs(projectDir), progress(onEvent), signal);
+  let p = await loadProject(projectDir);
+  if (p.sources.length > 1) {
+    if (!p.cut.keep.length) {
+      const ctx = newCtx(deps, projectDir, null, onEvent, signal);
+      const result = await executeTool(ctx, 'set_clips', { items: p.sources.map((source) => ({ source: source.id, in: 0, out: source.duration })) });
+      if (result.isError) throw new Error(result.content);
+    }
+  } else await deps.host.runEngine('autocut', engineArgs(projectDir), progress(onEvent), signal);
   changed.push('cut');
-  const p: Project = await loadProject(projectDir);
+  p = await loadProject(projectDir);
   if (!p.captions.enabled) { p.captions.enabled = true; changed.push('captions'); }
   let song: string | null = p.music.track;
   if (!song) {
@@ -468,7 +481,7 @@ export async function deterministicEdit(deps: EditorDeps, projectDir: string, on
   const version = Number(r?.version ?? (await loadProject(projectDir)).version ?? 1);
   onEvent({ type: 'render', version, draft: false, ...(r?.file ? { file: String(r.file) } : {}) });
   const songName = song ? path.basename(song, path.extname(song)) : null;
-  const did = `I cut out the pauses and added captions${songName ? `, with your song "${songName}" underneath` : ''}.`;
+  const did = `${p.sources.length > 1 ? 'I kept your clips in order and captioned any speech' : 'I cut out the pauses and added captions'}${songName ? `, with your song "${songName}" underneath` : ''}.`;
   const summary = why
     ? `${why} So I made a simple version: ${did[0].toLowerCase()}${did.slice(1)}`
     : `${did} Connect ChatGPT to let me pick your best takes and add pictures.`;

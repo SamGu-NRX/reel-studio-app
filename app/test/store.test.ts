@@ -112,6 +112,19 @@ describe('cut ranges', () => {
     kept.add('w6') // a lone word comes back right after the nearest earlier kept word (w4)
     expect(rangesKeepingOrder(w, keep, kept).map((r) => r.from)).toEqual(['w8', 'w10', 'w0', 'w6'])
   })
+  it('refuses manual word cuts on a mixed timeline instead of dropping clip items', () => {
+    const keep = [{ from: 'w0', to: 'w2' }, { clip: 'c1', source: 's2', in: 0, out: 2 }]
+    let refusal: unknown
+    try {
+      rangesKeepingOrder(words(3), keep, new Set(['w0', 'w2']))
+    } catch (error) {
+      refusal = error
+    }
+    expect(refusal).toMatchObject({ code: 'CLIP_CUT', userMessage: expect.stringMatching(/clip/i) })
+    expect(keep).toHaveLength(2)
+    expect(keep[1].clip).toBe('c1')
+  })
+
   it('ignores ranges that point at unknown words', () => {
     expect(keptIds(words(3), [{ from: 'w9', to: 'w10' }])).toEqual([])
   })
