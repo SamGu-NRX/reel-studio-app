@@ -26,12 +26,12 @@
 .fr .reels img:nth-child(odd) { margin-top: 20px; }
 .fr .w-foot { margin-top: 14px; font-size: var(--fs-base); color: var(--ink-3); }
 @keyframes fr-rise { from { opacity: 0; transform: translateY(10px); } }
-.fr-welcome > * { animation: fr-rise 420ms cubic-bezier(.2, .8, .2, 1) both; }
-.fr-welcome h1 { animation-delay: 60ms; }
-.fr-welcome .w-lead { animation-delay: 120ms; }
-.fr-welcome .reels { animation-delay: 180ms; }
-.fr-welcome .btn { animation-delay: 240ms; }
-.fr-welcome .w-foot { animation-delay: 300ms; }
+.fr-welcome > * { animation: fr-rise 220ms cubic-bezier(.2, .8, .2, 1) both; }
+.fr-welcome h1 { animation-delay: 50ms; }
+.fr-welcome .w-lead { animation-delay: 100ms; }
+.fr-welcome .reels { animation-delay: 150ms; }
+.fr-welcome .btn { animation-delay: 200ms; }
+.fr-welcome .w-foot { animation-delay: 250ms; }
 
 /* the middle reel on its way into the player (FirstRun.tsx fly): the player's size and corners, scaled */
 .fr-flyer { position: fixed; z-index: 50; border-radius: 6.5% / 3.66%; overflow: hidden; pointer-events: none; }
@@ -60,8 +60,9 @@
 @media (hover: hover) and (pointer: fine) { .fr-snd:hover { background: var(--wash); color: var(--ink); } }
 
 /* the player: one video, the still that covers a source change, and what the sample draws over the picture */
-.fr-stage .phone { transition: transform 160ms cubic-bezier(.2, .8, .2, 1); }
-.fr-stage .phone.fr-held { transform: scale(.985); }
+/* pressed slowly enough to see, let go at once */
+.fr-stage .phone { transition: transform 100ms cubic-bezier(.2, .8, .2, 1); }
+.fr-stage .phone.fr-held { transform: scale(.985); transition-duration: 160ms; }
 .fr-stage.leaving .phone { transform: scale(.97); transition-duration: 200ms; }
 .fr-landing .fr-v { visibility: hidden; }
 .fr-still { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; pointer-events: none; }
@@ -74,15 +75,15 @@
 }
 .fr-subs span { display: inline-block; }
 .fr-subs em, .fr-cover .cover-t em { font-style: normal; background: var(--marker); color: #111; -webkit-text-stroke: 0; padding: 0 1.2cqw; border-radius: 1.2cqw; text-shadow: none; }
-.fr-tag { z-index: 2; opacity: 0; transition: opacity 160ms ease; }
+.fr-tag { z-index: 2; opacity: 0; transition: opacity 160ms cubic-bezier(.2, .8, .2, 1); }
 .fr-tag.show { opacity: 1; }
-.fr-scrim { position: absolute; inset: 0; z-index: 2; background: rgba(10, 12, 11, .55); opacity: 0; pointer-events: none; transition: opacity 220ms ease; }
+.fr-scrim { position: absolute; inset: 0; z-index: 2; background: rgba(10, 12, 11, .55); opacity: 0; pointer-events: none; transition: opacity 200ms cubic-bezier(.2, .8, .2, 1); }
 .fr-scrim.show { opacity: 1; }
 /* three frames, centred: each 26% of the picture wide, 4% apart (demo.ts pickCover grows the cover from the third) */
 .fr-cands { position: absolute; left: 7%; width: 86%; top: 37%; z-index: 2; display: flex; justify-content: space-between; pointer-events: none; }
 .fr-cands img {
   width: 30.2326%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 2.4cqw; opacity: 0;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, .25), 0 8px 20px rgba(0, 0, 0, .35); transition: opacity 200ms ease, transform 220ms cubic-bezier(.2, .8, .2, 1);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .25), 0 8px 20px rgba(0, 0, 0, .35); transition: opacity 200ms cubic-bezier(.2, .8, .2, 1), transform 220ms cubic-bezier(.2, .8, .2, 1);
 }
 .fr-cands.show img { opacity: 1; }
 .fr-cands.picked img:not([data-pick]) { opacity: .3; }
@@ -95,11 +96,12 @@
   -webkit-text-stroke: .6cqw #000; paint-order: stroke fill; text-shadow: 0 .6cqw 2cqw rgba(0, 0, 0, .3);
 }
 .fr-hold { position: absolute; inset: 0; z-index: 3; border: 0; padding: 0; background: transparent; border-radius: inherit; cursor: pointer; touch-action: none; user-select: none; }
-.fr-hold:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+/* inside the picture: the screen clips anything outside it */
+.fr-hold:focus-visible { outline: 3px solid #fff; outline-offset: -6px; box-shadow: inset 0 0 0 9px rgba(0, 0, 0, .35); }
 
 .fr-hint {
   flex: 1; min-width: 0; text-align: center; font-size: var(--fs-base); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  opacity: 0; transition: opacity 200ms ease;
+  opacity: 0; transition: opacity 200ms cubic-bezier(.2, .8, .2, 1);
 }
 .fr-hint.show { opacity: 1; }
 
@@ -115,7 +117,7 @@
 .fr-words .fr-seg.gone, .fr-words .tk.pic.gone { display: none; }
 .fr-words .tk {
   display: inline-block; position: relative; margin: 0 -2px; padding: 0 2px; border-radius: 4px; opacity: 0; transform: translateY(3px);
-  transition: opacity 200ms cubic-bezier(.2, .8, .2, 1), transform 200ms cubic-bezier(.2, .8, .2, 1), background-color 120ms ease, color 160ms ease;
+  transition: opacity 200ms cubic-bezier(.2, .8, .2, 1), transform 200ms cubic-bezier(.2, .8, .2, 1);
 }
 .fr-words .tk.in { opacity: 1; transform: none; }
 .fr-words .tk.now { background: var(--marker); }
@@ -149,18 +151,20 @@
 .fr-dl .lk { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 
 /* Keyboard and reduced motion: things change state without moving; the sample still tells its whole story. */
-html.kb .fr-stage .phone { transition: none; }
+/* moving between steps from the keyboard never animates */
+html.kb :is(.fr-stage .phone, .fr-welcome.leaving, .fr-stage.leaving) { transition: none; }
+html.kb :is(.fr-stage.on .stage, .fr-stage.on .fr-col, .fr-pick, .shell.arriving > *) { animation: none; }
 @media (prefers-reduced-motion: reduce) {
   .fr-welcome > *, .fr-stage.on .fr-col, .fr-pick { animation-name: fr-in; }
   .fr-stage .phone, .fr-stage .phone.fr-held, .fr-stage.leaving .phone { transform: none; transition: none; }
-  .fr-words .tk { transform: none; transition: opacity 160ms ease, background-color 120ms ease, color 160ms ease; }
+  .fr-words .tk { transform: none; transition: opacity 160ms cubic-bezier(.2, .8, .2, 1); }
   .fr-words .tk::after { transition: none; }
-  .fr-cands img { transition: opacity 200ms ease; }
+  .fr-cands img { transition: opacity 200ms cubic-bezier(.2, .8, .2, 1); }
   .fr-cands.picked img[data-pick] { transform: none; }
 }
 
 /* ---------- your turn: the app's window arrives around a new reel (App.tsx) ---------- */
 @keyframes fr-side { from { opacity: 0; transform: translateX(-16px); } }
-.shell.arriving > .side { animation: fr-side 240ms cubic-bezier(.2, .8, .2, 1) both; }
-.shell.arriving > .titlebar, .shell.arriving > .main { animation: fr-in 240ms 60ms cubic-bezier(.2, .8, .2, 1) both; }
+.shell.arriving > .side { animation: fr-side 220ms cubic-bezier(.2, .8, .2, 1) both; }
+.shell.arriving > .titlebar, .shell.arriving > .main { animation: fr-in 220ms 60ms cubic-bezier(.2, .8, .2, 1) both; }
 @media (prefers-reduced-motion: reduce) { .shell.arriving > .side { animation-name: fr-in; } }

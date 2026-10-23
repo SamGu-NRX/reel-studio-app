@@ -40,17 +40,21 @@ const LEAVE_MS = 200
 
 export function FirstRun({ onDone, platform }: { onDone: () => Promise<void>; platform: string }) {
   const computer = platform === 'darwin' ? 'Mac' : 'PC'
-  const [start, setStart] = useState<{ from: DOMRect | null } | null>(null)
+  const [start, setStart] = useState<Start | null>(null)
   const [welcomeGone, setWelcomeGone] = useState(false)
   const center = useRef<HTMLImageElement>(null)
+  const player = useRef<HTMLVideoElement>(null)
   const stage = !!start
+  // Both places are read on the click, before anything moves: the stage has been laid out under the welcome.
+  const begin = () =>
+    setStart({ flight: canFly() && center.current ? { from: center.current.getBoundingClientRect(), to: player.current!.parentElement!.getBoundingClientRect() } : null })
 
   return (
     <div className="fr" data-testid="first-run">
       {/* mounted under the welcome, so Get started only starts things: its frame is not the stage's mount */}
-      <Stage computer={computer} start={start} onLanded={() => setWelcomeGone(true)} onDone={onDone} />
+      <Stage computer={computer} start={start} video={player} onLanded={() => setWelcomeGone(true)} onDone={onDone} />
       {!welcomeGone && (
-        <main className={`fr-welcome${stage ? ' leaving' : ''}${start?.from ? ' flying' : ''}`} aria-hidden={stage || undefined} inert={stage || undefined}>
+        <main className={`fr-welcome${stage ? ' leaving' : ''}${start?.flight ? ' flying' : ''}`} aria-hidden={stage || undefined} inert={stage || undefined}>
           <span className="w-logo" aria-hidden>
             <Logo size={36} />
           </span>
@@ -61,7 +65,7 @@ export function FirstRun({ onDone, platform }: { onDone: () => Promise<void>; pl
             <img src={posterUrl} alt="" ref={center} />
             <img src={kneadUrl} alt="" />
           </div>
-          <button className="btn primary big" onClick={() => setStart({ from: canFly() ? (center.current?.getBoundingClientRect() ?? null) : null })} data-testid="get-started">
+          <button className="btn primary big" onClick={begin} data-testid="get-started">
             Get started
           </button>
           <p className="w-foot">Free, no account. Your videos stay on this {computer}.</p>
@@ -93,34 +97,26 @@ async function fly(src: string, from: DOMRect, to: DOMRect): Promise<void> {
   const move = node.animate([{ transform: start }, { transform: 'none' }], { duration: 360, easing: EASE_IN_OUT, fill: 'forwards' })
   const gone = () => node.remove()
   return move.finished.then(
-    () => void node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'ease', fill: 'forwards' }).finished.then(gone, gone),
+    () => void node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }).finished.then(gone, gone),
     gone
   )
 }
 
-/** Where the player is, once PhoneFill has given it a width (its ResizeObserver runs after the first layout). */
-const placed = (el: Element) =>
-  new Promise<DOMRect>((done) => {
-    const ro = new ResizeObserver(() => {
-      const r = el.getBoundingClientRect()
-      if (!r.width) return
-      ro.disconnect()
-      done(r)
-    })
-    ro.observe(el)
-  })
-
+/** Get started: where the welcome's middle reel and the player were, or no flight (reduced motion, keyboard, narrow). */
+type Start = { flight: { from: DOMRect; to: DOMRect } | null }
 type Pane = 'sample' | 'editor'
 
 function Stage({
   computer,
   start,
+  video,
   onLanded,
   onDone
 }: {
   computer: string
-  /** null until Get started; then where the welcome's middle reel was, or null for no flight */
-  start: { from: DOMRect | null } | null
+  /** null until Get started */
+  start: Start | null
+  video: React.RefObject<HTMLVideoElement | null>
   onLanded: () => void
   onDone: () => Promise<void>
 }) {
@@ -149,7 +145,7 @@ function Stage({
   const [phoneView, setPhoneView] = usePhoneView()
   const [playhead] = useState(createPlayhead)
   const demo = useRef<Demo | null>(null)
-  const video = useRef<HTMLVideoElement>(null)
+  const next = useRef<HTMLButtonElement>(null)
   const still = useRef<HTMLCanvasElement>(null)
   const r = {
     subs: useRef<HTMLDivElement>(null),
@@ -163,7 +159,7 @@ function Stage({
   const pics = useRef<HTMLElement[]>([])
   const heading = useRef<HTMLHeadingElement>(null)
   const [landed, setLanded] = useState(false)
-  const landing = !!start?.from && !landed
+  const landing = !!start?.flight && !landed
 
   useEffect(() => followVideo(() => video.current, playhead), [playhead])
   // The cover, its candidates and the editor's pictures start hidden; decoded now, their first frame on screen is not a decode.
@@ -217,7 +213,7 @@ function Stage({
     setSoundOn(sound.on)
     let alive = true
     void (async () => {
-      if (start.from) await fly(posterUrl, start.from, await placed(video.current!.parentElement!))
+      if (start.flight) await fly(posterUrl, start.flight.from, start.flight.to)
       else if (!byKeyboard()) await new Promise((r) => window.setTimeout(r, LEAVE_MS)) // the welcome fades out first
       if (!alive) return
       setLanded(true)
@@ -232,6 +228,11 @@ function Stage({
     }
     // once, on Get started
   }, [start])
+
+  // Skip, which had focus, is gone once the sample is done: focus moves to Continue in its place
+  useEffect(() => {
+    if (finished && (document.activeElement === document.body || document.activeElement === null)) next.current?.focus({ preventScroll: true })
+  }, [finished])
 
   // a step change moves a screen reader to its heading
   useEffect(() => {
@@ -506,7 +507,7 @@ function Stage({
               </button>
             )}
             {pane === 'sample' && finished && (
-              <button className="btn primary" onClick={() => setPane('editor')} data-testid="demo-next">
+              <button ref={next} className="btn primary" onClick={() => setPane('editor')} data-testid="demo-next">
                 Continue
               </button>
             )}

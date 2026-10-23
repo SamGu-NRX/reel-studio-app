@@ -398,6 +398,8 @@ export class Demo {
     this.tag(null)
     this.view = 'simple'
     this.subsOn = true
+    // reduced motion: nothing plays by itself once the story is told; Play starts the reel
+    if (reduced()) this.setPaused(true)
     void this.show('simple', { at: 0 })
     this.finish()
   }
