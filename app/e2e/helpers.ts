@@ -122,7 +122,8 @@ export async function passFirstRun(page: Page): Promise<void> {
   if (await welcome.isVisible()) {
     await passSample(page)
     await modelReady(page)
-    await page.getByTestId('not-now').click()
+    // an editor already connected (the mock Claude, the practice editor) turns Not now into Continue
+    await page.getByTestId('not-now').or(page.getByTestId('editor-continue')).click()
     await expect(page.getByTestId('planned-stage')).toBeVisible()
     await page.getByTestId('nav-home').click()
     await page.evaluate(async () => {
