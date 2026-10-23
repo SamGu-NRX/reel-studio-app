@@ -59,7 +59,10 @@ export function validateIpcArgs(channel: string, args: unknown[]): void {
     case 'notes:attachData': ok = object(second) && text(second.name) && text(second.mime) && second.bytes instanceof Uint8Array; break
     case 'notes:removeAttachment': ok = text(second); break
     case 'library:choose': ok = first === 'music' || first === 'images'; break
-    case 'jobs:cancel': case 'cloud:cancel': case 'style:remove': case 'style:update': case 'style:restore': case 'style:add': ok = text(first) && first.length > 0; break
+    case 'jobs:cancel': case 'cloud:cancel': case 'style:remove': case 'style:restore': case 'style:add': ok = text(first) && first.length > 0; break
+    case 'style:update': ok = text(first) && first.length > 0 && object(second) && (second.text === undefined || text(second.text)) && (second.paused === undefined || typeof second.paused === 'boolean'); break
+    case 'app:setPhoneView': ok = first === 'instagram' || first === 'clean'; break
+    case 'projects:exportPlatforms': ok = finite(second) && Number.isInteger(second) && second >= 0 && object(third); break
     case 'style:keepLearned': ok = Array.isArray(first) && first.every((r) => object(r) && text(r.text) && text(r.evidence)) && text(second); break
     case 'library:preview': ok = path(first); break
     case 'cloud:save': ok = path(first) && path(second) && text(third) && third.length > 0; break

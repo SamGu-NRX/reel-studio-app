@@ -477,7 +477,7 @@ export async function settleInterrupted(slug: string): Promise<'settled' | 'unre
     } else if (handVersion !== null) {
       st.chat.push(stamp({ from: 'editor', text: versionMessage(handVersion, hand!.text), version: handVersion }))
     } else if (st.queue?.some((q) => q.id === st.job?.noteId)) {
-      st.chat.push(stamp({ from: 'editor', text: 'Reel Studio closed before I finished that change. It is waiting below. Press Resume when you want it.' }))
+      st.chat.push(stamp({ from: 'editor', text: 'Reel Studio closed before that change was made. It is waiting below. Press Send now when you want it.' }))
     } else if (st.status === 'ready' && st.job?.kind !== 'export') {
       st.chat.push(stamp({ from: 'editor', text: 'Reel Studio closed before I finished that change. Send your note again and I will pick it up.' }))
     }

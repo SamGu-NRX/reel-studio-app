@@ -263,11 +263,13 @@ export function createJobFeedback(opts: {
       if (!stages.size) setBar(-1)
       if (!e.slug) return
       const slug = e.slug
-      if (e.type === 'done') {
-        void opts.title(slug).then((t) => notify('Your reel is ready', `"${t}" is ready to watch.`, slug))
+      // only a job that made a version is news (a script, a share or an export makes none)
+      if (e.type === 'done' && e.version !== undefined) {
+        const n = e.version
+        void opts.title(slug).then((t) => notify(`${t}: Version ${n} is ready`, 'Open Reel Studio to watch it.', slug))
         attention()
       } else if (e.type === 'error') {
-        void opts.title(slug).then((t) => notify('That did not work', `I could not finish "${t}". Open Reel Studio to try again.`, slug))
+        void opts.title(slug).then((t) => notify(`${t} didn't finish`, 'Open Reel Studio to see why and try again.', slug))
         attention()
       }
     }

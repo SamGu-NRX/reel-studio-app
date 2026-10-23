@@ -490,7 +490,7 @@ async function finishedExportVersion(slug: string, n: number): Promise<VersionIn
     // A preview is not the full-quality file: make it first, as a normal job (progress, Stop, and
     // nothing else can run on this video meanwhile) (review 25).
     let stopped: AbortSignal | undefined
-    jobs.start(slug, 'rerender', async (emit, signal, { id, owner }) => {
+    jobs.start(slug, 'export', async (emit, signal, { id, owner }) => {
       stopped = signal
       emit({ type: 'status', message: 'Making the full-quality video', pct: 1, phase: 'final' })
       const r: any = await runEngine(
@@ -1073,11 +1073,6 @@ function registerIpc(): void {
     const dir = sfxPackDir()
     const pack = await readJson<{ sounds?: { id: string; job: string; file: string; seconds: number; onsetMs: number }[] }>(join(dir, 'pack.json'), {})
     return (pack.sounds ?? []).map((x) => ({ id: x.id, kind: x.job, seconds: x.seconds, onsetMs: x.onsetMs, url: mediaUrl(join(dir, x.file)) }))
-  })
-
-  handle('script:write', (_e, idea: string) => {
-    if (!String(idea ?? '').trim()) throw { code: 'EMPTY', userMessage: 'Tell me your idea in a sentence or two first.' }
-    return ai.writeScript(String(idea), () => {})
   })
 
   handle('update:state', () => updates.state())
