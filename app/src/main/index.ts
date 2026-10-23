@@ -950,8 +950,9 @@ function registerIpc(): void {
     return { slug, jobId, skipped }
   })
   const running = (slug: string): boolean => !!jobs.forSlug(slug)
-  // Demo build: New reel stages the Solanke edit (demo-edit.ts) instead of planning with a real AI.
-  handle('projects:plan', async () => ({ slug: DEMO ? await demoEdit.start() : await planReel(running) }))
+  handle('projects:plan', async () => ({ slug: await planReel(running) }))
+  // Demo build: Suggest a reel for me stages the Solanke edit (demo-edit.ts).
+  handle('projects:suggest', async () => ({ slug: await demoEdit.start() }))
   // Leaving a New reel nobody touched removes it (store.ts isUntouchedPlanned).
   handle('projects:leave', async (_e, slug: string) => void (await discardIfUntouched(slug, running)))
   handle('projects:addVideo', async (_e, slug: string, files: string[]) => {

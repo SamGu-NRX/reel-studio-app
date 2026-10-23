@@ -8,6 +8,7 @@ import { notesLog, type LogEntry } from '../../../shared/notes-log'
 import { pausedSentence, pausedWords } from '../../../shared/pause'
 import type { Step } from '../../../shared/steps'
 import { droppedPaths, reel, userMessage } from '../api'
+import { suggestReel } from './create'
 import type { Go } from '../nav'
 import { Button, Confirm, IS_MAC, PickFiles, Spinner, useFileDrop } from '../components/ui'
 import { Icon } from '../components/icons'
@@ -902,9 +903,13 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   unwatched={unwatched}
                   empty={
                     planned && (
-                      <p className="log-empty" data-testid="plan-empty">
-                        Haven't filmed it yet? Say what it's about. Your editor asks a question or two, then suggests a hook, the beats and the shots.
-                      </p>
+                      <div className="log-empty" data-testid="plan-empty">
+                        <p>Haven't filmed it yet? Say what it's about. Your editor asks a question or two, then suggests a hook, the beats and the shots.</p>
+                        <button className="btn suggest-reel" onClick={() => void suggestReel(go, notify)} data-testid="suggest-reel">
+                          <Icon name="sparkles" size={16} stroke={1.75} />
+                          Suggest a reel for me
+                        </button>
+                      </div>
                     )
                   }
                   plan={planCard}

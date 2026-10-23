@@ -55,6 +55,7 @@ html.side-resizing, html.side-resizing * { cursor: col-resize !important; user-s
 /* New reel: a plain row with a plus at the top, like T3's New thread, so it never competes with Share */
 .nav .new-reel { margin-bottom: 8px; color: var(--ink); }
 .nav .new-reel .icon { color: var(--ink-2); }
+.log-empty .suggest-reel { margin-top: 12px; display: inline-flex; align-items: center; gap: 8px; }
 
 .side-foot { margin-top: auto; position: relative; display: grid; gap: 4px; }
 .side-update:empty { display: none; }

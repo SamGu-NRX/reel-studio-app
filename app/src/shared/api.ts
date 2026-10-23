@@ -737,6 +737,8 @@ export interface ReelApi {
     create(files: string[]): Promise<{ slug: string; jobId: string; skipped: DropResult[] }>
     /** New reel: a reel with no video yet, titled "New reel" until the editor titles it. */
     plan(): Promise<{ slug: string }>
+    /** Demo build: starts a reel Rundown suggests, edited live (main/demo-edit.ts). */
+    suggest(): Promise<{ slug: string }>
     /** Leaving a reel: a New reel nobody touched is removed. */
     leave(slug: string): Promise<void>
     /** The video for a planned reel: its first edit starts, and the editor gets the reel's script. */

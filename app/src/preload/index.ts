@@ -101,6 +101,7 @@ const api: ReelApi = {
     get: (slug) => call('projects:get', slug),
     create: (files) => call('projects:create', files),
     plan: () => call('projects:plan'),
+    suggest: () => call('projects:suggest'),
     leave: (slug) => call('projects:leave', slug),
     addVideo: (slug, files) => call('projects:addVideo', slug, files),
     planSay: (slug, text) => call('projects:planSay', slug, text),

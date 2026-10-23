@@ -318,7 +318,10 @@ export async function discardIfUntouched(slug: string, running: (slug: string) =
   return serialized(join(dir, 'app.json'), async () => {
     if (running(slug)) return false
     const files = await fs.readdir(dir).catch(() => null)
-    if (!files || !isUntouchedPlanned(await readAppStateNow(join(dir, 'app.json')), files)) return false
+    const st = files ? await readAppStateNow(join(dir, 'app.json')) : null
+    if (!files || !st || !isUntouchedPlanned(st, files)) return false
+    // React StrictMode (dev builds) unmounts the Reel screen once right after it opens; that must not delete the reel just made.
+    if (st.createdAt && Date.now() - Date.parse(st.createdAt) < 10_000) return false
     await fs.rm(dir, { recursive: true, force: true })
     return true
   })

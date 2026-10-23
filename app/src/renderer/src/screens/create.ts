@@ -28,3 +28,12 @@ export async function newReel(go: Go, notify: Notify): Promise<void> {
     notify(userMessage(e), 'error')
   }
 }
+
+/** Demo build: Suggest a reel for me. Opens a reel Rundown picked, with its edit already running. */
+export async function suggestReel(go: Go, notify: Notify): Promise<void> {
+  try {
+    go({ name: 'reel', slug: (await reel.projects.suggest()).slug })
+  } catch (e) {
+    notify(userMessage(e), 'error')
+  }
+}
