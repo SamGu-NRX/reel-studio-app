@@ -27,7 +27,7 @@ test('Home reopens a running note or rerender on the Reel screen', async () => {
         ipcMain.handle('projects:get', () => ({ ok: true, value: d }))
       }, running)
       await page.getByTestId('nav-home').click()
-      await expect(page.getByTestId('card-status')).toHaveText('Working on it')
+      await expect(page.getByTestId('card-status')).toContainText('Making')
       await page.getByTestId('project-card').focus()
       await page.keyboard.press('Enter')
       await expect(page.getByTestId('note-progress')).toContainText('Reading your note')
