@@ -1,40 +1,241 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { LibraryBin } from '../../../shared/api'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import type { DropResult, LibraryBin, LibraryFile, LibraryPreview } from '../../../shared/api'
+import { describeSorted } from '../../../shared/describe'
 import { reel, userMessage } from '../api'
 import { FOLDER_APP, PickFiles, Spinner } from '../components/ui'
-import { Icon, type IconName } from '../components/icons'
-import { describeSorted } from './create'
+import { Icon } from '../components/icons'
+import { TitleBarSlot } from '../components/titlebar'
+import { byKeyboard } from '../components/motion'
+import '../components/library.css'
 
-const ICON: Record<LibraryBin['key'], IconName> = { raw: 'video', broll: 'film', music: 'music', images: 'image', exports: 'done' }
-// "B-roll" is jargon: the folder keeps its name, the screen says what it is.
-const LABEL: Partial<Record<LibraryBin['key'], string>> = { broll: 'Extra clips' }
-const HELP: Record<LibraryBin['key'], string> = {
-  raw: 'Videos of you talking.',
-  broll: 'Short clips I can show while you talk.',
-  music: 'Songs I can put under your voice.',
-  images: 'Pictures, logos and screenshots.',
-  exports: 'Your finished reels.'
+type Tab = 'images' | 'videos' | 'music' | 'sfx'
+const TABS: { key: Tab; label: string; bins: LibraryBin['key'][]; empty: [string, string] }[] = [
+  { key: 'images', label: 'Pictures', bins: ['images'], empty: ['No pictures yet', 'Drop pictures, logos or screenshots on this window, or use Add files.'] },
+  { key: 'videos', label: 'Videos', bins: ['broll', 'raw'], empty: ['No videos yet', 'Drop clips your editor can show while you talk, or use Add files.'] },
+  { key: 'music', label: 'Music', bins: ['music'], empty: ['No music yet', 'Drop songs on this window, or use Add files.'] },
+  { key: 'sfx', label: 'Sound effects', bins: ['sfx'], empty: ['No sound effects', 'The sounds that come with Reel Studio are missing. Reinstall it to bring them back.'] }
+]
+const TAB_OF: Partial<Record<NonNullable<DropResult['bin']>, Tab>> = { images: 'images', broll: 'videos', raw: 'videos', music: 'music' }
+const ABOUT: Record<Tab, string> = {
+  images: 'Pictures your editor can put in a reel.',
+  videos: 'Clips your editor can show while you talk.',
+  music: 'Songs your editor can put under your voice.',
+  sfx: 'Come with Reel Studio, free to use (CC0). Your editor places them on cuts and words.'
+}
+const SFX_GROUP: Record<string, string> = { whoosh: 'Whooshes', pop: 'Pops', click: 'Clicks', ding: 'Dings', impact: 'Hits', riser: 'Risers', typing: 'Typing' }
+
+const clock = (s: number): string => (s < 10 ? `${s.toFixed(1)} s` : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`)
+const licence = (f: LibraryFile): string => f.licence ?? 'Yours'
+/** "whoosh-quick.opus" -> "Whoosh quick" */
+const soundName = (file: string): string => {
+  const s = file.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ')
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
-function prettySize(n: number): string {
-  if (n > 1e9) return `${(n / 1e9).toFixed(1)} GB`
-  if (n > 1e6) return `${Math.round(n / 1e6)} MB`
-  return `${Math.max(1, Math.round(n / 1e3))} KB`
+/** Previews are made in main (library-preview.ts) and asked for once per file while the screen is open. */
+function usePreviews(files: LibraryFile[]): Record<string, LibraryPreview | 'none'> {
+  const [got, setGot] = useState<Record<string, LibraryPreview | 'none'>>({})
+  const asked = useRef(new Set<string>())
+  useEffect(() => {
+    for (const f of files) {
+      if (asked.current.has(f.path)) continue
+      asked.current.add(f.path)
+      reel.library.preview(f.path).then(
+        (p) => setGot((g) => ({ ...g, [f.path]: p })),
+        () => setGot((g) => ({ ...g, [f.path]: 'none' }))
+      )
+    }
+  }, [files])
+  return got
 }
 
-/** Drops anywhere on the window land here while this screen is open (App handles the drop). */
-export function Library({ refreshKey = 0 }: { refreshKey?: number }) {
+/**
+ * One audio element for the whole screen: a song or a sound plays while you rest the pointer on its row or reach it
+ * with the keyboard, and stops when you leave; the play button keeps it going. Its time drives the played part
+ * of the waveform, written straight to the row's style so nothing re-renders while it plays.
+ */
+function useAudition() {
+  const audio = useRef<HTMLAudioElement | null>(null)
+  const [playing, setPlaying] = useState<string | null>(null)
+  const pinned = useRef(false)
+  const dwell = useRef<number | undefined>(undefined)
+  const raf = useRef(0)
+  const rows = useRef(new Map<string, HTMLElement>())
+
+  const paint = useCallback((path: string) => {
+    const a = audio.current
+    const row = rows.current.get(path)
+    if (!a || !row) return
+    const p = a.duration > 0 ? a.currentTime / a.duration : 0
+    row.style.setProperty('--played', `${(1 - p) * 100}%`)
+    raf.current = requestAnimationFrame(() => paint(path))
+  }, [])
+
+  const stop = useCallback(() => {
+    window.clearTimeout(dwell.current)
+    cancelAnimationFrame(raf.current)
+    audio.current?.pause()
+    for (const row of rows.current.values()) row.style.removeProperty('--played')
+    pinned.current = false
+    setPlaying(null)
+  }, [])
+
+  const play = useCallback(
+    (f: LibraryFile, pin: boolean) => {
+      stop()
+      const a = audio.current ?? (audio.current = new Audio())
+      a.src = f.url
+      a.onended = stop
+      pinned.current = pin
+      setPlaying(f.path)
+      void a.play().then(() => paint(f.path), stop)
+    },
+    [paint, stop]
+  )
+
+  useEffect(() => () => {
+    stop()
+    audio.current?.removeAttribute('src')
+  }, [stop])
+
+  return {
+    playing,
+    stop,
+    row: (f: LibraryFile) => ({
+      ref: (el: HTMLElement | null) => {
+        if (el) rows.current.set(f.path, el)
+        else rows.current.delete(f.path)
+      },
+      onPointerEnter: () => {
+        window.clearTimeout(dwell.current)
+        if (!pinned.current) dwell.current = window.setTimeout(() => play(f, false), 320)
+      },
+      onPointerLeave: () => {
+        window.clearTimeout(dwell.current)
+        if (!pinned.current && playing === f.path) stop()
+      },
+      onFocus: () => {
+        if (!byKeyboard() || pinned.current) return
+        window.clearTimeout(dwell.current)
+        dwell.current = window.setTimeout(() => play(f, false), 320)
+      },
+      onBlur: () => {
+        window.clearTimeout(dwell.current)
+        if (!pinned.current && playing === f.path) stop()
+      }
+    }),
+    toggle: (f: LibraryFile) => (playing === f.path && pinned.current ? stop() : play(f, true))
+  }
+}
+
+function Waveform({ peaks }: { peaks?: number[] }) {
+  if (!peaks) return <span className="lib-wave pending" aria-hidden />
+  const w = 2
+  const gap = 1.5
+  const bars = peaks.map((p, i) => {
+    const h = Math.max(1.5, p * 26)
+    return <rect key={i} x={i * (w + gap)} y={(28 - h) / 2} width={w} height={h} rx={1} />
+  })
+  const width = peaks.length * (w + gap) - gap
+  return (
+    <span className="lib-wave" aria-hidden>
+      <svg viewBox={`0 0 ${width} 28`} preserveAspectRatio="none">{bars}</svg>
+      <svg className="played" viewBox={`0 0 ${width} 28`} preserveAspectRatio="none">{bars}</svg>
+    </span>
+  )
+}
+
+function Sounds({ files, previews, audition }: { files: LibraryFile[]; previews: Record<string, LibraryPreview | 'none'>; audition: ReturnType<typeof useAudition> }) {
+  return (
+    <ul className="lib-rows">
+      {files.map((f) => {
+        const p = previews[f.path]
+        const peaks = p && p !== 'none' ? p.peaks : undefined
+        const seconds = f.durationSec ?? (p && p !== 'none' ? p.durationSec : undefined)
+        const name = f.group ? soundName(f.name) : f.name.replace(/\.[^.]+$/, '')
+        const on = audition.playing === f.path
+        return (
+          <li key={f.path} className={`lib-row${on ? ' on' : ''}`} {...audition.row(f)} data-testid="library-sound">
+            <button
+              type="button"
+              className="icon-btn lib-play"
+              aria-label={`${on ? 'Stop' : 'Play'} ${name}`}
+              aria-pressed={on}
+              onClick={() => audition.toggle(f)}
+            >
+              <Icon name={on ? 'pause' : 'play'} size={14} />
+            </button>
+            <span className="lib-row-t" title={f.name}>
+              <b>{name}</b>
+              <span>{licence(f)}</span>
+            </span>
+            {p === 'none' ? <span className="lib-wave none">No preview</span> : <Waveform peaks={peaks} />}
+            <span className="lib-dur">{seconds !== undefined ? clock(seconds) : ''}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function Pictures({ files }: { files: LibraryFile[] }) {
+  return (
+    <ul className="lib-grid lib-pics">
+      {files.map((f) => (
+        <li key={f.path} className="lib-item" title={f.name} data-testid="library-picture">
+          <img className="lib-thumb" src={f.url} alt="" loading="lazy" decoding="async" />
+          <b>{f.name}</b>
+          <span>{licence(f)}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function Clips({ files, previews }: { files: LibraryFile[]; previews: Record<string, LibraryPreview | 'none'> }) {
+  return (
+    <ul className="lib-grid lib-clips">
+      {files.map((f) => {
+        const p = previews[f.path]
+        return (
+          <li key={f.path} className="lib-item" title={f.name} data-testid="library-clip">
+            {p && p !== 'none' && p.sheet ? (
+              <img className="lib-thumb lib-sheet" src={p.sheet} alt="" decoding="async" />
+            ) : (
+              <span className={`lib-thumb lib-sheet${p === 'none' ? ' none' : ' pending'}`}>{p === 'none' ? 'No preview' : ''}</span>
+            )}
+            <b>{f.name}</b>
+            <span>
+              {p && p !== 'none' ? `${clock(p.durationSec)} · ` : ''}
+              {licence(f)}
+            </span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/** Drops anywhere on the window land here while this screen is open (App passes what they were sorted into). */
+export function Library({ added }: { added?: { results: DropResult[]; at: number } }) {
   const [bins, setBins] = useState<LibraryBin[] | null>(null)
+  const [tab, setTab] = useState<Tab>('images')
   const [busy, setBusy] = useState(false)
-  // What happened to the last files added, said here on the screen (not a toast that follows you).
   const [result, setResult] = useState<{ text: string; error?: boolean } | null>(null)
+  const audition = useAudition()
+  const tabs = useRef(new Map<Tab, HTMLButtonElement>())
   const load = useCallback(() => reel.library.list().then(setBins), [])
+
+  const landed = useCallback((r: DropResult[]) => {
+    setResult({ text: describeSorted(r) || 'Nothing was added.' })
+    const to = r.map((x) => x.bin && TAB_OF[x.bin]).find(Boolean)
+    if (to) setTab(to)
+  }, [])
 
   const add = async (paths: string[]) => {
     setBusy(true)
     try {
-      const r = await reel.library.add(paths)
-      setResult({ text: describeSorted(r) || 'Done.' })
+      landed(await reel.library.add(paths))
       await load()
     } catch (e) {
       setResult({ text: userMessage(e), error: true })
@@ -45,69 +246,124 @@ export function Library({ refreshKey = 0 }: { refreshKey?: number }) {
 
   useEffect(() => {
     void load()
-  }, [load, refreshKey])
+  }, [load])
+  // a drop from before this screen opened was already said where it was made
+  const openedAt = useRef(Date.now())
+  useEffect(() => {
+    if (!added || added.at < openedAt.current) return
+    landed(added.results)
+    void load()
+  }, [added, landed, load])
+
+  const current = TABS.find((t) => t.key === tab)!
+  const groups = (bins ?? []).filter((b) => current.bins.includes(b.key))
+  const files = groups.flatMap((b) => b.files)
+  const previews = usePreviews(tab === 'images' ? [] : files)
+  const count = (t: (typeof TABS)[number]) => (bins ?? []).filter((b) => t.bins.includes(b.key)).reduce((n, b) => n + b.files.length, 0)
+  // where Add files and drops put this tab's files (Videos: Extra clips)
+  const folder = groups.find((b) => b.key !== 'sfx')
+
+  const choose = (t: Tab) => {
+    audition.stop()
+    setTab(t)
+  }
+  const arrows = (e: KeyboardEvent<HTMLDivElement>) => {
+    const i = TABS.findIndex((t) => t.key === tab)
+    const next = e.key === 'ArrowRight' ? (i + 1) % TABS.length : e.key === 'ArrowLeft' ? (i + TABS.length - 1) % TABS.length : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : -1
+    if (next < 0) return
+    e.preventDefault()
+    choose(TABS[next].key)
+    tabs.current.get(TABS[next].key)?.focus()
+  }
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1>Library</h1>
-          <p className="muted">Drop anything onto this window. I sort it for you.</p>
-        </div>
-        <div className="row">
-          {busy && <Spinner />}
-          <PickFiles className="btn primary" label="Add files" icon={<Icon name="plus" />} onFiles={add} />
-        </div>
+    <div className="page lib-page">
+      <TitleBarSlot
+        title="Library"
+        actions={
+          <>
+            {busy && <Spinner />}
+            <PickFiles className="btn primary" label="Add files" icon={<Icon name="plus" />} onFiles={add} />
+          </>
+        }
+      />
+      <div className="lib-tabs" role="tablist" aria-label="Library" onKeyDown={arrows}>
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            ref={(el) => {
+              if (el) tabs.current.set(t.key, el)
+            }}
+            role="tab"
+            id={`lib-tab-${t.key}`}
+            aria-selected={tab === t.key}
+            aria-controls="lib-panel"
+            tabIndex={tab === t.key ? 0 : -1}
+            className="lib-tab"
+            onClick={() => choose(t.key)}
+            data-testid={`library-tab-${t.key}`}
+          >
+            {t.label}
+            {bins && <span className="n">{count(t)}</span>}
+          </button>
+        ))}
+      </div>
+      <div className="lib-sub">
+        <span>{ABOUT[tab]}</span>
+        {folder && (
+          <button className="btn ghost small" onClick={() => reel.app.openFolder(folder.dir)}>
+            Show in {FOLDER_APP}
+          </button>
+        )}
       </div>
       {result && (
-        <div className={`banner${result.error ? ' error' : ' good'}`} role="status" style={{ marginBottom: 22 }} data-testid="library-result">
+        <p className={`lib-result${result.error ? ' error' : ''}`} role="status" data-testid="library-result">
+          {!result.error && <Icon name="check" size={14} />}
           <span>{result.text}</span>
           <button className="icon-btn" aria-label="Hide this" onClick={() => setResult(null)}>
-            <Icon name="x" />
+            <Icon name="x" size={14} />
           </button>
-        </div>
+        </p>
       )}
-      {!bins && <Spinner />}
-      {bins?.map((b) => {
-        // Finished videos: one tile per video. Its cover and caption file sit beside it in the folder.
-        const files = b.key === 'exports' ? b.files.filter((f) => /\.(mp4|mov|m4v)$/i.test(f.name)) : b.files
-        const noun = b.key === 'exports' ? 'video' : 'file'
-        return (
-          <section key={b.key} className="bin" data-testid={`bin-${b.key}`}>
-            <div className="bin-head">
-              <h2 className="row" style={{ gap: 8 }}>
-                <Icon name={ICON[b.key]} /> {LABEL[b.key] ?? b.label}
-              </h2>
-              <span className="muted-sm">{files.length ? `${files.length} ${noun}${files.length === 1 ? '' : 's'}` : HELP[b.key]}</span>
-              <span className="spacer" />
-              <button className="btn small ghost" onClick={() => reel.app.openFolder(b.dir)}>
-                Show in {FOLDER_APP}
-              </button>
-            </div>
-            {files.length === 0 ? (
-              <div className="empty-bin">Nothing here yet.</div>
-            ) : (
-              <div className="files">
-                {files.slice(0, 24).map((f) => (
-                  <div key={f.path} className="file" title={f.name}>
-                    <div className="file-thumb">
-                      {b.key === 'images' ? (
-                        <img src={f.url} alt="" loading="lazy" />
-                      ) : /\.(mp4|mov|m4v|webm)$/i.test(f.name) ? (
-                        <video src={`${f.url}#t=0.5`} preload="metadata" muted disablePictureInPicture />
-                      ) : (
-                        <Icon name={ICON[b.key]} size={28} />
-                      )}
-                    </div>
-                    <div className="file-name">{f.name}</div>
-                    <div className="muted-sm" style={{ padding: '0 10px 8px' }}>{prettySize(f.size)}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )
-      })}
+      <div id="lib-panel" role="tabpanel" aria-labelledby={`lib-tab-${tab}`} className="lib-panel" data-testid={`library-panel-${tab}`}>
+        {bins && !files.length && (
+          <div className="lib-empty" data-testid="library-empty">
+            <h2>{current.empty[0]}</h2>
+            <p>{current.empty[1]}</p>
+          </div>
+        )}
+        {tab === 'images' && files.length > 0 && <Pictures files={files} />}
+        {tab === 'videos' &&
+          groups
+            .filter((b) => b.files.length)
+            .map((b) => (
+              <section key={b.key} className="lib-group" data-testid={`bin-${b.key}`}>
+                {groups.filter((g) => g.files.length).length > 1 && (
+                  <h2>
+                    {b.label} <span className="n">{b.files.length}</span>
+                  </h2>
+                )}
+                <Clips files={b.files} previews={previews} />
+              </section>
+            ))}
+        {tab === 'music' && files.length > 0 && (
+          <div data-testid="bin-music">
+            <Sounds files={files} previews={previews} audition={audition} />
+          </div>
+        )}
+        {tab === 'sfx' &&
+          [...new Set(files.map((f) => f.group ?? ''))].map((job) => {
+            const set = files.filter((f) => (f.group ?? '') === job)
+            return (
+              <section key={job} className="lib-group">
+                <h2>
+                  {SFX_GROUP[job] ?? job} <span className="n">{set.length}</span>
+                </h2>
+                <Sounds files={set} previews={previews} audition={audition} />
+              </section>
+            )
+          })}
+      </div>
     </div>
   )
 }

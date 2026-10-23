@@ -236,7 +236,7 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await expect(page.getByTestId('drop-overlay')).toContainText('Add to Library')
   await page.evaluate(() => window.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true })))
   await dropOnWindow(page, [media.song])
-  await expect(page.getByTestId('toast')).toContainText('Added 1 song to your Library.')
+  await expect(page.getByTestId('library-result')).toHaveText('Added 1 song to your Library.')
   await expect(page.getByTestId('bin-music')).toContainText('happy song')
   await shot(page, 'd-13-library-after-drop')
   await app.close()

@@ -53,7 +53,7 @@ test('a lowercase note is remembered only on Yes, starts the next video lowercas
     const rule = page.getByTestId('style-rule')
     await expect(rule).toHaveCount(1)
     await expect(rule).toContainText('Use lowercase captions.')
-    await expect(rule).toContainText(/On new videos\. From ".+", version \d+\./)
+    await expect(rule).toContainText(/Learned (\w+ \d+|\d+ \w+) from .+, Version \d+/)
     await shot(page, 'remember-02-my-style')
 
     // 5. the next video starts lowercase, and says why

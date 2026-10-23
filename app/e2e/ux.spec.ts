@@ -156,10 +156,10 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   expect(exported.some((f) => /\(\d\)/.test(f))).toBe(false)
   await page.getByText('Done', { exact: true }).click()
 
-  // ---- 8. Library: Finished videos first ----
+  // ---- 8. Library: no Finished videos bin; reels live on Reels ----
   await page.getByTestId('nav-library').click()
-  await expect(page.locator('.bin').first()).toHaveAttribute('data-testid', 'bin-exports')
-  await expect(page.locator('.bin').first()).toContainText('Finished videos')
+  await expect(page.getByTestId('library-tab-images')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByText('Finished videos')).toHaveCount(0)
   await shot(page, 'ux-13-library')
 
   // ---- 9. Settings uses the same simple connect panel ----

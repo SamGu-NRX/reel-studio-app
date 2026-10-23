@@ -114,11 +114,16 @@ const api: ReelApi = {
   library: {
     list: () => call('library:list'),
     add: (paths) => call('library:add', paths),
-    choose: (kind) => call('library:choose', kind)
+    choose: (kind) => call('library:choose', kind),
+    preview: (path) => call('library:preview', path)
   },
   style: {
     rules: () => call('style:rules'),
+    add: (text) => call('style:add', text),
     remove: (id) => call('style:remove', id),
+    restore: (id) => call('style:restore', id),
+    learn: () => call('style:learn'),
+    keepLearned: (rules, from) => call('style:keepLearned', rules, from),
     update: (id, patch) => call('style:update', id, patch),
     answer: (slug, messageId, yes) => call('style:answer', slug, messageId, yes)
   },

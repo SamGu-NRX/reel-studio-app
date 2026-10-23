@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import type { AppCommand, AppInfo, ProviderInfo } from '../../shared/api'
+import type { AppCommand, AppInfo, DropResult, ProviderInfo } from '../../shared/api'
 import { reel, userMessage } from './api'
 import type { Screen } from './nav'
 import { IS_MAC, Toast } from './components/ui'
@@ -45,7 +45,7 @@ export function App() {
   const [toast, setToast] = useState<{ text: string; kind?: 'error' | 'info'; id: number } | null>(null)
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
   const [veil, setVeil] = useState<Veil | null>(null)
-  const [libraryTick, setLibraryTick] = useState(0)
+  const [libraryAdded, setLibraryAdded] = useState<{ results: DropResult[]; at: number } | undefined>()
   const notify = useCallback<Notify>((text, kind) => setToast({ text, kind, id: Date.now() }), [])
   const closeToast = useCallback(() => setToast(null), [])
   // A toast belongs to the screen it was said on: every screen change clears it (critique 1.1).
@@ -121,9 +121,9 @@ export function App() {
       if (intent.kind === 'library') {
         reel.library
           .add(paths)
-          .then((r) => {
-            notify(describeSorted(r) || 'Done.')
-            setLibraryTick((t) => t + 1)
+          .then((results) => {
+            setLibraryAdded({ results, at: Date.now() })
+            if (screenRef.current.name !== 'library') notify(describeSorted(results) || 'Done.')
           })
           .catch((err) => notify(userMessage(err), 'error'))
         return
@@ -251,7 +251,7 @@ export function App() {
             <ErrorBoundary resetKey={JSON.stringify(screen)} onReset={() => go({ name: 'home' })}>
               {screen.name === 'home' && <Home go={go} />}
               {screen.name === 'reel' && <Reel key={screen.slug} slug={screen.slug} go={go} />}
-              {screen.name === 'library' && <Library refreshKey={libraryTick} />}
+              {screen.name === 'library' && <Library added={libraryAdded} />}
               {screen.name === 'style' && <MyStyle />}
               {screen.name === 'insights' && <Insights />}
               {screen.name === 'settings' && <Settings key={screen.section ?? ''} info={info} onInfo={setInfo} go={go} section={screen.section} />}

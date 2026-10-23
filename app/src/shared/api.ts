@@ -37,6 +37,8 @@ export interface ProjectSummary {
   series: string | null
   /** A Paused reel that continues on its own at this time (ISO; app.json `pausedUntil`), or null when it waits for you. */
   continuesAt: string | null
+  /** A version of it was posted (app.json `posted`). */
+  posted: boolean
 }
 
 export interface VersionInfo {
@@ -302,19 +304,35 @@ export interface LibraryFile {
   url: string
   size: number
   modifiedAt: string
+  /** "CC BY 4.0 · Jane Doe": from the folder's credits.json, or the sound pack. None: the person's own file. */
+  licence?: string
+  /** Known without reading the file (the sound pack). */
+  durationSec?: number
+  /** The sound pack's job for a sound effect: whoosh, pop, click... */
+  group?: string
 }
 
 export interface LibraryBin {
-  key: 'raw' | 'broll' | 'music' | 'images' | 'exports'
+  /** sfx: the sound effects that come with Reel Studio, not a folder of yours. */
+  key: 'raw' | 'broll' | 'music' | 'images' | 'sfx'
   label: string
   dir: string
   files: LibraryFile[]
 }
 
+/** A Library file's preview, made once and kept: a strip of frames for a clip, the loudness shape for a song. */
+export interface LibraryPreview {
+  durationSec: number
+  /** reel-media URL of a strip of four frames (clips). */
+  sheet?: string
+  /** 0..1 peaks, evenly spaced over the file (audio). */
+  peaks?: number[]
+}
+
 export interface DropResult {
   file: string
   name: string
-  bin: LibraryBin['key'] | null
+  bin: 'raw' | 'broll' | 'music' | 'images' | 'exports' | null
   dest: string | null
   reason?: string
 }
@@ -431,8 +449,27 @@ export interface StyleRule {
   /** Set: the app applies this rule itself when a new video is made. Otherwise the AI reads it on every edit. */
   payload?: { kind: 'caption-case'; case: 'lower' }
   paused?: boolean
-  source?: { project: string; title: string; version: number }
+  /** The reel, version and note it was learned from. */
+  source?: { project: string; title: string; version: number; note?: string }
+  /** Learned from another editor's export (My style, Learn from my past edits): its file name. */
+  imported?: { file: string }
   consent?: { proposal: string; at: string }
+}
+
+/** One rule "Learn from my past edits" read from an export, with what it was read from. Nothing is saved until the person keeps it. */
+export interface LearnedRule {
+  text: string
+  evidence: string
+}
+
+/** What "Learn from my past edits" read: the exports, how much was in them, and the rules, before any is saved. */
+export interface StyleLesson {
+  files: { path: string; name: string; editor: 'Final Cut Pro' | 'Premiere Pro' }[]
+  timelines: number
+  shots: number
+  rules: LearnedRule[]
+  /** Exports that couldn't be read, with the reason in plain words. */
+  skipped: { name: string; reason: string }[]
 }
 
 export interface StyleProposal {
@@ -635,10 +672,20 @@ export interface ReelApi {
     add(paths: string[]): Promise<DropResult[]>
     /** Open the system file picker for songs or pictures and add the picked files. [] = cancelled. */
     choose(kind: 'music' | 'images'): Promise<DropResult[]>
+    /** A Library file's contact sheet or waveform (main/library-preview.ts). */
+    preview(path: string): Promise<LibraryPreview>
   }
   style: {
     rules(): Promise<StyleRule[]>
+    /** A rule typed in My style. */
+    add(text: string): Promise<StyleRule>
     remove(id: string): Promise<void>
+    /** Undo of remove: the rule back where it was. Only a rule removed in this run of the app. */
+    restore(id: string): Promise<void>
+    /** Pick Final Cut Pro or Premiere Pro exports and read rules from them; saves nothing. null: the picker was cancelled. */
+    learn(): Promise<StyleLesson | null>
+    /** Keep these rules from a lesson; each remembers `from`, the export names it was read from. */
+    keepLearned(rules: LearnedRule[], from: string): Promise<StyleRule[]>
     /** Change a rule's words, or pause or resume it. */
     update(id: string, patch: { text?: string; paused?: boolean }): Promise<StyleRule>
     /** Answer "Remember this for next time?" on a chat message: Yes saves the rule, No only says so. */

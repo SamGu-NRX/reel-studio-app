@@ -16,12 +16,14 @@ import {
   ffmpegPath,
   ffprobePath,
   initPaths,
+  libraryPreviewDir,
   projectsDir,
   pythonExe,
   reelStudioRoot,
   setAsrThreads,
   setRootOverride,
-  settingsDir
+  settingsDir,
+  sfxPackDir
 } from './paths'
 import { offerMoveToApplications, writeErrorCode } from './move-to-applications'
 import { runSelfTest, selfTestArgs, type SelfTestResult } from './self-test'
@@ -55,6 +57,8 @@ import {
   type AppState
 } from './store'
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
+import { libraryPreview } from './library-preview'
+import { readLesson } from './style-learn'
 import { createJobManager } from './jobs'
 import { createNoteQueue, type NoteToRun } from './note-queue'
 import { withRenderSlot } from './render-slot'
@@ -72,7 +76,7 @@ import { loadSettings, saveSettings, settleLibraryRoot } from './settings'
 import { createPidRegistry } from './orphans'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
-import type { AppInfo, DropResult, ExportResult, JobEvent, PlatformExportResult, ProjectJson, VersionInfo, SettingsPane, CoverCandidate, NoteMoment, PlacedWord } from '../shared/api'
+import type { AppInfo, DropResult, ExportResult, JobEvent, PlatformExportResult, ProjectJson, VersionInfo, SettingsPane, CoverCandidate, NoteMoment, PlacedWord, LearnedRule, StyleRule } from '../shared/api'
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
@@ -983,8 +987,43 @@ function registerIpc(): void {
     return addToLibrary(r.filePaths, runEngine, log)
   })
 
+  handle('library:preview', (_e, file: string) => libraryPreview(file))
+
+  // Rules removed in this run of the app, for Undo; never written anywhere
+  const removedRules = new Map<string, { rule: StyleRule; index: number }>()
+
   handle('style:rules', () => ai.styleRules())
-  handle('style:remove', (_e, id: string) => ai.removeStyleRule(id))
+  handle('style:add', (_e, text: string) => {
+    if (!ai.addStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be saved to My style. Try again later.' }
+    if (!text.trim()) throw { code: 'EMPTY', userMessage: 'Type the rule first.' }
+    return ai.addStyleRule(text)
+  })
+  handle('style:remove', async (_e, id: string) => {
+    const gone = await ai.removeStyleRule(id)
+    if (gone) removedRules.set(id, gone)
+  })
+  handle('style:restore', async (_e, id: string) => {
+    const gone = removedRules.get(id)
+    if (!gone || !ai.restoreStyleRule) throw { code: 'NOT_FOUND', userMessage: 'That rule can no longer be brought back. Add it again.' }
+    await ai.restoreStyleRule(gone.rule, gone.index)
+    removedRules.delete(id)
+  })
+  handle('style:learn', async () => {
+    const r = await showOpenDialog({
+      title: 'Choose exports from Final Cut Pro or Premiere Pro',
+      // a .fcpxmld is a folder unless Final Cut Pro is installed to make it a package
+      properties: process.platform === 'darwin' ? ['openFile', 'openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'],
+      filters: [{ name: 'Final Cut Pro or Premiere Pro exports', extensions: ['fcpxml', 'fcpxmld', 'xml'] }]
+    })
+    if (r.canceled || !r.filePaths.length) return null
+    return readLesson(r.filePaths, (file) => runEngine('import-reference', [file]))
+  })
+  handle('style:keepLearned', async (_e, rules: LearnedRule[], from: string) => {
+    if (!ai.addStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be saved to My style. Try again later.' }
+    const kept: StyleRule[] = []
+    for (const rule of rules) kept.push(await ai.addStyleRule(rule.text, { imported: { file: from } }))
+    return kept
+  })
   handle('style:update', (_e, id: string, patch: { text?: unknown; paused?: unknown }) => {
     if (!ai.updateStyleRule) throw { code: 'NOT_READY', userMessage: 'I could not change that in My style. Try again later.' }
     const text = typeof patch?.text === 'string' ? patch.text : undefined
@@ -995,6 +1034,7 @@ function registerIpc(): void {
     answerStyleQuestion(
       {
         chat: async (s) => (await readAppState(s)).chat,
+        title: async (s) => (await readProject(s).catch(() => null))?.title || s,
         addStyleRule: ai.addStyleRule?.bind(ai),
         approveStyleProposal: ai.approveStyleProposal?.bind(ai),
         declineStyleProposal: ai.declineStyleProposal?.bind(ai),
@@ -1264,7 +1304,7 @@ app.whenReady().then(async () => {
   aiSource = loaded.source
   await carryOverClaudeCode(settings).catch((e) => log(`[ai] carry-over: ${String(e)}`))
   log(`[start] root=${reelStudioRoot()} engine=${engineMode()}:${engineDir()} python=${pythonExe()} ai=${aiSource}`)
-  handleMediaProtocol(() => [reelStudioRoot(), projectsDir()])
+  handleMediaProtocol(() => [reelStudioRoot(), projectsDir(), sfxPackDir(), libraryPreviewDir()])
   setAsrThreads(await models.savedThreads()) // before any engine call can start
   registerIpc()
   createWindow()

@@ -270,11 +270,19 @@ export const createMockAI: CreateAI = ({ host }) => {
     async styleRules() {
       return readRules()
     },
-    async addStyleRule(text) {
+    async addStyleRule(text, from) {
       return changeStyle(async () => {
-        const rule = { id: randomUUID(), text, createdAt: new Date().toISOString() }
+        // as the package stores it (ai/src/style.ts cleanRuleText): one capitalised sentence
+        const clean = /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`
+        const rule: StyleRule = { id: randomUUID(), text: clean[0].toUpperCase() + clean.slice(1), createdAt: new Date().toISOString(), ...from }
         await writeRules([...(await readRules()), rule])
         return rule
+      })
+    },
+    async restoreStyleRule(rule, index) {
+      return changeStyle(async () => {
+        const rules = await readRules()
+        if (!rules.some((r) => r.id === rule.id)) await writeRules([...rules.slice(0, index), rule, ...rules.slice(index)])
       })
     },
     async approveStyleProposal(proposal) {
@@ -307,7 +315,13 @@ export const createMockAI: CreateAI = ({ host }) => {
       })
     },
     async removeStyleRule(id) {
-      return changeStyle(async () => writeRules((await readRules()).filter((r) => r.id !== id)))
+      return changeStyle(async () => {
+        const rules = await readRules()
+        const index = rules.findIndex((r) => r.id === id)
+        if (index < 0) return null
+        await writeRules(rules.filter((r) => r.id !== id))
+        return { rule: rules[index], index }
+      })
     }
   }
   return ai
