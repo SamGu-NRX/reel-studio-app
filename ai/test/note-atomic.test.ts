@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
-import { createAI, AIError, StyleStore, listVersions } from '../src';
+import { createAI, AIError, StyleStore, OWNER_LOCK, listVersions } from '../src';
 import { FakeHost, ScriptedModel, makeProject, call, tmpDir, firstVersion } from './helpers';
 
 async function setup(opts: { firstVersion?: boolean } = {}) {
@@ -109,12 +109,14 @@ describe('a note that does not finish leaves the project as it was', () => {
     expect(JSON.parse(await read())).toMatchObject({ version: 2, title: 'Renamed by hand' });
   });
 
-  it('a model that answers in words and never calls a tool gets the "not sure" reply, and nothing changes', async () => {
-    const { dir, host, settingsDir, read, before } = await setup();
+  it('a model that answers in words and never calls a tool gets the "not sure" reply, saved like any note that changes nothing', async () => {
+    const { dir, host, settingsDir, read } = await setup();
     const m = new ScriptedModel(Array.from({ length: 6 }, () => ({ text: 'The music suits your bread nicely.' })));
-    const r = await createAI({ host, settingsDir, providerOverride: m }).applyNote(dir, 'what do you think of the music?', () => undefined);
-    expect(r).toMatchObject({ summary: 'I looked, but I was not sure what to change. Could you say it another way?', version: 1, changed: [] });
-    expect(await read()).toBe(before);
+    const r = await createAI({ host, settingsDir, providerOverride: m })
+      .applyNote(dir, 'what do you think of the music?', () => undefined, undefined, { id: 'job-4', saveStyleRules: false });
+    const reply = 'I looked, but I was not sure what to change. Could you say it another way?';
+    expect(r).toMatchObject({ summary: reply, version: 1, changed: [] });
+    expect(JSON.parse(await read()).notes.at(-1)).toMatchObject({ id: 'job-4', version: 1, applied: [], reply });
     expect(host.calls).toEqual([]);
     expect(notesLeft(dir)).toBe(0);
   });
@@ -137,6 +139,22 @@ describe('a note that does not finish leaves the project as it was', () => {
     // the note's own preview was shown while it worked, from its own folder
     expect(events.filter((e) => e.type === 'render').map((e) => e.draft)).toEqual([true]);
     expect(notesLeft(dir)).toBe(0);
+  });
+
+  it('part of the engine would not stop during a step that hides its errors: a note that then changes nothing is not saved', async () => {
+    const { root, dir, host, settingsDir, read, before } = await setup();
+    await fsp.writeFile(path.join(dir, OWNER_LOCK), JSON.stringify({ app: 'Reel Studio', token: 'job-1' }));
+    await fsp.mkdir(path.join(root, 'Library', 'Music'), { recursive: true });
+    await fsp.writeFile(path.join(root, 'Library', 'Music', 'calm.mp3'), 'song');
+    const run = host.runEngine.bind(host);
+    host.runEngine = async (command, args, onProgress) => {
+      if (command === 'analyze-music') throw { code: 'ENGINE_STUCK', userMessage: "Part of Reel Studio's video engine would not stop." };
+      return run(command, args, onProgress);
+    };
+    const m = new ScriptedModel([{ toolCalls: [call('list_library', { kind: 'music' })] }, finish('The music already fits.')]);
+    await expect(createAI({ host, settingsDir, providerOverride: m }).applyNote(dir, 'better music', () => undefined, undefined, { owner: 'job-1' }))
+      .rejects.toMatchObject({ code: 'ENGINE_STUCK' });
+    expect(await read()).toBe(before);
   });
 });
 
@@ -167,5 +185,15 @@ describe('a note that finishes is saved in one write', () => {
     expect(host.calls.filter((c) => c.command === 'render')).toEqual([]);
     expect(JSON.parse(await read()).notes.at(-1)).toMatchObject({ id: 'job-2', version: 1, styleSuggestions: ['Keep music quieter under talking.'] });
     expect(await new StyleStore(() => root).list()).toEqual([]);
+  });
+
+  it('a note that changes nothing is saved under its id with its reply, with no render', async () => {
+    const { dir, host, settingsDir, read } = await setup();
+    const m = new ScriptedModel([finish('It already looks right to me.')]);
+    const r = await createAI({ host, settingsDir, providerOverride: m })
+      .applyNote(dir, 'make it pop', () => undefined, undefined, { id: 'job-3', saveStyleRules: false });
+    expect(r).toMatchObject({ version: 1, changed: [], summary: 'It already looks right to me.' });
+    expect(host.calls.filter((c) => c.command === 'render')).toEqual([]);
+    expect(JSON.parse(await read()).notes.at(-1)).toMatchObject({ id: 'job-3', version: 1, applied: [], reply: 'It already looks right to me.' });
   });
 });

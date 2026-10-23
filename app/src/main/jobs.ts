@@ -2,7 +2,7 @@
 // goes to the renderer; app.json records the running job so a crash can be recovered at startup.
 import { randomUUID } from 'node:crypto'
 import type { JobEvent, JobKind, JobUpdate, Phase, VersionMade } from '../shared/api'
-import { addChat, cleanPartialVersions, listVersions, projectDir, recordVersionMade, settleNote, updateAppState, settleInterrupted, stamp } from './store'
+import { addChat, cleanPartialVersions, listVersions, projectDir, recordVersionMade, settleNote, updateAppState, settleInterrupted, stamp, type AppState } from './store'
 import { claimProject, type ProjectOwner } from './owner'
 import type { ChatLine } from './style-consent'
 import { toUserError } from './engine'
@@ -48,8 +48,16 @@ interface Running {
   secondsLeft: number | null
   overdue: boolean
   thinking: boolean
+  /** The project owner token its engine commands carry (owner.ts); null until the project is claimed. */
+  owner: string | null
+  /** Waiting for the render slot another reel holds (render-slot.ts). */
+  waitingForRender: boolean
+  setWaitingForRender: (waiting: boolean) => void
   done: Promise<void>
 }
+
+export const WAITING_FOR_RENDER = 'Waiting for another reel to finish rendering'
+const shown = (j: Running): string => (j.waitingForRender ? WAITING_FOR_RENDER : j.message)
 
 export function createJobManager(
   broadcast: (e: JobEvent) => void,
@@ -64,14 +72,26 @@ export function createJobManager(
 
   /** Projects a manual edit is writing right now: no job may start on them meanwhile. */
   const held = new Set<string>()
+  /** Callers waiting for a project to have no job and no manual edit (`whenFree`). */
+  const freeWaiters = new Map<string, (() => void)[]>()
+  function freed(slug: string): void {
+    if (forSlug(slug) || held.has(slug)) return
+    const waiting = freeWaiters.get(slug)
+    freeWaiters.delete(slug)
+    waiting?.forEach((go) => go())
+  }
   /** Projects an engine process may still be writing to after its job ended (ENGINE_STUCK): nothing
    * runs on them and they stay closed until Reel Studio restarts and its leftovers are reaped. */
   const stuck = new Map<string, { code: string; userMessage: string }>()
   const BUSY = { code: 'BUSY', userMessage: 'I am still working on this video. Give me a moment, or press Stop.' }
 
-  function refuseIfBusy(slug: string): void {
+  function refuseIfKeptClosed(slug: string): void {
     const s = stuck.get(slug)
     if (s) throw s
+  }
+
+  function refuseIfBusy(slug: string): void {
+    refuseIfKeptClosed(slug)
     if (forSlug(slug) || held.has(slug)) throw BUSY
   }
 
@@ -85,12 +105,13 @@ export function createJobManager(
     return stuck.has(slug) || !!forSlug(slug)
   }
 
-  function start(slug: string | null, kind: JobKind, fn: JobFn, opts: { note?: string } = {}): string {
+  /** `record`: more changes to app.json, saved in the same write that records the job as running. */
+  function start(slug: string | null, kind: JobKind, fn: JobFn, opts: { note?: string; record?: (s: AppState) => void } = {}): string {
     assertCanStart()
     if (slug) refuseIfBusy(slug)
     const id = randomUUID()
     const abort = new AbortController()
-    const job: Running = { id, slug, kind, abort, message: 'Getting started', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false, done: Promise.resolve() }
+    const job: Running = { id, slug, kind, abort, message: 'Getting started', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false, owner: null, waitingForRender: false, setWaitingForRender: () => undefined, done: Promise.resolve() }
     jobs.set(id, job)
     const send = (e: JobEvent): void => broadcast(e)
     let history: SpeedHistory = { v: 1, phases: {} }
@@ -98,6 +119,7 @@ export function createJobManager(
     let mediaAsked = false
     const pending: Promise<void>[] = []
     let progressKind: ProgressKind = kind
+    let ended: JobEvent | null = null
     // after a failure or Stop, a render still being copied is never shown
     let open = true
     let tracker = new ProgressTracker(progressKind, 0, history)
@@ -113,7 +135,12 @@ export function createJobManager(
       // Null clears an expired estimate in broadcasts and project-detail hydration alike.
       job.secondsLeft = secondsLeft
       job.overdue = snap.overdue
-      send({ jobId: id, slug, type: 'status', message: job.message, pct: job.pct, ...(phase ? { phase } : {}), overall: snap.overall, secondsLeft: job.secondsLeft, overdue: job.overdue, thinking: job.thinking })
+      send({ jobId: id, slug, type: 'status', message: shown(job), pct: job.pct, ...(phase ? { phase } : {}), overall: snap.overall, secondsLeft: job.secondsLeft, overdue: job.overdue, thinking: job.thinking, waitingForRender: job.waitingForRender })
+    }
+    job.setWaitingForRender = (waiting) => {
+      job.waitingForRender = waiting
+      tracker.hold(waiting)
+      status()
     }
     // re-broadcast once a second: time moves the bar and the estimate even while the AI thinks
     const tick = setInterval(() => status(), progress?.tickMs ?? 1000)
@@ -125,10 +152,12 @@ export function createJobManager(
         // Inside the try: if even this fails, the user gets an error instead of a job that never ends.
         if (slug) {
           owner = await enter(slug)
+          job.owner = owner.token
           await updateAppState(slug, (s) => {
             s.job = { id, kind, startedAt: new Date().toISOString(), note: opts.note }
             s.lastError = null
             if (kind === 'first-edit') s.status = 'working'
+            opts.record?.(s)
           })
         }
         if (progress) {
@@ -195,7 +224,7 @@ export function createJobManager(
           }
         }
         log(`[job ${kind}] done in ${Math.round((Date.now() - t0) / 1000)} s`)
-        send({ jobId: id, slug, type: 'done', summary: res.summary, version: res.version })
+        ended = { jobId: id, slug, type: 'done', summary: res.summary, version: res.version }
       } catch (e) {
         open = false
         await Promise.allSettled(pending)
@@ -216,12 +245,16 @@ export function createJobManager(
           }).catch(() => {})
         }
         if (slug && !cancelled && kind !== 'first-edit') await addChat(slug, 'editor', err.userMessage).catch(() => {})
-        send(cancelled ? { jobId: id, slug, type: 'cancelled' } : { jobId: id, slug, type: 'error', code: err.code, userMessage: err.userMessage })
+        ended = cancelled ? { jobId: id, slug, type: 'cancelled' } : { jobId: id, slug, type: 'error', code: err.code, userMessage: err.userMessage }
       } finally {
         clearInterval(tick)
         if (!(slug && stuck.has(slug))) await owner?.release().catch((e) => log(`[job ${kind}] could not let go of the project: ${String(e)}`))
         jobs.delete(id)
         leaveGate?.()
+        // The job's last event goes out only now: a screen that reloads on it must find no job running
+        // (projects:get reads forSlug), or it shows the progress row again after the note is done.
+        if (ended) send(ended)
+        if (slug) freed(slug)
       }
     })()
     return id
@@ -255,7 +288,14 @@ export function createJobManager(
       }
     } finally {
       held.delete(slug)
+      freed(slug)
     }
+  }
+
+  /** A project kept closed for a previous run's engine (keepClosed) whose engine has exited. A job's own
+   * stuck engine (ENGINE_STUCK) keeps its project closed until restart. */
+  function reopen(slug: string): void {
+    if (stuck.get(slug)?.code === 'ENGINE_STILL_RUNNING') stuck.delete(slug)
   }
 
   /** A project something of a previous run still writes to (orphans.ts reap): closed until it stops. */
@@ -266,13 +306,28 @@ export function createJobManager(
   return {
     start,
     hold,
-    /** Throws while a job runs on the project, a manual edit holds it, or it is kept closed: a note or
-     * deleting the video must wait. */
+    /** Throws while a job runs on the project, a manual edit holds it, or it is kept closed: deleting
+     * the video must wait. */
     refuseIfBusy,
+    /** Throws while the project is kept closed, with the reason. A note or an attachment sent while a
+     * job runs waits for that job (note-queue.ts, attachments.ts staging); one sent to a video kept
+     * closed is refused instead. */
+    refuseIfKeptClosed,
     isClosed,
     keepClosed,
+    reopen,
     forSlug,
+    /** Resolves once nothing runs on the project and no manual edit holds it. */
+    whenFree(slug: string): Promise<void> {
+      if (!forSlug(slug) && !held.has(slug)) return Promise.resolve()
+      return new Promise((resolve) => freeWaiters.set(slug, [...(freeWaiters.get(slug) ?? []), resolve]))
+    },
     get: (id: string) => jobs.get(id),
+    /** What a job is showing now (its own words, or that it waits for the render slot). */
+    message: shown,
+    waitingForRender(owner: string, waiting: boolean): void {
+      ;[...jobs.values()].find((j) => j.owner === owner)?.setWaitingForRender(waiting)
+    },
     cancel(id: string): void {
       jobs.get(id)?.abort.abort()
     },

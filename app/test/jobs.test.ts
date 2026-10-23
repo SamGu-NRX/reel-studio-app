@@ -8,6 +8,7 @@ import { OWNER_LOCK } from '../src/main/owner'
 import type { IpcMainInvokeEvent } from 'electron'
 import { registerAttachmentIpc, type AttachIpcDeps } from '../src/main/attachments'
 import { takeNote } from '../src/main/note-intake'
+import { noteStagingDir } from '../src/main/paths'
 import { projectDir } from '../src/main/store'
 import { setupPaths } from './helpers'
 
@@ -66,7 +67,8 @@ describe('a job whose engine would not stop', () => {
         throw new Error('a closed video is never read')
       },
       busy: (s) => jobs.isClosed(s),
-      refuse: (s) => jobs.refuseIfBusy(s),
+      refuse: (s) => jobs.refuseIfKeptClosed(s),
+      stagingDir: (s) => noteStagingDir(projectDir(s)),
       clipboardImage: async () => ({ mime: 'image/png', bytes: new Uint8Array([1]) }),
       choose: async () => ['/tmp/a.png']
     })
@@ -79,10 +81,27 @@ describe('a job whose engine would not stop', () => {
     await expect(call('notes:removeAttachment', asset)).rejects.toMatchObject(STUCK)
     expect(engineCalls).toEqual([])
     expect(existsSync(join(dir, ...asset.split('/')))).toBe(true)
+    expect(existsSync(noteStagingDir(dir))).toBe(false)
   })
 
   it('refuses a note with the "would not stop" message before it reaches the chat', async () => {
     const { slug, jobs } = await stuckVideo()
     await expect(takeNote(jobs, slug, 'make the captions bigger', undefined)).rejects.toMatchObject(STUCK)
+  })
+
+  it('takes a note while a job runs on the video: it waits in the queue', async () => {
+    setupPaths()
+    const slug = 'busy-reel'
+    mkdirSync(projectDir(slug), { recursive: true })
+    const jobs = createJobManager(() => undefined, () => undefined)
+    let finish = (): void => undefined
+    const running = new Promise<void>((resolve) => (finish = resolve))
+    const id = jobs.start(slug, 'rerender', async () => {
+      await running
+      return { summary: 'done' }
+    })
+    await expect(takeNote(jobs, slug, 'make the captions bigger', undefined)).resolves.toEqual({ note: 'make the captions bigger', files: [] })
+    finish()
+    await jobs.get(id)?.done
   })
 })

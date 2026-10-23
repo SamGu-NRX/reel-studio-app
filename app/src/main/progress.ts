@@ -53,6 +53,7 @@ export class ProgressTracker {
   private best = 0
   private jobStart: number | undefined
   private aggregate: { pct: number; at: number } | undefined
+  private heldAt: number | null = null
   private readonly spent: Partial<Record<Timed, number>> = {}
 
   constructor(
@@ -102,6 +103,20 @@ export class ProgressTracker {
     return factors.length % 2 ? factors[middle] : (factors[middle - 1] + factors[middle]) / 2
   }
 
+  /** While the job waits for another reel's render (render-slot.ts) the bar and the clock stop: the
+   * wait is not this phase running long, so afterwards the estimate neither jumps nor says "overdue". */
+  hold(on: boolean): void {
+    if (on === (this.heldAt !== null)) return
+    if (on) this.heldAt = this.now()
+    else {
+      const held = this.now() - this.heldAt!
+      this.phaseStart += held
+      if (this.jobStart !== undefined) this.jobStart += held
+      if (this.aggregate) this.aggregate.at += held
+      this.heldAt = null
+    }
+  }
+
   private phaseEstimate(phase: Timed): number {
     if (this.local(phase)) return this.estimate(phase)
     return this.default(phase) * (phase === 'edit' ? 1 : this.factor() ?? 1)
@@ -121,13 +136,16 @@ export class ProgressTracker {
     }
     if (i <= this.cur) return
     this.jobStart ??= t
-    this.recordPhase(t)
+    // a phase left while held ended when the hold began
+    this.recordPhase(this.heldAt ?? t)
     for (let k = Math.max(0, this.cur + 1); k < i; k++) this.spent[this.phases[k]] = 0
     this.cur = i
     this.phaseStart = t
+    if (this.heldAt !== null) this.heldAt = t
   }
 
   snapshot(): { overall: number; etaSec: number | null; overdue: boolean } {
+    if (this.heldAt !== null) return { overall: this.best, etaSec: null, overdue: false }
     if (this.cur < 0) return { overall: this.best, etaSec: null, overdue: false }
     const estimates = this.phases.map((p) => this.spent[p] === 0 ? 0 : this.phaseEstimate(p))
     const done = this.phases.slice(0, this.cur).reduce((sum, phase) => sum + (this.spent[phase] ?? 0), 0)

@@ -27,6 +27,9 @@ export interface EditorDeps {
   maxSteps?: number;
   /** render a full-quality export after a first edit (default true); a note is always saved with its final video */
   finalRender?: boolean;
+  /** the ENGINE_STUCK error once part of the engine would not stop (index.ts editHost), else null: a step that
+   * hides engine errors (a song list, a screenshot's credit) must not let the note be saved after it */
+  stuck?: () => unknown;
   /** cumulative token brake per run (default agent.DEFAULT_TOKEN_BUDGET) */
   tokenBudget?: number;
   /** DNS lookup for the private-host check (test hook) */
@@ -367,15 +370,12 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     const r = await runAgent({ provider, system: await systemPrompt(deps), task, taskImages: images, ctx, onEvent, signal, maxSteps: deps.maxSteps ?? 25, tokenBudget: deps.tokenBudget, preload: ['get_project', 'get_transcript'] });
     const nothing = !ctx.state.changed.size && !ctx.state.styleRulesAdded.length && !ctx.state.styleSuggestions.length;
     // A note that stopped before finish (step limit, or replies with no tool call) is not applied, and
-    // says so when that throws work away. With nothing to throw away it gets the reply below.
+    // says so when that throws work away. With nothing to throw away it gets the "not sure" reply.
     if (r.stoppedBy !== 'finish' && !nothing) throw unfinished(ctx.state);
-    if (nothing) {
-      return {
-        summary: r.finished || 'I looked, but I was not sure what to change. Could you say it another way?',
-        version: baseVersion, styleRulesAdded: [], styleSuggestions: [], changed: [],
-      };
-    }
-    const summary = withStyleEcho(r.finished || 'I saved your preference.', ctx.state);
+    // a note that changed nothing is saved too: its id in project.json is how the app's note queue knows it ran
+    const summary = nothing
+      ? r.finished || 'I looked, but I was not sure what to change. Could you say it another way?'
+      : withStyleEcho(r.finished || 'I saved your preference.', ctx.state);
     // this note's files, plus files attached to an earlier note that THIS note put in the video ("when I say X")
     const placedNow = placedAssets(await loadProject(projectDir, ctx.note!.file));
     const recorded = [...refs, ...earlier.map((a) => a.asset).filter((r) => placedNow.has(r) && !refs.includes(r))];
@@ -430,6 +430,8 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
     await fsp.writeFile(path.join(vdir, 'notes.md'), `# v${version}\n\nNote: ${n.label}\n\n${n.summary}\n`);
   }
   await writeFileAtomic(live, bytes, undefined, async () => {
+    const stuck = deps.stuck?.();
+    if (stuck) throw stuck;
     if (!deps.owner) refuseIfOpen(ctx.projectDir);
     await unchanged();
     if (ctx.signal?.aborted) throw new AIError('cancelled', 'Stopped.');

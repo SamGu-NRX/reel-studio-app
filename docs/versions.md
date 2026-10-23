@@ -113,3 +113,23 @@ engine would not stop stays closed. When `engines.json` cannot be read, the app 
 running processes: a project stays closed only while an engine or ffmpeg names its folder in its
 arguments, and every other project opens. It keeps looking at each start until it finds none
 (`app/src/main/orphans.ts`).
+
+## Notes waiting their turn
+
+A note sent while another job runs on the same video waits in that video's queue in `app.json`
+(`app/src/main/note-queue.ts`), written to disk before the send returns. Notes run one at a time, oldest
+first, each on whatever version is newest when it starts. A queued note's id is the id it is saved under in
+`project.json` `notes`, and it leaves the queue only once that id is there, so a crash on either side of
+the save never runs it twice. A note that changes nothing is saved too, with `applied: []`.
+
+The queue goes on by itself only after a saved note. Stop, a failed note and a restart hold it until the
+user presses Resume (a note sent to an empty queue starts at once). A note that was stopped or failed before
+it was saved waits again at the top, so it can be edited or tried again without retyping it. A file attached while a job runs goes
+to `<userData>/note-staging/<slug>/` and is copied into `work/assets` by its own note's job.
+
+Notes on different videos run side by side, but only one engine `render` runs at a time across all of
+them (`app/src/main/render-slot.ts`). A render that ends with `ENGINE_STUCK` keeps the slot until Reel
+Studio restarts. An engine a crashed run left that would not stop holds only its own video, which stays
+closed until that engine exits (`app/src/main/last-run.ts`); other videos render as usual. A video kept
+closed because the startup process scan found an engine or ffmpeg naming it opens once a later look finds
+none.

@@ -33,6 +33,12 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
   and the AI's `set_cover` clears it. `cover.exact` (the AI looked at this frame; search 0.2 s around it)
   is unchanged.
 
+## 2026-10-22 (note queue)
+
+- `notes[].id` is the queued note's id (app.json `queue[].id`), not a job id. Every note that finishes is
+  saved, including one that changed nothing (`applied: []`, `version` unchanged): the app's queue knows a
+  note ran by its id here.
+
 ## 2026-10-21 (all-or-nothing notes)
 
 - `notes[].id` (string): the app's job id for the note. `notes[].reply` (string): what the editor told the
