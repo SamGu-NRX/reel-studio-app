@@ -40,8 +40,11 @@ export function Models({ info, onInfo, onError }: { info: AppInfo; onInfo: (i: A
   const anchor = useRef<HTMLButtonElement | null>(null)
   const anyShown = [useShown('model-edits'), useShown('model-checks'), useShown('model-titles')].some(Boolean)
 
+  const editor = !!provider?.connected && provider.id !== 'none'
   useEffect(() => {
     let live = true
+    setMenu(null)
+    setOffered([])
     offeredModels(provider)
       .then((m) => live && setOffered(m))
       .catch(() => live && setOffered([]))
@@ -50,7 +53,6 @@ export function Models({ info, onInfo, onError }: { info: AppInfo; onInfo: (i: A
     }
   }, [provider])
 
-  const editor = !!provider?.connected && provider.id !== 'none'
   const m = info.models
   const gone = (r: ModelRole) => editor && m[r] !== 'auto' && !offered.includes(m[r])
   const pick = async (r: ModelRole, v: string) => {

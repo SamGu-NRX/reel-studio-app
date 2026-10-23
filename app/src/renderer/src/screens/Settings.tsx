@@ -193,11 +193,10 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
             )}
 
             <Section id="editor" desc="It picks your best takes, adds pictures and makes the changes in your notes.">
-              {shown('editor') && (
-                <div className="srow picker-row" data-setting="editor">
-                  <ConnectAI advanced={false} />
-                </div>
-              )}
+              {/* hidden, not unmounted: a search must not drop a check or sign-in that is under way */}
+              <div className="srow picker-row" data-setting="editor" hidden={!shown('editor')}>
+                <ConnectAI advanced={false} />
+              </div>
               {hits ? (
                 ADVANCED.some(shown) && advanced
               ) : (
@@ -345,12 +344,17 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
   )
 }
 
-/** A heading and its rows. A search that finds none of them hides the whole section. */
+/** A heading and its rows. A search that finds none of them hides the whole section, keeping its rows' state. */
 function Section({ id, desc, children }: { id: SectionId; desc?: string; children: ReactNode }) {
   const hits = useContext(SearchHits)
-  if (hits && !SETTING_IDS.some((s) => SETTINGS[s].section === id && hits.has(s))) return null
   return (
-    <section className="ssec" id={`sec-${id}`} aria-labelledby={`sec-${id}-h`} data-testid={`settings-${id}`}>
+    <section
+      className="ssec"
+      id={`sec-${id}`}
+      aria-labelledby={`sec-${id}-h`}
+      hidden={!!hits && !SETTING_IDS.some((s) => SETTINGS[s].section === id && hits.has(s))}
+      data-testid={`settings-${id}`}
+    >
       <h2 id={`sec-${id}-h`}>{SECTIONS[id]}</h2>
       {desc && !hits && <p className="ssec-desc">{desc}</p>}
       <div className="srows">{children}</div>

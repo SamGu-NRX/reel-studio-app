@@ -16,11 +16,11 @@ test('fails if a Settings search shows rows it did not find, hides a match, or E
     await expect(page.locator('[data-setting="sharing"]')).toBeVisible()
     await expect(page.getByTestId('share-on')).toBeVisible()
     await expect(page.getByTestId('settings-privacy')).toBeVisible()
-    await expect(page.getByTestId('settings-editor')).toHaveCount(0)
+    await expect(page.getByTestId('settings-editor')).toBeHidden()
     await expect(page.locator('[data-setting="library-folder"]')).toHaveCount(0)
 
     await search.fill('folder')
-    await expect(page.locator('[data-setting]')).toHaveCount(1)
+    await expect(page.locator('[data-setting]:visible')).toHaveCount(1)
     await expect(page.getByTestId('root-display')).toBeVisible()
 
     await search.fill('server')
@@ -28,7 +28,7 @@ test('fails if a Settings search shows rows it did not find, hides a match, or E
 
     await search.fill('qwertyuiop')
     await expect(page.getByTestId('settings-no-match')).toHaveText(/No settings match “qwertyuiop”\./)
-    await expect(page.locator('[data-setting]')).toHaveCount(0)
+    await expect(page.locator('[data-setting]:visible')).toHaveCount(0)
 
     await search.press('Escape')
     await expect(search).toHaveValue('')

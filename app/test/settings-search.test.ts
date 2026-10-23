@@ -30,4 +30,8 @@ describe('Settings search', () => {
     expect(findSettings('qwertyuiop')).toEqual(new Set())
     expect(findSettings('   ')).toBeNull()
   })
+
+  it('fails if a found setting shows without the switch it needs to be usable', () => {
+    expect(findSettings('quality scores')).toEqual(new Set(['sharing', 'sharing-quality']))
+  })
 })

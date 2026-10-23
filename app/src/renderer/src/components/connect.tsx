@@ -148,9 +148,9 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
     try {
       const p = await reel.ai.signInChatGPT()
       if (p.connected) connected(p)
-      else if (p.error) setChatgptError(p.error.userMessage)
+      else if (p.error && p.error.code !== 'cancelled') setChatgptError(p.error.userMessage)
     } catch (e) {
-      setChatgptError(userMessage(e))
+      if (errorCode(e) !== 'cancelled') setChatgptError(userMessage(e))
     } finally {
       setBusy(null)
     }
