@@ -9,7 +9,7 @@ import type { Step } from './steps'
 import type { HandEdit } from './hand-edit'
 import type { SoundEffect } from './sfx'
 export type { VersionRow } from './version-diff'
-import type { Platform, PlatformExportRequest } from './platforms'
+import type { Platform, PlatformExportRequest, TryProposal, TryVariable } from './platforms'
 export type { ChatAction } from './notes'
 export type { CoverCandidate } from './cover'
 
@@ -653,6 +653,10 @@ export interface ReelApi {
     /** Stops the look, if one runs; resolves once the engine has exited. */
     stopCoverCandidates(slug: string): Promise<void>
     exportPlatforms(slug: string, version: number, request: PlatformExportRequest): Promise<PlatformExportResult>
+    /** Try 2 for a trial post: the connected editor's one change from the version with this caption, or the app's
+     * cover pick when no editor is connected. `notice`: why the editor's answer isn't used, in the app's words.
+     * `variable`: the creator swapped to this one. */
+    proposeTry(slug: string, version: number, ask: { caption: string; variable?: TryVariable }): Promise<{ proposal: TryProposal; notice?: string }>
     remove(slug: string): Promise<void>
   }
   /** Pictures, GIFs and short clips on a note (0.1.2). Each call copies the files into the project. */

@@ -38,6 +38,12 @@ function longestKeyframeGap(file: string): number {
   return Math.max(...keys.map((t, i) => (keys[i + 1] ?? end) - t))
 }
 
+/** The first frame's average brightness, 0 to 255. */
+function meanLuma(file: string): number {
+  const gray = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-frames:v', '1', '-vf', 'scale=32:32,format=gray', '-f', 'rawvideo', '-'])
+  return gray.reduce((sum, v) => sum + v, 0) / gray.length
+}
+
 function jpeg(args: string[], dest: string): Buffer {
   execFileSync('ffmpeg', ['-y', '-v', 'error', ...args, '-frames:v', '1', '-q:v', '2', dest])
   return readFileSync(dest)
@@ -109,6 +115,17 @@ describe('platform files through the real engine', () => {
     expect((await fs.readFile(instagram[1].cover)).equals(jpeg(['-ss', '1', '-i', source], join(scratch, 'expected-second.jpg')))).toBe(true)
   })
 
+  it('fails if a brighter Try 2 shares Try 1\'s video, or its video or cover is not brighter', async () => {
+    const source = finalRender(join(scratch, 'brightness.mp4'), 3)
+    const folder = join(scratch, 'brighter')
+    const one = { version: 1, source, chosenCover: null, name: 'Light - Version 1', platforms: ['instagram'] as Platform[], caption: 'Same', coverSeconds: null }
+    const tries = await checkPlatformExport([one, { ...one, brightness: 0.1 }], runEngine)
+    const [first, second] = (await exportPlatforms({ tries, folder, runEngine })).files
+    expect(second.video).toBe(join(folder, 'Light - Version 1 - Instagram Reels - Try 2.mp4'))
+    expect(meanLuma(second.video)).toBeGreaterThan(meanLuma(first.video) + 10)
+    expect(meanLuma(second.cover)).toBeGreaterThan(meanLuma(first.cover) + 10)
+  })
+
   it('fails if Stop during Try 2\'s encode leaves any Try 1 file or the staging folder', async () => {
     const first = finalRender(join(scratch, 'try 1.mp4'), 3)
     const second = join(scratch, 'try 2 small.mp4')
@@ -147,7 +164,7 @@ describe('platform files through the real engine', () => {
     const one = { version: 1, source, chosenCover: null, name: 'Frame - Version 1', platforms, caption: 'Same' }
     // 1 s and 1.01 s are both frame 30 at 30 fps.
     await expect(checkPlatformExport([{ ...one, coverSeconds: 1 }, { ...one, coverSeconds: 1.01 }], runEngine))
-      .rejects.toMatchObject({ code: 'BAD_EXPORT', userMessage: 'Try 2 is the same as Try 1. Pick another version, cover or caption.' })
+      .rejects.toMatchObject({ code: 'BAD_EXPORT', userMessage: 'Try 2 is the same as Try 1.' })
   })
 
   it('fails if one export gives its sets different numbers', async () => {

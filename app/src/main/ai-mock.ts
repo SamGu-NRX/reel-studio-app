@@ -285,6 +285,22 @@ export const createMockAI: CreateAI = ({ host }) => {
       }
     },
 
+    // The practice editor's Try 2: the hook line unless the creator swapped, a fixed answer per thing, after a beat.
+    async proposeTry(req, signal) {
+      if (!(noteMs > 0)) throw { code: 'NO_AI', userMessage: 'Connect an editor to have it choose Try 2.' }
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(resolve, Math.min(noteMs, 600))
+        signal?.addEventListener('abort', () => (clearTimeout(t), reject({ code: 'CANCELLED', userMessage: 'Stopped.' })), { once: true })
+      })
+      const tags = req.caption.split('\n').filter((l) => l.trim().startsWith('#')).join('\n')
+      switch (req.variable ?? 'hook') {
+        case 'hook': return { variable: 'hook', value: 'The one change that fixed my sourdough', reason: 'I lead with the payoff, since people decide before they tap more.' }
+        case 'caption': return { variable: 'caption', value: `Mix, wait, fold four times, then the fridge.${tags ? `\n\n${tags}` : ''}`, reason: 'I swapped the story for the steps, so the caption pays off the hook.' }
+        case 'cover': return { variable: 'cover', value: Math.round(req.duration * 50) / 100, reason: 'I picked the middle, where you look straight at the camera.' }
+        case 'brightness': return { variable: 'brightness', value: 0.06, reason: 'I lift it a little so your face reads on a small screen.' }
+      }
+    },
+
     async styleRules() {
       return readRules()
     },

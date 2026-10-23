@@ -34,7 +34,6 @@ const posted = (post: ProjectJson['post']): string =>
 export function Outs({
   slug,
   version,
-  versions,
   post,
   disabled,
   quiet,
@@ -44,8 +43,6 @@ export function Outs({
   slug: string
   /** The version on screen: the one Share sends. */
   version: VersionInfo | undefined
-  /** Every version, for Try 2. */
-  versions: VersionInfo[]
   post: ProjectJson['post']
   /** A version is being made: nothing new can start. */
   disabled: boolean
@@ -313,7 +310,7 @@ export function Outs({
       id: 'platforms',
       icon: <Icon name="layers" size={16} />,
       label: 'Other platforms',
-      hint: 'TikTok, YouTube Shorts and 5 more, with Try 2',
+      hint: 'TikTok, YouTube Shorts and 5 more',
       testid: 'share-platforms-toggle',
       go: () => setPlatformsOpen((o) => !o)
     }
@@ -441,8 +438,8 @@ export function Outs({
                         <SharePlatforms
                           slug={slug}
                           version={version}
-                          versions={versions}
                           caption={caption}
+                          open={open && platformsOpen && !view}
                           disabled={disabled}
                           onWork={(w) => {
                             setPlatformWork(w)

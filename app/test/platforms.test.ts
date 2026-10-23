@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { PLATFORM_RULES, checkPlatform, secondTryPlatforms } from '../src/shared/platforms'
+import {
+  PLATFORM_RULES, appCoverPick, checkPlatform, parseTryProposal, sameVideo, secondTryPlatforms, secondTryProblem, tryChanges, tryFromProposal,
+  type PlatformTry, type TryProposal
+} from '../src/shared/platforms'
 
 const captionIssue = (...args: Parameters<typeof checkPlatform>) => checkPlatform(...args).find((issue) => issue.kind === 'caption')
 const durationIssue = (...args: Parameters<typeof checkPlatform>) => checkPlatform(...args).find((issue) => issue.kind === 'duration')
@@ -59,5 +62,46 @@ describe('platform export rules', () => {
     const all = PLATFORM_RULES.map((rule) => rule.id)
     expect(secondTryPlatforms(all, true)).toEqual(['instagram', 'facebook'])
     expect(secondTryPlatforms(all, false)).toEqual(['instagram'])
+  })
+})
+
+describe('Try 2 from a proposal', () => {
+  const first: PlatformTry = { version: 3, caption: 'Hi guys, quick one\nOne bowl, two folds.\n\n#sourdough', coverSeconds: null }
+  const proposals: TryProposal[] = [
+    { variable: 'hook', value: 'Sourdough without a mixer', reason: 'I lead with the topic.' },
+    { variable: 'caption', value: 'Mix, wait, fold.\n\n#sourdough', reason: 'I give the steps.' },
+    { variable: 'cover', value: 7.5, reason: 'I picked your smile.' },
+    { variable: 'brightness', value: 0.06, reason: 'I lift it a little.' }
+  ]
+
+  // fails if a proposal changes a second thing, which would leave the creator unable to tell what won
+  it('changes exactly the one thing the proposal names', () => {
+    expect(proposals.map((p) => tryChanges(first, tryFromProposal(first, p), 30))).toEqual([['caption'], ['caption'], ['cover'], ['brightness']])
+    expect(tryFromProposal(first, proposals[0]).caption).toBe('Sourdough without a mixer\nOne bowl, two folds.\n\n#sourdough')
+    expect(tryFromProposal(first, proposals[1]).caption).toBe('Hi guys, quick one\nMix, wait, fold.\n\n#sourdough')
+  })
+
+  // fails if a brighter Try 2 reaches Facebook, which tests only a cover or a caption
+  it('counts a brightness change as a change to the video', () => {
+    const brighter = tryFromProposal(first, proposals[3])
+    expect(sameVideo(first, brighter)).toBe(false)
+    expect(secondTryPlatforms(['instagram', 'facebook'], sameVideo(first, brighter))).toEqual(['instagram'])
+    expect(secondTryProblem(['facebook'], first, brighter, 30)).toBe('Only Instagram can test a change to the video. Tick Instagram Reels, or undo Try 2.')
+  })
+
+  // fails if an editor answer with no reason, the same hook line, or a cover outside the reel reaches the screen
+  it('refuses an editor answer that changes nothing or says nothing', () => {
+    expect(parseTryProposal({ variable: 'cover', value: 7.5, reason: ' I picked your smile. ' }, first.caption, 20)).toEqual({ variable: 'cover', value: 7.5, reason: 'I picked your smile.' })
+    expect(() => parseTryProposal({ variable: 'cover', value: 7.5 }, first.caption, 20)).toThrow(/reason/)
+    expect(() => parseTryProposal({ variable: 'hook', value: 'Hi guys, quick one', reason: 'I kept it.' }, first.caption, 20)).toThrow(/same as Try 1/)
+    expect(() => parseTryProposal({ variable: 'cover', value: 31, reason: 'I picked the end.' }, first.caption, 20)).toThrow(/inside the video/)
+    expect(() => parseTryProposal({ variable: 'brightness', value: 0.5, reason: 'I lift it.' }, first.caption, 20)).toThrow(/too small or too large/)
+  })
+
+  // fails if the app's own pick lands on the current cover, which would make Try 2 the same as Try 1
+  it('picks a cover a word end away from the current one', () => {
+    const words = [{ s: 5.2, e: 5.6 }, { s: 11.6, e: 12.1 }, { s: 6.6, e: 7.1 }]
+    expect(appCoverPick(20, words, null)).toBe(12.1)
+    expect(appCoverPick(20, words, 12)).toBe(7.1)
   })
 })

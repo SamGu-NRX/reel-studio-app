@@ -385,8 +385,15 @@ def cmd_export_probe(args: list[str]) -> dict:
 def cmd_export_media(args: list[str]) -> dict:
     dest = take(args, "--dest")
     width, height, bitrate = take(args, "--width"), take(args, "--height"), take(args, "--bitrate")
-    video = (["-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+    brightness = take(args, "--brightness")
+    look = f",eq=brightness={brightness}" if brightness else ""
+    video = (["-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2{look}",
               "-c:v", "libx264", "-preset", "ultrafast", "-b:v", bitrate, "-pix_fmt", "yuv420p"] if width else ["-c:v", "copy"])
+    # FAKE_ENGINE_SLOW_EXPORT=<seconds>: a platform file takes that long, so Stop can land while it is written.
+    slow = float(os.environ.get("FAKE_ENGINE_SLOW_EXPORT", "0") or 0)
+    for i in range(20 if slow else 0):
+        progress("export", 5 * i, "Saving platform files")
+        time.sleep(slow / 20)
     run_ffmpeg([FFMPEG, "-y", "-v", "error", "-i", args[0], *video, "-c:a", "aac", "-b:a", "128k", "-use_editlist", "0", dest],
                float(probe(args[0])["duration"]), "export", "Saving platform files", 0, 100)
     return {"video": dest, "sizeBytes": Path(dest).stat().st_size}
@@ -395,7 +402,9 @@ def cmd_export_media(args: list[str]) -> dict:
 def cmd_export_cover(args: list[str]) -> dict:
     dest = take(args, "--dest")
     at = take(args, "--at")
-    subprocess.run([FFMPEG, "-y", "-v", "error", *(["-ss", at] if at else []), "-i", args[0], "-frames:v", "1", "-q:v", "2", dest],
+    brightness = take(args, "--brightness")
+    look = ["-vf", f"eq=brightness={brightness}"] if brightness else []
+    subprocess.run([FFMPEG, "-y", "-v", "error", *(["-ss", at] if at else []), "-i", args[0], "-frames:v", "1", *look, "-q:v", "2", dest],
                    check=True, capture_output=True)
     return {"cover": dest}
 

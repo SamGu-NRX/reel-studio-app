@@ -88,8 +88,9 @@ import { COVER_SUGGESTIONS } from '../shared/cover'
 import { createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
 import { aiNoteText, checkMoment, forPerson, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment } from '../shared/moments'
-import { parsePlatformExportRequest, secondTryPlatforms, type Platform, type PlatformTry } from '../shared/platforms'
+import { parsePlatformExportRequest, sameVideo, secondTryPlatforms, type Platform, type PlatformTry, type TryVariable } from '../shared/platforms'
 import { checkPlatformExport, exportPlatforms, sweepExportStaging, type ExportTry } from './platform-export'
+import { proposeTry } from './try-proposal'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { displayPath } from '../shared/display-path'
 import { RELEASES_REPO } from '../shared/config'
@@ -958,16 +959,16 @@ function registerIpc(): void {
     if (![n, request.second?.version ?? n].every((m) => versions.some((v) => v.n === m))) throw { code: 'NO_VERSION', userMessage: 'Choose an available version before sharing.' }
     const version = await finishedExportVersion(slug, n)
     const project = await readProject(slug)
-    const exportTry = (v: VersionInfo, platforms: Platform[], { caption, coverSeconds }: Pick<PlatformTry, 'caption' | 'coverSeconds'>): ExportTry => {
+    const exportTry = (v: VersionInfo, platforms: Platform[], { caption, coverSeconds, brightness }: Pick<PlatformTry, 'caption' | 'coverSeconds' | 'brightness'>): ExportTry => {
       const chosenCover = join(dirname(v.videoPath), 'cover.png')
       return { version: v.n, source: v.videoPath, chosenCover: existsSync(chosenCover) ? chosenCover : null,
-        name: `${safeFileName(project.title || slug)} - Version ${v.n}`, platforms, caption, coverSeconds }
+        name: `${safeFileName(project.title || slug)} - Version ${v.n}`, platforms, caption, coverSeconds, ...(brightness ? { brightness } : {}) }
     }
     const first = exportTry(version, request.platforms, request)
     const { second } = request
     const secondVersion = second && (second.version === n ? version : await finishedExportVersion(slug, second.version))
     const tries = await checkPlatformExport(second && secondVersion
-      ? [first, exportTry(secondVersion, secondTryPlatforms(request.platforms, second.version === n), second)]
+      ? [first, exportTry(secondVersion, secondTryPlatforms(request.platforms, sameVideo(first, second)), second)]
       : [first], runEngine)
     let result: PlatformExportResult | null = null
     let failure: unknown
@@ -989,6 +990,14 @@ function registerIpc(): void {
     if (failure) throw failure
     if (!result) throw { code: 'EXPORT_FAILED', userMessage: 'Saving for those platforms stopped. Try again.' }
     return result
+  })
+  handle('projects:proposeTry', async (_e, slug: string, n: number, ask: { caption: string; variable?: TryVariable }) => {
+    const timeline = await readTimeline(slug, n)
+    if (!timeline) throw { code: 'NO_VERSION', userMessage: 'Choose an available version before sharing.' }
+    // the cover of the version on screen: its own snapshot, or the project for a preview
+    const snapshot = n > 0 ? await readJson<ProjectJson | null>(join(projectDir(slug), 'versions', `v${n}`, 'project.json'), null) : null
+    const { cover } = snapshot ?? (await readProject(slug))
+    return proposeTry({ ai, caption: ask.caption, variable: ask.variable, timeline, cover: cover ?? null, log })
   })
   handle('projects:remove', async (_e, slug: string) => {
     removing.add(slug)

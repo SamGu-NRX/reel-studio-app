@@ -1,6 +1,7 @@
 // Mirror of the @reelstudio/ai interface (docs/architecture.md section 8). The real package is loaded at
 // runtime when it exists; until then ai-mock.ts implements the same shape.
 import type { JobUpdate, StyleProposal, StyleRule } from '../shared/api'
+import type { TryVariable } from '../shared/platforms'
 
 /** What @reelstudio/ai emits: the job contract minus `heard` (main adds that one itself). */
 export type AgentEvent = Exclude<JobUpdate, { type: 'heard' }>
@@ -29,6 +30,18 @@ export interface ScriptResult {
   script: string
   onScreenText: string[]
   title?: string
+}
+
+/** What the editor reads to choose Try 2 (ai/src/trial.ts). */
+export interface TryRequest {
+  /** Try 1's caption as posted; its first line is the hook line. */
+  caption: string
+  duration: number
+  /** What is said, on the finished reel's clock. */
+  words: { w: string; s: number }[]
+  coverSeconds: number | null
+  /** The creator swapped to this one. */
+  variable?: TryVariable
 }
 
 export interface EngineHost {
@@ -119,6 +132,8 @@ export interface AI {
   /** The words are a whole-reel setting applyNote does without the model ("smaller captions"). */
   wholeReelSetting(projectDir: string, note: string): Promise<boolean>
   writeScript(idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult>
+  /** Try 2 for a trial post: the one thing the editor changes, and its reason in its own voice. Optional: older packages lack it. */
+  proposeTry?(req: TryRequest, signal?: AbortSignal): Promise<{ variable: unknown; value: unknown; reason: unknown }>
   styleRules(): Promise<StyleRule[]>
   /** The removed rule and where it was, for Undo; null when it was already gone. */
   removeStyleRule(id: string): Promise<{ rule: StyleRule; index: number } | null>
