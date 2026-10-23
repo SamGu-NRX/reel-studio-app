@@ -1,14 +1,21 @@
-"""The cut: word-id ranges -> source segments on the output clock, and every time mapping.
+"""The cut: keep ranges -> source segments on the output clock, and every time mapping.
 
-`cut.keep` is a list of inclusive word-id ranges in OUTPUT order. A range covers every transcript
-word between its two ends (by position in transcript.words). This module turns that into
-Segments (source, src_start, src_end, out_start) and answers "where does word wN land in the
-output?" -- the one mapping that b-roll, zooms, music automation and captions all go through, so a
-re-cut moves all of them together.
+`cut.keep` is a list of ranges in OUTPUT order, each one of two kinds:
+  {"from": "w12", "to": "w40"}               inclusive word-id range: every transcript word between
+                                             its two ends (by position in transcript.words)
+  {"source": "s1", "start": 3.2, "end": 9.8} seconds of one source, played exactly as given
+This module turns them into Segments (source, src_start, src_end, out_start) and answers "where
+does word wN land in the output?" -- the one mapping that b-roll, zooms, music automation and
+captions all go through, so a re-cut moves all of them together.
 
-Dead air is handled here, measured from the AUDIO, not the transcript (ported from a working
-deadspace pass): transcribe.py stores each word's measured edges, so `e` already includes the
-word's release. Between two kept words, a pause longer than gapCap + minSaving is cut down to
+Seconds ranges exist for footage whose edit was chosen elsewhere, such as sport clips: the action
+happens between the commentary lines, so pause capping would cut it out. A seconds range becomes
+one frame-snapped segment with no pause capping, lead or tail trimming, or merging, and keeps every
+word of its source whose midpoint falls inside it. It needs no words at all.
+
+In word ranges, dead air is handled here, measured from the AUDIO, not the transcript (ported from
+a working deadspace pass): transcribe.py stores each word's measured edges, so `e` already includes
+the word's release. Between two kept words, a pause longer than gapCap + minSaving is cut down to
 gapCap: AFTER_SHARE of it stays with the outgoing word, the rest leads into the next one. A word
 is never split, and only silence is ever removed.
 
@@ -103,27 +110,68 @@ class Timeline:
         return None
 
 
+def is_seconds(rng) -> bool:
+    """A keep entry meant as source seconds ({source, start, end}): anything without a word end."""
+    return isinstance(rng, dict) and "from" not in rng and "to" not in rng
+
+
+def _word_runs(words: list, index: dict, k: int, rng: dict) -> list:
+    try:
+        i0, i1 = index[rng["from"]], index[rng["to"]]
+    except KeyError as exc:
+        raise EngineError("BAD_CUT", f"cut.keep[{k}] names unknown word {exc.args[0]!r}",
+                          "The edit points at words that aren't in the transcript. "
+                          "Try making the cut again.")
+    if i0 > i1:
+        i0, i1 = i1, i0
+    runs, start = [], i0
+    for i in range(i0 + 1, i1 + 1):
+        if words[i]["source"] != words[i - 1]["source"]:
+            runs.append((start, i - 1))
+            start = i
+    runs.append((start, i1))
+    return runs
+
+
 def resolve_ranges(words: list, keep: list) -> list:
-    """keep ranges -> list of transcript-position runs [(i0, i1)], in output order, each inside one
-    source. Unknown ids are an error the AI can fix; reversed ranges are taken as written forwards."""
+    """Word keep ranges -> list of transcript-position runs [(i0, i1)], in output order, each inside
+    one source; seconds ranges are skipped. Unknown ids are an error the AI can fix; reversed ranges
+    are taken as written forwards."""
     index = {w["id"]: i for i, w in enumerate(words)}
     runs = []
     for k, rng in enumerate(keep or []):
-        try:
-            i0, i1 = index[rng["from"]], index[rng["to"]]
-        except KeyError as exc:
-            raise EngineError("BAD_CUT", f"cut.keep[{k}] names unknown word {exc.args[0]!r}",
-                              "The edit points at words that aren't in the transcript. "
-                              "Try making the cut again.")
-        if i0 > i1:
-            i0, i1 = i1, i0
-        start = i0
-        for i in range(i0 + 1, i1 + 1):
-            if words[i]["source"] != words[i - 1]["source"]:
-                runs.append((start, i - 1))
-                start = i
-        runs.append((start, i1))
+        if not is_seconds(rng):
+            runs.extend(_word_runs(words, index, k, rng))
     return runs
+
+
+def _bad_seconds(k: int, why: str) -> EngineError:
+    return EngineError("BAD_CUT", f"cut.keep[{k}] {why}",
+                       "The edit points at a part of the video that isn't there. "
+                       "Try making the cut again.")
+
+
+def plan_seconds(rng: dict, k: int, sources: dict) -> tuple:
+    """(source, src_start, src_end) of a seconds range: snapped to the source frame grid and clamped
+    to the source, floored at the end like plan_run."""
+    src = rng.get("source")
+    if not isinstance(src, str) or src not in sources:
+        raise _bad_seconds(k, f"names unknown source {src!r}")
+    a, b = rng.get("start"), rng.get("end")
+    for v in (a, b):
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+            raise _bad_seconds(k, f"needs numeric start and end seconds, got {a!r}..{b!r}")
+    if b <= a:
+        raise _bad_seconds(k, f"ends at {b} s, not after its start {a} s")
+    meta = sources[src] or {}
+    fps = float(meta.get("fps") or 30.0)
+    dur = float(meta.get("duration") or 0.0)
+    s, e = snap(max(float(a), 0.0), fps), snap(float(b), fps)
+    if dur:
+        e = min(e, math.floor(dur * fps + EPS) / fps)
+    if e - s < 1.0 / fps - EPS:
+        raise _bad_seconds(k, f"{a}..{b} s is under one frame of {src} (duration {dur} s)")
+    return src, round(s, 6), round(e, 6)
 
 
 def merge_contiguous(words: list, runs: list) -> list:
@@ -200,15 +248,43 @@ def plan_run(words: list, i0: int, i1: int, gap_cap: float, min_saving: float, f
 def build_timeline(words: list, keep: list, sources: dict, gap_cap: float = GAP_CAP,
                    min_saving: float = MIN_SAVING) -> Timeline:
     """sources: {sid: {"duration": float, "fps": float}}."""
-    runs = merge_contiguous(words, resolve_ranges(words, keep))
+    index = {w["id"]: i for i, w in enumerate(words)}
+    # output order: word runs (i0, i1), back-to-back ones merged as before, and seconds spans (src, s, e)
+    items, pending = [], []
+    for k, rng in enumerate(keep or []):
+        if is_seconds(rng):
+            items.extend(merge_contiguous(words, pending))
+            pending = []
+            items.append(plan_seconds(rng, k, sources))
+        else:
+            pending.extend(_word_runs(words, index, k, rng))
+    items.extend(merge_contiguous(words, pending))
+
     segments, words_out, first_pos = [], [], {}
     out = 0.0
-    for n, (i0, i1) in enumerate(runs):
+    for n, item in enumerate(items):
+        if len(item) == 3:
+            src, s, e = item
+            seg = Segment(source=src, src_start=s, src_end=e, out_start=round(out, 6))
+            out += e - s
+            kept = [w for w in words if w["source"] == src and s <= (w["s"] + w["e"]) / 2 < e]
+            lo, hi = seg.out_start, seg.out_end
+            for w in kept:
+                os_ = min(max(lo + (w["s"] - s), lo), hi)
+                oe = max(min(lo + (w["e"] - s), hi), os_ + 0.01)
+                words_out.append({"id": w["id"], "w": w["w"], "s": round(os_, 4), "e": round(oe, 4),
+                                  "source": src})
+                first_pos.setdefault(w["id"], (round(os_, 4), round(oe, 4)))
+            if kept:
+                seg.first_word, seg.last_word = kept[0]["id"], kept[-1]["id"]
+            segments.append(seg)
+            continue
+        i0, i1 = item
         src = words[i0]["source"]
         meta = sources.get(src) or {}
         fps = float(meta.get("fps") or 30.0)
         pieces = plan_run(words, i0, i1, gap_cap, min_saving, fps, float(meta.get("duration") or 0.0),
-                          is_first=(n == 0), is_last=(n == len(runs) - 1))
+                          is_first=(n == 0), is_last=(n == len(items) - 1))
         run_segs = []
         for s, e in pieces:
             seg = Segment(source=src, src_start=s, src_end=e, out_start=round(out, 6))
@@ -235,7 +311,6 @@ def build_timeline(words: list, keep: list, sources: dict, gap_cap: float = GAP_
         run_segs[0].first_word = words[i0]["id"]
         run_segs[-1].last_word = words[i1]["id"]
         segments.extend(run_segs)
-    index = {w["id"]: i for i, w in enumerate(words)}
     kept_index = sorted({index[wid] for wid in first_pos})
     return Timeline(segments=segments, duration=round(out, 6), words_out=words_out,
                     first_pos=first_pos, kept_index=kept_index, index=index, words=words)

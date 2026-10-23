@@ -117,3 +117,141 @@ def test_remap_anchors_after_retranscription():
     assert moved == 3
     assert p["cut"]["keep"] == [{"from": "w0", "to": "w9"}]
     assert p["zooms"][0]["anchor"] == {"from": "w9", "to": "w9"}
+
+
+# --- seconds ranges ----------------------------------------------------------------------------
+
+def test_seconds_range_plays_its_snapped_span_with_every_pause_left_in():
+    w = words_basic()            # 2 s and 1.5 s pauses that a word range would cap
+    tl = cut.build_timeline(w, [{"source": "s1", "start": 0.41, "end": 6.52}], SRC)
+    assert [(s.source, s.src_start, s.src_end, s.out_start) for s in tl.segments] == [
+        ("s1", round(12 / 30, 6), round(196 / 30, 6), 0.0)]
+    assert tl.duration == round(184 / 30, 6)
+    assert (tl.segments[0].first_word, tl.segments[0].last_word) == ("w0", "w5")
+
+
+def test_seconds_range_keeps_words_by_midpoint_on_the_output_clock():
+    w = words_basic()
+    tl = cut.build_timeline(w, [{"source": "s1", "start": 1.0, "end": 4.3}], SRC)
+    # "build" (mid 1.025) and "day." (mid 4.275) are in; "We" (mid 0.65) and "Again." are not
+    assert [x["id"] for x in tl.words_out] == ["w1", "w2", "w3", "w4"]
+    out = {x["id"]: x for x in tl.words_out}
+    assert out["w1"]["s"] == 0.0                         # starts before the cut: clamped to it
+    assert out["w3"] == {"id": "w3", "w": "Every", "s": 2.7, "e": 3.0, "source": "s1"}
+    assert out["w4"]["e"] == 3.3                         # ends after the cut: clamped to it
+    assert not tl.is_kept("w0") and not tl.is_kept("w5")
+    assert tl.word_out_time("w0") == 0.0                 # cut word -> next kept word
+    assert tl.word_out_end("w5") == 3.3                  # cut word -> end of the last kept one
+
+
+def test_mixed_keep_plays_in_list_order_and_word_ranges_cap_as_before():
+    w = words_basic()
+    keep = [{"source": "s2", "start": 1.0, "end": 3.0}, {"from": "w0", "to": "w4"},
+            {"source": "s1", "start": 5.0, "end": 7.0}]
+    tl = cut.build_timeline(w, keep, SRC)
+    # a word run in the middle of the video is planned like any middle run (capped, no head/tail air)
+    middle = cut.plan_run(w, 0, 4, cut.GAP_CAP, cut.MIN_SAVING, 30.0, 10.0, is_first=False, is_last=False)
+    assert len(middle) > 1
+    assert [(s.source, s.src_start, s.src_end) for s in tl.segments] == (
+        [("s2", 1.0, 3.0)] + [("s1", a, b) for a, b in middle] + [("s1", 5.0, 7.0)])
+    assert tl.segments[0].first_word is None
+    words_dur = sum(b - a for a, b in middle)
+    assert tl.word_out_time("w0") == pytest.approx(2.0 + w[0]["s"] - middle[0][0], abs=1e-4)
+    assert tl.word_out_time("w5") == pytest.approx(2.0 + words_dur + 1.0, abs=1e-4)
+    assert abs(tl.duration - sum(s.duration for s in tl.segments)) < 1e-6
+
+
+def test_back_to_back_word_ranges_still_merge_but_not_across_a_seconds_range():
+    w = words_basic()
+    merged = cut.build_timeline(w, [{"from": "w0", "to": "w2"}, {"from": "w3", "to": "w4"}], SRC)
+    one = cut.build_timeline(w, [{"from": "w0", "to": "w4"}], SRC)
+    assert merged.segments == one.segments
+    split = cut.build_timeline(w, [{"from": "w0", "to": "w2"}, {"source": "s2", "start": 0, "end": 1},
+                                   {"from": "w3", "to": "w4"}], SRC)
+    assert [(s.source, s.first_word, s.last_word) for s in split.segments] == [
+        ("s1", "w0", "w2"), ("s2", None, None), ("s1", "w3", "w4")]
+
+
+def test_a_word_inside_two_seconds_ranges_keeps_its_first_place():
+    w = words_basic()
+    tl = cut.build_timeline(w, [{"source": "s1", "start": 3.0, "end": 5.0},
+                                {"source": "s1", "start": 3.5, "end": 4.6}], SRC)
+    assert [x["id"] for x in tl.words_out] == ["w3", "w4", "w3", "w4"]
+    assert tl.word_out_time("w3") == 0.7
+    assert tl.kept_index == [3, 4]
+
+
+def test_seconds_range_clamps_to_the_source_end_on_its_frame_grid():
+    tl = cut.build_timeline([], [{"source": "s2", "start": 5.0, "end": 9.0}],
+                            {"s2": {"duration": 5.99, "fps": 25.0}})
+    assert (tl.segments[0].src_start, tl.segments[0].src_end) == (5.0, 5.96)
+
+
+def test_seconds_cut_needs_no_words():
+    tl = cut.build_timeline([], [{"source": "s1", "start": 0, "end": 5}], SRC)
+    assert tl.duration == 5.0 and tl.words_out == [] and tl.kept_index == []
+    assert cut.positions_from_keep([], [{"source": "s1", "start": 0, "end": 5}]) == []
+
+
+@pytest.mark.parametrize("rng, why", [
+    ({"source": "s1", "start": 4.0, "end": 4.0}, "not after"),
+    ({"source": "s1", "start": 5.0, "end": 2.0}, "not after"),
+    ({"source": "s9", "start": 0.0, "end": 2.0}, "unknown source"),
+    ({"source": "s1", "start": "0", "end": 2.0}, "numeric"),
+    ({"source": "s1", "start": 0.0, "end": True}, "numeric"),
+    ({"source": "s1", "start": 12.0, "end": 14.0}, "under one frame"),
+])
+def test_bad_seconds_range_is_a_bad_cut(rng, why):
+    with pytest.raises(EngineError) as e:
+        cut.build_timeline(words_basic(), [{"from": "w0", "to": "w1"}, rng], SRC)
+    assert e.value.code == "BAD_CUT" and "cut.keep[1]" in e.value.message and why in e.value.message
+    assert e.value.user_message
+
+
+def _speechless(tmp_path, keep):
+    from reelengine import project
+    (tmp_path / "work").mkdir()
+    (tmp_path / "work" / "transcript.json").write_text('{"words": []}')
+    p = project.new_project("t")
+    p["cut"]["keep"] = keep
+    return project, p
+
+
+@pytest.mark.parametrize("keep, ok", [
+    ([{"source": "s1", "start": 0.0, "end": 4.0}], True),
+    ([{"source": "s1", "start": 0.0, "end": 4.0}, {"from": "w0", "to": "w1"}], False),
+    ([], False),
+])
+def test_an_empty_transcript_is_no_speech_unless_the_cut_is_all_seconds(tmp_path, keep, ok):
+    project, p = _speechless(tmp_path, keep)
+    if ok:
+        assert project.load_transcript(tmp_path, p)["words"] == []
+    else:
+        with pytest.raises(EngineError) as e:
+            project.load_transcript(tmp_path, p)
+        assert e.value.code == "NO_SPEECH"
+
+
+def test_the_schema_takes_word_and_seconds_ranges_and_a_brief():
+    from reelengine import project
+    p = project.new_project("t")
+    p["cut"]["keep"] = [{"from": "w0", "to": "w3"}, {"source": "s1", "start": 0, "end": 2.5}]
+    p["brief"] = {"kind": "match", "home": "Spurs"}
+    assert project.validate(p) == []
+    # a bad entry is explained as the kind of range it was meant to be, not "matches no oneOf branch"
+    p["cut"]["keep"] = [{"source": "s1", "start": -1, "end": 2.5}]
+    assert project.validate(p) == ["cut/keep/0/start: -1 is less than the minimum of 0"]
+
+
+@pytest.mark.parametrize("keep, shown", [
+    ([{"source": "s1", "start": 1.0, "end": 3.0}], [{"source": "s1", "start": 1.0, "end": 3.0}]),
+    ([{"from": "w2", "to": "w3"}], [{"from": "w0", "to": "w5"}]),
+])
+def test_first_look_keeps_a_seconds_cut_and_replaces_a_word_cut(tmp_path, keep, shown):
+    import json
+    from reelengine import project, render
+    (tmp_path / "work").mkdir()
+    (tmp_path / "work" / "analysis.json").write_text(json.dumps({"defaultCut": {"keep": [{"from": "w0", "to": "w5"}]}}))
+    p = project.new_project("t")
+    p["cut"]["keep"] = keep
+    assert render.first_look_project(tmp_path, p)["cut"]["keep"] == shown

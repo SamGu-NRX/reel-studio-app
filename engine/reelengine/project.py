@@ -124,10 +124,21 @@ def validate(proj: dict) -> list:
             if key not in proj:
                 problems.append(f"missing required field {key!r}")
         return problems
-    for err in sorted(v.iter_errors(proj), key=lambda e: list(e.absolute_path)):
-        where = "/".join(str(p) for p in err.absolute_path) or "(root)"
-        problems.append(f"{where}: {err.message}")
+    for top in sorted(v.iter_errors(proj), key=lambda e: list(e.absolute_path)):
+        for err in _keep_branch(top):
+            where = "/".join(str(p) for p in err.absolute_path) or "(root)"
+            problems.append(f"{where}: {err.message}")
     return problems
+
+
+def _keep_branch(err) -> list:
+    """A bad cut.keep entry fails its oneOf as a whole ("not valid under any of the given schemas"):
+    report the problems of the kind of range it was meant to be (oneOf[0] word, oneOf[1] seconds)."""
+    path = list(err.absolute_path)
+    if err.validator != "oneOf" or path[:2] != ["cut", "keep"] or len(path) != 3:
+        return [err]
+    branch = 1 if cutmod.is_seconds(err.instance) else 0
+    return [e for e in err.context if e.relative_schema_path[0] == branch] or [err]
 
 
 def project_file(project_dir: Path) -> Path:
@@ -181,6 +192,12 @@ def transcript_path(project_dir: Path, proj: Optional[dict] = None) -> Path:
     return Path(project_dir) / "work" / "transcript.json"
 
 
+def seconds_cut(proj: dict) -> bool:
+    """True when every cut.keep entry is a seconds range: such a cut plays without any speech."""
+    keep = (proj.get("cut") or {}).get("keep") or []
+    return bool(keep) and all(cutmod.is_seconds(r) for r in keep)
+
+
 def load_transcript(project_dir: Path, proj: dict) -> dict:
     tp = transcript_path(project_dir, proj)
     if not tp.exists():
@@ -188,8 +205,10 @@ def load_transcript(project_dir: Path, proj: dict) -> dict:
                           "I need to listen to your video first. Run the transcription step.")
     data = read_json(tp)
     if not data.get("words"):
-        raise EngineError("NO_SPEECH", "transcript has no words",
-                          "I couldn't hear anyone talking in this video. Try a different take.")
+        if not seconds_cut(proj):
+            raise EngineError("NO_SPEECH", "transcript has no words",
+                              "I couldn't hear anyone talking in this video. Try a different take.")
+        data["words"] = []
     return data
 
 
@@ -220,6 +239,8 @@ def timeline(project_dir: Path, proj: dict, words: Optional[list] = None) -> cut
 def _anchor_slots(proj: dict):
     """Every (container, key, role) in a project that holds a word id. role: 'from' | 'to'."""
     for r in (proj.get("cut") or {}).get("keep") or []:
+        if cutmod.is_seconds(r):
+            continue
         yield r, "from", "from"
         yield r, "to", "to"
     for b in proj.get("broll") or []:
@@ -247,6 +268,8 @@ def remap_anchors(proj: dict, old_words: list, new_words: list) -> int:
     """After a re-transcription, point any anchor whose word id vanished at the nearest new word in
     time (same source): a range start moves to the first word starting at/after it, a range end to
     the last word ending at/before it. Returns how many anchors moved."""
+    if not new_words:               # a speechless re-transcription: nothing to point at
+        return 0
     new_ids = {w["id"] for w in new_words}
     old = {w["id"]: w for w in old_words}
     by_src: dict = {}

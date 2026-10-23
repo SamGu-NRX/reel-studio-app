@@ -702,10 +702,11 @@ def check_fontselect(stderr: str, font_path: Path) -> Optional[str]:
 
 def first_look_project(project_dir: Path, proj: dict, music: Optional[str] = None) -> dict:
     """The deterministic edit IN MEMORY (never saved): the analysis's default cut, captions on, and
-    `music` when the project has no song yet. The app shows it while the AI edits project.json."""
+    `music` when the project has no song yet. The app shows it while the AI edits project.json.
+    A seconds cut keeps its own ranges: that footage was chosen elsewhere, not by its words."""
     proj = json.loads(json.dumps(proj))
     af = project_dir / "work" / "analysis.json"
-    if af.exists():
+    if af.exists() and not projmod.seconds_cut(proj):
         keep = ((projmod.read_json(af).get("defaultCut") or {}).get("keep")) or []
         if keep:
             proj.setdefault("cut", {})["keep"] = keep

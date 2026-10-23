@@ -96,3 +96,19 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
   most 20. A change made while the editor is busy waits in the reel's note queue; the app writes its id here in the
   same project.json write that saves it, after its final render, and that id is the queue's proof it ran (as a note's
   id in `notes` is). Written only by the app (app/src/main/hand-edit.ts); the engine ignores it.
+
+## 2026-10-23 (match clips)
+
+- `cut.keep[]` may also be a seconds range `{source, start, end}`: seconds of one source, played exactly as
+  given, with no pause capping and no lead or tail trimming. It keeps the words of that source whose midpoint
+  lies inside it, and it needs no words at all, so a cut made only of seconds ranges renders a clip with no
+  speech instead of failing with NO_SPEECH. It is for footage whose edit was chosen elsewhere, such as a
+  match clip, where capping the pauses between commentary lines would cut out the action. The app's own
+  cut tools still write word ranges only.
+- `brief` (object, optional): what the video shows when it is not a talking head. The AI editor reads it
+  (`ai/src/project.ts` MatchBrief: the match, the team, the moment, minute, score, players with their
+  Library photo, a footage description, a planned title, caption and hashtags). With a brief, the first
+  edit uses `ai/prompts/systemMatch.md` and `firstEditMatch.md`, keeps the cut, and fetches nothing from
+  the web; the only pictures are the brief's own images.
+- `zooms[].focus` (`[x, y]`, fractions of the frame), which the engine already read, is now written by
+  `set_zoom` in a match edit: `[0.5, 0.5]`, because the match footage is already framed on the play.

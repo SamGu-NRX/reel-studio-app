@@ -55,13 +55,20 @@
       "properties": {
         "keep": {
           "type": "array",
+          "description": "output order; each entry is a word range or a seconds range of one source (engine/reelengine/cut.py)",
           "items": {
-            "type": "object",
-            "required": ["from", "to"],
-            "properties": {
-              "from": { "$ref": "#/$defs/wordId" },
-              "to": { "$ref": "#/$defs/wordId" }
-            }
+            "oneOf": [
+              { "$ref": "#/$defs/wordRange" },
+              {
+                "type": "object",
+                "required": ["source", "start", "end"],
+                "properties": {
+                  "source": { "type": "string" },
+                  "start": { "type": "number", "minimum": 0 },
+                  "end": { "type": "number", "exclusiveMinimum": 0 }
+                }
+              }
+            ]
           }
         },
         "gapCap": { "type": "number", "minimum": 0, "maximum": 5 },
@@ -222,6 +229,10 @@
           "styleSuggestions": { "type": "array", "items": { "type": "string" }, "description": "My style rules the AI proposed" }
         }
       }
+    },
+    "brief": {
+      "type": "object",
+      "description": "what the video is about when it is not a talking head; read by the AI editor only (ai/src/project.ts MatchBrief)"
     }
   },
   "$defs": {

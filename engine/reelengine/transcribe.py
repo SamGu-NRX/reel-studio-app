@@ -860,7 +860,7 @@ def run(project_dir: Path, model_name: Optional[str] = None, language: Optional[
         done_dur += dur
     t_asr = time.time() - t2
 
-    if not all_words:
+    if not all_words and not projmod.seconds_cut(proj):
         raise EngineError("NO_SPEECH", "whisper returned no words",
                           "I couldn't hear anyone talking in this video. Check that the sound is on "
                           "and try again.")
