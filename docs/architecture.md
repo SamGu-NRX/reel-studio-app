@@ -64,7 +64,12 @@ The root `package.json` is an npm workspace (`app`, `ai`).
 Projects live in `<Documents>/Reel Studio/Projects/<slug>/`. The shared **Library** lives in
 `<Documents>/Reel Studio/Library/` with subfolders `Raw takes/`, `B-roll/`, `Music/`, `Images/`, `Exports/`
 (plain folder names on purpose, so anyone can open them in Finder or Explorer). User style lives in
-`<Documents>/Reel Studio/My style.json`.
+`<Documents>/Reel Studio/My style.json`. Its rules are sentences the AI reads; a rule may also carry a typed
+`payload` the app applies itself when a new video is made (only `{"kind":"caption-case","case":"lower"}` so
+far), plus `paused`, `source` (project, title, version) and `consent` (the question the person said Yes to).
+`forgotten` lists the questions of removed rules, so answering one again cannot bring a rule back. All of
+these are optional. An older version reads a typed rule as a plain sentence, applies paused rules, cannot answer
+a typed question, and drops `forgotten` if it rewrites the file.
 
 ```
 <slug>/

@@ -68,7 +68,8 @@ export function NotesLog({
   onPlay,
   onAction,
   onRetry,
-  onError
+  onError,
+  answerError
 }: {
   slug: string
   entries: LogEntry[]
@@ -88,6 +89,8 @@ export function NotesLog({
   onAction: (a: ChatAction, messageId: string) => void
   onRetry: (text: string, moment: NoteMoment | null) => void
   onError: (message: string) => void
+  /** saving a "Remember this for next time?" answer failed: the question keeps its buttons */
+  answerError: { id: string; text: string } | null
 }) {
   const box = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<Record<number, boolean>>({})
@@ -236,7 +239,17 @@ export function NotesLog({
           </div>
           {e.result && result(e, e.result)}
           {e.extra.map((m) => (
-            <Reply key={m.id} text={m.text} actions={m.actions ?? []} id={m.id} busy={busy} onAction={onAction} />
+            <Reply
+              key={m.id}
+              text={m.text}
+              actions={m.actions ?? []}
+              id={m.id}
+              busy={busy}
+              onAction={onAction}
+              question={!!(m.suggestion || m.proposal)}
+              scope={m.proposal?.source.version}
+              error={answerError?.id === m.id && m.actions?.length ? answerError.text : undefined}
+            />
           ))}
         </article>
       ))}
@@ -252,25 +265,43 @@ function Reply({
   actions,
   id,
   busy,
-  onAction
+  onAction,
+  question,
+  scope,
+  error
 }: {
   text: string
   actions: ChatAction[]
   id: string
   busy: boolean
   onAction: (a: ChatAction, id: string) => void
+  /** a "Remember this for next time?" question: focus returns here once it is answered */
+  question?: boolean
+  /** the version a typed My style rule comes from */
+  scope?: number
+  error?: string
 }) {
   const shown = actions.filter((a) => a !== 'connect')
   return (
-    <div className="nt-res quiet reply" data-testid="bubble-editor">
+    <div className="nt-res quiet reply" id={`msg-${id}`} tabIndex={question ? -1 : undefined} data-testid="bubble-editor">
       <span className="nk" />
       <span className="t wrap selectable">
         {text}
+        {scope !== undefined && (
+          <span className="bubble-meta" data-testid="remember-scope">
+            For new videos. From version {scope} of this video.
+          </span>
+        )}
+        {error && (
+          <span className="bubble-meta error" role="alert" data-testid="remember-error">
+            {error}
+          </span>
+        )}
         {shown.length > 0 && (
           <span className="reply-acts">
             {shown.map((a) => (
               <button key={a} className="lk" disabled={busy} onClick={() => onAction(a, id)} data-testid={`action-${a}`}>
-                {ACTION_LABELS[a]}
+                {a === 'remember-yes' && error ? 'Try again' : ACTION_LABELS[a]}
               </button>
             ))}
           </span>

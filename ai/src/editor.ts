@@ -4,7 +4,7 @@ import { AgentEvent, AgentResult, AIError, EngineHost, ModelProvider, Phase, Scr
 import { runAgent, RunAgentResult } from './agent';
 import type { LookupFn } from './safety';
 import { Prompts } from './prompts';
-import { StyleStore } from './style';
+import { StyleProposal, StyleStore, captionCaseProposal } from './style';
 import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProofread, doRender, unsureWords, executeTool, load, newToolState, resolveAsset, cleanSummary, renderEvent } from './tools';
 import { planFastNote } from './fastnote';
 import { AttachmentInfo, attachmentStills, attachmentsSection, earlierUnplaced, placedAssets, validateAttachments } from './attachments';
@@ -225,8 +225,23 @@ async function firstLook(deps: EditorDeps, ctx: ToolContext, onEvent: (e: AgentE
   } catch { /* an older engine, or a failed preview: the AI edit goes on */ }
 }
 
+/** A new video starts from the person's typed My style rules. They go through the caption tool like any AI
+ * call, before the AI edits, so the AI (and later notes) can still change them. */
+async function applyMyStyle(deps: EditorDeps, projectDir: string): Promise<boolean> {
+  if (await deps.style.captionCase() !== 'lower') return false;
+  return !(await executeTool(newCtx(deps, projectDir, null, () => undefined), 'set_caption_style', { case: 'lower' })).isError;
+}
+
 export async function firstEdit(deps: EditorDeps, provider: ModelProvider | null, projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<EditResult> {
   await ensureAnalyzed(deps, projectDir, onEvent, signal);
+  const applied = await applyMyStyle(deps, projectDir);
+  const r = await editNewVideo(deps, provider, projectDir, onEvent, signal);
+  // the AI may still pick another case for this video; only say so when the video kept it
+  const kept = applied && (await loadProject(projectDir)).captions.style.case === 'lower';
+  return kept ? { ...r, summary: `${r.summary} I used lowercase captions from your My style.` } : r;
+}
+
+async function editNewVideo(deps: EditorDeps, provider: ModelProvider | null, projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<EditResult> {
   if (!provider) return deterministicEdit(deps, projectDir, onEvent, signal);
   const ctx = newCtx(deps, projectDir, provider, onEvent, signal, 3);
   const { p } = await load(ctx);
@@ -369,6 +384,15 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   }
 }
 
+/** A note that turned the captions lowercase, now committed in `version`: ask to keep that for new videos.
+ * Read from the saved project, so a case the AI set and then changed back asks nothing, and the question's
+ * words are fixed here, never taken from the note or the AI. */
+async function rememberCaptionCase(deps: EditorDeps, before: Project, after: Project, version: number): Promise<StyleProposal | null> {
+  if (after.captions.style.case !== 'lower' || before.captions.style.case === 'lower') return null;
+  if (await deps.style.hasCaptionCase()) return null;
+  return captionCaseProposal({ project: after.id, title: after.title, version });
+}
+
 /** The final video (none when the note only saved or proposed a My style rule), then the one write that saves the note
  * (see applyNote). Nothing after that write can fail the note. */
 async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVersion: number, n: { text: string; label: string; summary: string; attachments: string[] }, saveStyle: boolean): Promise<EditResult> {
@@ -404,14 +428,16 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
     }
     if (ctx.signal?.aborted) throw new AIError('cancelled', 'Stopped.');
   });
+  let styleProposal: StyleProposal | null = null;
   try {
+    styleProposal = await rememberCaptionCase(deps, withDefaults(JSON.parse(base.toString('utf8'))), p, version);
     if (saveStyle) for (const rule of styleRulesAdded) await deps.style.add(rule);
     if (final) ctx.emit(renderEvent(final));
     ctx.emit({ type: 'status', message: 'Done', pct: 100 });
   } catch {
     // the note is saved: a My style write or a listener that fails now must not report it as failed
   }
-  return { summary: n.summary, version, styleRulesAdded, styleSuggestions, changed: [...ctx.state.changed] };
+  return { summary: n.summary, version, styleRulesAdded, styleSuggestions, changed: [...ctx.state.changed], ...(styleProposal ? { styleProposal } : {}) };
 }
 
 // ---------------------------------------------------------------- idea -> script

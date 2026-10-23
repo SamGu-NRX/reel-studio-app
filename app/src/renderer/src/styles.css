@@ -343,6 +343,9 @@ html.kb :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 @starting-style { .vmenu { opacity: 0; transform: translateY(-4px) scale(.98); } }
 
+/* under a "Remember this for next time?" question: where the rule applies, or why saving failed */
+.bubble-meta { display: block; margin-top: 2px; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); }
+.bubble-meta.error { color: var(--pencil); }
 .att-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .att-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 220px; padding: 4px; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .att-chip.busy { padding: 6px 12px; color: var(--ink-2); }

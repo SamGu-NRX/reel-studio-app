@@ -81,6 +81,8 @@ export interface ChatMessage {
   actions?: ChatAction[]
   /** A My style rule the AI suggested; saved only if the user answers Yes (remember-yes). */
   suggestion?: string
+  /** A typed My style rule to ask about instead (lowercase captions after a note made them so). */
+  proposal?: StyleProposal
   /** Pictures, GIFs or clips the user attached to this note (a "you" message). */
   attachments?: NoteAttachment[]
   /** Where a note asked "Just here" points: shown as a muted "0:08" before the words and placed as a mark (shared/moments.ts). */
@@ -406,6 +408,18 @@ export interface StyleRule {
   id: string
   text: string
   createdAt: string
+  /** Set: the app applies this rule itself when a new video is made. Otherwise the AI reads it on every edit. */
+  payload?: { kind: 'caption-case'; case: 'lower' }
+  paused?: boolean
+  source?: { project: string; title: string; version: number }
+  consent?: { proposal: string; at: string }
+}
+
+export interface StyleProposal {
+  id: string
+  text: string
+  payload: { kind: 'caption-case'; case: 'lower' }
+  source: { project: string; title: string; version: number }
 }
 
 export interface ExportResult {
@@ -587,6 +601,8 @@ export interface ReelApi {
   style: {
     rules(): Promise<StyleRule[]>
     remove(id: string): Promise<void>
+    /** Change a rule's words, or pause or resume it. */
+    update(id: string, patch: { text?: string; paused?: boolean }): Promise<StyleRule>
     /** Answer "Remember this for next time?" on a chat message: Yes saves the rule, No only says so. */
     answer(slug: string, messageId: string, yes: boolean): Promise<void>
   }

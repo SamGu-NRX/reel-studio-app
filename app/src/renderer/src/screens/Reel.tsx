@@ -97,6 +97,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const [chip, setChip] = useState<Chip>(null)
   const [alert, setAlert] = useState<string | null>(null)
   const noteField = useRef<HTMLTextAreaElement>(null)
+  const [answerError, setAnswerError] = useState<{ id: string; text: string } | null>(null)
   const att = useNoteAttachments(slug, notify)
   // Files dropped on the note box before the AI check answers: attached once it does, as any drop is.
   const heldDrops = useRef<{ files: File[]; types: string[] }[]>([])
@@ -364,8 +365,13 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     if (a === 'remember-yes' || a === 'remember-no') {
       reel.style
         .answer(slug, messageId, a === 'remember-yes')
-        .then(() => load())
-        .catch((e) => notify(userMessage(e), 'error'))
+        .then(async () => {
+          setAnswerError(null)
+          await load()
+          // the buttons are gone: keep focus on the answered question, not lost to the page
+          document.getElementById(`msg-${messageId}`)?.focus()
+        })
+        .catch((e) => setAnswerError({ id: messageId, text: userMessage(e) }))
     } else if (a === 'connect') connect()
     else openDrawer(ACTION_TAB[a] ?? 'cut')
   }
@@ -429,6 +435,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
         onAction={runAction}
         onRetry={(text, moment) => void note(text, undefined, moment ?? undefined).catch((e) => setAlert(userMessage(e)))}
         onError={(m) => notify(m, 'error')}
+        answerError={answerError}
       />
       <div
         className="cwrap"
