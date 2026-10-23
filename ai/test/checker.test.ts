@@ -60,7 +60,9 @@ async function noteProject(start: Partial<Project> = {}) {
   const run = host.runEngine.bind(host);
   host.runEngine = async (command: string, args: string[], onProgress?: (pr: EngineProgress) => void) => {
     const r = await run(command, args, onProgress);
-    if (command === 'render') r.receipt.facts = netChanges(p, await loadProject(dir));
+    // like the engine: from the document it rendered, a note's private copy (--project-file) or project.json
+    const file = args.includes('--project-file') ? args[args.indexOf('--project-file') + 1] : undefined;
+    if (command === 'render') r.receipt.facts = netChanges(p, await loadProject(dir, file));
     return r;
   };
   return { dir, host, transcript, size: p.captions.style.size, mid: (id: string, keep: Project['cut']['keep']) => {

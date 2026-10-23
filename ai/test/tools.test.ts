@@ -261,16 +261,17 @@ describe('tool implementations', () => {
   it('add_broll with a picture and no params places it', async () => {
     const { ctx, root, dir } = await ctxFor();
     await fsp.writeFile(path.join(root, 'Library', 'Images', 'flour.png'), tinyPng());
-    const r = await executeTool(ctx, 'add_broll', { anchor: { from: 'w33', to: 'w34' }, treatment: 'card-above-head', asset: 'flour.png', search: null, animation: null });
+    const r = await executeTool(ctx, 'add_broll', { anchor: { from: 'w33', to: 'w34' }, treatment: 'card-above-head', asset: 'flour.png', animation: null });
     expect(r.isError, r.content).toBe(false);
-    expect((await loadProject(dir)).broll[0]).toMatchObject({ asset: 'Library/Images/flour.png', params: {} });
+    // a Library picture is frozen into the project when it is placed
+    expect((await loadProject(dir)).broll[0]).toMatchObject({ asset: expect.stringMatching(/^work\/assets\/frozen\/image\/[0-9a-f]{64}\.png$/), params: {} });
   });
 
   it('sound effects: on a word, a b-roll or a cut that exist; an empty list leaves no trace', async () => {
     const { ctx, dir } = await ctxFor();
     await executeTool(ctx, 'set_cut', { keep: [{ from: 'w16', to: 'w40' }, { from: 'w44', to: 'w56' }] });
     const nullP = { tilt: null, scale: null, text: null };
-    await executeTool(ctx, 'add_broll', { anchor: { from: 'w29', to: 'w30' }, treatment: 'text-pop', asset: null, search: null, animation: null, params: { ...nullP, text: '$20' } });
+    await executeTool(ctx, 'add_broll', { anchor: { from: 'w29', to: 'w30' }, treatment: 'text-pop', asset: null, animation: null, params: { ...nullP, text: '$20' } });
     const id = (await loadProject(dir)).broll[0].id;
     const none = { word: null, broll: null, cut: null };
     const ok = await executeTool(ctx, 'set_sfx', { sfx: [

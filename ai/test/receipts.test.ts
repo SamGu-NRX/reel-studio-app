@@ -70,7 +70,8 @@ it('fails if a note the AI took back is missing from the notes, or is filed unde
   const ai = createAI({ host: new FakeHost(root), settingsDir: tmpDir('settings '), providerOverride: model });
   await ai.applyNote(dir, ' try tighter pauses ', () => {});
   const notes = (await loadProject(dir)).notes;
-  expect(notes).toEqual([{ text: 'try tighter pauses', applied: [], at: expect.any(String) }]);
+  // saved under its id with its reply, like every note that finishes, and with no version
+  expect(notes).toEqual([{ text: 'try tighter pauses', applied: [], at: expect.any(String), id: expect.any(String), reply: expect.stringMatching(/didn't make a new version/) }]);
 });
 
 it('fails if a note the AI took back leaves its discarded edit in the only preview the app plays', async () => {
@@ -100,7 +101,9 @@ it('fails if a note the AI took back leaves its discarded edit in the only previ
   expect(madeFrom.get(shown)?.cut.keep).toEqual([{ from: 'w0', to: 'w56' }]);
 });
 
-it('fails if a note whose final render failed records the fallback preview as its version receipt', async () => {
+// A note's final render failing fails the whole note (editor.ts saveNote), so no preview stands in for its version
+// and nothing, receipt included, is saved.
+it('fails if a note whose final render failed is saved, with the fallback preview as its version receipt', async () => {
   const { root, dir } = await makeProject();
   const host = new FakeHost(root);
   const model = new ScriptedModel([
@@ -108,8 +111,8 @@ it('fails if a note whose final render failed records the fallback preview as it
     () => { host.failRender = true; return { toolCalls: [call('finish', { summary_for_user: 'I kept your second take.' })] }; },
   ]);
   const ai = createAI({ host, settingsDir: tmpDir('settings '), providerOverride: model });
-  await ai.applyNote(dir, 'keep the second take', () => {}, undefined, { jobId: 'job-2' });
-  expect((await loadProject(dir)).notes.at(-1)!.receipt).toBeUndefined();
+  await expect(ai.applyNote(dir, 'keep the second take', () => {}, undefined, { jobId: 'job-2' })).rejects.toMatchObject({ code: 'RENDER_FAILED' });
+  expect((await loadProject(dir)).notes ?? []).toEqual([]);
 });
 
 it("fails if the AI's view of the project carries every note's receipt", async () => {

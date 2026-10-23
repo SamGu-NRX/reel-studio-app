@@ -381,19 +381,22 @@ describe('frozen image assets', () => {
     expect(await fs.readFile(path.join(dir, asset.committedPath))).toEqual(tinyPng());
   });
 
-  it.skipIf(process.platform === 'win32')('fails if a rollback that could not restore project.json deletes the picture that project still uses', async () => {
+  // A failed note never changes project.json (editor.ts applyNote), and takes back only the pictures it froze itself:
+  // one the saved project already uses was frozen before the note began.
+  it('fails if a failed note deletes a frozen picture the saved project still uses', async () => {
     const { dir, root, host } = await setup();
     const loaf = 'Library/Images/loaf.png';
     await fs.writeFile(path.join(root, loaf), tinyPng([200, 160, 90]));
     const model = new ScriptedModel([
       { toolCalls: [call('add_broll', { ...place(loaf), anchor: { from: 'w48', to: 'w52' } })] },
-      async () => { await fs.chmod(dir, 0o555); return { toolCalls: [call('finish', { summary_for_user: 'Added the loaf.' })] }; },
+      { toolCalls: [call('finish', { summary_for_user: 'Added the loaf.' })] },
+      { toolCalls: [call('add_broll', { ...place(loaf), anchor: { from: 'w29', to: 'w30' } })] },
+      { toolCalls: [call('finish', { summary_for_user: 'Added it again.' })] },
     ]);
+    const ai = createAI({ host, settingsDir: tmpDir('settings '), providerOverride: model });
+    await ai.applyNote(dir, 'show the loaf', () => undefined);
     host.failRender = true;
-    try {
-      const ai = createAI({ host, settingsDir: tmpDir('settings '), providerOverride: model, finalRender: false });
-      await expect(ai.applyNote(dir, 'show the loaf', () => undefined)).rejects.toThrow();
-    } finally { await fs.chmod(dir, 0o755); }
+    await expect(ai.applyNote(dir, 'show the loaf here too', () => undefined)).rejects.toThrow();
     const [b] = (await loadProject(dir)).broll;
     expect(b.asset).toMatch(FROZEN);
     expect(await fs.readFile(path.join(dir, String(b.asset)))).toEqual(tinyPng([200, 160, 90]));

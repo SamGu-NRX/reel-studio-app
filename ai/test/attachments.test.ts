@@ -122,10 +122,11 @@ describe('attachments: the AI sees them', () => {
     expect(imgs).toHaveLength(2);
     expect(imgs.every((i: any) => i.mime === 'image/jpeg' && i.base64.length > 10)).toBe(true);
     // nothing changed (the model asked a question): no version, the question is the reply, and the note is
-    // recorded with nothing applied (the app's note queue knows it ran by its id)
+    // recorded with nothing applied and no version (the app's note queue knows it ran by its id)
     expect(r.changed).toEqual([]);
     expect(r.summary).toBe('Which words should it show on?');
-    expect((await loadProject(dir)).notes).toMatchObject([{ applied: [], version: 0, reply: 'Which words should it show on?' }]);
+    expect((await loadProject(dir)).notes).toMatchObject([{ applied: [], reply: 'Which words should it show on?' }]);
+    expect((await loadProject(dir)).notes![0]).not.toHaveProperty('version');
     // the prompt tells it what to do with attached files
     expect(text).toMatch(/Never search the web or the library for something the user attached/);
     expect(text).not.toMatch(/—/);

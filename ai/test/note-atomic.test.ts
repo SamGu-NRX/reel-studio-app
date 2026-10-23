@@ -115,8 +115,11 @@ describe('a note that does not finish leaves the project as it was', () => {
     const r = await createAI({ host, settingsDir, providerOverride: m })
       .applyNote(dir, 'what do you think of the music?', () => undefined, undefined, { id: 'job-4', saveStyleRules: false });
     const reply = 'I looked, but I was not sure what to change. Could you say it another way?';
-    expect(r).toMatchObject({ summary: reply, version: 1, changed: [] });
-    expect(JSON.parse(await read()).notes.at(-1)).toMatchObject({ id: 'job-4', version: 1, applied: [], reply });
+    // no version for a note that made none, in the result or the saved note (docs/schema-changes.md)
+    expect(r).toMatchObject({ summary: reply, changed: [] });
+    expect(r).not.toHaveProperty('version');
+    expect(JSON.parse(await read()).notes.at(-1)).toMatchObject({ id: 'job-4', applied: [], reply });
+    expect(JSON.parse(await read()).notes.at(-1)).not.toHaveProperty('version');
     expect(host.calls).toEqual([]);
     expect(notesLeft(dir)).toBe(0);
   });
@@ -181,9 +184,10 @@ describe('a note that finishes is saved in one write', () => {
     const m = new ScriptedModel([{ toolCalls: [call('add_style_rule', { rule: 'Keep music quieter under talking' })] }, finish('I can do that in every video.')]);
     const r = await createAI({ host, settingsDir, providerOverride: m })
       .applyNote(dir, 'I like quieter music', () => undefined, undefined, { id: 'job-2', saveStyleRules: false });
-    expect(r).toMatchObject({ version: 1, styleSuggestions: ['Keep music quieter under talking.'] });
+    expect(r).toMatchObject({ styleSuggestions: ['Keep music quieter under talking.'] });
+    expect(r).not.toHaveProperty('version');
     expect(host.calls.filter((c) => c.command === 'render')).toEqual([]);
-    expect(JSON.parse(await read()).notes.at(-1)).toMatchObject({ id: 'job-2', version: 1, styleSuggestions: ['Keep music quieter under talking.'] });
+    expect(JSON.parse(await read()).notes.at(-1)).toMatchObject({ id: 'job-2', styleSuggestions: ['Keep music quieter under talking.'] });
     expect(await new StyleStore(() => root).list()).toEqual([]);
   });
 
@@ -192,8 +196,9 @@ describe('a note that finishes is saved in one write', () => {
     const m = new ScriptedModel([finish('It already looks right to me.')]);
     const r = await createAI({ host, settingsDir, providerOverride: m })
       .applyNote(dir, 'make it pop', () => undefined, undefined, { id: 'job-3', saveStyleRules: false });
-    expect(r).toMatchObject({ version: 1, changed: [], summary: 'It already looks right to me.' });
+    expect(r).toMatchObject({ changed: [], summary: 'It already looks right to me.' });
+    expect(r).not.toHaveProperty('version');
     expect(host.calls.filter((c) => c.command === 'render')).toEqual([]);
-    expect(JSON.parse(await read()).notes.at(-1)).toMatchObject({ id: 'job-3', version: 1, applied: [], reply: 'It already looks right to me.' });
+    expect(JSON.parse(await read()).notes.at(-1)).toMatchObject({ id: 'job-3', applied: [], reply: 'It already looks right to me.' });
   });
 });

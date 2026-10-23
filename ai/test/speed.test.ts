@@ -4,7 +4,7 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { ClaudeCliProvider, createAI, loadProject, saveProject, toolSchemas } from '../src';
 import { planFastNote } from '../src/fastnote';
-import { FakeHost, ScriptedModel, call, makeProject, tmpDir } from './helpers';
+import { FakeHost, ScriptedModel, call, makeProject, tmpDir, tinyMp3 } from './helpers';
 
 async function setup() {
   const { root, dir } = await makeProject();
@@ -42,7 +42,10 @@ describe('fast notes (no model turns)', () => {
   });
 
   it('fails if the negation guard sends the cannot-hear complaint to the model', async () => {
-    const { dir, host, settingsDir } = await setup();
+    const { root, dir, host, settingsDir } = await setup();
+    // choose_music freezes the Library song into the project (engine freeze-asset), which needs real audio
+    await fsp.writeFile(path.join(root, 'Library', 'Music', 'gentle.mp3'), tinyMp3());
+    host.engineAssets = true;
     const p = await loadProject(dir);
     p.music.level = 'quiet';
     await saveProject(dir, p);
