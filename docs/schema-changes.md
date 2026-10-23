@@ -89,3 +89,10 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
   voice's speech loudness, 6 dB more while the voice is talking, `gainDb` (-24 to +12) on top but never above 4 dB
   under the voice, and its sample peak stays 3 dB under the voice's loudest peak. Word and cut anchors are
   remapped after a re-transcription like the others. Written by the AI's `set_sfx`; an empty list removes the field.
+
+## 2026-10-22 (Edit it myself in the note queue)
+
+- `handEdits` (string array, absent = none): ids of the "Edit it myself" changes saved in this project, newest last, at
+  most 20. A change made while the editor is busy waits in the reel's note queue; the app writes its id here in the
+  same project.json write that saves it, after its final render, and that id is the queue's proof it ran (as a note's
+  id in `notes` is). Written only by the app (app/src/main/hand-edit.ts); the engine ignores it.
