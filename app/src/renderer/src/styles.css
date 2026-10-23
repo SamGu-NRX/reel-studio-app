@@ -543,6 +543,10 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
 .platform-cover { display: flex; gap: 16px; align-items: center; }
 .platform-cover video { width: 90px; height: 160px; object-fit: contain; background: #000; border-radius: var(--r-sm); flex: none; }
 .platform-errors { color: var(--pencil); font-size: var(--fs-md); }
+.platform-try { border: 0; margin: 0; padding: 0 0 0 26px; display: flex; flex-direction: column; gap: 12px; transition: opacity .18s var(--ease-out), transform .18s var(--ease-out); }
+@starting-style { .platform-try { opacity: 0; transform: translateY(-6px); } }
+.platform-try legend { float: left; font-weight: 600; padding: 0; }
+.platform-try .chips { justify-content: flex-start; max-width: none; }
 .platform-export { display: contents; }
 .platform-actions { justify-content: flex-end; position: sticky; bottom: calc(-1 * var(--space-s)); margin: 0 calc(-1 * var(--space-s)) calc(-1 * var(--space-s)); padding: 14px var(--space-s) var(--space-s); background: var(--surface); border-top: 1px solid var(--line); }
 .platform-counts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-variant-numeric: tabular-nums; }
@@ -628,6 +632,7 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
   .update-pill:active { transform: none; }
   /* Full screen just appears and goes. */
   .fs, .fs-frame { transition: none; }
+  .platform-try { transform: none; transition: opacity .18s var(--ease-out) !important; }
 }
 @keyframes fade-out { to { opacity: 0; } }
 @keyframes breathe-soft { 0%, 100% { opacity: .2; } 50% { opacity: .85; } }
