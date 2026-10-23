@@ -91,6 +91,7 @@ import { TikTokService } from './tiktok'
 import { registerTikTokIpc } from './tiktok-ipc'
 import { InstagramService } from './instagram'
 import { registerInstagramIpc } from './instagram-ipc'
+import { createDemoEdit } from './demo-edit'
 import { registerInsightsIpc } from './insights-ipc'
 import { InstagramError } from './instagram-http'
 import { loadSettings, saveSettings, settleLibraryRoot, showsFirstRun } from './settings'
@@ -301,6 +302,9 @@ const jobs = createJobManager(
   () => updates.assertCanStartWork(),
   footageIndex
 )
+
+/** Demo build: New reel's staged edit, reported on the same job:event stream as a real job. */
+const demoEdit = createDemoEdit((e) => broadcast('job:event', e), log)
 
 /** A note job: the AI applies it as one all-or-nothing change (ai applyNote) on the newest version. */
 async function startNote(slug: string, { id: noteId, text, attachments, moment, branch }: NoteToRun, record: (s: AppState) => void): Promise<string> {
@@ -902,6 +906,8 @@ function registerIpc(): void {
   handle('projects:get', async (_e, slug: string) => {
     const d = await detail(slug)
     const running = jobs.forSlug(slug)
+    const staged = demoEdit.live(slug)
+    if (staged) return { ...d, status: 'working' as const, job: staged }
     d.job = running
       ? { id: running.id, kind: running.kind, message: jobs.message(running), pct: running.pct, overall: running.overall, secondsLeft: running.secondsLeft, overdue: running.overdue, thinking: running.thinking, waiting: running.waiting, waitingForRender: running.waitingForRender, steps: running.steps }
       : null
@@ -943,7 +949,8 @@ function registerIpc(): void {
     return { slug, jobId, skipped }
   })
   const running = (slug: string): boolean => !!jobs.forSlug(slug)
-  handle('projects:plan', async () => ({ slug: await planReel(running) }))
+  // Demo build: New reel stages the Solanke edit (demo-edit.ts) instead of planning with a real AI.
+  handle('projects:plan', async () => ({ slug: DEMO ? await demoEdit.start() : await planReel(running) }))
   // Leaving a New reel nobody touched removes it (store.ts isUntouchedPlanned).
   handle('projects:leave', async (_e, slug: string) => void (await discardIfUntouched(slug, running)))
   handle('projects:addVideo', async (_e, slug: string, files: string[]) => {
@@ -1189,7 +1196,10 @@ function registerIpc(): void {
     }
   })
 
-  handle('jobs:cancel', (_e, id: string, slug?: string) => noteQueue.stop(String(id), typeof slug === 'string' ? slug : undefined))
+  handle('jobs:cancel', async (_e, id: string, slug?: string) => {
+    if (await demoEdit.stop(String(id))) return
+    return noteQueue.stop(String(id), typeof slug === 'string' ? slug : undefined)
+  })
   handle('queue:edit', (_e, slug: string, id: string, text: string) => noteQueue.edit(slug, String(id), String(text ?? '')))
   handle('queue:cancel', (_e, slug: string, id: string) => noteQueue.cancel(slug, String(id)))
   handle('queue:move', (_e, slug: string, id: string, by: number) => noteQueue.move(slug, String(id), by < 0 ? -1 : 1))
