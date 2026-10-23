@@ -79,13 +79,16 @@ async function candidate(locator: Locator): Promise<Locator | null> {
 async function click(locator: Locator): Promise<string> {
   const item = await candidate(locator)
   if (!item) return 'skipped: control absent, disabled or inert'
-  const box = await item.boundingBox()
+  // a control can go between the check above and this read (Pause turns into Play when the video ends): a short
+  // wait, then it counts as absent, instead of the 30 s default that fails the whole walk
+  const box = await item.boundingBox({ timeout: 2000 }).catch(() => null)
   if (!box) return 'skipped: no bounds'
   const cover = await item.evaluate((el) => {
     const rect = el.getBoundingClientRect()
     const top = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
     return top && el.contains(top) ? null : `${top?.tagName}.${top?.getAttribute('class') ?? ''}`
-  })
+  }, undefined, { timeout: 2000 }).catch(() => 'gone')
+  if (cover === 'gone') return 'skipped: no bounds'
   await item.page().mouse.click(box.x + box.width / 2, box.y + box.height / 2)
   return cover ? `blocked by ${cover}` : 'clicked'
 }
