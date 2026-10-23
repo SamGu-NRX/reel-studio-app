@@ -14,6 +14,7 @@ import { Icon } from '../components/icons'
 import { PhonePlayer } from '../components/Player'
 import type { SubtitleLook } from '../../../shared/caption-presets'
 import { PhoneViewSwitch, usePhoneView } from '../components/Phone'
+import { ReviewControls } from '../components/Review'
 import { createPlayhead, usePlayhead, type Playhead } from '../components/playhead'
 import { createTransport, useTransport, type Transport } from '../components/transport'
 import { versionOnScreen, versionsShown } from '../components/videoLayers'
@@ -656,6 +657,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
 
   const actions = (
     <>
+      {hasVersions && <ReviewControls slug={slug} review={d.review} onChange={(review) => setD((x) => x && { ...x, review })} />}
       {hasVersions && (
         <Button kind="tertiary" className={drawer ? 'on' : undefined} aria-pressed={!!drawer} onClick={() => (drawer ? (setDrawer(null), setHandId(null), setPreview(null), setSound(null)) : openDrawer('cut'))} data-testid="edit-myself">
           <Icon name="sliders" size={16} /> Edit it myself

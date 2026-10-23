@@ -20,6 +20,7 @@ const reel = (slug: string, over: Partial<ProjectSummary> = {}): ProjectSummary 
   pausedFor: null,
   failedWhy: null,
   posted: false,
+  review: { status: 'draft' },
   ...over
 })
 const slugs = (l: ProjectSummary[]) => l.map((p) => p.slug)

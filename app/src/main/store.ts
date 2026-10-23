@@ -22,7 +22,8 @@ import type {
   VersionMade,
   Word,
   JobKind,
-  QueuedNote
+  QueuedNote,
+  Review
 } from '../shared/api'
 import { mediaUrl } from './media-url'
 import { replyChat, styleConsent, type ChatLine } from './style-consent'
@@ -57,6 +58,8 @@ export interface AppState {
   posted?: { version: number; platform: 'instagram'; at: string }[]
   /** The plan made before the video: in the planning chat or the plain form (shared/plan.ts checks it). */
   plan?: ReelPlan
+  /** Sign-off (demo build): absent = draft. */
+  review?: Review
 }
 
 const EMPTY_STATE: AppState = { chat: [], job: null, status: 'new', lastError: null }
@@ -683,7 +686,8 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
       series: null,
       pausedFor: null,
       failedWhy: status === 'failed' ? (st.lastError?.userMessage ?? null) : null,
-      posted: !!st.posted?.length
+      posted: !!st.posted?.length,
+      review: st.review ?? { status: 'draft' }
     }
   }
   const versions = await listVersions(dir)
@@ -715,7 +719,8 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
     series: typeof p.series === 'string' && p.series.trim() ? p.series.trim() : null,
     pausedFor: st.paused ?? null,
     failedWhy: status === 'failed' ? (st.lastError?.userMessage ?? null) : null,
-    posted: !!st.posted?.length
+    posted: !!st.posted?.length,
+    review: st.review ?? { status: 'draft' }
   }
 }
 

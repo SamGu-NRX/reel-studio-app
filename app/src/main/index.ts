@@ -992,6 +992,19 @@ function registerIpc(): void {
       if (s.status === 'planned' && s.title === PLANNED_TITLE && next.topic) s.title = titleFromTopic(next.topic)
     })
   })
+  // Sign-off (demo build): Send for approval, Approve, Request changes. Posting sets 'posted' itself (demo-post.ts).
+  handle('projects:setReview', async (_e, slug: string, status: unknown, note?: unknown) => {
+    const moves: Record<string, string[]> = { waiting: ['draft', 'changes'], approved: ['waiting'], changes: ['waiting'], draft: ['waiting', 'changes', 'approved'] }
+    if (typeof status !== 'string' || !(status in moves)) throw { code: 'BAD_ARGS', userMessage: 'That review step is not one Reel Studio knows.' }
+    if (note !== undefined && (typeof note !== 'string' || note.length > 500)) throw { code: 'BAD_ARGS', userMessage: 'That note is too long.' }
+    if (!existsSync(join(projectDir(slug), 'app.json'))) throw { code: 'NOT_FOUND', userMessage: 'That reel could not be found. It may have been moved or deleted.' }
+    const st = await updateAppState(slug, (s) => {
+      const from = s.review?.status ?? 'draft'
+      if (!moves[status].includes(from)) throw { code: 'BUSY', userMessage: `This reel is ${from === 'posted' ? 'already posted' : `marked ${from}`}. Reload to see where it is.` }
+      s.review = { status: status as 'waiting' | 'approved' | 'changes' | 'draft', at: new Date().toISOString(), ...(note?.trim() ? { note: note.trim() } : {}) }
+    })
+    return st.review!
+  })
   handle('projects:resume', async (_e, slug: string, basic?: boolean) => {
     const dir = projectDir(slug)
     if (!existsSync(join(dir, 'project.json'))) {

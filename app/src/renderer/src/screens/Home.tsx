@@ -15,6 +15,7 @@ import { Button, IS_MAC, PickFiles, Segmented } from '../components/ui'
 import { useModelStatus } from '../components/connect'
 import { createFromFiles, newReel } from './create'
 import { activity, stateOf } from './home-state'
+import { ReviewBadge, REVIEW_WORDS } from '../components/Review'
 import '../components/home.css'
 
 type View = 'activity' | 'all'
@@ -23,6 +24,15 @@ const VIEWS = [
   { key: 'all', label: 'All reels', testid: 'home-all' }
 ] as const
 const VIEW_KEY = 'rs.home-view'
+/** Sign-off filter (demo build). Changes requested counts with Waiting: both still need someone. */
+type Rv = 'all' | 'waiting' | 'approved' | 'posted'
+const RV: { key: Rv; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'waiting', label: 'Waiting' },
+  { key: 'approved', label: 'Approved' },
+  { key: 'posted', label: 'Posted' }
+]
+const inRv = (p: ProjectSummary, rv: Rv): boolean => rv === 'all' || p.review.status === rv || (rv === 'waiting' && p.review.status === 'changes')
 /** Series chips only help once there are this many reels (spec.md section 4). */
 const SERIES_FROM = 12
 const CARD_MIN = 140
@@ -63,6 +73,7 @@ export function Home({ go }: { go: Go }) {
   const [view, setView] = useState<View>(() => (localStorage.getItem(VIEW_KEY) === 'all' ? 'all' : 'activity'))
   const [series, setSeries] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [rv, setRv] = useState<Rv>('all')
   const [found, setFound] = useState<Set<string> | null>(null)
   const page = useRef<HTMLDivElement>(null)
   const cols = useColumns(page)
@@ -128,7 +139,7 @@ export function Home({ go }: { go: Go }) {
   const now = new Date()
   const allSeries = [...new Set(list.map((p) => p.series).filter((s): s is string => !!s))].sort((a, b) => a.localeCompare(b))
   const chips = list.length >= SERIES_FROM && allSeries.length > 0
-  useFlip(page, `${view}|${series}|${found ? [...found].join() : ''}`, list)
+  useFlip(page, `${view}|${series}|${rv}|${found ? [...found].join() : ''}`, list)
 
   const card = (p: ProjectSummary) => (
     <Card key={p.slug} p={p} live={live[p.slug]} now={now} onOpen={() => open(p)} onAct={() => resume(p)} />
@@ -144,7 +155,20 @@ export function Home({ go }: { go: Go }) {
 
   let body: ReactNode = null
   if (projects && list.length === 0) body = <Empty go={go} />
-  else if (view === 'activity') {
+  else if (rv !== 'all') {
+    const shown = list.filter((p) => inRv(p, rv) && (!found || found.has(p.slug)))
+    body =
+      shown.length > 0 ? (
+        grid(shown)
+      ) : (
+        <p className="home-quiet" data-testid="review-empty">
+          {rv === 'waiting' ? 'Nothing is waiting for approval.' : rv === 'approved' ? 'Nothing approved yet.' : 'Nothing posted yet.'}{' '}
+          <button className="link inline" onClick={() => setRv('all')}>
+            See all reels
+          </button>
+        </p>
+      )
+  } else if (view === 'activity') {
     const { needs, making, recent } = activity(list, now)
     // Needs you and Making are usually one to three cards each: they share a row rather than leave two mostly empty.
     const shared = needs.length > 0 && making.length > 0 && needs.length + making.length <= cols
@@ -232,6 +256,15 @@ export function Home({ go }: { go: Go }) {
           ) : undefined
         }
       />
+      {list.length > 0 && (
+        <div className="series rv-filter" role="toolbar" aria-label="Sign-off" data-testid="review-filter">
+          {RV.map((o) => (
+            <button key={o.key} className="schip" aria-pressed={rv === o.key} onClick={() => setRv(o.key)} data-testid={`review-filter-${o.key}`}>
+              {o.label} <span className="n">{list.filter((p) => inRv(p, o.key)).length}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {body}
     </div>
   )
@@ -325,6 +358,7 @@ function Card({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live;
     )
     if (fresh) label += `, Version ${p.version} is new`
   }
+  if (p.review.status !== 'draft') label += `, ${REVIEW_WORDS[p.review.status].toLowerCase()}`
   const act = () => {
     setBusy(true)
     void onAct().finally(() => setBusy(false))
@@ -341,6 +375,7 @@ function Card({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live;
         ) : (
           p.take && <video src={`${p.take}#t=1`} muted playsInline preload="metadata" />
         )}
+        {p.review.status !== 'draft' && <ReviewBadge review={p.review} className="on-pic" />}
         {state === 'paused' && <Icon name="pause" size={30} stroke={0} className="pause-glyph" />}
         {left && <span className="left">{left}</span>}
         {state === 'making' && (

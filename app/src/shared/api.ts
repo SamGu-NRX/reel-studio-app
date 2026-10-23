@@ -25,6 +25,15 @@ export type AppCommand = { type: 'new-video' | 'settings' | 'export' | 'library'
 /** planned: a reel with no video yet (New reel); its notes column is for planning and scripts. */
 export type ScreenStatus = 'planned' | 'new' | 'working' | 'ready' | 'interrupted' | 'failed'
 
+/** Where a reel is in sign-off (app.json `review`; absent = draft). Demo build only. */
+export type ReviewStatus = 'draft' | 'waiting' | 'approved' | 'changes' | 'posted'
+export interface Review {
+  status: ReviewStatus
+  by?: string
+  at?: string
+  note?: string
+}
+
 export interface ProjectSummary {
   slug: string
   dir: string
@@ -51,6 +60,7 @@ export interface ProjectSummary {
   failedWhy: string | null
   /** A version of it was posted (app.json `posted`). */
   posted: boolean
+  review: Review
 }
 
 export interface VersionInfo {
@@ -731,6 +741,8 @@ export interface ReelApi {
     planSay(slug: string, text: string): Promise<{ jobId: string }>
     /** Saves the reel's plan: an edited line, the picked hook, a line ticked off, or the plain form's plan. */
     setPlan(slug: string, plan: ReelPlan): Promise<void>
+    /** Moves the reel through sign-off (draft → waiting → approved or changes). Returns the saved review. */
+    setReview(slug: string, status: ReviewStatus, note?: string): Promise<Review>
     /** `basic`: make the version without the editor (a failed Version 1's "Make a basic version"). */
     resume(slug: string, basic?: boolean): Promise<{ jobId: string }>
     /** jobId null = no AI connected: the note and a plain reply were added to the chat, nothing runs.

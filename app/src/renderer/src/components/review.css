@@ -1,0 +1,33 @@
+/* Sign-off (Review.tsx). Status is a dot and a word, like .badge; on a card's picture it sits on a small paper pill
+   so it reads over any frame. */
+.rv-badge {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; white-space: nowrap;
+  font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 580; color: var(--ink-3);
+}
+.rv-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.rv-waiting { color: var(--amber); }
+.rv-approved { color: var(--green-ink); }
+.rv-changes { color: var(--pencil); }
+.rv-posted { color: var(--ink); }
+.rv-badge.rv-waiting::before { box-shadow: 0 0 0 3px var(--amber-tint); }
+.rv-badge.rv-changes::before { box-shadow: 0 0 0 3px var(--pencil-tint); }
+.rv-badge.rv-approved::before { box-shadow: 0 0 0 3px var(--green-tint); }
+
+.rv-badge.on-pic {
+  position: absolute; top: 8px; left: 8px; z-index: 1; height: 22px; padding: 0 8px 0 7px; border-radius: 999px;
+  font-size: var(--fs-xs); line-height: var(--lh-xs); background: rgba(255, 255, 255, .94); box-shadow: 0 1px 2px rgba(10, 20, 15, .18);
+}
+.rv-badge.on-pic::before { box-shadow: none; }
+
+.rv-ctl { display: flex; align-items: center; gap: 8px; padding-right: 6px; margin-right: 2px; box-shadow: inset -1px 0 0 var(--line); }
+.rv-ctl .rv-badge { margin-right: 4px; }
+.rv-ctl:not(:has(.btn)) { padding-right: 12px; }
+.rv-anchor { position: relative; display: flex; }
+
+.rv-pop { right: 0; top: calc(100% + 6px); width: 300px; padding: 14px; display: flex; flex-direction: column; gap: 10px; pointer-events: auto; -webkit-app-region: no-drag; }
+.rv-pop-h { font-size: var(--fs-base); font-weight: 620; display: flex; justify-content: space-between; align-items: baseline; }
+.rv-note { min-height: 72px; font-size: var(--fs-base); }
+.rv-pop-foot { display: flex; justify-content: flex-end; gap: 6px; }
+
+/* Home's sign-off filter: the series chips' look, with counts */
+.rv-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: var(--space-s); }

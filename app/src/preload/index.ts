@@ -105,6 +105,7 @@ const api: ReelApi = {
     addVideo: (slug, files) => call('projects:addVideo', slug, files),
     planSay: (slug, text) => call('projects:planSay', slug, text),
     setPlan: (slug, plan) => call('projects:setPlan', slug, plan),
+    setReview: (slug, status, note) => call('projects:setReview', slug, status, note),
     resume: (slug, basic) => call('projects:resume', slug, basic),
     note: (slug, text, attachments, moment, onVersion, base) => call('projects:note', slug, text, attachments, moment, onVersion, base),
     mergeVersions: (slug, request) => call('projects:mergeVersions', slug, request),
