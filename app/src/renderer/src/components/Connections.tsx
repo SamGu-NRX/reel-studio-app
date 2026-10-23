@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { ConnectionInfo, ConnectionKind, ProviderInfo, SaveConnectionResult } from '../../../shared/api'
 import { reel, userMessage } from '../api'
 import { Confirm, Modal, MoreMenu, Spinner } from './ui'
+import { Icon } from './icons'
+import { ConnectedMark, ProviderRow } from './provider-row'
 
 const KINDS: { kind: ConnectionKind; label: string }[] = [
   { kind: 'openai', label: 'OpenAI-compatible' },
@@ -11,7 +13,7 @@ const ADDRESS_EXAMPLE: Record<ConnectionKind, string> = { openai: 'http://127.0.
 const ADDRESS_HELP: Record<ConnectionKind, string> = { openai: 'Usually ends in /v1.', anthropic: 'Usually without /v1 at the end.' }
 type Field = NonNullable<NonNullable<SaveConnectionResult['error']>['field']>
 
-/** "Use your own AI server (advanced)": one quiet link until a server is saved, then the saved ones. */
+/** Your own AI server: one row with Set up until a server is saved, then each saved one under it. */
 export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) => void }) {
   const [list, setList] = useState<ConnectionInfo[] | null>(null)
   const [editing, setEditing] = useState<ConnectionInfo | 'new' | null>(null)
@@ -58,51 +60,55 @@ export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) =>
   if (!list) return null
   return (
     <>
-      {list.length ? (
-        <div className="stack" style={{ gap: 8 }} data-testid="connections">
-          <h3>Your own AI server</h3>
-          <ul className="list" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+      <ProviderRow
+        setting="own-server"
+        mark={<Icon name="server" size={20} />}
+        status={list.length ? `${list.length} saved` : 'Not set up'}
+        action={
+          <button className="btn small" onClick={() => setEditing('new')} data-testid={list.length ? 'connection-add' : 'own-server-toggle'}>
+            {list.length ? 'Add another' : 'Set up'}
+          </button>
+        }
+      >
+        {list.length > 0 && (
+          <ul className="pv-subs" data-testid="connections">
             {list.map((c) => (
-              <li key={c.id} className="list-item" data-testid="connection-card">
-                <div className="stack" style={{ gap: 2, flex: 1, minWidth: 0 }}>
-                  <div className="row" style={{ gap: 8 }}>
-                    <span className="field-label conn-line">{c.label}</span>
-                    {c.active && <span className="badge ready">In use</span>}
+              <li key={c.id} className="pv-sub" data-testid="connection-card">
+                <div className="pv-sub-main">
+                  <div className="pv-t">
+                    <b className="conn-line">{c.label}</b>
+                    <span className={`pv-status conn-line ${c.active ? 'ok' : 'plain'}`} title={`${c.model} · ${c.baseURL}`}>
+                      {c.active ? <ConnectedMark /> : `${c.model} · ${c.baseURL}`}
+                    </span>
                   </div>
-                  <span className="muted-sm conn-line" title={`${c.model} · ${c.baseURL}`}>
-                    {c.model} · {c.baseURL}
-                  </span>
-                  <label className="toggle conn-images">
-                    <input type="checkbox" checked={c.supportsImages} onChange={(e) => void setImages(c, e.target.checked)} data-testid="connection-images" />
-                    Can see pictures
-                    {!c.supportsImages && <span className="muted-sm">It edits without looking at your video.</span>}
-                  </label>
+                  {!c.active && (
+                    <button className="btn small" onClick={() => void use(c)} data-testid="connection-use">
+                      Use this
+                    </button>
+                  )}
+                  <MoreMenu
+                    label={`More for ${c.label}`}
+                    items={[
+                      { label: 'Edit…', run: () => setEditing(c), testid: 'connection-edit' },
+                      { label: 'Remove…', run: () => setRemoving(c), danger: true, testid: 'connection-remove' }
+                    ]}
+                  />
                 </div>
-                {!c.active && (
-                  <button className="btn small" onClick={() => void use(c)} data-testid="connection-use">
-                    Use this
-                  </button>
-                )}
-                <MoreMenu
-                  label={`More for ${c.label}`}
-                  items={[
-                    { label: 'Edit…', run: () => setEditing(c), testid: 'connection-edit' },
-                    { label: 'Remove…', run: () => setRemoving(c), danger: true, testid: 'connection-remove' }
-                  ]}
-                />
+                <label className="toggle conn-images">
+                  <input type="checkbox" checked={c.supportsImages} onChange={(e) => void setImages(c, e.target.checked)} data-testid="connection-images" />
+                  Can see pictures
+                  {!c.supportsImages && <span className="muted-sm">It edits without looking at your video.</span>}
+                </label>
               </li>
             ))}
           </ul>
-          <button className="link left" onClick={() => setEditing('new')} data-testid="connection-add">
-            Add another server
-          </button>
-        </div>
-      ) : (
-        <button className="link left" onClick={() => setEditing('new')} data-testid="own-server-toggle">
-          Use your own AI server (advanced)
-        </button>
-      )}
-      {error && <div className="banner error">{error}</div>}
+        )}
+        {error && (
+          <p className="pv-note error" role="alert">
+            {error}
+          </p>
+        )}
+      </ProviderRow>
       {editing && (
         <ConnectionDialog
           editing={editing === 'new' ? null : editing}
@@ -117,7 +123,7 @@ export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) =>
       {removing && (
         <Confirm
           title={`Remove ${removing.label}?`}
-          body={`Reel Studio forgets this server and its key.${removing.active ? ' Your videos are edited without AI until you connect one again.' : ''}`}
+          body={`Reel Studio forgets this server and its key.${removing.active ? ' Reels get a basic version until you connect an editor again.' : ''}`}
           yes="Remove"
           no="Keep it"
           danger
