@@ -7,7 +7,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, openSettings, passFirstRun, shot } from './helpers'
+import { BASE, launch, makeMedia, openSettings, passFirstRun, shot, makeReel } from './helpers'
 
 const MINE = mkdtempSync(join(BASE, 'remember-'))
 const ROOT = join(MINE, 'Documents', 'Reel Studio')
@@ -17,9 +17,7 @@ const captionCase = (slug: string): unknown => JSON.parse(readFileSync(join(ROOT
 async function newVideo(page: Page, video: string): Promise<string> {
   const before = projects()
   await page.getByTestId('nav-home').click()
-  await page.getByTestId('new-video').click()
-  await page.getByTestId('file-input').setInputFiles([video])
-  await expect(page.getByTestId('player')).toBeVisible({ timeout: 240_000 })
+  await makeReel(page, video)
   return projects().find((s) => !before.includes(s))!
 }
 
