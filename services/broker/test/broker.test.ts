@@ -156,6 +156,24 @@ describe('credential boundaries and lifecycle', () => {
     expect(unknown.status).toBe(401)
     expect(unknown.headers.has('location')).toBe(false)
   })
+  it('removes failed TikTok code reservations', async () => {
+    const store = new MemoryStore()
+    const broker = createBroker({ config: baseConfig, store, objects: new MemoryObjectStore(), fetch: async () => response({ error: 'invalid_grant' }, 400) })
+    for (let i = 0; i < 10; i++) {
+      const result = await broker(req('/api/tiktok/oauth/token', { ...ttCode, code: `failed-${i}` }))
+      expect(result.status).toBe(400)
+    }
+    expect([...store.records.keys()].filter(key => key.startsWith('code:'))).toHaveLength(0)
+  })
+  it('refuses a 1001st outstanding TikTok code reservation', async () => {
+    const store = new MemoryStore()
+    const now = Date.now()
+    for (let i = 0; i < 1000; i++) await store.records.set(`code:${i}`, { key: `code:${i}`, owner: '', expiresAt: now + 600_000, value: true })
+    let calls = 0
+    const broker = createBroker({ config: baseConfig, store, objects: new MemoryObjectStore(), fetch: async () => { calls++; return response({ access_token: 'tt-access', refresh_token: 'tt-refresh', expires_in: 86400, refresh_expires_in: 31536000, open_id: 'tt-user', scope: 'user.info.basic,video.upload' }) } })
+    expect((await broker(req('/api/tiktok/oauth/token', { ...ttCode, code: 'one-too-many' }))).status).toBe(429)
+    expect(calls).toBe(0)
+  })
   it('passes TikTok PKCE and opaque codes exactly once with the server secret', async () => {
     const calls: URLSearchParams[] = []
     const broker = createBroker({ config: baseConfig, store: new MemoryStore(), objects: new MemoryObjectStore(), fetch: async (_input, init) => {
@@ -230,6 +248,29 @@ describe('authenticated deletion and cleanup', () => {
     expect(result.status).toBe(200)
     expect([...store.records.keys()].filter(key => key.startsWith('install:') || key.startsWith('refresh:'))).toEqual([])
     expect((await broker(req('/api/tiktok/oauth/token', { client_key: 'tt-key', grant_type: 'refresh_token', refresh_token: 'tt-refresh' }, token.install_token))).status).toBe(401)
+  })
+  it('cleans expired media when OAuth records fill the disposable backlog', async () => {
+    let time = Date.now()
+    const store = new MemoryStore(); const objects = new MemoryObjectStore()
+    const broker = createBroker({ config: baseConfig, store, objects, fetch: fixtureFetch(), now: () => time })
+    const credentials = await startAndComplete(broker)
+    await broker(req('/api/instagram/uploads', { video_size: 100 }, credentials.install_token))
+    const object = [...objects.objects.values()][0]!
+    for (let i = 0; i < 600; i++) store.records.set(`code:expired-${i}`, { key: `code:expired-${i}`, owner: '', expiresAt: time - 1, value: true })
+    time += 26 * 60 * 60_000 + 1000
+    await broker(new Request('https://broker.example.test/api/cleanup', { headers: { authorization: `Bearer ${baseConfig.cronSecret}` } }))
+    expect(objects.deleted).toContain(object.key)
+  })
+  it('deduplicates a suffixed replay of a used Meta callback', async () => {
+    const { broker, objects } = make()
+    const credentials = await startAndComplete(broker)
+    await broker(req('/api/instagram/uploads', { video_size: 100 }, credentials.install_token))
+    const signed = metaRequest(Date.now())
+    const first = await broker(req('/api/meta/data-deletion', signed))
+    expect(first.status).toBe(200)
+    const replay = await broker(req('/api/meta/data-deletion', { signed_request: `${signed.signed_request}..suffix` }))
+    expect(replay.status).toBe(401)
+    expect(objects.deleted).toHaveLength(1)
   })
   it('keeps replay cleanup until PUT expiry and returns one receipt for concurrent deletion', async () => {
     let time = Date.now()

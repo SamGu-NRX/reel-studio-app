@@ -91,7 +91,7 @@ export function createBroker(options: Options): (request: Request) => Promise<Re
       const raw = error.success ? (typeof error.data.error === 'string' ? error.data.error : error.data.error.code) : undefined
       const safeCode = p === 'instagram' ? (typeof raw === 'number' ? raw : 190) :
         (typeof raw === 'string' && ['invalid_grant', 'invalid_client', 'invalid_request', 'invalid_scope', 'access_denied', 'rate_limit_exceeded', 'access_token_invalid'].includes(raw) ? raw : 'server_error')
-      return fail(response.status === 429 ? 429 : response.status >= 500 ? 502 : 400, safeCode)
+      throw new HttpError(response.status === 429 ? 429 : response.status >= 500 ? 502 : 400, safeCode)
     }
     return body
   }
@@ -242,11 +242,22 @@ export function createBroker(options: Options): (request: Request) => Promise<Re
       await rate('tt-start-global', 200, minute)
       const createdAt = now()
       const claimKey = `code:${hash(body.code)}`
-      await store.transaction(claimKey, async tx => {
+      await store.transaction('code-admission', async tx => {
+        // A shared admission lock makes the live-reservation cap hold across distinct authorization codes.
+        if (await tx.count('code:') >= 1000) fail(429)
         if (live(await tx.get(claimKey), now())) fail(401)
         await tx.put({ key: claimKey, owner: '', expiresAt: now() + 10 * minute, value: true })
       })
-      const token = parse(tikTokToken, await upstream('tiktok', 'https://open.tiktokapis.com/v2/oauth/token/', { method: 'POST', body: form }))
+      let rawToken: unknown
+      try {
+        rawToken = await upstream('tiktok', 'https://open.tiktokapis.com/v2/oauth/token/', { method: 'POST', body: form })
+      } catch (error) {
+        if (error instanceof HttpError && error.status >= 400 && error.status < 500) {
+          await store.transaction(claimKey, tx => tx.remove(claimKey))
+        }
+        throw error
+      }
+      const token = parse(tikTokToken, rawToken)
       const owner = ownerKey('tiktok', token.open_id)
       return store.transaction(owner, async tx => {
         await rejectOldGrant(tx, owner, createdAt)
@@ -338,13 +349,13 @@ export function createBroker(options: Options): (request: Request) => Promise<Re
   }
   async function metaDeletion(request: Request, deletion: boolean) {
     const body = parse(z.object({ signed_request: z.string().max(16_000) }), await readBody(request, true))
-    const [signature, encoded, extra] = body.signed_request.split('.')
-    if (!signature || !encoded || extra || !secureEqual(createHmac('sha256', config.instagramAppSecret).update(encoded).digest('base64url'), signature)) return fail(401)
+    const [signature, encoded] = body.signed_request.split('.')
+    if (!signature || !encoded || body.signed_request.split('.').length !== 2 || !secureEqual(createHmac('sha256', config.instagramAppSecret).update(encoded).digest('base64url'), signature)) return fail(401)
     let raw: unknown
     try { raw = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) } catch { return fail(400) }
     const payload = parse(z.object({ algorithm: z.literal('HMAC-SHA256'), user_id: opaque, issued_at: z.number().int() }), raw)
     if (Math.abs(now() / 1000 - payload.issued_at) > 86400) return fail(401)
-    const result = await deleteAccount('instagram', payload.user_id, `receipt:${hash(body.signed_request)}`)
+    const result = await deleteAccount('instagram', payload.user_id, `receipt:${hash(encoded)}`)
     return deletion ? json({ url: `${config.brokerOrigin}/api/deletion-status?code=${result.confirmation_code}`, confirmation_code: result.confirmation_code }) : json({})
   }
   async function tikTokWebhook(request: Request) {

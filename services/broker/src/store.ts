@@ -65,7 +65,12 @@ export function postgresStore(databaseUrl: string, sealer: Sealer): Store {
           },
           async remove(key) { await tx`DELETE FROM broker_records WHERE key = ${key}` },
           async owned(owner) { return (await tx`SELECT * FROM broker_records WHERE owner = ${owner}`).map(decode) },
-          async expired(now) { return (await tx`SELECT * FROM broker_records WHERE expires_at <= ${now} ORDER BY expires_at LIMIT 500`).map(decode) },
+          async expired(now) {
+            // Disposable OAuth records get a separate budget so unauthenticated starts cannot starve media deletion.
+            const records = await tx`SELECT * FROM broker_records WHERE expires_at <= ${now} AND NOT (starts_with(key, 'code:') OR starts_with(key, 'state:') OR starts_with(key, 'rate:') OR starts_with(key, 'tt-start:')) ORDER BY expires_at LIMIT 500`
+            const oauth = await tx`SELECT * FROM broker_records WHERE expires_at <= ${now} AND (starts_with(key, 'code:') OR starts_with(key, 'state:') OR starts_with(key, 'rate:') OR starts_with(key, 'tt-start:')) ORDER BY expires_at LIMIT 500`
+            return [...records, ...oauth].map(decode)
+          },
           async count(prefix) {
             const rows = await tx`SELECT count(*) AS count FROM broker_records WHERE starts_with(key, ${prefix}) AND expires_at > ${Date.now()}`
             return z.coerce.number().parse(rows[0]?.count)

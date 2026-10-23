@@ -17,7 +17,11 @@ export class MemoryStore implements Store {
         put: async row => { this.records.set(row.key, structuredClone(row)) },
         remove: async key => { this.records.delete(key) },
         owned: async owner => structuredClone([...this.records.values()].filter(row => row.owner === owner)),
-        expired: async now => structuredClone([...this.records.values()].filter(row => row.expiresAt <= now)),
+        expired: async now => {
+          const oauth = (row: RecordRow) => row.key.startsWith('code:') || row.key.startsWith('state:') || row.key.startsWith('rate:') || row.key.startsWith('tt-start:')
+          const expired = [...this.records.values()].filter(row => row.expiresAt <= now).sort((a, b) => a.expiresAt - b.expiresAt)
+          return structuredClone([...expired.filter(row => !oauth(row)).slice(0, 500), ...expired.filter(oauth).slice(0, 500)])
+        },
         count: async prefix => [...this.records.values()].filter(row => row.key.startsWith(prefix) && row.expiresAt > Date.now()).length
       })
     } catch (error) {
