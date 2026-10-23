@@ -21,12 +21,12 @@ describe('Try 2 proposal', () => {
     expect(editor).not.toHaveBeenCalled()
   })
 
-  // fails if the editor reads the cover on the raw take's clock, or the creator's swap is dropped on the way
+  // fails if the editor reads the cover on the raw take's clock, loses where words end, or the creator's swap is dropped
   it('asks the connected editor with the cover on the reel\'s clock and the swapped thing', async () => {
     const editor = vi.fn(async () => ({ variable: 'caption', value: 'Mix, wait, fold.', reason: 'I give the steps.' }))
     const r = await proposeTry({ ai: { active: async () => connected, proposeTry: editor }, caption, variable: 'caption', timeline, cover: { source: 's1', atSourceTime: 9 }, log: () => {} })
     expect(r).toEqual({ proposal: { variable: 'caption', value: 'Mix, wait, fold.', reason: 'I give the steps.' } })
-    expect(editor).toHaveBeenCalledWith({ caption, duration: 20, coverSeconds: 5, variable: 'caption', words: [{ w: 'Nobody', s: 0.4 }, { w: 'knows', s: 11.6 }] })
+    expect(editor).toHaveBeenCalledWith({ caption, duration: 20, coverSeconds: 5, variable: 'caption', words: [{ w: 'Nobody', s: 0.4, e: 0.8 }, { w: 'knows', s: 11.6, e: 12.1 }] })
   })
 
   // fails if a failed or unusable answer leaves the creator with nothing, or with the editor's words unchecked

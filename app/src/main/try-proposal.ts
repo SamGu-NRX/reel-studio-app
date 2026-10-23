@@ -28,7 +28,7 @@ export async function proposeTry({ ai, caption, variable, timeline, cover, log }
   try {
     const got = await ai.proposeTry({
       caption, duration, coverSeconds, ...(variable ? { variable } : {}),
-      words: words.map((w) => ({ w: w.w, s: Math.round(w.s * 10) / 10 }))
+      words: words.map((w) => ({ w: w.w, s: Math.round(w.s * 10) / 10, e: Math.round(w.e * 10) / 10 }))
     })
     const proposal = parseTryProposal(got, caption, duration)
     if (variable && proposal.variable !== variable) throw new Error(`asked for ${variable}, got ${proposal.variable}`)

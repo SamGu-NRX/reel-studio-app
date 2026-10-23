@@ -76,16 +76,21 @@ const hookLine = (caption: string): string => lines(caption)[0]
 /** Everything after the hook line. */
 const captionBody = (caption: string): string => lines(caption)[1]
 
-/** Why `p` can't be Try 2 for a reel of `duration` seconds whose caption is `caption`, or null. */
-function tryProposalProblem(p: TryProposal, caption: string, duration: number): string | null {
+/**
+ * Why `p` can't be Try 2 for a reel of `duration` seconds whose caption is `caption`, or null. Checks the editor's
+ * answer, and the creator's own words once they change it.
+ */
+export function tryProposalProblem(p: TryProposal, caption: string, duration: number): string | null {
   switch (p.variable) {
     case 'hook': {
       const line = p.value.trim()
-      if (!line || line.includes('\n')) return 'The hook line must be one line.'
+      if (!line) return 'Write a hook line for Try 2.'
+      if (line.includes('\n')) return 'The hook line must be one line.'
       return line === hookLine(caption).trim() ? 'The hook line is the same as Try 1.' : null
     }
     case 'caption':
-      return !p.value.trim() || p.value.trim() === captionBody(caption).trim() ? 'The caption is the same as Try 1.' : null
+      if (!p.value.trim()) return 'Write a caption for Try 2.'
+      return p.value.trim() === captionBody(caption).trim() ? 'The caption is the same as Try 1.' : null
     case 'cover':
       return Number.isFinite(p.value) && p.value >= 0 && p.value <= duration ? null : 'The cover must be a frame inside the video.'
     case 'brightness': {

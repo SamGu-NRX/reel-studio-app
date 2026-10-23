@@ -13,8 +13,8 @@ export interface TryRequest {
   caption: string;
   /** The finished reel's length in seconds. */
   duration: number;
-  /** What is said, on the finished reel's clock. */
-  words: { w: string; s: number }[];
+  /** What is said, on the finished reel's clock: each word's start and end, so a cover can fall between words. */
+  words: { w: string; s: number; e: number }[];
   /** The current cover on the reel's clock, when known. */
   coverSeconds: number | null;
   /** The creator swapped to this one: change only it. */
@@ -59,10 +59,10 @@ export function checkTryProposal(j: any, req: TryRequest): { proposal: TryPropos
 }
 
 function describe(req: TryRequest): string {
-  const said = req.words.map((w) => `[${w.s.toFixed(1)}] ${w.w}`).join(' ');
+  const said = req.words.map((w) => `[${w.s.toFixed(1)}-${w.e.toFixed(1)}] ${w.w}`).join(' ');
   return [
     `The reel is ${req.duration.toFixed(1)} s long.`,
-    `What is said, with the second each word starts: ${said || '(nothing)'}`,
+    `What is said, with the seconds each word starts and ends: ${said || '(nothing)'}`,
     `The current cover is ${req.coverSeconds === null ? 'a frame the editor picked earlier' : `the frame at ${req.coverSeconds.toFixed(1)} s`}.`,
     `The hook line (the caption's first line): ${firstLine(req.caption) || '(empty)'}`,
     `The rest of the caption: ${body(req.caption) || '(empty)'}`,

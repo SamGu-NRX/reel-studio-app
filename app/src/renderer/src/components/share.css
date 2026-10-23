@@ -91,10 +91,13 @@ html.kb .sp-plat[data-enter] { transition: none; }
 .sp-thing:disabled { cursor: default; }
 .sp-thing:disabled:not(.on) { color: var(--ink-4); }
 html.kb .sp-thing { transition: none; }
-.sp-prop { display: flex; flex-direction: column; gap: 2px; min-height: 18px; transition: opacity 180ms cubic-bezier(.2, .8, .2, 1), transform 180ms cubic-bezier(.2, .8, .2, 1); }
+.sp-prop { align-self: stretch; display: flex; flex-direction: column; gap: 4px; min-height: 18px; transition: opacity 180ms cubic-bezier(.2, .8, .2, 1), transform 180ms cubic-bezier(.2, .8, .2, 1); }
 @starting-style { .sp-prop { opacity: 0; transform: translateY(2px); } }
 html.kb .sp-prop { transition: none; }
 .sp-value { font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 560; color: var(--ink); white-space: pre-line; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+/* The proposed hook line, as tall and as rounded as the caption field above it. */
+.input.sp-try-text { height: 32px; padding: 0 10px; font-size: var(--fs-base); border-radius: var(--r-sm); user-select: text; }
+.sp-prop .input[aria-invalid], .sp-prop .textarea[aria-invalid] { border-color: var(--amber); }
 .sp-reason { font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-2); }
 .sp-on { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-2); }
 .sp-on > .icon { color: var(--green-ink); flex: none; }

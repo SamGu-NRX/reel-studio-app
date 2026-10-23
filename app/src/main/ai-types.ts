@@ -37,8 +37,8 @@ export interface TryRequest {
   /** Try 1's caption as posted; its first line is the hook line. */
   caption: string
   duration: number
-  /** What is said, on the finished reel's clock. */
-  words: { w: string; s: number }[]
+  /** What is said, on the finished reel's clock, with each word's start and end. */
+  words: { w: string; s: number; e: number }[]
   coverSeconds: number | null
   /** The creator swapped to this one. */
   variable?: TryVariable

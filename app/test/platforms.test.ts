@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  PLATFORM_RULES, appCoverPick, checkPlatform, parseTryProposal, sameVideo, secondTryPlatforms, secondTryProblem, tryChanges, tryFromProposal,
+  PLATFORM_RULES, appCoverPick, checkPlatform, parseTryProposal, sameVideo, secondTryPlatforms, secondTryProblem, tryChanges, tryFromProposal, tryProposalProblem,
   type PlatformTry, type TryProposal
 } from '../src/shared/platforms'
 
@@ -96,6 +96,16 @@ describe('Try 2 from a proposal', () => {
     expect(() => parseTryProposal({ variable: 'hook', value: 'Hi guys, quick one', reason: 'I kept it.' }, first.caption, 20)).toThrow(/same as Try 1/)
     expect(() => parseTryProposal({ variable: 'cover', value: 31, reason: 'I picked the end.' }, first.caption, 20)).toThrow(/inside the video/)
     expect(() => parseTryProposal({ variable: 'brightness', value: 0.5, reason: 'I lift it.' }, first.caption, 20)).toThrow(/too small or too large/)
+  })
+
+  // fails if the creator's own words for Try 2 can be empty or Try 1's again, which would export a Try 2 that tests nothing
+  it('asks for words when the creator empties the hook line or caption, and refuses Try 1\'s', () => {
+    const own = (variable: 'hook' | 'caption', value: string) => tryProposalProblem({ variable, value, reason: 'I lead with the topic.' }, first.caption, 20)
+    expect(own('hook', '  ')).toBe('Write a hook line for Try 2.')
+    expect(own('hook', ' Hi guys, quick one ')).toBe('The hook line is the same as Try 1.')
+    expect(own('hook', 'Sourdough without a mixer')).toBeNull()
+    expect(own('caption', '')).toBe('Write a caption for Try 2.')
+    expect(own('caption', 'One bowl, two folds.\n\n#sourdough')).toBe('The caption is the same as Try 1.')
   })
 
   // fails if the app's own pick lands on the current cover, which would make Try 2 the same as Try 1

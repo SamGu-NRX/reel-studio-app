@@ -1,11 +1,12 @@
 // Share › Other platforms: one video, cover and caption file per platform (#52), and Try 2 for the platforms that
-// test two versions of a post themselves (#61). The editor decides what Try 2 changes; the creator confirms it or
-// swaps the thing it changes. With no editor, the app picks another cover and nobody says "I".
+// test two versions of a post themselves (#61). The editor decides what Try 2 changes; the creator confirms it, rewrites
+// a proposed hook line or caption, or swaps the thing it changes. With no editor, the app picks another cover and
+// nobody says "I".
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { PlatformExportResult, VersionInfo } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
 import {
-  PLATFORM_RULES, TRY_VARIABLES, checkPlatform, platformRule, sameVideo, secondTryPlatforms, secondTryProblem, tryFromProposal,
+  PLATFORM_RULES, TRY_VARIABLES, checkPlatform, platformRule, sameVideo, secondTryPlatforms, secondTryProblem, tryFromProposal, tryProposalProblem,
   type ExportIssue, type Platform, type PlatformTry, type TryProposal, type TryVariable
 } from '../../../shared/platforms'
 import { errorCode, reel, userMessage } from '../api'
@@ -26,6 +27,11 @@ function valueWords(p: TryProposal): string {
     case 'brightness': return `${Math.round(Math.abs(p.value) * 100)}% ${p.value > 0 ? 'brighter' : 'darker'}`
   }
 }
+
+/** The app's own Try 2, with no editor: always another cover. */
+const appPick = (p: TryProposal): string => `Try 2 uses another cover: ${valueWords(p).toLowerCase()}.`
+
+const isText = (p: TryProposal): p is Extract<TryProposal, { variable: 'hook' | 'caption' }> => p.variable === 'hook' || p.variable === 'caption'
 
 type Saving = { kind: 'saving'; pct: number | null; jobId: string | null; stopping: boolean }
 type State = { kind: 'idle' } | Saving | { kind: 'saved'; result: PlatformExportResult } | { kind: 'failed'; message: string }
@@ -51,6 +57,8 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
   const [variable, setVariable] = useState<TryVariable | undefined>(undefined)
   const [ask, setAsk] = useState<Ask | null>(null)
   const [confirmed, setConfirmed] = useState(false)
+  // The creator's own words for the answer asked under `key`.
+  const [own, setOwn] = useState<{ key: string; text: string } | null>(null)
   // Known from the first answer: an editor answered, or was asked and couldn't. Only then can the creator swap.
   const [editor, setEditor] = useState(false)
   const saving = state.kind === 'saving'
@@ -117,7 +125,10 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
   useEffect(() => onWorkRef.current(work), [workKey]) // eslint-disable-line react-hooks/exhaustive-deps -- `work` is rebuilt each render; its key says when it changed
 
   const current = ask?.key === askKey ? ask : null
-  const shown = current?.kind === 'ready' ? current.proposal : null
+  const proposed = current?.kind === 'ready' ? current.proposal : null
+  // A new hook line or caption is the creator's to change; their words replace the editor's for this answer only.
+  const words = proposed && isText(proposed) ? (own?.key === askKey ? own.text : proposed.value) : null
+  const shown: TryProposal | null = proposed && isText(proposed) && words !== null ? { ...proposed, value: words.trim() } : proposed
   const toggle = (p: Platform) => setSelected((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]))
   const swap = (v: TryVariable) => {
     if (v === shown?.variable) return
@@ -134,16 +145,23 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
   }
 
   const first: PlatformTry = { version: version.n, caption, coverSeconds: null }
-  const second = confirmed && shown && testing.length ? tryFromProposal(first, shown) : null
-  const secondPlatforms = second ? secondTryPlatforms(selected, sameVideo(first, second)) : []
-  const problem = second ? secondTryProblem(selected, first, second, fps) : null
   // Until the length is read, NaN passes every length rule, so the caption is still checked. Main checks again.
   const length = seconds[version.n] ?? Number.NaN
+  const wordsProblem = shown && isText(shown) ? tryProposalProblem(shown, caption, length) : null
+  const second = confirmed && shown && testing.length ? tryFromProposal(first, shown) : null
+  const secondPlatforms = second ? secondTryPlatforms(selected, sameVideo(first, second)) : []
+  const problem = second ? (wordsProblem ?? secondTryProblem(selected, first, second, fps)) : null
   const issuesFor = (p: Platform): ExportIssue[] => checkPlatform(p, caption, length)
   const tryIssues = second ? secondPlatforms.flatMap((p) => checkPlatform(p, second.caption, length).filter((i) => i.kind !== 'duration').map((i) => `${platformRule(p).label}: ${i.message}`)) : []
   const blocked = selected.some((p) => issuesFor(p).some((i) => i.blocking)) || (second !== null && secondPlatforms.some((p) => checkPlatform(p, second.caption, length).some((i) => i.blocking)))
   const ready = selected.length > 0 && !blocked && !problem && !disabled
   const edges = selected.filter((p) => p !== 'instagram').map((p) => platformRule(p).label)
+  const asking = `${variable ? `Asking your editor for a new ${THING[variable].toLowerCase()}` : 'Choosing what Try 2 changes'}…`
+  // Built from the editor's answer, not the field, so typing in the field is never read out.
+  const said = !current || current.kind === 'asking' ? asking
+    : current.kind === 'failed' ? current.message
+    : [current.proposal.reason === null ? appPick(current.proposal) : `Try 2 changes the ${THING[current.proposal.variable].toLowerCase()}: ${valueWords(current.proposal)}. ${current.proposal.reason}`, current.notice]
+      .filter(Boolean).join(' ')
 
   const save = async () => {
     stopAsked.current = false
@@ -207,23 +225,45 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
               })}
             </div>
           )}
-          {/* The live region stays put so each answer is read out; the keyed block inside fades in. */}
-          <div role="status" data-testid="try-two-proposal">
-            <div className="sp-prop" key={current?.kind === 'ready' ? `${askKey}|ready` : askKey}>
-              {!current || current.kind === 'asking' ? (
-                <p className="muted-sm">{variable ? `Asking your editor for a new ${THING[variable].toLowerCase()}` : 'Choosing what Try 2 changes'}…</p>
-              ) : current.kind === 'failed' ? (
-                <p className="sp-warn">{current.message}</p>
-              ) : current.proposal.reason === null ? (
-                <p className="sp-value">Try 2 uses another cover: {valueWords(current.proposal).toLowerCase()}.</p>
-              ) : (
-                <>
+          {/* One live region that stays put reads each answer out; the keyed block below fades in and holds the field. */}
+          <p className="sr-only" role="status">{said}</p>
+          <div className="sp-prop" key={current?.kind === 'ready' ? `${askKey}|ready` : askKey} data-testid="try-two-proposal">
+            {!current || current.kind === 'asking' ? (
+              <p className="muted-sm">{asking}</p>
+            ) : current.kind === 'failed' ? (
+              <p className="sp-warn">{current.message}</p>
+            ) : current.proposal.reason === null ? (
+              <p className="sp-value">{appPick(current.proposal)}</p>
+            ) : (
+              <>
+                {words === null ? (
                   <p className="sp-value">{valueWords(current.proposal)}</p>
-                  <p className="sp-reason" data-testid="try-two-reason">{current.proposal.reason}</p>
-                </>
-              )}
-              {current?.kind === 'ready' && current.notice && <p className="muted-sm">{current.notice}</p>}
-            </div>
+                ) : current.proposal.variable === 'hook' ? (
+                  <input
+                    className="input sp-try-text"
+                    value={words}
+                    disabled={saving}
+                    aria-label="Try 2’s hook line"
+                    aria-invalid={!!wordsProblem || undefined}
+                    onChange={(e) => setOwn({ key: askKey, text: e.target.value })}
+                    data-testid="try-two-value"
+                  />
+                ) : (
+                  <textarea
+                    className="textarea sp-caption"
+                    rows={2}
+                    value={words}
+                    disabled={saving}
+                    aria-label="Try 2’s caption after the hook line"
+                    aria-invalid={!!wordsProblem || undefined}
+                    onChange={(e) => setOwn({ key: askKey, text: e.target.value })}
+                    data-testid="try-two-value"
+                  />
+                )}
+                <p className="sp-reason" data-testid="try-two-reason">{current.proposal.reason}</p>
+              </>
+            )}
+            {current?.kind === 'ready' && current.notice && <p className="muted-sm">{current.notice}</p>}
           </div>
           {shown && (confirmed ? (
             <p className="sp-on" data-testid="try-two-on">
@@ -236,7 +276,7 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
           ) : (
             <button type="button" className="btn small sp-use" disabled={saving} onClick={() => setConfirmed(true)} data-testid="try-two-use">Use Try 2</button>
           ))}
-          {(problem || tryIssues.length > 0) && <p className="sp-warn" data-testid="try-two-warning">{[problem, ...tryIssues].filter(Boolean).join(' ')}</p>}
+          {(problem || wordsProblem || tryIssues.length > 0) && <p className="sp-warn" data-testid="try-two-warning">{[problem ?? wordsProblem, ...tryIssues].filter(Boolean).join(' ')}</p>}
         </section>
       )}
 
