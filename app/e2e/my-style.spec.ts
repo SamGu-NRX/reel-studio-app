@@ -18,9 +18,9 @@ test('a damaged My style file is kept next to a new one, and My style says so in
     await passFirstRun(page)
     await page.getByTestId('nav-style').click()
     await expect(page.getByTestId('style-damaged')).toHaveText(
-      'Your saved style file was damaged, so I started a new one. The old one is kept next to it.'
+      'Your saved style file was damaged, so a new one was started. The old one is kept next to it.'
     )
-    await expect(page.getByText('Nothing here yet.')).toBeVisible()
+    await expect(page.getByTestId('style-empty')).toBeVisible()
     await shot(page, 'style-damaged')
     expect(readFileSync(join(root, 'My style.damaged.json'), 'utf8')).toBe(damaged)
   } finally {

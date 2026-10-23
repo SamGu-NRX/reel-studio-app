@@ -34,11 +34,12 @@ export function MyStyle() {
   const [lesson, setLesson] = useState<(StyleLesson & { keep: boolean[] }) | null>(null)
   const [learning, setLearning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [damaged, setDamaged] = useState(false)
   const editButtons = useRef(new Map<string, HTMLButtonElement>())
   const addButton = useRef<HTMLButtonElement>(null)
   const undoTimer = useRef<number | undefined>(undefined)
   const undoButton = useRef<HTMLButtonElement>(null)
-  const load = () => reel.style.rules().then(setRules)
+  const load = () => Promise.all([reel.style.rules().then(setRules), reel.style.damaged().then(setDamaged)])
   useEffect(() => {
     void load()
     return () => window.clearTimeout(undoTimer.current)
@@ -136,6 +137,11 @@ export function MyStyle() {
         }
       />
       <p className="style-intro">Your editor follows these on every reel. A note that starts with “always” adds one.</p>
+      {damaged && (
+        <p className="banner" role="status" data-testid="style-damaged">
+          Your saved style file was damaged, so a new one was started. The old one is kept next to it.
+        </p>
+      )}
       {error && (
         <p className="style-note" role="alert">
           {error}
@@ -239,6 +245,7 @@ export function MyStyle() {
                     value={editing.text}
                     onChange={(e) => setEditing({ id: r.id, text: e.target.value })}
                     aria-label="Rule"
+                    aria-describedby={r.payload ? `edit-hint-${r.id}` : undefined}
                     autoFocus
                     data-testid="style-edit-input"
                   />
@@ -249,6 +256,11 @@ export function MyStyle() {
                     Cancel
                   </button>
                 </form>
+                {r.payload && (
+                  <p id={`edit-hint-${r.id}`} className="muted-sm style-edit-hint" data-testid="style-edit-hint">
+                    If you change these words, they become a sentence the AI reads, and the app no longer makes new reels lowercase by itself.
+                  </p>
+                )}
               </li>
             ) : (
               <li key={r.id} className="style-row" data-testid="style-rule">

@@ -56,7 +56,7 @@ test('a lowercase note is remembered only on Yes, starts the next video lowercas
     // editing it says, before anything changes, that new words make it a sentence the AI reads
     await page.getByRole('button', { name: 'Edit "Use lowercase subtitles."' }).click()
     await expect(page.getByTestId('style-edit-input')).toHaveAccessibleDescription(
-      'If you change these words, they become a sentence the AI reads, and the app no longer makes new videos lowercase by itself.'
+      'If you change these words, they become a sentence the AI reads, and the app no longer makes new reels lowercase by itself.'
     )
     await shot(page, 'remember-03-editing')
     await page.keyboard.press('Escape')
