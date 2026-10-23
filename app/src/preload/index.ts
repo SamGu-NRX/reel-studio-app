@@ -1,3 +1,4 @@
+// Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
 // The only bridge between the page and the main process. The page never sees Node or ipcRenderer.
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AppCommand, JobEvent, ModelStatus, PhoneEvent, ReelApi, UpdateNotice } from '../shared/api'
@@ -17,6 +18,15 @@ function on<T>(channel: string, cb: (v: T) => void): () => void {
 }
 
 const api: ReelApi = {
+  instagram: {
+    configure: (settings) => call('instagram:configure', settings),
+    session: () => call('instagram:session'),
+    connect: () => call('instagram:connect'),
+    cancelConnect: () => call('instagram:cancelConnect'),
+    disconnect: () => call('instagram:disconnect'),
+    publish: (input) => call('instagram:publish', input),
+    insights: (slug, version, postId) => call('instagram:insights', slug, version, postId)
+  },
   app: {
     info: () => call('app:info'),
     finishFirstRun: () => call('app:finishFirstRun'),
