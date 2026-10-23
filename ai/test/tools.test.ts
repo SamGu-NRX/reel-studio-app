@@ -482,7 +482,7 @@ describe('tool implementations', () => {
       // position counts down from the top: at or above the lowest clear line is a fraction no larger than it
       expect([key, p.captions.style.position]).toEqual([key, expect.any(Number)]);
       expect([key, p.captions.style.position! <= lowestCaptionPosition(p.format, p.captions.style)]).toEqual([key, true]);
-      expect([key, planFastNote('turn on captions', p)!.summary]).toEqual([key, 'I put the captions back on.']);
+      expect([key, planFastNote('turn on captions', p)!.summary]).toEqual([key, 'I put the subtitles back on.']);
       const r = await executeTool(ctx, 'set_caption_style', { enabled: true });
       expect([key, (r.content as any).warning]).toEqual([key, undefined]);
     }

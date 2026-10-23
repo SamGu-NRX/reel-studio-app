@@ -77,19 +77,19 @@ describe('fast notes (no model turns)', () => {
     const r: any = await createAI({ host, settingsDir, providerOverride: model }).applyNote(dir, 'bigger captions', () => {});
     expect(r.fast).toBe('captions-bigger');
     expect((await loadProject(dir)).captions.style).toMatchObject({ size: 121, position: 0.75 });
-    expect(r.summary).toMatch(/^I made the captions a bit bigger\. .*under Instagram's own caption and username/);
+    expect(r.summary).toMatch(/^I made the subtitles a bit bigger\. .*under Instagram's own caption and username/);
     const p = await loadProject(dir);
     p.captions.style = { ...p.captions.style, size: 105, position: 0.66 };
-    expect(planFastNote('bigger captions', p)!.summary).toBe('I made the captions a bit bigger.');
+    expect(planFastNote('bigger captions', p)!.summary).toBe('I made the subtitles a bit bigger.');
   });
 
   it('says when captions turned back on sit under Instagram\'s caption', async () => {
     const { dir } = await setup();
     const p = await loadProject(dir);
     p.captions.enabled = false;
-    expect(planFastNote('turn on captions', p)!.summary).toBe('I put the captions back on.');
+    expect(planFastNote('turn on captions', p)!.summary).toBe('I put the subtitles back on.');
     p.captions.style = { ...p.captions.style, position: 0.88 };
-    expect(planFastNote('turn on captions', p)!.summary).toMatch(/^I put the captions back on\. .*under Instagram's own caption and username/);
+    expect(planFastNote('turn on captions', p)!.summary).toMatch(/^I put the subtitles back on\. .*under Instagram's own caption and username/);
   });
 
   it('"lower case captions" means the letters, so it goes to the AI instead of moving the captions down', async () => {
