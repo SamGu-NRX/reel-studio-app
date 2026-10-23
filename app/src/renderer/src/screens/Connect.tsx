@@ -2,40 +2,39 @@ import type { Go, Screen } from '../nav'
 import { ConnectAI, USING_CLAUDE_CODE } from '../components/connect'
 import { useNotify } from '../App'
 import { Icon } from '../components/icons'
+import { TitleBarSlot } from '../components/titlebar'
 
 const BACK_LABEL: Record<Exclude<Screen, { name: 'connect' }>['name'], string> = {
-  home: 'My videos',
+  home: 'Reels',
   new: 'Back',
-  script: 'Back to my script',
-  working: 'Back to my video',
-  reel: 'Back to my video',
+  script: 'Back to the script',
+  working: 'Back to the reel',
+  reel: 'Back to the reel',
   library: 'Library',
   style: 'My style',
   insights: 'Insights',
   settings: 'Settings'
 }
 
-/** Where every "Connect" button goes: one simple screen, nothing else on it. */
+/** Where every "Connect" button goes: the editor picker, nothing else. */
 export function Connect({ back, go }: { back?: Exclude<Screen, { name: 'connect' }>; go: Go }) {
   const notify = useNotify()
   const leave = () => go(back ?? { name: 'home' })
   return (
     <div className="page" style={{ maxWidth: 560 }} data-testid="connect-screen">
+      <TitleBarSlot title="Choose your editor" />
       <button className="back" onClick={leave} data-testid="connect-back">
         <Icon name="back" size={16} /> {BACK_LABEL[back?.name ?? 'home']}
       </button>
-      <h1>Turn on your AI editor</h1>
-      <p className="muted" style={{ margin: '8px 0 22px', fontSize: 16 }}>
-        Sign in once. Then just tell me what to change, in plain words.
+      <p className="muted" style={{ margin: '8px 0 12px' }}>
+        Your editor makes each version and the changes in your notes, on your own plan.
       </p>
-      <div className="panel">
-        <ConnectAI
-          onConnected={(p) => {
-            notify(p.id === 'claude-cli' ? USING_CLAUDE_CODE : `Connected to ${p.label}.`)
-            leave()
-          }}
-        />
-      </div>
+      <ConnectAI
+        onConnected={(p) => {
+          notify(p.id === 'claude-cli' ? USING_CLAUDE_CODE : `Connected to ${p.label}.`)
+          leave()
+        }}
+      />
     </div>
   )
 }

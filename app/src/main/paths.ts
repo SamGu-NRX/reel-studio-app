@@ -8,8 +8,10 @@ export interface PathContext {
   isPackaged: boolean
   /** process.resourcesPath in production. */
   resourcesPath: string
-  /** app.getPath('documents') */
+  /** app.getPath('documents'): where the library lived before ~/Movies became the default */
   documentsDir: string
+  /** app.getPath('videos'): ~/Movies on a Mac */
+  moviesDir: string
   /** app.getPath('userData') */
   userDataDir: string
   /** The app/ folder in dev (where package.json lives). */
@@ -59,8 +61,14 @@ export function reelStudioRoot(): string {
   const c = need()
   if (env().REELSTUDIO_ROOT) return resolve(env().REELSTUDIO_ROOT as string)
   if (c.rootOverride) return c.rootOverride
-  return join(c.documentsDir, 'Reel Studio')
+  return defaultRoot()
 }
+
+/** A new install's library folder: ~/Movies is not one of the folders macOS asks about. */
+export const defaultRoot = (): string => join(need().moviesDir, 'Reel Studio')
+
+/** The library folder of installs made before ~/Movies became the default. */
+export const legacyRoot = (): string => join(need().documentsDir, 'Reel Studio')
 
 export const projectsDir = (): string => join(reelStudioRoot(), 'Projects')
 export const libraryDir = (): string => join(reelStudioRoot(), 'Library')

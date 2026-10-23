@@ -8,7 +8,7 @@ export const APP_DIR = resolve(__dirname, '..')
 export const FAKE_ENGINE = join(APP_DIR, 'dev', 'fake-engine')
 export const PYTHON = process.platform === 'win32' ? 'python' : 'python3'
 
-/** A temp "Documents" folder whose path has spaces and non-ASCII characters, like real users. */
+/** A temp home for the library (Documents and Movies both) whose path has spaces and non-ASCII characters, like real users. */
 export function tempHome(): string {
   const base = mkdtempSync(join(tmpdir(), 'rs-test-'))
   const home = join(base, 'Zoë Müller', 'Documents 文档')
@@ -24,6 +24,7 @@ export function setupPaths(home = tempHome()): { home: string; root: string } {
     isPackaged: false,
     resourcesPath: '',
     documentsDir: home,
+    moviesDir: home,
     userDataDir: join(home, '..', 'userdata'),
     appDir: APP_DIR,
     env: { ...env, REELSTUDIO_ENGINE_DIR: FAKE_ENGINE }
