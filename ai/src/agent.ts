@@ -1,5 +1,5 @@
 // The provider-neutral agent loop: model -> tool calls -> results -> model ... until `finish`.
-import { AgentEvent, AIError, ChatMessage, ImagePart, ModelProvider, TokenUsage, ToolCall, ToolResultMsg } from './types';
+import { AgentEvent, AIError, ChatMessage, ImagePart, ModelProvider, TokenUsage, ToolCall, ToolResultMsg, WaitSignal } from './types';
 import { discardAssetCandidates, executeTool, toolSchemas, ToolContext } from './tools';
 
 const STAGE: Record<string, { message: string; pct: number }> = {
@@ -107,6 +107,35 @@ export function thinkingMessage(messages: ChatMessage[]): string {
   return 'Deciding what to do next';
 }
 
+/** Silence longer than this before an answer starts is a wait, and the status says so. */
+export const QUIET_MS = 20_000;
+
+/**
+ * The words while a reply is awaited, from a provider that reports its waits (ModelProvider.reportsWaits): the step's
+ * own words while the answer arrives; "Waiting for Claude to answer" once it has been quiet for QUIET_MS (one note
+ * once waited 543 s while saying "Watching your video"); the retry when the service refused. Others keep the step's words.
+ */
+export function waitWords(provider: Pick<ModelProvider, 'id' | 'reportsWaits'>, say: (message: string, waiting: boolean) => void, thinking: string, quietMs = QUIET_MS): { onWait?: (w: WaitSignal) => void; end: () => void } {
+  if (!provider.reportsWaits) return { end: () => undefined };
+  const who = provider.id === 'claude-cli' || provider.id === 'claude' ? 'Claude' : 'your editor';
+  let quiet: ReturnType<typeof setTimeout> | null = null;
+  const listen = () => {
+    if (quiet) clearTimeout(quiet);
+    quiet = setTimeout(() => say(`Waiting for ${who} to answer`, true), quietMs);
+    quiet.unref?.();
+  };
+  const stop = () => { if (quiet) clearTimeout(quiet); quiet = null; };
+  listen();
+  return {
+    onWait: (w) => {
+      if (w.kind === 'answering') { stop(); say(thinking, false); return; }
+      say(`${who === 'Claude' ? 'Claude' : 'Your editor'} is busy. Trying again${w.max ? ` (${w.attempt} of ${w.max})` : ''}`, true);
+      listen();
+    },
+    end: stop,
+  };
+}
+
 export const MAX_CONSECUTIVE_MISSES = 4;
 export const PARALLEL_LIMIT = 4;
 
@@ -174,13 +203,17 @@ async function agentLoop(o: RunAgentOptions): Promise<RunAgentResult> {
     steps++;
     let res;
     for (let attempt = 0; ; attempt++) {
+      const thinking = thinkingMessage(messages);
+      const wait = waitWords(o.provider, (message, waiting) => o.onEvent({ type: 'status', message, phase: 'edit', thinking: true, ...(waiting ? { waiting } : {}) }), thinking);
       try {
         const sent = pruneImages(messages);
-        o.onEvent({ type: 'status', message: thinkingMessage(messages), phase: 'edit', thinking: true });
-        res = await o.provider.complete({ system: o.system, messages: sent, tools, signal: o.signal });
+        o.onEvent({ type: 'status', message: thinking, phase: 'edit', thinking: true });
+        res = await o.provider.complete({ system: o.system, messages: sent, tools, signal: o.signal, onWait: wait.onWait });
         tokens += effectiveTokens(res.usage, o.system.length + JSON.stringify(sent).length);
+        wait.end();
         break;
       } catch (e: any) {
+        wait.end();
         if (o.signal?.aborted) throw new AIError('cancelled', 'Stopped.');
         if (e instanceof AIError && e.retryable && attempt < retryDelays.length) {
           o.onEvent({ type: 'status', message: 'The AI is busy, trying again' });

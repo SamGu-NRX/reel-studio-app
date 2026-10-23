@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { AIError, claudeCandidates, claudeFromLoginShell, createAI, detectLocalClaude, findClaude } from '../src';
+import { AIError, claudeCandidates, claudeFromLoginShell, createAI, detectLocalClaude, findClaude, modelForRole } from '../src';
 import type { Runner } from '../src/providers/localClaude';
 import { FakeHost, tmpDir } from './helpers';
 
@@ -247,5 +247,54 @@ describe('the Claude Code choice in the provider list', () => {
     const ai = createAI({ ...noProvider(), localClaude: { bin: '/x/claude', run } });
     expect((await ai.claudeCodeStatus()).state).toBe('signed_out');
     expect((await ai.claudeCodeStatus()).state).toBe('ready');
+  });
+});
+
+describe('the Claude check can be cancelled', () => {
+  // fails if Cancel on "Checking Claude…" leaves the check running, or saves Claude as the editor anyway
+  it('stops the check call and saves nothing', async () => {
+    const dir = tmpDir();
+    const slow = path.join(tmpDir(), 'claude');
+    fs.writeFileSync(slow, '#!/bin/sh\nexec sleep 30\n', { mode: 0o755 });
+    const ai = createAI({ host: new FakeHost(tmpDir()), settingsDir: dir, localClaude: { bin: slow, run: signedIn } });
+    const t0 = Date.now();
+    const check = ai.setActive('claude-cli');
+    await new Promise((r) => setTimeout(r, 300));
+    ai.cancelCheck();
+    await expect(check).rejects.toMatchObject({ code: 'cancelled' });
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect((await ai.active()).id).toBe('none');
+    expect(fs.existsSync(path.join(dir, 'ai-settings.json'))).toBe(false);
+  });
+});
+
+describe('a model per role (Settings › Editor › Models)', () => {
+  it('asks Claude Code and your own server for the chosen model, leaves ChatGPT and a key to their own, and refuses a name Claude Code cannot run', () => {
+    const choices = { editor: 'opus', checker: 'auto', writer: 'claude-haiku-4-5' };
+    expect(modelForRole('claude-cli', 'editor', choices)).toBe('opus');
+    expect(modelForRole('claude-cli', 'checker', choices)).toBeUndefined();
+    expect(modelForRole('claude-cli', 'writer', choices)).toBe('claude-haiku-4-5');
+    expect(modelForRole('custom', 'editor', { editor: 'llama-3.3-70b' })).toBe('llama-3.3-70b');
+    expect(modelForRole('chatgpt', 'editor', choices)).toBeUndefined();
+    expect(modelForRole('claude', 'editor', choices)).toBeUndefined();
+    expect(() => modelForRole('claude-cli', 'editor', { editor: 'llama-3.3-70b' })).toThrow(expect.objectContaining({ code: 'model_not_offered' }));
+  });
+
+  // fails if a role's choice is saved but the call still goes out with the default model
+  it('runs the check with the Edits model and a script with the Writes titles model', async () => {
+    const log = path.join(tmpDir(), 'argv.log');
+    const bin = path.join(tmpDir(), 'claude');
+    const script = JSON.stringify({ title: 'T', hook: 'H', script: 'S', onScreenText: [] });
+    fs.writeFileSync(bin, `#!/bin/sh\necho "$*" >> '${log}'\ncat >/dev/null\necho '${JSON.stringify({ type: 'result', is_error: false, result: script })}'\n`, { mode: 0o755 });
+    let choices = { editor: 'opus', checker: 'auto', writer: 'fable' };
+    const ai = createAI({ ...noProvider(), localClaude: { bin, run: signedIn }, roleModels: () => choices });
+    await ai.setActive('claude-cli');
+    await ai.writeScript('sourdough without a mixer', () => undefined);
+    const models = () => fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => / --model (\S+)/.exec(l)?.[1]);
+    expect(models()).toEqual(['opus', 'fable']);
+    // a choice changed in Settings applies to the next job, with no restart
+    choices = { ...choices, writer: 'auto' };
+    await ai.writeScript('again', () => undefined);
+    expect(models()[2]).toBe('sonnet');
   });
 });
