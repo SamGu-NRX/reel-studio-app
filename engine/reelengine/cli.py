@@ -52,6 +52,14 @@ def cmd_transcribe(args):
                           prompt=args.prompt, device=args.device)
 
 
+def cmd_footage(args):
+    from . import footage, tools
+    root = tools.root_dir(args.root)
+    if args.footage_command == "index":
+        return footage.index(root, model_name=args.model, budget_seconds=args.budget_seconds)
+    return footage.search(root, args.query, limit=args.limit)
+
+
 def cmd_download_model(args):
     from . import transcribe
     return transcribe.download_model(args.name or transcribe.default_model())
@@ -318,6 +326,19 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--language")
     sp.add_argument("--prompt")
     sp.add_argument("--device", choices=["auto", "cuda", "cpu"])
+    sp = sub.add_parser("footage", help="index and search Library footage")
+    footage_sub = sp.add_subparsers(dest="footage_command", required=True, parser_class=_Parser)
+    for action in ("index", "search"):
+        fp = footage_sub.add_parser(action)
+        fp.set_defaults(fn=cmd_footage)
+        fp.add_argument("--root", help="Reel Studio root")
+        if action == "index":
+            fp.add_argument("--place", choices=["Library"], default="Library")
+            fp.add_argument("--model")
+            fp.add_argument("--budget-seconds", type=float, help="stop between stages after this budget")
+        else:
+            fp.add_argument("--query", required=True)
+            fp.add_argument("--limit", type=int, default=8)
     sp = add("download-model", cmd_download_model, "download the speech model")
     sp.add_argument("--name")
     sp = add("analyze", cmd_analyze, "pauses, retakes, default cut")
