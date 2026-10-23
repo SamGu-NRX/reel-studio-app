@@ -168,7 +168,8 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   st.aiEdited = true
   writeFileSync(appJson, JSON.stringify(st, null, 2))
   await openSettings(page)
-  await expect(page.getByTestId('ai-connected')).toContainText('Connected to ChatGPT')
+  await expect(page.locator('[data-provider="chatgpt"]')).toContainText('Connected')
+  await expect(page.getByTestId('ai-connected')).toHaveText('Connected')
   await expect(page.getByTestId('signin-chatgpt')).toHaveCount(0) // its row says Sign out instead
   await expect(page.getByTestId('root-display')).toContainText('Reel Studio')
   await expect(page.getByTestId('root-display')).not.toContainText('~')

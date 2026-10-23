@@ -49,6 +49,7 @@ test('add your own AI server from Settings', async () => {
   try {
     await passFirstRun(page)
     await openSettings(page)
+    await page.getByTestId('settings-advanced').click()
     await page.getByTestId('own-server-toggle').click()
     const dialog = page.getByTestId('connection-dialog')
     await expect(page.getByTestId('connection-kind-openai')).toBeFocused()
@@ -72,7 +73,8 @@ test('add your own AI server from Settings', async () => {
     await page.getByTestId('connection-key').press('Enter')
     await expect(dialog).toHaveCount(0)
 
-    await expect(page.getByTestId('ai-connected')).toHaveText('Connected to Work (mock-small).')
+    await expect(page.locator('[data-provider="custom"]')).toContainText('Work')
+    await expect(page.getByTestId('ai-connected')).toHaveText('Connected')
     // the sidebar follows without leaving Settings
     await expect(page.getByTestId('ai-status')).toHaveText('AI editor: Work')
     expect(chats.at(-1)).toEqual({ auth: `Bearer ${KEY}`, model: 'mock-small' })
@@ -85,7 +87,7 @@ test('add your own AI server from Settings', async () => {
     for (const f of files) expect(readFileSync(join(aiDir, f)).toString('utf8')).not.toContain(KEY)
 
     const card = page.getByTestId('connection-card')
-    await expect(card).toContainText('In use')
+    await expect(card).toContainText('Connected')
     await card.getByTestId('more').click()
     await page.getByTestId('connection-edit').click()
     await expect(page.getByTestId('connection-key')).toHaveValue('')

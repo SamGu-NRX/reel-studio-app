@@ -167,8 +167,7 @@ test(`${TAG}: first run + macOS chrome`, async () => {
 
     // ---- Edit > Paste into the Claude key box (the reason the Edit menu exists) ----
     await openSettings(page)
-    const other = page.getByTestId('use-different-ai')
-    if (await other.isVisible()) await other.click()
+    await page.getByTestId('settings-advanced').click()
     await page.getByTestId('claude-key-toggle').click()
     const key = page.getByTestId('claude-key-input')
     await key.fill('')

@@ -137,7 +137,7 @@ test('make a reel end to end', async () => {
   await expect(page.getByText('My style', { exact: true }).first()).toBeVisible()
   await shot(page, '14-my-style')
   await openSettings(page)
-  await expect(page.getByText('Where your videos are kept')).toBeVisible()
+  await expect(page.getByText('Library folder')).toBeVisible()
   await shot(page, '15-settings')
   await page.getByTestId('nav-home').click()
   await page.getByTestId('new-video').click()
