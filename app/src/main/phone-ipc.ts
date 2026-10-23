@@ -3,7 +3,7 @@
 import { app, BrowserWindow, ShareMenu, shell, type IpcMainInvokeEvent } from 'electron'
 import { realpathSync, statSync } from 'node:fs'
 import { basename, extname, resolve, sep } from 'node:path'
-import type { PhoneEvent, PhoneShare } from '../shared/api'
+import type { PhoneEvent, PhoneShare, ReelPlan } from '../shared/api'
 import { PHONE_WAIT_MS } from '../shared/phone-help'
 import { cloudDriveAt, copyToCloudDrive, detectCloudDrives } from './cloud-drive'
 import { lanAddresses, startShare, type LanAddress, type ShareServer } from './phone-share'
@@ -14,6 +14,8 @@ export interface PhoneIpcDeps {
   handle: Handle
   /** Folders a shared video may live in (the Reel Studio root). */
   roots: () => string[]
+  /** A reel's title and plan, read from its app.json; throws when it has none. */
+  plan: (slug: string) => Promise<{ title: string; plan: ReelPlan }>
   send: (channel: string, v: unknown) => void
   log: (line: string) => void
   test: boolean
@@ -117,8 +119,8 @@ export function registerPhoneIpc(d: PhoneIpcDeps): void {
     if (typeof id === 'string') saves.get(id)?.abort()
   })
 
-  d.handle('phone:start', async (_e, video: unknown, caption: unknown, address?: unknown): Promise<PhoneShare> => {
-    const file = checkedVideo(video, d.roots())
+  /** Opens the one link: a video or a plan, on the network asked for (or the likeliest one). */
+  async function open(what: { file: string; caption: string; title: string } | { plan: ReelPlan; title: string }, address: unknown): Promise<PhoneShare> {
     await stopPhoneShare()
     const list = addresses(d.test)
     if (!list.length)
@@ -130,9 +132,8 @@ export function registerPhoneIpc(d: PhoneIpcDeps): void {
     let s: ShareServer
     try {
       s = await startShare({
-        file,
-        caption: typeof caption === 'string' ? caption.slice(0, 5000) : '',
-        title: basename(file, extname(file)),
+        ...('plan' in what ? { plan: what.plan, caption: '' } : { file: what.file, caption: what.caption }),
+        title: what.title,
         host: pick.address,
         onEvent: (ev: PhoneEvent) => {
           if (ev.kind === 'stopped' && current === s) current = null
@@ -154,6 +155,16 @@ export function registerPhoneIpc(d: PhoneIpcDeps): void {
       size: s.size,
       waitMs: wait
     }
+  }
+
+  d.handle('phone:start', async (_e, video: unknown, caption: unknown, address?: unknown): Promise<PhoneShare> => {
+    const file = checkedVideo(video, d.roots())
+    return open({ file, caption: typeof caption === 'string' ? caption.slice(0, 5000) : '', title: basename(file, extname(file)) }, address)
+  })
+  // read from the reel's own app.json, never from the page: the link only ever shows what the reel holds
+  d.handle('phone:startPlan', async (_e, slug: unknown, address?: unknown): Promise<PhoneShare> => {
+    if (typeof slug !== 'string') throw { code: 'BAD_INPUT', userMessage: 'Try sending the plan again.' }
+    return open(await d.plan(slug), address)
   })
 
   d.handle('phone:stop', () => stopPhoneShare())

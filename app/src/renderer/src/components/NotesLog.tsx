@@ -7,6 +7,7 @@ import { reel, userMessage } from '../api'
 import { Icon } from './icons'
 import { Button } from './ui'
 import { AttachmentThumb } from './NoteAttachments'
+import { Thinking } from './ui'
 
 /** "What changed" under a version: its before → after rows, read once when first opened. */
 export function useVersionRows(slug: string): { rows: Map<number, VersionRow[] | null>; want: (n: number) => void } {
@@ -79,6 +80,7 @@ export function NotesLog({
   landed,
   unwatched,
   empty,
+  plan,
   versionRows,
   onPlay,
   onCompare,
@@ -112,6 +114,8 @@ export function NotesLog({
   unwatched: number | null
   /** shown when there is nothing yet (a reel with no video) */
   empty?: ReactNode
+  /** the reel's Plan card: under the editor's newest plan, or on its own (made in the form, or folded above the video) */
+  plan?: ReactNode
   versionRows: ReturnType<typeof useVersionRows>
   onPlay: (n: number) => void
   onCompare: (n: number) => void
@@ -287,13 +291,29 @@ export function NotesLog({
           </div>
         )
       case 'writing':
+        // the strip under the log names the step or the wait, with Stop
         return (
-          <div className="nt-res quiet" aria-busy data-testid="script-writing">
-            <span className="nk">
-              <span className="spin" />
-            </span>
-            <span className="t">Writing your script</span>
+          <div className="nt-res quiet pl-answering" aria-busy data-testid="plan-answering">
+            <span className="nk" />
+            <Thinking />
           </div>
+        )
+      case 'question':
+        return (
+          <div className="nt-res quiet reply pl-said" data-testid="plan-question">
+            <span className="nk" />
+            <span className="t wrap selectable">{r.text}</span>
+          </div>
+        )
+      case 'proposed':
+        return (
+          <>
+            <div className="nt-res quiet reply pl-said" data-testid="plan-said">
+              <span className="nk" />
+              <span className="t wrap selectable">{r.text}</span>
+            </div>
+            {r.card && <div className="pl-wrap">{plan}</div>}
+          </>
         )
       case 'script':
         return <Script s={r.script} onCopy={onCopy} />
@@ -353,21 +373,25 @@ export function NotesLog({
       {shownEntries.map((e) => (
         <article key={e.key} className="nt" data-testid={`log-${e.ask.kind}`}>
           {e.day && <div className="nday">{e.day}</div>}
-          <div className="nt-ask">
-            <p className="bubble selectable">
-              {e.ask.kind === 'video' && <Icon name="video" size={14} stroke={1.75} />}
-              {e.ask.kind === 'hand' && <Icon name="sliders" size={14} stroke={1.75} />}
-              {e.ask.kind === 'note' && e.ask.moment && <span className="tm">{momentLabel(e.ask.moment)}</span>}
-              {e.ask.text}
-              {e.ask.kind === 'note' && e.ask.attachments.length > 0 && (
-                <span className="q-att">
-                  {e.ask.attachments.map((a) => (
-                    <AttachmentThumb key={a.asset} a={a} size="chip" />
-                  ))}
-                </span>
-              )}
-            </p>
-          </div>
+          {e.ask.kind === 'plan' ? (
+            plan
+          ) : (
+            <div className="nt-ask">
+              <p className="bubble selectable">
+                {e.ask.kind === 'video' && <Icon name="video" size={14} stroke={1.75} />}
+                {e.ask.kind === 'hand' && <Icon name="sliders" size={14} stroke={1.75} />}
+                {e.ask.kind === 'note' && e.ask.moment && <span className="tm">{momentLabel(e.ask.moment)}</span>}
+                {e.ask.text}
+                {e.ask.kind === 'note' && e.ask.attachments.length > 0 && (
+                  <span className="q-att">
+                    {e.ask.attachments.map((a) => (
+                      <AttachmentThumb key={a.asset} a={a} size="chip" />
+                    ))}
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
           {e.key === 'video' && first ? firstLine(first) : e.result && result(e, e.result)}
           {e.extra.map((m) => (
             <Reply

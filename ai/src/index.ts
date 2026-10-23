@@ -5,7 +5,7 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import {
-  AgentEvent, AgentResult, AIError, EngineHost, ModelProvider, Part, ProviderId, ProviderStatus, ScriptResult, SecretStore, UserFacingError,
+  AgentEvent, AgentResult, AIError, EngineHost, ModelProvider, Part, PlanTurnInput, PlanTurnResult, ProviderId, ProviderStatus, ScriptResult, SecretStore, UserFacingError,
 } from './types';
 import { Prompts, defaultPromptsDir } from './prompts';
 import { StyleStore, StyleProposal, StyleRule } from './style';
@@ -671,6 +671,10 @@ export function createAI(opts: CreateAIOptions) {
       const r = await p.complete({ system: prompts.render('versionTitle'), messages: [{ role: 'user', content: [{ type: 'text', text: JSON.stringify(text) }] }], tools: [], jsonOnly: true, signal });
       const j = extractJson(r.text);
       return typeof j?.title === 'string' && typeof j?.summary === 'string' ? { title: j.title, summary: j.summary } : null;
+    },
+    /** One turn of a planned reel's planning chat: a short question back, or the whole plan (editor.ts planTurn). */
+    async planTurn(input: PlanTurnInput, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<PlanTurnResult> {
+      return editor.planTurn(deps(), await modelProvider('writer'), input, onEvent, signal);
     },
     async styleRules() { return style.list(); },
     async removeStyleRule(id: string, options?: { forget?: boolean }) { return style.remove(id, options); },

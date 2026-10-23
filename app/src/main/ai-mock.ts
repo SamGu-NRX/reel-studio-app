@@ -5,7 +5,7 @@ import { constants, existsSync, promises as fs } from 'node:fs'
 import { basename, join, extname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { serialized, writeJson } from './store'
-import type { AgentEvent, AgentResult, AI, ClaudeCodeStatus, CreateAI, ProviderStatus, ScriptResult } from './ai-types'
+import type { AgentEvent, AgentResult, AI, ClaudeCodeStatus, CreateAI, PlanTurnResult, ProviderStatus } from './ai-types'
 import type { Phase, StyleProposal, StyleRule } from '../shared/api'
 
 const MUSIC_EXT = new Set(['.mp3', '.m4a', '.wav', '.aac', '.flac', '.ogg'])
@@ -337,19 +337,26 @@ export const createMockAI: CreateAI = ({ host }) => {
       return false
     },
 
-    // The practice editor (REELSTUDIO_MOCK_NOTE) writes a fixed script, as slowly as it makes a note.
-    async writeScript(idea, onEvent, signal): Promise<ScriptResult> {
-      if (!(noteMs > 0)) throw { code: 'NO_AI', userMessage: 'Connect an editor in Settings to get a script.' }
-      onEvent({ type: 'status', message: 'Writing your script', pct: 10, thinking: true })
+    // The practice editor (REELSTUDIO_MOCK_NOTE) plans like the real one: a question about who it is for, one about
+    // the takeaway, then a fixed plan, each after thinking as long as it takes over a note. Halfway through it says the
+    // wait the way the real package does after 20 quiet seconds (ai agent.ts waitWords).
+    async planTurn(input, onEvent, signal): Promise<PlanTurnResult> {
+      if (!(noteMs > 0)) throw { code: 'NO_AI', userMessage: 'Connect an editor to plan a reel together.' }
+      onEvent({ type: 'status', message: 'Planning your reel', pct: 10, thinking: true })
       await new Promise<void>((resolve, reject) => {
+        const quiet = setTimeout(() => onEvent({ type: 'status', message: 'Waiting for your editor to answer', thinking: true, waiting: true }), noteMs / 2)
         const t = setTimeout(resolve, noteMs)
-        signal?.addEventListener('abort', () => (clearTimeout(t), reject({ code: 'CANCELLED', userMessage: 'Stopped.' })), { once: true })
+        signal?.addEventListener('abort', () => (clearTimeout(quiet), clearTimeout(t), reject({ code: 'CANCELLED', userMessage: 'Stopped.' })), { once: true })
       })
+      if (!input.plan && input.asked === 0) return { kind: 'question', text: 'Who is it for?' }
+      if (!input.plan && input.asked === 1) return { kind: 'question', text: "What's the one thing they should take away?" }
       return {
+        kind: 'plan',
+        say: input.plan ? 'I made that change.' : 'I led with the mistake most people make, then the four steps.',
         title: 'Sourdough without a mixer',
-        hook: 'You do not need a mixer to make good sourdough.',
-        script: `${idea.trim()}. Flour, water, salt. Mix it, leave it, fold it four times. Then it sleeps in the fridge, and that is it. The first loaf I made this way cost me [how much you spent] and it was the best one I had made.`,
-        onScreenText: ['No mixer needed', 'Mix, wait, fold', 'Into the fridge']
+        hooks: ['You do not need a mixer to make good sourdough.', 'I kneaded bread by hand for a year before I learned this.', 'Flour, water, salt. That is the whole list.'],
+        beats: ['Flour, water, salt. Nothing else goes in.', 'Mix it by hand, then leave it for an hour.', 'Fold it four times, an hour apart.', 'It sleeps in the fridge overnight.', 'Bake it hot in a closed pot. No mixer, ever.'],
+        shots: ['You at the kitchen counter, chest up, by the window', 'Your hands folding the dough, close up', 'The loaf coming out of the pot']
       }
     },
 

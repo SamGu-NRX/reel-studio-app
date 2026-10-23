@@ -1,0 +1,125 @@
+/* The Plan card and the plain plan form (components/Plan.tsx), in the notes column. The card is one white surface, the
+   only box in its row of the log; inside it, sections are spacing and quiet labels, never more boxes. The picked hook
+   leads in the card's largest type: picking one is what promotes it. */
+
+.plan {
+  background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--e1); padding: 10px 12px 12px;
+  display: grid; gap: 4px; min-width: 0;
+  transition: opacity 180ms cubic-bezier(.2, .8, .2, 1), transform 180ms cubic-bezier(.2, .8, .2, 1);
+}
+@starting-style { .plan { opacity: 0; transform: translateY(4px); } }
+/* under the editor's line in the chat, aligned with the line's words */
+.pl-wrap { padding-left: 26px; min-width: 0; }
+
+.pl-head { display: flex; align-items: center; gap: 8px; min-height: 28px; min-width: 0; }
+.pl-head h3 { font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 650; }
+.pl-acts { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 14px; }
+.plan .lk, .plan-form .lk, .pf-editor .lk {
+  flex: none; border: 0; background: none; padding: 0; min-height: 24px; font: inherit; font-size: var(--fs-base); font-weight: 600; color: var(--ink-2);
+  display: inline-flex; align-items: center; gap: 5px; text-decoration: underline; text-decoration-color: rgba(22, 30, 26, .3); text-underline-offset: 3px;
+  white-space: nowrap; cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) { :is(.plan, .plan-form, .pf-editor) .lk:hover { color: var(--ink); text-decoration-color: currentColor; } }
+
+.pl-sec { margin-top: 8px; min-width: 0; }
+.pl-sec h4 {
+  display: flex; align-items: baseline; gap: 8px; margin: 0 0 2px; font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 650; color: var(--ink-3);
+}
+.pl-done-n { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--green-ink); }
+.pl-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.pl-hooks { display: grid; gap: 1px; }
+.pl-row { display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: 4px; align-items: start; min-width: 0; }
+/* a lone hook (the plain form's) has nothing to pick: its words line up with the label above */
+.pl-row > .pl-field:only-child { grid-column: 1 / -1; width: calc(100% + 6px); margin-left: -6px; }
+
+/* a line, edited where it stands: plain text until hovered or focused */
+.pl-field {
+  display: block; width: 100%; min-height: 24px; margin: 0; padding: 3px 6px; border: 0; border-radius: 6px; resize: none; field-sizing: content;
+  background: transparent; color: var(--ink); font: inherit; font-size: var(--fs-base); line-height: var(--lh-base); overflow-wrap: anywhere;
+}
+@media (hover: hover) and (pointer: fine) { .pl-field:not([readonly]):hover { background: var(--sunk-2); } }
+.pl-field:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--ink); }
+.pl-field:not([readonly]):focus-visible { background: var(--surface); }
+.pl-field[readonly] { cursor: default; }
+.pl-row.done .pl-field { color: var(--ink-3); }
+
+/* the hook: the picked one in the card's largest type, the others quiet until picked */
+.pl-hook .pl-field { color: var(--ink-2); }
+.pl-hook.on .pl-field { color: var(--ink); font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 650; padding-top: 2px; padding-bottom: 2px; }
+.pl-pick { position: relative; width: 24px; height: 24px; display: grid; place-items: center; cursor: pointer; }
+.pl-pick input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: inherit; }
+.pl-pick span { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink-4); pointer-events: none; }
+.pl-pick input:checked + span { box-shadow: inset 0 0 0 1.5px var(--ink), inset 0 0 0 4px var(--surface), inset 0 0 0 8px var(--ink); }
+.pl-pick input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 3px; }
+.pl-pick:has(input:disabled) { cursor: default; }
+@media (hover: hover) and (pointer: fine) { .pl-pick input:not(:checked):not(:disabled):hover + span { box-shadow: inset 0 0 0 1.5px var(--ink-3); } }
+
+/* a beat's number (or a shot's empty ring) is its box to tick: green with a check once it's done */
+.pl-tick { position: relative; width: 24px; height: 24px; display: grid; place-items: center; cursor: pointer; }
+.pl-tick input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: inherit; }
+.pl-tick span {
+  width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px var(--line-strong);
+  color: var(--ink-2); font-size: var(--fs-xs); font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+.pl-tick input:checked + span { background: var(--green); box-shadow: none; color: #fff; }
+.pl-tick input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
+.pl-tick:has(input:disabled) { cursor: default; }
+@media (hover: hover) and (pointer: fine) { .pl-tick input:not(:checked):not(:disabled):hover + span { box-shadow: inset 0 0 0 1.5px var(--ink-3); } }
+
+/* folded above the video: one line that opens the card */
+.plan.folded { padding: 4px 8px 4px 4px; gap: 0; }
+.plan.folded .pl-body { padding: 4px 4px 8px 8px; display: grid; gap: 4px; }
+.plan.folded .pl-acts { margin-left: 0; justify-content: flex-start; }
+.pl-fold {
+  flex: 1 1 auto; min-width: 0; min-height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 4px; border: 0; border-radius: 7px; background: none;
+  font: inherit; font-size: var(--fs-base); color: var(--ink); cursor: pointer; text-align: left;
+}
+.pl-fold .icon { flex: none; color: var(--ink-3); transform: rotate(-90deg); transition: transform 150ms cubic-bezier(.2, .8, .2, 1); }
+.pl-fold .icon.open { transform: none; }
+.pl-fold b { font-weight: 650; flex: none; }
+.pl-fold-hook { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.pl-n { flex: none; font-size: var(--fs-sm); color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; padding-right: 4px; }
+@media (hover: hover) and (pointer: fine) { .pl-fold:hover { background: var(--wash); } }
+
+/* Send to my phone, opened in the card */
+.pl-phone {
+  display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 4px 12px; align-items: start; margin-top: 6px; padding: 10px; border-radius: var(--r-md);
+  background: var(--sunk-2); box-shadow: inset 0 0 0 1px var(--line);
+  transition: opacity 180ms cubic-bezier(.2, .8, .2, 1), transform 180ms cubic-bezier(.2, .8, .2, 1);
+}
+@starting-style { .pl-phone { opacity: 0; transform: translateY(-4px); } }
+.pl-qr { width: 112px; height: 112px; padding: 4px; border-radius: 8px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); display: grid; place-items: center; }
+.pl-phone-t { display: grid; gap: 4px; min-width: 0; font-size: var(--fs-base); line-height: var(--lh-base); }
+.pl-phone-s { color: var(--ink-2); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.pl-phone-s.sent { color: var(--green-ink); }
+.pl-phone-err { grid-column: 1 / -1; color: var(--ink-2); font-size: var(--fs-base); line-height: var(--lh-base); }
+.pl-phone-done { grid-column: 2; justify-self: start; }
+
+/* the editor's words in the planning chat: they arrive the way a version's line does */
+.nt-res.pl-said { transition: opacity 180ms cubic-bezier(.2, .8, .2, 1), transform 180ms cubic-bezier(.2, .8, .2, 1); }
+@starting-style { .nt-res.pl-said { opacity: 0; transform: translateY(4px); } }
+.nt-res.pl-answering { min-height: 24px; }
+
+/* ---- no editor: the plain form ---- */
+.plan-form { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 6px 2px 4px; margin: 0 -2px; }
+.pf-lead { font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-2); }
+.pf-f { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.pf-f > span, .pf-f > legend { font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 620; color: var(--ink); padding: 0; margin-bottom: 6px; }
+.pf-f > span { margin-bottom: 0; }
+.pf-beats { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.pf-beats li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: center; }
+.pf-n { font-size: var(--fs-sm); font-weight: 650; color: var(--ink-3); text-align: right; font-variant-numeric: tabular-nums; }
+.pf-add { justify-self: start; margin: 6px 0 0 24px; }
+.pf-save { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.pf-missing { font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 600; color: var(--pencil); }
+.pf-editor { margin-top: auto; padding-top: 12px; box-shadow: inset 0 1px 0 var(--line); }
+.pf-editor .lk { font-size: var(--fs-sm); }
+
+/* What the keyboard opens or ticks just appears. */
+html.kb :is(.plan, .pl-phone, .pl-fold .icon, .pl-tick span, .nt-res.pl-said) { transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .plan, .pl-phone, .nt-res.pl-said { transform: none; transition-property: opacity; }
+  @starting-style { .plan, .pl-phone, .nt-res.pl-said { transform: none; } }
+  .pl-fold .icon { transition: none; }
+}

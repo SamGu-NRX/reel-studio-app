@@ -27,6 +27,7 @@ import { Outs } from '../components/Outs'
 import { PopMenu } from '../components/PopMenu'
 import { TitleBarSlot } from '../components/titlebar'
 import { ConnectAI, ModelDownload } from '../components/connect'
+import { PlanCard, PlanForm } from '../components/Plan'
 import { byKeyboard, reducedMotion } from '../components/motion'
 import '../components/reel.css'
 
@@ -343,6 +344,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                 : { id: d.job.id, kind: d.job.kind === 'rerender' ? 'hand' : d.job.kind === 'first-edit' ? 'first-edit' : d.job.kind === 'script' ? 'script' : 'note' }
               : null,
             planned: d.status === 'planned',
+            plan: d.plan,
             source: d.project.sources?.[0] ?? null,
             now: new Date()
           })
@@ -410,8 +412,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     if (planned) {
       setDraft('')
       try {
-        const r = await reel.projects.script(slug, text)
-        setJob({ ...EMPTY_LIVE, jobId: r.jobId, message: 'Writing your script' })
+        const r = await reel.projects.planSay(slug, text)
+        setJob({ ...EMPTY_LIVE, jobId: r.jobId, message: 'Planning your reel' })
         await load()
       } catch (e) {
         setDraft(text)
@@ -452,7 +454,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     // a note that didn't finish waits at the head of the queue, with its moment and files: run it again
     const kept = d.queue.some((q) => q.id === e.key)
     const r = planned
-      ? reel.projects.script(slug, e.ask.text).then(() => load())
+      ? reel.projects.planSay(slug, e.ask.text).then(() => load())
       : kept
         ? reel.queue.runNext(slug)
         : note(e.ask.text, undefined, e.ask.moment ?? undefined)
@@ -560,13 +562,27 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const waiting = d.queue.filter((q) => !q.attempt).length
   const nextSpot = Math.max(0, ...pins.map((p) => p.n)) + 1
   const placeholder = planned
-    ? "What's this reel about?"
+    ? d.plan
+      ? 'Ask your editor for a change…'
+      : "What's this reel about?"
     : !hasVersions
       ? 'Notes you send now wait for Version 1…'
       : job
         ? 'Your next note waits for this one…'
         : 'Tell your editor what to change…'
-  const showComposer = planned || hasVersions || first?.kind === 'making'
+  const showComposer = (planned && !aiOff) || hasVersions || first?.kind === 'making'
+  const planCard = d.plan && (
+    <PlanCard
+      slug={slug}
+      title={d.title}
+      plan={d.plan}
+      folded={!planned}
+      busy={d.job?.kind === 'script'}
+      onSaved={() => void load()}
+      onCopy={(t) => void reel.app.copyText(t).then(() => notify('Copied.'))}
+      onError={(m) => notify(m, 'error')}
+    />
+  )
 
   // A version's name: the AI's rewording when it passed the check against what changed, else the app's own (#60).
   const nameOf = (v: VersionInfo): string => v.wording?.title ?? (v.facts ? versionTitle(v.facts, d.words) : '')
@@ -801,42 +817,65 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
           ) : (
             <>
               <div className="notes-h">
-                <h2>Notes for your editor</h2>
+                <h2>{!planned ? 'Notes for your editor' : aiOff ? 'Plan this reel' : 'Plan with your editor'}</h2>
               </div>
-              <NotesLog
-                slug={slug}
-                entries={entries}
-                queue={d.queue}
-                held={d.queueHeld}
-                latest={latestN ?? 0}
-                first={first}
-                shown={onScreen?.n ?? null}
-                making={making}
-                busy={!!job}
-                aiOn={!aiOff}
-                basic={!d.aiEdited}
-                landed={landed}
-                unwatched={unwatched}
-                empty={
-                  planned && (
-                    <p className="log-empty" data-testid="plan-empty">
-                      Haven't filmed it yet? Tell your editor what it's about and get a script.
-                    </p>
-                  )
-                }
-                versionRows={versionRows}
-                onPlay={watch}
-                onCompare={startCompare}
-                onAction={runAction}
-                onRetry={retry}
-                onEditHand={(id) => openDrawer('cut', id)}
-                onResume={() => void resume()}
-                onBasic={() => void resume(true)}
-                onCopy={(t) => void reel.app.copyText(t).then(() => notify('Copied.'))}
-                onError={(m) => notify(m, 'error')}
-                answerError={answerError}
-                pausedWhy={pausedWhy}
-              />
+              {planned && aiOff && !d.plan ? (
+                <PlanForm
+                  onConnect={connect}
+                  onSave={async (p) => {
+                    try {
+                      await reel.projects.setPlan(slug, p)
+                      await load()
+                    } catch (e) {
+                      notify(userMessage(e), 'error')
+                    }
+                  }}
+                />
+              ) : (
+                <NotesLog
+                  slug={slug}
+                  entries={entries}
+                  queue={d.queue}
+                  held={d.queueHeld}
+                  latest={latestN ?? 0}
+                  first={first}
+                  shown={onScreen?.n ?? null}
+                  making={making}
+                  busy={!!job}
+                  aiOn={!aiOff}
+                  basic={!d.aiEdited}
+                  landed={landed}
+                  unwatched={unwatched}
+                  empty={
+                    planned && (
+                      <p className="log-empty" data-testid="plan-empty">
+                        Haven't filmed it yet? Say what it's about. Your editor asks a question or two, then suggests a hook, the beats and the shots.
+                      </p>
+                    )
+                  }
+                  plan={planCard}
+                  versionRows={versionRows}
+                  onPlay={watch}
+                  onCompare={startCompare}
+                  onAction={runAction}
+                  onRetry={retry}
+                  onEditHand={(id) => openDrawer('cut', id)}
+                  onResume={() => void resume()}
+                  onBasic={() => void resume(true)}
+                  onCopy={(t) => void reel.app.copyText(t).then(() => notify('Copied.'))}
+                  onError={(m) => notify(m, 'error')}
+                  answerError={answerError}
+                  pausedWhy={pausedWhy}
+                />
+              )}
+              {planned && aiOff && d.plan && (
+                <p className="pf-editor muted-sm" data-testid="plan-connect-line">
+                  An editor can change the plan with you.{' '}
+                  <button className="lk" onClick={connect} data-testid="plan-connect">
+                    Connect an editor
+                  </button>
+                </p>
+              )}
               {showComposer && (
                 <div
                   className="cwrap"
@@ -885,6 +924,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     firstSteps={first?.kind === 'making' ? firstSteps : null}
                     steps={steps}
                     stepsOpenFirst={first?.kind === 'making'}
+                    noSteps={d.job?.kind === 'script'}
                     stepNote={job ? d.chat.find((m) => m.from === 'you' && m.jobId === job.jobId) : null}
                     under={
                       first?.kind === 'making' &&
@@ -910,7 +950,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     connect={
                       aiOff ? (
                         <div className="connect-cin" data-testid="composer-connect">
-                          <p>{planned ? 'Connect an editor to get a script' : 'Connect an editor to leave notes'}</p>
+                          <p>Connect an editor to leave notes</p>
                           <ConnectAI onConnected={setProvider} />
                         </div>
                       ) : null

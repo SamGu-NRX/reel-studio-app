@@ -103,7 +103,8 @@ const api: ReelApi = {
     plan: () => call('projects:plan'),
     leave: (slug) => call('projects:leave', slug),
     addVideo: (slug, files) => call('projects:addVideo', slug, files),
-    script: (slug, idea) => call('projects:script', slug, idea),
+    planSay: (slug, text) => call('projects:planSay', slug, text),
+    setPlan: (slug, plan) => call('projects:setPlan', slug, plan),
     resume: (slug, basic) => call('projects:resume', slug, basic),
     note: (slug, text, attachments, moment, onVersion, base) => call('projects:note', slug, text, attachments, moment, onVersion, base),
     mergeVersions: (slug, request) => call('projects:mergeVersions', slug, request),
@@ -144,6 +145,7 @@ const api: ReelApi = {
   },
   phone: {
     start: (video, caption, address) => call('phone:start', video, caption, address),
+    startPlan: (slug, address) => call('phone:startPlan', slug, address),
     stop: () => call('phone:stop'),
     onEvent: (cb) => on<PhoneEvent>('phone:event', cb),
     emailSelf: (video) => call('phone:emailSelf', video),

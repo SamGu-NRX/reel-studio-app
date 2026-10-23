@@ -56,7 +56,7 @@ function Glyph({ name, size = 18 }: { name: keyof typeof G; size?: number }) {
   )
 }
 
-function Qr({ url }: { url: string }) {
+export function Qr({ url }: { url: string }) {
   const { path, side } = useMemo(() => qrSvg(url), [url])
   return (
     <svg className="phone-qr" viewBox={`0 0 ${side} ${side}`} shapeRendering="crispEdges" role="img" aria-label="QR code for your phone's camera" data-testid="phone-qr" data-url={url}>

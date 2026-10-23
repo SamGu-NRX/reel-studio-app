@@ -1,8 +1,8 @@
 // High-level editor tasks: firstEdit, applyNote, writeScript, pickTakes, and the no-AI path.
 import { StockSearch } from './stock';
 import * as path from 'node:path';
-import { AgentEvent, AgentResult, AIError, EngineHost, ImagePart, ModelProvider, Phase, ScriptResult, UserFacingError } from './types';
-import { effectiveTokens, runAgent, RunAgentResult, DEFAULT_TOKEN_BUDGET } from './agent';
+import { AgentEvent, AgentResult, AIError, EngineHost, ImagePart, ModelProvider, Phase, PlanTurnInput, PlanTurnResult, ScriptResult, UserFacingError } from './types';
+import { effectiveTokens, runAgent, RunAgentResult, DEFAULT_TOKEN_BUDGET, waitWords } from './agent';
 import { Harness, loopHarness } from './harness';
 import type { LookupFn } from './safety';
 import { Prompts } from './prompts';
@@ -791,12 +791,101 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
 
 // ---------------------------------------------------------------- idea -> script
 
-/** The script the person planned with the editor before filming (the app keeps it in project.json), for the first edit. */
+/** The script the person planned with the editor before filming (the app keeps it in project.json), for the first edit.
+ * A plan made in the app's planning chat carries its beats as the script and its shot list as `shots`. */
 export function plannedScript(p: object): string {
-  const s = (p as { script?: { hook?: unknown; script?: unknown } }).script;
+  const s = (p as { script?: { hook?: unknown; script?: unknown; shots?: unknown } }).script;
   if (typeof s?.script !== 'string' || !s.script.trim()) return '';
   const hook = typeof s.hook === 'string' && s.hook.trim() ? `${s.hook.trim()}\n` : '';
-  return `\n\nThe script they planned before filming. Their takes follow it loosely; use it to tell which lines they meant to say:\n${hook}${s.script.trim()}`;
+  const shots = Array.isArray(s.shots) ? s.shots.filter((x): x is string => typeof x === 'string' && !!x.trim()) : [];
+  const filmed = shots.length ? `\n\nWhat they planned to film:\n${shots.map((x) => `- ${x.trim()}`).join('\n')}` : '';
+  return `\n\nThe script they planned before filming. Their takes follow it loosely; use it to tell which lines they meant to say:\n${hook}${s.script.trim()}${filmed}`;
+}
+
+// ---------------------------------------------------------------- planning chat -> plan
+
+/** Questions the editor may ask in one planning chat (audience, then the one takeaway) before it proposes. */
+export const PLAN_QUESTIONS = 2;
+const PLAN_LINE_MAX = 160;
+const PLAN_STEP = 'Planning your reel';
+
+const planLine = (v: unknown): string => (typeof v === 'string' ? cleanSummary(v).replace(/\s+/g, ' ').trim().slice(0, PLAN_LINE_MAX) : '');
+function planLines(v: unknown, min: number, max: number): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const out = v.map(planLine).filter(Boolean);
+  return out.length >= min ? out.slice(0, max) : null;
+}
+
+/** The model's reply to a planning turn, or null when it is not one the app can use: a question once the questions
+ * are spent, or a plan short of 2 hooks, 3 beats or 1 shot. Extra lines past 3 hooks, 6 beats and 6 shots go. */
+export function readPlanTurn(j: unknown, asked: number): PlanTurnResult | null {
+  if (!j || typeof j !== 'object') return null;
+  const o = j as Record<string, unknown>;
+  const question = planLine(o.question);
+  if (question) return asked < PLAN_QUESTIONS ? { kind: 'question', text: question } : null;
+  const hooks = planLines(o.hooks, 2, 3);
+  const beats = planLines(o.beats, 3, 6);
+  const shots = planLines(o.shots, 1, 6);
+  if (!hooks || !beats || !shots) return null;
+  const title = planLine(o.title).slice(0, 80);
+  return { kind: 'plan', say: planLine(o.say) || 'Here is a plan to film from.', ...(title ? { title } : {}), hooks, beats, shots };
+}
+
+function planForPrompt(p: NonNullable<PlanTurnInput['plan']>): string {
+  const hooks = p.hooks.map((h, i) => `${i === p.hook ? '(picked) ' : ''}${h}`);
+  return [`Hooks:\n${hooks.map((h) => `- ${h}`).join('\n')}`, `Beats:\n${p.beats.map((b, i) => `${i + 1}. ${b}`).join('\n')}`, `Shots:\n${p.shots.map((s) => `- ${s}`).join('\n')}`].join('\n\n');
+}
+
+/**
+ * One turn of the planning chat for a reel with no video yet: the editor asks a short question (at most
+ * PLAN_QUESTIONS in the chat) or proposes the whole plan. While the answer is awaited the status says the step, then
+ * the honest waits ("Waiting for Claude to answer", agent.ts waitWords). Stop aborts the model call.
+ */
+export async function planTurn(deps: EditorDeps, provider: ModelProvider | null, input: PlanTurnInput, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<PlanTurnResult> {
+  if (!provider) throw new AIError('no_ai', 'Connect an editor to plan a reel together.');
+  const last = input.turns[input.turns.length - 1];
+  if (!last || last.from !== 'you') throw new AIError('plan_input', 'Say what the reel is about first.');
+  const mustPropose = input.asked >= PLAN_QUESTIONS;
+  const system = deps.prompts.render('planReel', {
+    asked: String(Math.min(input.asked, PLAN_QUESTIONS)),
+    mustPropose: mustPropose ? 'No questions are left: propose the plan now.' : '',
+    plan: input.plan ? planForPrompt(input.plan) : 'None yet.',
+    styleRules: await deps.style.asPromptText(),
+  });
+  // one message per side in turn, as every provider expects: the creator's words, and the editor's replies as the JSON it gave
+  const messages: any[] = [];
+  for (const t of input.turns) {
+    const msg = t.from === 'you'
+      ? { role: 'user', content: [{ type: 'text', text: t.text }] }
+      : { role: 'assistant', text: JSON.stringify(t.kind === 'question' ? { question: t.text } : { say: t.text }), toolCalls: [] };
+    const prev = messages[messages.length - 1];
+    if (prev?.role === 'user' && msg.role === 'user') prev.content[0].text += `\n\n${t.text}`;
+    else if (prev?.role === 'assistant' && msg.role === 'assistant') prev.text = (msg as { text: string }).text;
+    else if (messages.length || msg.role === 'user') messages.push(msg);
+  }
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (signal?.aborted) throw new AIError('cancelled', 'Stopped.');
+      onEvent({ type: 'status', message: PLAN_STEP, pct: 10, thinking: true });
+      const wait = waitWords(provider, (message, waiting) => onEvent({ type: 'status', message, thinking: true, ...(waiting ? { waiting } : {}) }), PLAN_STEP);
+      let text: string;
+      try {
+        text = (await provider.complete({ system, messages, tools: [], jsonOnly: true, signal, onWait: wait.onWait })).text;
+      } finally {
+        wait.end();
+      }
+      if (signal?.aborted) throw new AIError('cancelled', 'Stopped.');
+      const r = readPlanTurn(extractJson(text), input.asked);
+      if (r) return r;
+      messages.push({ role: 'assistant', text, toolCalls: [] });
+      messages.push({ role: 'user', content: [{ type: 'text', text: mustPropose
+        ? 'No questions are left. Reply with ONLY the plan JSON: {"say": string, "title": string, "hooks": [2 or 3], "beats": [3 to 6], "shots": [2 to 6]}.'
+        : 'That could not be read. Reply with ONLY one JSON object: {"question": string}, or {"say": string, "title": string, "hooks": [2 or 3], "beats": [3 to 6], "shots": [2 to 6]}.' }] });
+    }
+  } finally {
+    await provider.dispose?.();
+  }
+  throw new AIError('plan_failed', 'I could not make a plan from that this time. Try again.');
 }
 
 export async function writeScript(deps: EditorDeps, provider: ModelProvider | null, idea: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<ScriptResult> {

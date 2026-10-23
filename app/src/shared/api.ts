@@ -135,8 +135,11 @@ export interface ChatMessage {
   outcome?: NoteOutcome
   /** Said while planning, before the reel had a video. */
   plan?: true
-  /** The script the editor wrote for a planned reel (an editor message). */
+  /** The script the editor wrote for a planned reel (an editor message, before planning was a chat). */
   script?: ScriptResult
+  /** An editor message in the planning chat: a question back, or the line it said with the plan it proposed (the
+   * plan itself is app.json `plan`). */
+  planTurn?: 'question' | 'plan'
 }
 
 /** done: the note made a new version. failed: an error, or nothing changed. stopped: Stop, or the app quit. */
@@ -250,6 +253,8 @@ export interface ProjectDetail extends ProjectSummary {
   brollCredits: Record<string, string>
   /** True when an AI editor made this video's edit. False = the simple no-AI edit (be honest about it). */
   aiEdited: boolean
+  /** The plan made before the video (app.json `plan`), or null. */
+  plan: ReelPlan | null
 }
 
 // Loose mirror of project.json (docs/architecture.md section 3). The engine owns validation.
@@ -589,6 +594,24 @@ export interface PhoneShare {
 
 export type PhoneEvent = { kind: 'page' } | { kind: 'video' } | { kind: 'stopped'; reason: 'timeout' | 'closed' }
 
+/** One line of a plan: what to say at a beat, or one shot to film. `done`: ticked off while filming. */
+export interface PlanLine {
+  text: string
+  done?: boolean
+}
+
+/**
+ * A reel's plan, made before it has a video: in the planning chat with the editor, or in the plain form when none is
+ * connected (shared/plan.ts checks its shape). `hooks`: first lines to pick from, `hook` the picked one's index.
+ */
+export interface ReelPlan {
+  topic: string
+  hooks: string[]
+  hook: number
+  beats: PlanLine[]
+  shots: PlanLine[]
+}
+
 export interface ScriptResult {
   hook: string
   script: string
@@ -701,8 +724,11 @@ export interface ReelApi {
     leave(slug: string): Promise<void>
     /** The video for a planned reel: its first edit starts, and the editor gets the reel's script. */
     addVideo(slug: string, files: string[]): Promise<{ jobId: string; skipped: DropResult[] }>
-    /** The editor writes a script for a planned reel from `idea` (a job: its status line, Stop, the script in the chat). */
-    script(slug: string, idea: string): Promise<{ jobId: string }>
+    /** Says `text` in a planned reel's planning chat: the editor answers with a question or the plan (a job: its
+     * status line, Stop, the answer in the chat). */
+    planSay(slug: string, text: string): Promise<{ jobId: string }>
+    /** Saves the reel's plan: an edited line, the picked hook, a line ticked off, or the plain form's plan. */
+    setPlan(slug: string, plan: ReelPlan): Promise<void>
     /** `basic`: make the version without the editor (a failed Version 1's "Make a basic version"). */
     resume(slug: string, basic?: boolean): Promise<{ jobId: string }>
     /** jobId null = no AI connected: the note and a plain reply were added to the chat, nothing runs.
@@ -773,6 +799,8 @@ export interface ReelApi {
   phone: {
     /** Start (or restart, e.g. on another network) the link for one exported video. */
     start(video: string, caption: string, address?: string): Promise<PhoneShare>
+    /** The same link for a reel's plan: a page with the hook, the beats and the shots to tick off while filming. */
+    startPlan(slug: string, address?: string): Promise<PhoneShare>
     stop(): Promise<void>
     onEvent(cb: (e: PhoneEvent) => void): () => void
     /** Open a new email to yourself and show the video in Finder/Explorer to attach it. */

@@ -1,5 +1,5 @@
 // "Send to my phone": a tiny, temporary web server on this computer's home-network address that
-// serves exactly ONE finished video, plus a phone-sized page to play and save it. The phone opens it
+// serves exactly ONE finished video, plus a phone-sized page to play and save it, or one reel's plan to film from. The phone opens it
 // by scanning a QR code. No Electron imports, so the unit tests run it under plain Node.
 //
 // Security model (the link travels as a QR code on the screen, the network is the person's Wi-Fi):
@@ -16,6 +16,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os'
 import { basename } from 'node:path'
 import type { AddressInfo, Socket } from 'node:net'
+import type { ReelPlan } from '../shared/api'
+import { pickedHook, planText } from '../shared/plan'
 
 export const SHARE_TTL_MS = 15 * 60_000
 
@@ -74,10 +76,12 @@ export function lanAddresses(ifaces: NodeJS.Dict<NetworkInterfaceInfo[]> = netwo
 export type ShareEvent = { kind: 'page' } | { kind: 'video' } | { kind: 'stopped'; reason: 'timeout' | 'closed' }
 
 export interface ShareOptions {
-  /** The one file this server may send. */
-  file: string
+  /** The one file this server may send; none when it sends a plan. */
+  file?: string
   /** Shown on the phone page with a Copy button. */
   caption: string
+  /** A reel's plan, to film from: the page shows it instead of a video, and there is no file to fetch. */
+  plan?: ReelPlan
   /** The video's name, for the page title and the saved file name. */
   title: string
   /** The LAN address to listen on (from lanAddresses()). */
@@ -141,12 +145,17 @@ const BASE_HEADERS: Record<string, string> = {
 }
 
 export async function startShare(opts: ShareOptions): Promise<ShareServer> {
-  const st = await fs.stat(opts.file)
-  if (!st.isFile()) throw new Error('not a file')
-  const size = st.size
+  if (!opts.file === !opts.plan) throw new Error('a share sends one video or one plan')
+  const file = opts.file ?? ''
+  let size = 0
+  if (file) {
+    const st = await fs.stat(file)
+    if (!st.isFile()) throw new Error('not a file')
+    size = st.size
+  }
   const token = randomBytes(32).toString('base64url')
   const expected = sha(token)
-  const fileName = basename(opts.file)
+  const fileName = basename(file)
   const ttl = opts.ttlMs ?? SHARE_TTL_MS
   const sockets = new Set<Socket>()
   const seen = { page: false, video: false }
@@ -169,7 +178,7 @@ export async function startShare(opts: ShareOptions): Promise<ShareServer> {
 
   const sendPage = (req: IncomingMessage, res: ServerResponse): void => {
     const nonce = randomBytes(16).toString('base64')
-    const body = Buffer.from(phonePage({ title: opts.title, caption: opts.caption, size, nonce }), 'utf8')
+    const body = Buffer.from(opts.plan ? planPage({ title: opts.title, plan: opts.plan, nonce }) : phonePage({ title: opts.title, caption: opts.caption, size, nonce }), 'utf8')
     res.writeHead(200, {
       ...BASE_HEADERS,
       'Content-Type': 'text/html; charset=utf-8',
@@ -204,7 +213,7 @@ export async function startShare(opts: ShareOptions): Promise<ShareServer> {
       res.end()
       return
     }
-    const stream = createReadStream(opts.file, { start, end })
+    const stream = createReadStream(file, { start, end })
     stream.on('error', () => res.destroy())
     res.on('close', () => stream.destroy())
     stream.pipe(res)
@@ -228,7 +237,7 @@ export async function startShare(opts: ShareOptions): Promise<ShareServer> {
       }
       return sendPage(req, res)
     }
-    if (parts[2] === 'video.mp4' && (query === '' || query === 'save=1')) {
+    if (file && parts[2] === 'video.mp4' && (query === '' || query === 'save=1')) {
       if (!seen.video) {
         seen.video = true
         emit({ kind: 'video' })
@@ -376,6 +385,83 @@ export function phonePage(p: { title: string; caption: string; size: number; non
       if (ok) return done();
       if (navigator.clipboard) navigator.clipboard.writeText(t.value).then(done, function () {});
       else document.getElementById('copied').textContent = 'Press and hold the text, then tap Copy.';
+    });
+  })();
+</script>
+</body>
+</html>`
+}
+
+/** The page the phone sees for a plan: the hook, then the beats and the shots to tick off while filming, and Copy. */
+export function planPage(p: { title: string; plan: ReelPlan; nonce: string }): string {
+  const list = (items: { text: string }[], name: string) =>
+    items.map((x, i) => `<li><label><input type="checkbox" name="${name}-${i}"><span>${esc(x.text)}</span></label></li>`).join('\n      ')
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>${esc(p.title)} · Reel Studio</title>
+<style nonce="${p.nonce}">
+  :root { color-scheme: light; --ink:#1d1b18; --ink2:#57524c; --line:#e6e1d9; --bg:#f7f5f1; --green:#1f6b42; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font: 17px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-text-size-adjust:100%; }
+  main { max-width: 520px; margin: 0 auto; padding: 18px 18px 40px; display:flex; flex-direction:column; gap:20px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); margin: 0 0 6px; }
+  .hook { font-size: 20px; font-weight: 650; margin: 0; }
+  ol, ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  li { border-bottom: 1px solid var(--line); }
+  label { display:flex; gap: 12px; align-items:flex-start; padding: 12px 2px; min-height: 48px; }
+  input { width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--green); flex: none; }
+  input:checked + span { color: var(--ink2); text-decoration: line-through; }
+  .btn { display:flex; align-items:center; justify-content:center; min-height:52px; border-radius:999px; border:1px solid #d6cfc4; background:#fff; color:var(--ink); font: inherit; font-weight:600; width:100%; }
+  textarea { position:absolute; left:-9999px; }
+  .ok { color: var(--green); font-weight:600; min-height: 1.4em; margin: 6px 0 0; }
+  .small { font-size: 14px; color: var(--ink2); }
+</style>
+</head>
+<body>
+<main>
+  <h1>${esc(p.title)}</h1>
+  <div>
+    <h2>Hook</h2>
+    <p class="hook">${esc(pickedHook(p.plan))}</p>
+  </div>
+  <div>
+    <h2>Beats</h2>
+    <ol>
+      ${list(p.plan.beats, 'beat')}
+    </ol>
+  </div>
+  ${p.plan.shots.length ? `<div>
+    <h2>Shots</h2>
+    <ul>
+      ${list(p.plan.shots, 'shot')}
+    </ul>
+  </div>` : ''}
+  <textarea id="plan" readonly aria-hidden="true" tabindex="-1">${esc(planText(p.plan, p.title))}</textarea>
+  <div>
+    <button class="btn" id="copy" type="button">Copy plan</button>
+    <p class="ok" id="copied" aria-live="polite"></p>
+  </div>
+  <p class="small">This link stops working by itself in 15 minutes. It only works on your home Wi-Fi. Ticks stay on this page only.</p>
+</main>
+<script nonce="${p.nonce}">
+  (function () {
+    document.getElementById('copy').addEventListener('click', function () {
+      var t = document.getElementById('plan');
+      var done = function () { document.getElementById('copied').textContent = 'Copied.'; };
+      // a plain http page on the home network is not a secure context: select the text and use the older copy command
+      t.removeAttribute('readonly');
+      t.focus();
+      t.setSelectionRange(0, t.value.length);
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      t.setAttribute('readonly', '');
+      if (ok) return done();
+      if (navigator.clipboard) navigator.clipboard.writeText(t.value).then(done, function () {});
     });
   })();
 </script>

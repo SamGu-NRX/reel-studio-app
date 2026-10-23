@@ -1,12 +1,14 @@
 // "Notes for your editor": the reel's history as one list, oldest first. Each entry is what you asked
 // (your video, a note, or a change you made yourself) and what came of it. Built from app.json's chat and
 // version records only. Keep free of Node and DOM imports.
-import type { ChatAction, ChatMessage, NoteAttachment, NoteMoment, ScriptResult, VersionInfo, VersionMade } from './api'
+import type { ChatAction, ChatMessage, NoteAttachment, NoteMoment, ReelPlan, ScriptResult, VersionInfo, VersionMade } from './api'
 
 export type LogAsk =
   | { kind: 'video'; text: string }
   | { kind: 'note'; text: string; moment: NoteMoment | null; attachments: NoteAttachment[] }
   | { kind: 'hand'; text: string }
+  /** the reel's Plan card on its own: made in the plain form, or folded above the video once it arrived */
+  | { kind: 'plan'; text: string }
 
 export type LogResult =
   | { kind: 'version'; v: number; text: string }
@@ -17,9 +19,14 @@ export type LogResult =
   | { kind: 'paused' }
   /** an answer that made no version: the no-AI reply, or a question back */
   | { kind: 'reply'; text: string; actions: ChatAction[]; messageId: string }
-  /** the editor's script for a reel planned before it had a video, and while it writes one */
+  /** the editor's script for a reel planned before it had a video, from before planning was a chat */
   | { kind: 'script'; script: ScriptResult }
+  /** the editor is answering in the planning chat */
   | { kind: 'writing' }
+  /** a question back in the planning chat */
+  | { kind: 'question'; text: string }
+  /** the editor's line with a plan it proposed; `card`: the newest one, which shows the reel's Plan card */
+  | { kind: 'proposed'; text: string; card: boolean }
 
 export interface LogEntry {
   key: string
@@ -56,6 +63,8 @@ export function notesLog(input: {
   running: { id: string; kind: 'first-edit' | 'note' | 'hand' | 'script' } | null
   /** the reel has no video yet: only its planning shows */
   planned?: boolean
+  /** the reel's plan (app.json `plan`): once the video is in, its planning folds into the one Plan card */
+  plan?: ReelPlan | null
   /** the raw take as project.json lists it: `originalName` is the file the person brought in, `path` the copy (media/take01.mp4) */
   source: { path: string; originalName?: string } | null
   now: Date
@@ -78,8 +87,25 @@ export function notesLog(input: {
     if (m.from === 'you') {
       const result: LogResult | null = running && m.jobId === running.id ? { kind: 'writing' } : m.outcome === 'stopped' ? { kind: 'stopped', kept: 0 } : null
       plan.push({ key: m.id, day: null, at: m.at, ask: { kind: 'note', text: m.text, moment: null, attachments: [] }, result, extra: [], outcome: m.outcome, jobId: m.jobId })
-    } else if (last && !last.result) last.result = m.script ? { kind: 'script', script: m.script } : { kind: 'failed', text: m.text }
+    } else if (last && !last.result)
+      last.result = m.script
+        ? { kind: 'script', script: m.script }
+        : m.planTurn === 'question'
+          ? { kind: 'question', text: m.text }
+          : m.planTurn === 'plan'
+            ? { kind: 'proposed', text: m.text, card: false }
+            : { kind: 'failed', text: m.text }
     else last?.extra.push(m)
+  }
+  if (input.plan) {
+    const newest = [...plan].reverse().find((e) => e.result?.kind === 'proposed')
+    if (!input.planned) {
+      // planning is done: the conversation folds into the plan it made, above the video
+      const at = plan[0]?.at ?? first.at
+      plan.splice(0, plan.length, { key: 'plan', day: null, at, ask: { kind: 'plan', text: input.plan.topic }, result: null, extra: [] })
+    } else if (newest?.result?.kind === 'proposed') newest.result = { ...newest.result, card: true }
+    // made in the plain form: no editor proposed it
+    else plan.push({ key: 'plan', day: null, at: now.toISOString(), ask: { kind: 'plan', text: input.plan.topic }, result: null, extra: [] })
   }
   const entries: Entry[] = input.planned ? plan : [...plan, first]
   let open: Entry | null = input.planned ? null : first

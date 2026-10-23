@@ -16,6 +16,7 @@ import type {
   ProjectJson,
   ProjectSummary,
   ScreenStatus,
+  ReelPlan,
   ScriptResult,
   VersionInfo,
   VersionMade,
@@ -28,6 +29,7 @@ import { replyChat, styleConsent, type ChatLine } from './style-consent'
 import { keptIds } from '../shared/cut'
 import { readCaptionLines } from '../shared/subtitle-lines'
 import { versionMessage } from '../shared/describe'
+import { planAsScript } from '../shared/plan'
 export { keptIds, rangesFromKept, rangesKeepingOrder } from '../shared/cut'
 
 export interface AppState {
@@ -53,6 +55,8 @@ export interface AppState {
   /** Each time a version was posted. Insights joins the sidebar once any reel has one (ux-foundation-b.md section 6);
    * posting itself is not built yet (spec.md section 11), so nothing writes this today. */
   posted?: { version: number; platform: 'instagram'; at: string }[]
+  /** The plan made before the video: in the planning chat or the plain form (shared/plan.ts checks it). */
+  plan?: ReelPlan
 }
 
 const EMPTY_STATE: AppState = { chat: [], job: null, status: 'new', lastError: null }
@@ -298,6 +302,7 @@ export function isUntouchedPlanned(s: AppState, files: string[]): boolean {
     !s.job &&
     s.title === PLANNED_TITLE &&
     s.chat.length === 0 &&
+    !s.plan &&
     !s.queue?.length &&
     files.every((f) => f === 'app.json')
   )
@@ -337,9 +342,11 @@ export function latestScript(s: AppState): ScriptResult | null {
   return null
 }
 
-/** Once `engine init` has made project.json for a planned reel: its newest script goes in, for the editor to read. */
+/** Once `engine init` has made project.json for a planned reel: its plan, or else the newest script the editor wrote
+ * before planning was a chat, goes in as project.json `script`, for the first edit to read (shared/plan.ts planAsScript). */
 export async function carryScript(slug: string): Promise<void> {
-  const script = latestScript(await readAppState(slug))
+  const st = await readAppState(slug)
+  const script = st.plan ? planAsScript(st.plan) : latestScript(st)
   if (!script) return
   const p = await readProject(slug)
   p.script = script
@@ -825,7 +832,8 @@ export async function detail(slug: string): Promise<ProjectDetail> {
     queue: (st.queue ?? []).map((q) => ({ ...q, attachments: q.attachments.map(thumb) })),
     queueHeld: !!st.queueHeld,
     job: st.job ? { id: st.job.id, kind: st.job.kind, message: 'Working on it', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false, waiting: false, waitingForRender: false } : null,
-    aiEdited: !!st.aiEdited
+    aiEdited: !!st.aiEdited,
+    plan: st.plan ?? null
   }
 }
 
