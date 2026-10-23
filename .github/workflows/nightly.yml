@@ -1,10 +1,13 @@
 name: Nightly alpha
 
 on:
+  push:
+    branches: [infra/nightly]
+    paths: [nightly-ref.txt]
   workflow_dispatch:
     inputs:
       ref:
-        description: Branch or tag to package
+        description: Branch, tag, or commit to package
         required: true
         default: redesign-alpha
         type: string
@@ -18,110 +21,210 @@ concurrency:
   group: nightly-alpha
   cancel-in-progress: false
 
-env:
-  BUILD_REF: ${{ inputs.ref || 'redesign-alpha' }}
-
 jobs:
+  resolve:
+    name: Resolve one source commit
+    if: github.repository == 'SamGu-NRX/reel-studio-app'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      ref: ${{ steps.ref.outputs.ref }}
+      sha: ${{ steps.source.outputs.sha }}
+      tag: ${{ steps.source.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Select source ref
+        id: ref
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          if [[ "$EVENT_NAME" == push ]]; then
+            ref="$(cat nightly-ref.txt)"
+          elif [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            ref="$INPUT_REF"
+          else
+            ref=redesign-alpha
+          fi
+          git check-ref-format "refs/heads/$ref" || {
+            echo '::error::Build ref must be one non-empty Git ref without whitespace'
+            exit 1
+          }
+          printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
+      - name: Resolve requested ref on the fork
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: SamGu-NRX/reel-studio-app
+          ref: ${{ steps.ref.outputs.ref }}
+          path: source
+          persist-credentials: false
+      - name: Record source commit and release tag
+        id: source
+        run: |
+          sha="$(git -C source rev-parse HEAD)"
+          tag="nightly-$(date -u +%Y-%m-%d)-${sha:0:7}"
+          printf 'sha=%s\ntag=%s\n' "$sha" "$tag" >> "$GITHUB_OUTPUT"
+          printf 'Source commit: `%s`\nRelease tag: `%s`\n' "$sha" "$tag" >> "$GITHUB_STEP_SUMMARY"
+
   build-macos:
     name: Build and test macOS arm64
-    runs-on: macos-14
+    needs: resolve
+    runs-on: macos-15
     timeout-minutes: 90
     steps:
-      - name: Check out requested ref
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ env.BUILD_REF }}
+          ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
-
-      - name: Build unsigned DMG
-        run: packaging/build-mac.sh
-        env:
-          REELSTUDIO_RELEASE_REPO: SamGu-NRX/reel-studio-app
-
-      - name: Install and smoke-test packaged app
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.11'
+      - name: Build DMG and ad-hoc seal without notarization
         run: |
-          dmg=$(find app/release -maxdepth 1 -name '*.dmg' -type f -print -quit)
-          test -n "$dmg"
-          TEST_APPS_DIR="$RUNNER_TEMP/reel-studio-mac-install" \
-            packaging/test-mac-install.sh "$dmg" --unsigned --timeout 600
-
-      - name: Upload macOS DMG
+          unset ELECTRON_RUN_AS_NODE
+          test "$(uname -m)" = arm64
+          bash packaging/build-mac.sh --no-adhoc
+          bash packaging/sign-mac.sh --adhoc --skip-notarize
+      - name: Install and smoke-test the sealed DMG
+        env:
+          TEST_APPS_DIR: ${{ runner.temp }}/Reel Studio install
+        run: |
+          version="$(node -p "require('./app/package.json').version")"
+          dmg="app/release/signed/Reel-Studio-${version}-arm64.dmg"
+          test -s "$dmg"
+          bash packaging/test-mac-install.sh "$dmg" --fresh --unsigned --timeout 600 \
+            | tee "$RUNNER_TEMP/mac-install-smoke.log"
+          codesign --verify --deep --strict "$TEST_APPS_DIR/Reel Studio.app"
+      - name: Upload tested macOS DMG
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nightly-macos-arm64
-          path: app/release/*.dmg
+          path: app/release/signed/*.dmg
           if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Preserve macOS smoke output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: smoke-macos
+          path: ${{ runner.temp }}/mac-install-smoke.log
+          if-no-files-found: ignore
           retention-days: 14
 
   build-windows:
     name: Build and test Windows x64
-    runs-on: windows-latest
+    needs: resolve
+    runs-on: windows-2025
     timeout-minutes: 90
     steps:
-      - name: Check out requested ref
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ env.BUILD_REF }}
+          ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
-
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.11'
       - name: Build unsigned NSIS installer
         shell: pwsh
         run: .\packaging\build-win.ps1
-        env:
-          REELSTUDIO_RELEASE_REPO: SamGu-NRX/reel-studio-app
-
       - name: Install and smoke-test packaged app
         shell: pwsh
+        env:
+          REELSTUDIO_USER_DATA: ${{ runner.temp }}/Reel Studio profile
+          REELSTUDIO_ROOT: ${{ runner.temp }}/Reel Studio library
+          REELENGINE_CACHE: ${{ runner.temp }}/Reel Studio engine cache
         run: |
-          $installer = Get-ChildItem app\release -Filter '*.exe' | Select-Object -First 1
-          if (-not $installer) { throw 'No NSIS installer was produced' }
-          powershell -ExecutionPolicy Bypass -File packaging\test-win-install.ps1 `
-            -Installer $installer.FullName `
-            -InstallDir (Join-Path $env:RUNNER_TEMP 'reel-studio-win-install')
-
-      - name: Upload Windows installer
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          $version = (Get-Content app\package.json -Raw | ConvertFrom-Json).version
+          $installer = (Resolve-Path "app\release\Reel-Studio-Setup-$version-x64.exe").Path
+          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File packaging\test-win-install.ps1 `
+            -Installer $installer -ExeName 'Reel Studio.exe' `
+            -InstallDir (Join-Path $env:RUNNER_TEMP 'Reel Studio install') `
+            -UserDataDir $env:REELSTUDIO_USER_DATA
+          if ($LASTEXITCODE -ne 0) { throw 'Installed Windows smoke check failed' }
+          $result = Get-Content (Join-Path $env:TEMP 'rs-selftest-result.json') -Raw | ConvertFrom-Json
+          if ($result.ok -ne $true -or $result.isPackaged -ne $true -or $result.arch -ne 'x64') {
+            throw 'Smoke result must be a passing packaged x64 app'
+          }
+      - name: Upload tested Windows installer
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nightly-windows-x64
           path: app/release/*.exe
           if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Preserve Windows smoke result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: smoke-windows
+          path: ${{ runner.temp }}/rs-selftest-result.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  sources:
+    name: Collect corresponding GPL and LGPL source
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - run: python3 -I packaging/mirror_gpl_sources.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nightly-gpl-sources
+          path: release/gpl-sources/*
+          if-no-files-found: error
+          compression-level: 0
           retention-days: 14
 
   release:
-    name: Publish nightly prerelease
-    needs: [build-macos, build-windows]
+    name: Publish fork-only nightly prerelease
+    needs: [resolve, build-macos, build-windows, sources]
+    if: github.repository == 'SamGu-NRX/reel-studio-app'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
     steps:
-      - name: Check out packaged ref
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
-        with:
-          ref: ${{ env.BUILD_REF }}
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Download installers
+      - name: Download tested installers and corresponding source
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: nightly-*
           path: release-assets
           merge-multiple: true
-
-      - name: Create fork prerelease
+      - name: Create or refresh fork prerelease
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ needs.resolve.outputs.ref }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
+          TAG: ${{ needs.resolve.outputs.tag }}
         run: |
-          set -euo pipefail
-          sha7=$(git rev-parse --short=7 HEAD)
-          date=$(date -u +%Y-%m-%d)
-          tag="nightly-${date}-${sha7}"
-          test -n "$(find release-assets -type f -print -quit)"
-          gh release create "$tag" release-assets/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$BUILD_REF" \
-            --prerelease \
-            --title "Nightly alpha ${date} (${sha7})" \
-            --notes "Automated fork-only nightly build from ${BUILD_REF} at ${sha7}. macOS is ad-hoc signed and was not notarized."
-          echo "release_url=https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}" >> "$GITHUB_STEP_SUMMARY"
+          shopt -s nullglob
+          dmgs=(release-assets/*.dmg)
+          installers=(release-assets/*.exe)
+          test "${#dmgs[@]}" -eq 1
+          test "${#installers[@]}" -eq 1
+          test -s release-assets/SHA256SUMS.txt
+          notes="Fork alpha from ${SOURCE_REF} at ${SOURCE_SHA}. Both installed-package self-tests passed. macOS is ad-hoc signed, not notarized; Windows is unsigned."
+          if gh release view "$TAG" --repo SamGu-NRX/reel-studio-app >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/* --clobber --repo SamGu-NRX/reel-studio-app
+          else
+            gh release create "$TAG" release-assets/* \
+              --repo SamGu-NRX/reel-studio-app --target "$SOURCE_SHA" \
+              --prerelease --latest=false --title "Alpha ${TAG}" --notes "$notes"
+          fi
+          printf 'https://github.com/SamGu-NRX/reel-studio-app/releases/tag/%s\n' "$TAG" >> "$GITHUB_STEP_SUMMARY"
