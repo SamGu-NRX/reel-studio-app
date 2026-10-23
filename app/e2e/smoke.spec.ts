@@ -6,9 +6,16 @@
 //   REELSTUDIO_ENGINE_DIR  a real engine to test against (default: the stand-in in dev/fake-engine)
 import { test, expect } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, ROOT, SHOTS, dropFiles, launch, makeMedia, passFirstRun, passMacStage, shot, openSettings } from './helpers'
+import { BASE, SHOTS, dropFiles, launch, makeMedia, passFirstRun, passMacStage, shot, openSettings } from './helpers'
+
+/** Each test starts on a fresh profile of its own, so neither depends on the order specs run in. */
+function freshProfile(name: string): { root: string; env: Record<string, string> } {
+  const dir = mkdtempSync(join(BASE, `smoke-${name}-`))
+  const root = join(dir, 'Zoë Müller', 'Documents', 'Reel Studio')
+  return { root, env: { REELSTUDIO_USER_DATA: join(dir, 'user data'), REELSTUDIO_ROOT: root } }
+}
 
 test.beforeAll(() => {
   mkdirSync(SHOTS, { recursive: true })
@@ -17,7 +24,8 @@ test.beforeAll(() => {
 
 test('make a reel end to end', async () => {
   const media = makeMedia()
-  let { app, page } = await launch()
+  const profile = freshProfile('reel')
+  let { app, page } = await launch(profile.env)
 
   // ---- first run ----
   await expect(page.getByText('Welcome to Reel Studio')).toBeVisible()
@@ -119,7 +127,7 @@ test('make a reel end to end', async () => {
   await page.getByTestId('export').click()
   await expect(page.getByText('Saved to your computer')).toBeVisible({ timeout: 120_000 })
   await shot(page, '13-export')
-  const exported = readdirSync(join(ROOT, 'Library', 'Exports'))
+  const exported = readdirSync(join(profile.root, 'Library', 'Exports'))
   expect(exported.some((f) => / - Version 2\.mp4$/.test(f))).toBe(true)
   await expect(page.getByTestId('export-name')).toContainText('- Version 2.mp4')
   expect(exported.some((f) => f.endsWith('caption.txt'))).toBe(true)
@@ -189,7 +197,7 @@ test('make a reel end to end', async () => {
   await expect(page.getByTestId('status-message')).toContainText(/Listening/, { timeout: 60_000 })
   await app.close()
 
-  ;({ app, page } = await launch())
+  ;({ app, page } = await launch(profile.env))
   await expect(page.getByText('Your videos')).toBeVisible()
   await expect(page.locator('[data-testid="project-card"][data-state="paused"]')).toBeVisible()
   await shot(page, '17-home-after-quit')
@@ -206,7 +214,8 @@ test('make a reel end to end', async () => {
 
 test('a force quit mid-job recovers on the next start', async () => {
   const media = makeMedia()
-  let { app, page } = await launch()
+  const profile = freshProfile('quit')
+  let { app, page } = await launch(profile.env)
   await passFirstRun(page)
   const before = await page.getByTestId('project-card').count()
   await page.getByTestId('new-video').click()
@@ -222,7 +231,7 @@ test('a force quit mid-job recovers on the next start', async () => {
   else process.kill(mainPid, 'SIGKILL')
   await exited
 
-  ;({ app, page } = await launch())
+  ;({ app, page } = await launch(profile.env))
   await expect(page.getByTestId('project-card')).toHaveCount(before + 1)
   const stopped = page.locator('[data-testid="project-card"][data-state="paused"]')
   await expect(stopped).toHaveCount(1)
