@@ -2,7 +2,7 @@
 // goes to the renderer; app.json records the running job so a crash can be recovered at startup.
 import { randomUUID } from 'node:crypto'
 import type { JobEvent, JobKind, JobUpdate, Phase } from '../shared/api'
-import { addChat, cleanPartialVersions, projectDir, updateAppState } from './store'
+import { addChat, cleanPartialVersions, projectDir, settleNote, updateAppState } from './store'
 import { toUserError } from './engine'
 import { learn, ProgressTracker, type SpeedHistory, parseHistory, type ProgressKind } from './progress'
 import type { WorkGate } from './work-gate'
@@ -22,7 +22,8 @@ export interface ProgressDeps {
 
 /** Turns a finished render into a playable URL of a copy that is safe to play (index.ts). */
 export type ToVideo = (slug: string, e: Extract<JobUpdate, { type: 'render' }>) => Promise<string | null>
-export type JobFn = (emit: Emit, signal: AbortSignal) => Promise<{ summary: string; version?: number; quiet?: boolean }>
+/** `outcome`: for a note, whether it changed the video (absent = it did). */
+export type JobFn = (emit: Emit, signal: AbortSignal) => Promise<{ summary: string; version?: number; quiet?: boolean; outcome?: 'done' | 'failed' }>
 
 interface Running {
   id: string
@@ -144,6 +145,7 @@ export function createJobManager(
           await updateAppState(slug, (s) => {
             s.job = null
             s.status = 'ready'
+            settleNote(s, id, res.outcome ?? 'done')
           })
           if (!res.quiet) await addChat(slug, 'editor', res.summary, res.version)
         }
@@ -159,6 +161,7 @@ export function createJobManager(
             s.job = null
             if (kind === 'first-edit') s.status = cancelled ? 'interrupted' : 'failed'
             if (!cancelled) s.lastError = { code: err.code, userMessage: err.userMessage }
+            settleNote(s, id, cancelled ? 'stopped' : 'failed')
           }).catch(() => {})
           if (!cancelled && kind !== 'first-edit') await addChat(slug, 'editor', err.userMessage).catch(() => {})
         }
