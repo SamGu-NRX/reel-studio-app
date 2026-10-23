@@ -78,7 +78,7 @@ const api: ReelApi = {
     timeline: (slug, n) => call('projects:timeline', slug, n),
     versionRows: (slug, n) => call('projects:versionRows', slug, n),
     update: (slug, patch) => call('projects:update', slug, patch),
-    rerender: (slug, change, label) => call('projects:rerender', slug, change, label),
+    handEdit: (slug, edit, summary, changes, replace) => call('projects:handEdit', slug, edit, summary, changes, replace),
     exportVersion: (slug, n) => call('projects:export', slug, n),
     coverCandidates: (slug, moments, source) => call('projects:coverCandidates', slug, moments, source),
     stopCoverCandidates: (slug) => call('projects:stopCoverCandidates', slug),
@@ -130,7 +130,11 @@ const api: ReelApi = {
     learn: () => call('style:learn'),
     keepLearned: (rules, from) => call('style:keepLearned', rules, from),
     update: (id, patch) => call('style:update', id, patch),
-    answer: (slug, messageId, yes) => call('style:answer', slug, messageId, yes)
+    answer: (slug, messageId, yes) => call('style:answer', slug, messageId, yes),
+    rememberLowercase: (slug) => call('style:rememberLowercase', slug)
+  },
+  sfx: {
+    pack: () => call('sfx:pack')
   },
   dev: {
     renderTestAnimation: (out, full, template, params) => call('dev:renderTestAnimation', out, full, template, params)

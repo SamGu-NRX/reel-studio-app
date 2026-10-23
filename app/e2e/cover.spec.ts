@@ -33,6 +33,7 @@ test('cover suggestions say when and why, mark the chosen frame, and save it as 
 
   await page.getByTestId('make-version').click()
   await expect(page.getByTestId('drawer')).toHaveCount(0)
+  await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 }) // saved with its version
   const dir = join(ROOT, 'Projects', readdirSync(join(ROOT, 'Projects'))[0])
   const cover = JSON.parse(readFileSync(join(dir, 'project.json'), 'utf8')).cover
   expect(cover.manual).toBe(true) // the engine renders this frame, no search around it

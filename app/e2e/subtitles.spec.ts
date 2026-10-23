@@ -1,4 +1,4 @@
-// The Subtitles list in "Edit it myself": a fix typed over a word and an Enter in a line go into the project,
+// The subtitle lines under Cut › Fix words in "Edit it myself": a fix typed over a word and an Enter in a line go into the project,
 // anchored on word ids, and the next version's lines show them. Same env as smoke.spec.ts.
 import { test, expect } from '@playwright/test'
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
@@ -22,7 +22,7 @@ test('fix a word and break a line in the Subtitles list', async () => {
   await page.getByTestId('file-input').setInputFiles([media.video])
   await expect(page.getByTestId('player')).toBeVisible({ timeout: 10 * 60_000 })
   await page.getByTestId('edit-myself').click()
-  await page.getByTestId('tab-captions').click()
+  await page.getByTestId('cut-mode-fix').click()
 
   const first = page.getByLabel('Subtitle line 1')
   await expect(first).toHaveValue('this is placeholder')
@@ -43,7 +43,7 @@ test('fix a word and break a line in the Subtitles list', async () => {
   await expect(page.getByTestId('chat')).toContainText('fixed a word, new subtitle lines')
 
   await page.getByTestId('edit-myself').click()
-  await page.getByTestId('tab-captions').click()
+  await page.getByTestId('cut-mode-fix').click()
   await expect(page.getByLabel('Subtitle line 1')).toHaveValue('this')
   await expect(page.getByLabel('Subtitle line 2')).toHaveValue('is Placeholders')
 
@@ -53,9 +53,9 @@ test('fix a word and break a line in the Subtitles list', async () => {
   await page.getByTestId('make-version').click()
   await expect(page.getByTestId('log-play-3')).toBeVisible({ timeout: 10 * 60_000 })
   await page.getByTestId('edit-myself').click()
-  await page.getByTestId('tab-captions').click()
+  await page.getByTestId('cut-mode-fix').click()
   await expect(page.getByLabel('Subtitle line 2')).toHaveValue('Placeholders')
-  const off = page.locator('.list-item', { hasText: '"is" is off the subtitles in one place' })
+  const off = page.locator('.edit-row', { hasText: '“is” is off the subtitles in one place' })
   await off.getByRole('button', { name: 'Remove' }).click()
   await expect(page.getByLabel('Subtitle line 2')).toHaveValue('is Placeholders')
   await app.close()

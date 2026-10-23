@@ -44,9 +44,7 @@ test('first edit and a note with a live AI provider', async () => {
   await page.getByTestId('edit-myself').click()
   await page.getByTestId('tab-broll').click()
   await shot(page, 'live/04-broll')
-  await page.getByTestId('tab-post').click()
-  await shot(page, 'live/05-post')
-  await page.getByText('Close', { exact: true }).click()
+  await page.getByTestId('drawer-close').click()
 
   const replies = page.locator('.bubble.editor:not(.working):not(.reply-pending)')
   const bubbles = await replies.count()

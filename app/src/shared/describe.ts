@@ -63,6 +63,12 @@ export function describeChange(before: ProjectJson, patch: Partial<ProjectJson>,
     if (n > 0) parts.push(n === 1 ? 'added a picture' : `added ${n} pictures`)
     if (n < 0) parts.push(n === -1 ? 'removed a picture' : `removed ${-n} pictures`)
   }
+  if (patch.sfx) {
+    const n = patch.sfx.length - (before.sfx?.length ?? 0)
+    if (n > 0) parts.push(n === 1 ? 'added a sound effect' : `added ${n} sound effects`)
+    else if (n < 0) parts.push(n === -1 ? 'removed a sound effect' : `removed ${-n} sound effects`)
+    else parts.push('changed the sound effects')
+  }
   if (patch.cover) {
     if ((patch.cover.text ?? null) !== (before.cover?.text ?? null)) parts.push(patch.cover.text ? 'new words on the cover' : 'no words on the cover')
     else if (patch.cover.atSourceTime !== before.cover?.atSourceTime) parts.push('new cover')

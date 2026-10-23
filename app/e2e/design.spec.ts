@@ -124,7 +124,7 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   const wasCut = (await firstWord.getAttribute('class'))!.includes('cut')
   await firstWord.click()
   await expect(page.getByTestId('drawer-undo')).toBeVisible()
-  await page.locator('.drawer-head h2').click()
+  await page.locator('.edit-h h2').click()
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Z' : 'Control+Z')
   await expect(page.getByTestId('drawer-undo')).toHaveCount(0)
   expect((await firstWord.getAttribute('class'))!.includes('cut')).toBe(wasCut)

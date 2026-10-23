@@ -3,16 +3,19 @@
 // at a gate until the test lets it go on, and every check waits for the queue to come to rest, so no
 // result depends on how fast this computer's disk or engine is.
 import { describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createEngineRunner } from '../src/main/engine'
 import { createJobManager, WAITING_FOR_RENDER } from '../src/main/jobs'
 import { createMockAI } from '../src/main/ai-mock'
 import { BACK_IN_QUEUE, createNoteQueue, STOPPED } from '../src/main/note-queue'
+import { handEditJob } from '../src/main/hand-edit'
+import { diffProject } from '../src/shared/hand-edit'
+import { keptIds } from '../src/shared/cut'
 import { withRenderSlot } from '../src/main/render-slot'
 import { engineEnv, noteStagingDir, reelStudioRoot, setRootOverride } from '../src/main/paths'
-import { projectDir, readAppState, readProject, recoverInterrupted, updateAppState } from '../src/main/store'
+import { projectDir, readAppState, readProject, readWords, recoverInterrupted, updateAppState } from '../src/main/store'
 import type { JobEvent, QueuedNote } from '../src/shared/api'
 import { FAKE_ENGINE, makeClip, PYTHON, setupPaths } from './helpers'
 
@@ -74,6 +77,8 @@ function app(opts: { failRender?: boolean; holdRenders?: boolean; holdAfterSave?
         if (opts.holdAfterSave) await gate(saved, slug)
         return { summary: r.summary, version: r.version }
       }, { record }),
+    // as index.ts startHand
+    startHand: async (slug, entry, record) => jobs.start(slug, 'rerender', handEditJob(slot.run, slug, entry), { record }),
     changed: () => undefined,
     log: () => undefined
   })
@@ -414,5 +419,42 @@ describe('note queue', () => {
     await app().queue.recover()
     expect(existsSync(staged)).toBe(true)
   }, 60000)
-})
 
+  it('fails if a hand edit made while a note runs is lost, or lands on the version before the note', async () => {
+    setupPaths()
+    const slug = await reel('hand-behind-note')
+    const a = app()
+    expect((await a.send(slug, 'first')).jobId).toBeTruthy()
+    // Edit it myself, opened on Version 1 while the note runs: subtitles higher
+    const v1 = await readProject(slug)
+    const kept = new Set(keptIds(await readWords(projectDir(slug), v1), v1.cut?.keep))
+    const edited = { ...v1, captions: { ...v1.captions!, style: { ...v1.captions!.style, position: 0.66 } } }
+    expect(await a.queue.sendHand(slug, { edit: diffProject(v1, edited, kept, kept), changes: 1 }, 'subtitles moved up', 1)).toEqual({ jobId: null, queued: true })
+    await a.runAll(slug)
+    const style = (n: number) => JSON.parse(readFileSync(join(projectDir(slug), 'versions', `v${n}`, 'project.json'), 'utf8')).captions.style
+    expect((await readProject(slug)).version).toBe(3)
+    expect(style(2).position).not.toBe(0.66)
+    expect(style(3).position).toBe(0.66)
+    expect((await readAppState(slug)).queue).toEqual([])
+    expect((await readAppState(slug)).versionsMade?.find((m) => m.version === 3)).toMatchObject({ by: 'hand', summary: 'subtitles moved up' })
+  }, 60000)
+
+  it('fails if a hand edit saved just before a crash runs again, or is reported as still waiting', async () => {
+    setupPaths()
+    const slug = await reel('hand-crash-after')
+    const v1 = await readProject(slug)
+    const kept = new Set(keptIds(await readWords(projectDir(slug), v1), v1.cut?.keep))
+    const hand = { edit: diffProject(v1, { ...v1, captions: { ...v1.captions!, style: { ...v1.captions!.style, position: 0.66 } } }, kept, kept), changes: 1 }
+    const run = createEngineRunner({ python: () => PYTHON, env: () => ({ ...engineEnv(), PYTHONPATH: FAKE_ENGINE }) })
+    // the edit is saved as Version 2, then the app closes before the queue hears it ended
+    await handEditJob(run, slug, { ...entry('h1', 'subtitles moved up', true), hand })(() => undefined, new AbortController().signal, { id: 'job-1', owner: null })
+    await updateAppState(slug, (s) => {
+      s.job = { id: 'job-1', kind: 'rerender', startedAt: '', noteId: 'h1' }
+      s.queue = [{ ...entry('h1', 'subtitles moved up', true), hand }, entry('q2', 'second')]
+    })
+    await recoverInterrupted()
+    await app().queue.recover()
+    expect(await waitingTexts(slug)).toEqual(['second'])
+    expect((await readProject(slug)).version).toBe(2)
+  }, 60000)
+})

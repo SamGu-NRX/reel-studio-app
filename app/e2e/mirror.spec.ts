@@ -1,4 +1,4 @@
-// "Flip picture (it's mirrored)" in "Edit it myself": the no-AI way to flip a mirrored take. Makes a
+// "Flip the picture" in "Edit it myself": the no-AI way to flip a mirrored take. Makes a
 // reel, turns the toggle on, makes a new version, and checks what reached project.json and the
 // chat; then turns it off again.
 //
@@ -35,7 +35,7 @@ test('flip a mirrored take from Edit it myself', async () => {
   const toggle = page.getByTestId('mirror-on')
   await expect(toggle).toBeVisible()
   await expect(toggle).not.toBeChecked()
-  await expect(page.getByText("Flip picture (it's mirrored)")).toBeVisible()
+  await expect(page.getByText('Flip the picture')).toBeVisible()
   await snap('mirror-01-drawer-off')
   await toggle.check()
   await expect(page.getByTestId('make-version')).toBeEnabled()

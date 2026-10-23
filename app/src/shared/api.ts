@@ -7,6 +7,8 @@ import type { RenderSegment } from './moments'
 import type { Platform, PlatformExportRequest } from './platforms'
 import type { VersionRow } from './version-diff'
 import type { Step } from './steps'
+import type { HandEdit } from './hand-edit'
+import type { SoundEffect } from './sfx'
 export type { VersionRow } from './version-diff'
 export type { ChatAction } from './notes'
 export type { CoverCandidate } from './cover'
@@ -187,6 +189,8 @@ export interface QueuedNote {
   moment?: NoteMoment
   /** Set while its note job runs: `base` = the version it started from. */
   attempt?: { base: number }
+  /** A change made in "Edit it myself" rather than a note: it runs without the editor (`text` says what it changes). */
+  hand?: { edit: HandEdit; changes: number }
 }
 
 /** What came of attaching: the files that made it, and a plain message for each one that did not. */
@@ -219,6 +223,8 @@ export interface ProjectDetail extends ProjectSummary {
   /** A small picture for each b-roll item with an image file (broll id -> reel-media URL). Animations and
    * text-only items have none (the Pictures list names them in words instead of a file name). */
   brollThumbs: Record<string, string>
+  /** Who to credit for each b-roll picture (broll id -> one line), for those that have a credit. */
+  brollCredits: Record<string, string>
   /** True when an AI editor made this video's edit. False = the simple no-AI edit (be honest about it). */
   aiEdited: boolean
 }
@@ -265,6 +271,8 @@ export interface ProjectJson {
     params?: Record<string, unknown>
   }[]
   zooms?: unknown[]
+  /** Built-in sound effects (docs/schema-changes.md, 2026-10-22): `sound` is a pack id, `at` one moment. */
+  sfx?: { at: { word?: string; broll?: string; cut?: string }; sound: string; gainDb?: number }[]
   /** manual: the person picked this exact frame in the app (rendered as is). exact: the AI looked at this frame
    * (the engine searches 0.2 s around it). Neither: the engine searches 1.5 s around atSourceTime. */
   cover?: { atSourceTime: number; source: string; text: string | null; exact?: boolean | null; manual?: boolean | null }
@@ -641,9 +649,10 @@ export interface ReelApi {
     /** What version `n` changed, as before → after rows. null when its saved copy is gone. */
     versionRows(slug: string, n: number): Promise<VersionRow[] | null>
     update(slug: string, patch: Partial<ProjectJson>): Promise<ProjectDetail>
-    /** `change`: what changed, in plain words ("bigger yellow subtitles"), for the chat and the version button.
-     * `label`: what to call the work while it runs ("Updating your subtitles"). Render only, never the AI. */
-    rerender(slug: string, change?: string, label?: string): Promise<{ jobId: string }>
+    /** A change from "Edit it myself": it waits its turn behind running and waiting notes, then lands on the
+     * newest version (render only, never the editor). `summary`: what it changes, in plain words. `replace`: a
+     * waiting hand edit's id, changed in place. queued = it waits its turn. */
+    handEdit(slug: string, edit: HandEdit, summary: string, changes: number, replace?: string): Promise<{ jobId: string | null; queued?: boolean }>
     exportVersion(slug: string, version: number): Promise<ExportResult>
     /** The best cover frame near each raw-take moment, best first (engine cover-candidates). One look per
      * project at a time: asking again while one runs gets that one's answer. */
@@ -721,6 +730,12 @@ export interface ReelApi {
     update(id: string, patch: { text?: string; paused?: boolean }): Promise<StyleRule>
     /** Answer "Remember this for next time?" on a chat message: Yes saves the rule, No only says so. */
     answer(slug: string, messageId: string, yes: boolean): Promise<void>
+    /** "Use lowercase for new reels too", ticked in Edit it myself: the same rule a note's question saves. */
+    rememberLowercase(slug: string): Promise<void>
+  }
+  sfx: {
+    /** Every built-in sound effect, with a URL to hear it. */
+    pack(): Promise<SoundEffect[]>
   }
   dev: {
     /** Test builds only. `template` defaults to the bundled self-test template. */
