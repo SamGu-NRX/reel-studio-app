@@ -6,7 +6,7 @@
 import { test, expect, type ElectronApplication } from '@playwright/test'
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, CLAUDE_CODE_LABEL, CLAUDE_CODE_MISNAMED, USE_CLAUDE_CODE, launch, makeMedia, passFirstRun, shot, openSettings } from './helpers'
+import { BASE, CLAUDE_CODE_LABEL, CLAUDE_CODE_MISNAMED, USE_CLAUDE_CODE, launch, makeMedia, passFirstRun, shot, openSettings, newReel } from './helpers'
 
 // Its own Reel Studio folder: the smoke test leaves a song in the shared Library, and this test
 // needs the "No music yet" state.
@@ -42,7 +42,7 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   // Sidebar says plainly that no AI is on, and is a way in.
   await expect(page.getByTestId('ai-status')).toHaveText('No AI editor')
 
-  await page.getByTestId('new-video').click()
+  await newReel(app)
   await page.getByTestId('file-input').setInputFiles([media.video])
   await expect(page.getByTestId('player')).toBeVisible({ timeout: 10 * 60_000 })
   const aiSource = await page.evaluate(() => window.reel.app.info().then((i) => i.ai))

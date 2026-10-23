@@ -12,7 +12,7 @@ const WIDTH_KEY = 'rs.sidebar-width'
 const RAIL_W = 64
 
 const NAV: { key: 'home' | 'library' | 'style' | 'insights'; label: string; icon: IconName }[] = [
-  { key: 'home', label: 'My videos', icon: 'film' },
+  { key: 'home', label: 'Reels', icon: 'film' },
   { key: 'library', label: 'Library', icon: 'folder' },
   { key: 'style', label: 'My style', icon: 'layers' },
   { key: 'insights', label: 'Insights', icon: 'chart' }

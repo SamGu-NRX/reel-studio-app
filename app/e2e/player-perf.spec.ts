@@ -4,7 +4,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun } from './helpers'
+import { BASE, launch, makeMedia, passFirstRun, newReel } from './helpers'
 
 declare global {
   interface Window {
@@ -45,7 +45,7 @@ test('the player writes the scrub bar at most once per presented frame and decod
     await app.context().addInitScript(probe)
     await page.reload()
     await passFirstRun(page)
-    await page.getByTestId('new-video').click()
+    await newReel(app)
     await page.getByTestId('file-input').setInputFiles([media.video])
     await expect(page.getByTestId('player')).toBeVisible({ timeout: 10 * 60_000 })
     // a second version, made by hand

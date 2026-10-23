@@ -5,7 +5,7 @@
 //
 // Run: npx playwright test e2e/phone-view.spec.ts (after npm run build).
 import { test, expect, type Page } from '@playwright/test'
-import { launch, makeMedia, passFirstRun } from './helpers'
+import { launch, makeMedia, passFirstRun, newReel } from './helpers'
 
 const SIZES = [
   { width: 1100, height: 720 },
@@ -31,7 +31,7 @@ test('fails if the phone stops filling its column at 9:16, the view is not Insta
   })
   try {
     await passFirstRun(page)
-    await page.getByTestId('new-video').click()
+    await newReel(app)
     await page.getByTestId('file-input').setInputFiles(media.video)
     await expect(page.getByTestId('player')).toBeVisible({ timeout: 5 * 60_000 })
 

@@ -63,6 +63,7 @@ const api: ReelApi = {
   },
   projects: {
     list: () => call('projects:list'),
+    search: (query) => call('projects:search', query),
     get: (slug) => call('projects:get', slug),
     create: (files) => call('projects:create', files),
     resume: (slug) => call('projects:resume', slug),

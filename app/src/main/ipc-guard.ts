@@ -40,13 +40,14 @@ function validPatch(patch: unknown): boolean {
 export function validateIpcArgs(channel: string, args: unknown[]): void {
   const [first, second, third] = args
   const bad = { code: 'BAD_ARGS', userMessage: 'That request was not valid. Try again.' }
-  if ((channel.startsWith('projects:') && !['projects:list', 'projects:create'].includes(channel)) || channel.startsWith('notes:') || channel === 'style:answer') {
+  if ((channel.startsWith('projects:') && !['projects:list', 'projects:create', 'projects:search'].includes(channel)) || channel.startsWith('notes:') || channel === 'style:answer') {
     if (!text(first) || !/^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u.test(first)) throw bad
   }
   let ok = true
   switch (channel) {
     case 'app:openFolder': case 'app:setRoot': case 'app:startDrag': ok = path(first); break
     case 'projects:create': case 'library:add': ok = paths(first); break
+    case 'projects:search': ok = text(first) && first.length <= 200; break
     case 'projects:update': ok = validPatch(second); break
     case 'projects:export': ok = finite(second) && Number.isInteger(second) && second >= 0; break
     case 'projects:note': ok = text(second) && (third === undefined || strings(third)); break

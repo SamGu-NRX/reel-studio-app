@@ -9,7 +9,7 @@
 import { test, expect } from '@playwright/test'
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ROOT, SHOTS, launch, makeMedia, passFirstRun } from './helpers'
+import { ROOT, SHOTS, launch, makeMedia, passFirstRun, newReel } from './helpers'
 
 const OUT = process.env.REELSTUDIO_E2E_SHOTS ?? SHOTS
 
@@ -28,7 +28,7 @@ test('flip a mirrored take from Edit it myself', async () => {
   const media = makeMedia()
   const { app, page } = await launch()
   await passFirstRun(page)
-  await page.getByTestId('new-video').click()
+  await newReel(app)
   await page.getByTestId('file-input').setInputFiles([media.video])
   await expect(page.getByTestId('player')).toBeVisible({ timeout: 15 * 60_000 })
   expect(project().sources[0].mirror).toBeUndefined()

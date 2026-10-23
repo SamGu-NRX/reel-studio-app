@@ -20,7 +20,7 @@ import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, dirname } from 'node:path'
-import { attachMemeFlow, chooseClaudeCode, dropFiles, passMacStage, passSample, openSettings } from './helpers'
+import { attachMemeFlow, chooseClaudeCode, dropFiles, passMacStage, passSample, openSettings, newReel } from './helpers'
 import { installedRuntime } from './runtime'
 
 const EXE = process.env.REELSTUDIO_E2E_INSTALLED
@@ -108,7 +108,7 @@ test('first run: speech model + AI', async () => {
   const info: Record<string, unknown> = {}
   try {
     const welcome = page.getByTestId('get-started')
-    await expect(welcome.or(page.getByRole('heading', { name: 'Your videos' }))).toBeVisible()
+    await expect(welcome.or(page.getByRole('heading', { name: 'Reels' }))).toBeVisible()
     info.freshProfile = await welcome.isVisible()
     await snap(page, '00-welcome')
     if (info.freshProfile) {
@@ -132,7 +132,7 @@ test('first run: speech model + AI', async () => {
       if (!picked) await page.getByTestId('skip').click()
       await page.getByTestId('share-no').click()
     }
-    await expect(page.getByText('Your videos')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
     await openSettings(page)
     const c = page.getByTestId('ai-connected')
     await c.waitFor({ timeout: 10_000 }).catch(() => {})
@@ -158,7 +158,7 @@ TAKES.forEach((take, i) => {
     const save = () => writeFileSync(join(out, 'result.json'), JSON.stringify(result, null, 2))
     const { app, page } = await open()
     try {
-      await expect(page.getByText('Your videos')).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Reels' })).toBeVisible()
       const music = (process.env.REELSTUDIO_E2E_MUSIC ?? '').split(';').filter(Boolean)
       if (music.length && i === 0) {
         await page.getByTestId('nav-library').click()
@@ -166,7 +166,7 @@ TAKES.forEach((take, i) => {
         await page.waitForTimeout(4000)
       }
       await page.getByTestId('nav-home').click()
-      await page.getByTestId('new-video').click()
+      await newReel(app)
       const t0 = Date.now()
       await dropFiles(page, 'drop-zone', [take])
       await expect(page.getByText('Making your reel')).toBeVisible()

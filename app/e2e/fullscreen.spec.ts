@@ -8,7 +8,7 @@
 // Run: npx playwright test e2e/fullscreen.spec.ts (after npm run build).
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { join } from 'node:path'
-import { launch, makeMedia, passFirstRun, SHOTS } from './helpers'
+import { launch, makeMedia, passFirstRun, SHOTS, newReel } from './helpers'
 
 const media = (page: Page, testid: string) =>
   page.getByTestId(testid).evaluate((v: HTMLVideoElement) => ({ at: v.currentTime, paused: v.paused, muted: v.muted }))
@@ -65,7 +65,7 @@ test('full screen reel: open, hand-off both ways, Space, Esc, Exit button, small
   const m = makeMedia()
   const { app, page } = await launch({}, { realViewport: true })
   await passFirstRun(page)
-  await page.getByTestId('new-video').click()
+  await newReel(app)
   await page.getByTestId('file-input').setInputFiles([m.video])
   await expect(page.getByTestId('export')).toBeEnabled({ timeout: 10 * 60_000 })
 
