@@ -121,12 +121,14 @@ export class McpRun {
     this.sockets.add(sock);
     const send = (m: unknown) => { if (!sock.destroyed) sock.write(JSON.stringify(m) + '\n'); };
     const refuse = (error: string) => { send({ error }); sock.end(); };
-    sock.on('close', () => { this.sockets.delete(sock); clearTimeout(timer); });
+    // declared before the handlers: a connection refused at once closes before any timer is set
+    let timer: NodeJS.Timeout | undefined;
+    sock.on('close', () => { this.sockets.delete(sock); if (timer) clearTimeout(timer); });
     sock.on('error', () => undefined);
     if (this.ended) return refuse('run ended');
     let authed = false;
     let buf = '';
-    const timer = setTimeout(() => refuse('no hello'), HELLO_TIMEOUT_MS);
+    timer = setTimeout(() => refuse('no hello'), HELLO_TIMEOUT_MS);
     sock.setEncoding('utf8');
     sock.on('data', (d: string) => {
       buf += d;
@@ -137,7 +139,7 @@ export class McpRun {
         let m: any;
         try { m = JSON.parse(line); } catch { sock.destroy(); return; }
         if (!authed) {
-          clearTimeout(timer);
+          if (timer) clearTimeout(timer);
           if (!this.helloOk(m?.hello)) return refuse('refused');
           if (this.ended) return refuse('run ended');
           if (this.claimed) return refuse('run already has a connection');
@@ -159,13 +161,15 @@ export class McpRun {
     const { ctx } = this.o;
     if (!this.o.tools.includes(name)) return errorResult(`the tool "${name}" is not available in this task`);
     if (ctx.state.finished !== null) return errorResult('finish was already called');
-    if (ctx.signal?.aborted || this.failure) return ENDED;
+    if (this.ended || ctx.signal?.aborted || this.failure) return ENDED;
     if (name !== 'finish' && ++this.calls > this.o.maxSteps) {
       if (this.calls > this.o.maxSteps + STEP_GRACE) this.o.onStop('steps');
       return errorResult('You are out of steps. Call finish now with your summary for the user.');
     }
     return this.lock.run(PARALLEL_SAFE.has(name), async () => {
-      if (ctx.signal?.aborted || this.failure || ctx.state.finished !== null) return ENDED;
+      // checked again once the call has the project: one queued behind a running call must not
+      // start after close() began, or after Stop, a fatal error or finish
+      if (this.ended || ctx.signal?.aborted || this.failure || ctx.state.finished !== null) return ENDED;
       const stage = STAGE[name];
       if (stage) this.o.onEvent({ type: 'status', message: stage.message, pct: stage.pct, phase: 'edit' });
       try {

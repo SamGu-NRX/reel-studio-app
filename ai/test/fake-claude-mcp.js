@@ -1,14 +1,16 @@
 // A stand-in for `claude -p --input-format stream-json --output-format stream-json` with an MCP
 // config: it starts the configured server as claude does (stdio, its env merged over ours), and on
 // each user message plays the next turn of the scenario (--scenario FILE) as MCP tool calls.
-// Scenario: { turns: [[{name, args} | "hang"]], pidFile, inbox, initTools? }; "hang" never ends the turn
-// (a slow model); initTools is the tool list the init event reports (claude lists what the model can call)
+// Scenario: { turns: [[{name, args} | "hang"]], pidFile, inbox, initTools?, argvFile? }; "hang" never ends
+// the turn (a slow model); initTools is the tool list the init event reports (claude lists what the model
+// can call); argvFile receives the arguments this process was started with
 'use strict';
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 
 const arg = (k) => { const i = process.argv.indexOf(k); return i >= 0 ? process.argv[i + 1] : undefined; };
 const scenario = JSON.parse(fs.readFileSync(arg('--scenario'), 'utf8'));
+if (scenario.argvFile) fs.writeFileSync(scenario.argvFile, JSON.stringify(process.argv.slice(2)));
 const cfg = JSON.parse(fs.readFileSync(arg('--mcp-config'), 'utf8')).mcpServers.reelstudio;
 const out = (m) => process.stdout.write(JSON.stringify(m) + '\n');
 

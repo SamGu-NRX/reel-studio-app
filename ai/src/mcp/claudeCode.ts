@@ -109,12 +109,16 @@ export class ClaudeCodeHarness implements Harness {
       env: childEnv(process.env, { MCP_TOOL_TIMEOUT: String(TOOL_TIMEOUT_MS) }),
     });
     const exited = new Promise<void>((resolve) => child.once('close', () => resolve()));
+    let tokens = 0;
+    const budget = o.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
+    const overBudget = () => new AIError('token_budget', 'This edit was taking far more AI work than it should, so I stopped to protect your AI usage. Try a shorter, more specific note.', { detail: `${tokens} effective tokens > budget ${budget}` });
     let errTail = '';
     child.stderr.setEncoding('utf8').on('data', (d: string) => { errTail = (errTail + d).slice(-800); });
     child.stdin.on('error', () => undefined);
     child.on('error', (e) => decide({ error: new AIError('cli_missing', 'The claude command line tool is not installed or not on PATH.', { detail: e.message }) }));
     child.on('close', (code) => {
-      if (o.ctx.state.finished !== null) decide({ stoppedBy: 'finish' });
+      if (tokens > budget) decide({ error: overBudget() });
+      else if (o.ctx.state.finished !== null) decide({ stoppedBy: 'finish' });
       else decide({ error: new AIError('cli_error', 'The AI did not answer.', { retryable: true, detail: `exit ${code}: ${errTail}` }) });
     });
     const send = (line: string) => { try { child.stdin.write(line); } catch { /* gone: close decides */ } };
@@ -124,8 +128,7 @@ export class ClaudeCodeHarness implements Harness {
     const messages: ChatMessage[] = [first];
     const seen = new Set<string>();
     const allowed = new Set(o.tools.map(mcpName));
-    let tokens = 0; let misses = 0; let usedTools = false;
-    const budget = o.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
+    let misses = 0; let usedTools = false;
     const maxMisses = o.maxMisses ?? MAX_CONSECUTIVE_MISSES;
 
     const onEvent = (j: any) => {
@@ -158,10 +161,9 @@ export class ClaudeCodeHarness implements Harness {
           const limited = /limit|quota|rate/i.test(String(j.result ?? '')) || j.api_error_status === 429;
           return decide({ error: new AIError(limited ? 'cli_limited' : 'cli_error', limited ? 'The AI hit its usage limit. Try again later.' : 'The AI had a problem answering.', { retryable: !limited, detail: String(j.result ?? '').slice(0, 500) }) });
         }
+        // before finish is accepted: a run over budget is not saved, even one that has finished
+        if (tokens > budget) return decide({ error: overBudget() });
         if (o.ctx.state.finished !== null) return decide({ stoppedBy: 'finish' });
-        if (tokens > budget) {
-          return decide({ error: new AIError('token_budget', 'This edit was taking far more AI work than it should, so I stopped to protect your AI usage. Try a shorter, more specific note.', { detail: `${tokens} effective tokens > budget ${budget}` }) });
-        }
         // a turn that ended without finish: as agent.ts, only turns in a row with no tool call end the run
         misses = usedTools ? 0 : misses + 1;
         usedTools = false;

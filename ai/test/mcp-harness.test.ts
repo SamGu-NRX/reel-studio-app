@@ -4,6 +4,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
+import * as net from 'node:net';
 import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createAI, ClaudeCodeHarness, StyleStore, TOOL_NAMES, toolSchemas, newToolState, listVersions } from '../src';
 import type { ToolContext } from '../src';
@@ -84,6 +85,27 @@ class Relay {
 
 const text = (r: any) => r.content.map((c: any) => c.text ?? '').join('');
 
+/** A run whose image search waits until `release()`: close() then waits on it in idle(). */
+async function runWithSlowSearch() {
+  const s = await noteSetup();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  let entered!: () => void;
+  const searching = new Promise<void>((r) => { entered = r; });
+  const host = s.ctx.host;
+  s.ctx.host = { ...host, reelStudioRoot: () => host.reelStudioRoot(), renderAnimation: host.renderAnimation.bind(host),
+    runEngine: async (command, args, onProgress, signal) => {
+      if (command === 'search-images') { entered(); await gate; }
+      return host.runEngine(command, args, onProgress, signal);
+    } };
+  const run = await openRun(s.ctx);
+  const relay = new Relay(run);
+  await relay.ready();
+  const search = relay.call('search_images', { query: 'bread photo' });
+  await searching;
+  return { ...s, run, relay, release, search };
+}
+
 describe('the relay', () => {
   it('lists exactly toolSchemas() over MCP', async () => {
     const { ctx } = await noteSetup();
@@ -132,6 +154,39 @@ describe('the relay', () => {
     expect(ctx.state.toolCalls).toBe(0);
   });
 
+  it('a call queued behind a running one does not start once close() began', async () => {
+    const { run, relay, release, search, editFile, before } = await runWithSlowSearch();
+    const queued = relay.call('set_caption_style', { case: 'lower' });
+    while ((run as any).running.size < 2) await new Promise((r) => setTimeout(r, 5));
+    const closing = run.close();
+    release();
+    await closing;
+    expect((await search).isError).toBe(false);
+    expect(text(await queued)).toMatch(/run ended/);
+    expect((await fsp.readFile(editFile)).equals(before)).toBe(true);
+  });
+
+  it('refuses a connection that arrives while the run closes, and main keeps running', async () => {
+    const { run, release } = await runWithSlowSearch();
+    const crashes: unknown[] = [];
+    const onCrash = (e: unknown) => crashes.push(e);
+    process.on('uncaughtException', onCrash);
+    try {
+      const closing = run.close();
+      const late = net.connect(run.socket);
+      let reply = '';
+      late.setEncoding('utf8').on('data', (d: string) => { reply += d; });
+      await new Promise((r) => late.once('close', r));
+      await new Promise((r) => setTimeout(r, 20));
+      release();
+      await closing;
+      expect(JSON.parse(reply)).toEqual({ error: 'run ended' });
+      expect(crashes).toEqual([]);
+    } finally {
+      process.off('uncaughtException', onCrash);
+    }
+  });
+
   it('refuses in main a tool outside the run allowlist, whatever the client asks', async () => {
     const { ctx, editFile, before } = await noteSetup();
     const relay = new Relay(await openRun(ctx, { tools: ['get_project', 'finish'] }));
@@ -159,7 +214,7 @@ describe('the relay', () => {
 });
 
 describe('a note through Claude Code (a stand-in claude)', () => {
-  async function setup(turns: unknown[], extra: Record<string, unknown> = {}) {
+  async function setup(turns: unknown[], extra: Record<string, unknown> = {}, tokenBudget?: number) {
     const { root, dir } = await makeProject();
     const host = new FakeHost(root);
     await firstVersion(dir, host);
@@ -169,7 +224,7 @@ describe('a note through Claude Code (a stand-in claude)', () => {
     await fsp.writeFile(file, JSON.stringify(scenario));
     const model = new ScriptedModel([]);
     const harness = new ClaudeCodeHarness({ bin: process.execPath, binArgs: [FAKE_CLAUDE], extraArgs: ['--scenario', file] });
-    const ai = createAI({ host, settingsDir: tmpDir('settings '), providerOverride: model, harnessOverride: harness });
+    const ai = createAI({ host, settingsDir: tmpDir('settings '), providerOverride: model, harnessOverride: harness, tokenBudget });
     const read = () => fsp.readFile(path.join(dir, 'project.json'), 'utf8');
     return { dir, ai, model, scenario, read, before: await read() };
   }
@@ -215,6 +270,29 @@ describe('a note through Claude Code (a stand-in claude)', () => {
       const pids = JSON.parse(fs.readFileSync(scenario.pidFile, 'utf8'));
       expect([alive(pids.claude), alive(pids.relay)]).toEqual([false, false]);
     }
+  });
+
+  it('starts claude with its own tools, settings and other MCP servers off, and only ours allowed', async () => {
+    const { dir, ai, scenario } = await setup([[{ name: 'finish', args: { summary_for_user: 'Nothing needed changing here.' } }]], { argvFile: path.join(tmpDir('argv '), 'argv.json') });
+    await ai.applyNote(dir, 'lowercase subtitles', () => undefined);
+    const argv: string[] = JSON.parse(fs.readFileSync(String((scenario as any).argvFile), 'utf8'));
+    const after = (flag: string) => { expect(argv).toContain(flag); return argv[argv.indexOf(flag) + 1]; };
+    expect(after('--tools')).toBe('');
+    expect(after('--setting-sources')).toBe('');
+    expect(after('--permission-prompts')).toBe('none');
+    expect(argv).toEqual(expect.arrayContaining(['--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence']));
+    expect(after('--allowedTools').split(',')).toEqual(TOOL_NAMES.map((t) => `mcp__reelstudio__${t}`));
+    expect(path.basename(after('--mcp-config'))).toBe('mcp.json');
+    expect(path.basename(path.dirname(after('--mcp-config')))).toMatch(/^rs-mcp-/);
+  });
+
+  it('a run over its token budget is not saved, even when it called finish', async () => {
+    const { dir, ai, read, before } = await setup([[
+      { name: 'set_caption_style', args: { case: 'lower' } },
+      { name: 'finish', args: { summary_for_user: 'Your subtitles are lowercase now.' } },
+    ]], {}, 1);
+    await expect(ai.applyNote(dir, 'lowercase subtitles', () => undefined)).rejects.toMatchObject({ code: 'token_budget' });
+    expect(await read()).toBe(before);
   });
 
   it('will not run when claude offers the model any tool but ours', async () => {
