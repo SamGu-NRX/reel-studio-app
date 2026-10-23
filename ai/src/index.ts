@@ -426,6 +426,10 @@ export function createAI(opts: CreateAIOptions) {
       if (id === 'claude-cli') {
         const lc = await localClaude(true);
         if (lc.state !== 'ready') throw new AIError('not_available', lc.reason ?? 'Your Claude Code app is not ready.');
+        // signed in is not the same as able to answer (a plan at its limit, a broken install): one tiny real call
+        const s = await settings();
+        await new ClaudeCliProvider({ model: s.cliModel, timeoutMs: CHECK_TIMEOUT_MS, ...(lc.bin ? { bin: lc.bin } : {}) })
+          .complete({ system: '', messages: [{ role: 'user', content: [{ type: 'text', text: 'Reply with the word OK.' }] }], tools: [], jsonOnly: true });
       } else if (!opts.dev && !PEOPLE_PROVIDERS.includes(id)) {
         throw new AIError('not_available', 'That option is not available.');
       }

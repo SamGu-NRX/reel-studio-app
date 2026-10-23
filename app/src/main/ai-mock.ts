@@ -256,8 +256,8 @@ export const createMockAI: CreateAI = ({ host }) => {
       return {
         summary:
           (track
-            ? 'Your video is ready. I cut out the pauses, added subtitles, music and a cover. Connect ChatGPT and I can also pick your best takes and add pictures.'
-            : 'Your video is ready. I cut out the pauses and added subtitles and a cover. Add a song for music, and connect ChatGPT so I can pick your best takes and add pictures.') +
+            ? 'Your video is ready. I cut out the pauses, added subtitles, music and a cover. Connect an AI editor and I can also pick your best takes and add pictures.'
+            : 'Your video is ready. I cut out the pauses and added subtitles and a cover. Add a song for music, and connect an AI editor so I can pick your best takes and add pictures.') +
           (lower ? ' I used lowercase captions from your My style.' : ''),
         version,
         styleRulesAdded: [],
@@ -293,8 +293,8 @@ export const createMockAI: CreateAI = ({ host }) => {
       // a rule to remember is only proposed: the app asks before anything goes into My style
       const proposed = /\b(always|never|every video|from now on|in general)\b/i.test(note) ? [note.trim()] : []
       const summary = proposed.length
-        ? 'Connect ChatGPT in Settings and I can change this video from your notes too.'
-        : 'I saved your note. Connect ChatGPT in Settings and I can change the video from notes like this one. You can also tweak it yourself under "Show me how".'
+        ? 'Connect an AI editor in Settings and I can change this video from your notes too.'
+        : 'I saved your note. Connect an AI editor in Settings and I can change the video from notes like this one. You can also tweak it yourself under "Show me how".'
       const attachments = opts?.attachments?.length ? { attachments: opts.attachments } : {}
       // saved under the job's id with its reply, so a crash right after is finished at the next start (store.ts settleInterrupted)
       p.notes = [...(p.notes ?? []), {
@@ -312,7 +312,7 @@ export const createMockAI: CreateAI = ({ host }) => {
     },
 
     async writeScript(): Promise<ScriptResult> {
-      throw { code: 'NO_AI', userMessage: 'Connect ChatGPT or Claude in Settings and I can help you write a script.' }
+      throw { code: 'NO_AI', userMessage: 'Connect an AI editor in Settings and I can help you write a script.' }
     },
 
     async styleRules() {

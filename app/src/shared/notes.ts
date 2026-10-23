@@ -23,7 +23,7 @@ export const ACTION_LABELS: Record<ChatAction, string> = {
   'open-cover': 'Open cover',
   'open-post': 'Open post caption',
   'open-editor': 'Edit it myself',
-  connect: 'Connect ChatGPT',
+  connect: 'Connect an AI editor',
   'remember-yes': 'Yes, remember it',
   'remember-no': 'No, just this video'
 }
@@ -75,7 +75,7 @@ export function noAiReply(note: string, attached = 0): NoAiReply {
     // a picture or clip on a note needs the AI to place it: say so, and that it is kept for later
     const one = attached === 1
     return {
-      text: `I can't put ${one ? 'your file' : 'your files'} in the video yet, because no AI editor is connected. I kept ${one ? 'it' : 'them'}. Connect ChatGPT, then tell me where ${one ? 'it' : 'they'} should go. Or add a picture yourself under "Open pictures".`,
+      text: `I can't put ${one ? 'your file' : 'your files'} in the video yet, because no AI editor is connected. I kept ${one ? 'it' : 'them'}. Connect an AI editor, then tell me where ${one ? 'it' : 'they'} should go. Or add a picture yourself under "Open pictures".`,
       actions: ['open-broll', 'connect']
     }
   }
