@@ -72,8 +72,8 @@ import { COVER_SUGGESTIONS } from '../shared/cover'
 import { createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
 import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment } from '../shared/moments'
-import { parsePlatformExportRequest } from '../shared/platforms'
-import { exportPlatforms, sweepExportStaging } from './platform-export'
+import { parsePlatformExportRequest, secondTryPlatforms, type Platform, type PlatformTry } from '../shared/platforms'
+import { exportPlatforms, sweepExportStaging, type ExportTry } from './platform-export'
 import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { displayPath } from '../shared/display-path'
@@ -816,19 +816,28 @@ function registerIpc(): void {
   // a job like any other, so the updater waits for it (main/updater.ts counts running jobs)
   handle('projects:exportPlatforms', async (_e, slug: string, n: number, value: unknown) => {
     const request = parsePlatformExportRequest(value)
-    if (!(await listVersions(projectDir(slug))).some((v) => v.n === n)) throw { code: 'NO_VERSION', userMessage: 'Choose an available version before exporting for platforms.' }
+    const versions = await listVersions(projectDir(slug))
+    if (![n, request.second?.version ?? n].every((m) => versions.some((v) => v.n === m))) throw { code: 'NO_VERSION', userMessage: 'Choose an available version before exporting for platforms.' }
     const version = await finishedExportVersion(slug, n)
     const project = await readProject(slug)
-    const chosenCover = join(dirname(version.videoPath), 'cover.png')
+    const exportTry = (v: VersionInfo, platforms: Platform[], { caption, coverSeconds }: Pick<PlatformTry, 'caption' | 'coverSeconds'>): ExportTry => {
+      const chosenCover = join(dirname(v.videoPath), 'cover.png')
+      return { version: v.n, source: v.videoPath, chosenCover: existsSync(chosenCover) ? chosenCover : null,
+        name: `${safeFileName(project.title || slug)} - Version ${v.n}`, platforms, caption, coverSeconds }
+    }
+    const first = exportTry(version, request.platforms, request)
+    const { second } = request
+    const secondVersion = second && (second.version === n ? version : await finishedExportVersion(slug, second.version))
+    const tries: [ExportTry] | [ExportTry, ExportTry] = second && secondVersion
+      ? [first, exportTry(secondVersion, secondTryPlatforms(request.platforms, second.version === n), second)]
+      : [first]
     let result: PlatformExportResult | null = null
     let failure: unknown
     jobs.start(slug, 'export', async (emit, signal) => {
       emit({ type: 'status', message: 'Reading the finished video', pct: 1 })
       try {
         result = await exportPlatforms({
-          source: version.videoPath, chosenCover: existsSync(chosenCover) ? chosenCover : null, folder: binDir('exports'),
-          name: `${safeFileName(project.title || slug)} - Version ${version.n}`, request, runEngine, signal,
-          onProgress: (message, pct) => emit({ type: 'status', message, pct })
+          tries, folder: binDir('exports'), runEngine, signal, onProgress: (message, pct) => emit({ type: 'status', message, pct })
         })
         return { summary: '', chat: [] }
       } catch (e) { failure = e; throw e }

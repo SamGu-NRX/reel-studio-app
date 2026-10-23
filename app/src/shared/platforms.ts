@@ -14,14 +14,18 @@ export interface PlatformRule {
   source: string
   /** Shown in the dialog in plain words. */
   note?: string
+  /** The platform's own test of two versions of one post: Instagram trial reels test any change, Facebook only a cover or caption. */
+  tryTwo?: { tests: 'video' | 'cover-caption'; steps: string; source: string }
 }
 
 // Limits checked 2026-10-22. They change and vary by account, so the dialog only warns about them.
 export const PLATFORM_RULES: readonly PlatformRule[] = [
-  { id: 'instagram', label: 'Instagram Reels', minSeconds: 3, maxSeconds: 900, maxBytes: 300_000_000, maxAudioBitrate: 128_000, noEditLists: true, captionLimit: 2200, hashtagLimit: 30, source: 'https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/ig-user/media' },
+  { id: 'instagram', label: 'Instagram Reels', minSeconds: 3, maxSeconds: 900, maxBytes: 300_000_000, maxAudioBitrate: 128_000, noEditLists: true, captionLimit: 2200, hashtagLimit: 30, source: 'https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/ig-user/media',
+    tryTwo: { tests: 'video', source: 'https://creators.instagram.com/blog/instagram-trial-reels', steps: "Post each video as a trial reel. Before you share, turn on Trial and leave automatic sharing off. Instagram shows trial reels to people who don't follow you first. After about a day, compare their views, then tap Share with everyone on the one that did better. No Trial switch? Your account can't use trial reels yet, so post Try 1." } },
   { id: 'tiktok', label: 'TikTok', maxSeconds: 180, maxBytes: 4_000_000_000, captionLimit: 2200, hashtagLimit: null, source: 'https://developers.tiktok.com/doc/content-posting-api-reference-direct-post', note: 'Some accounts can post longer videos. Check yours before posting.' },
   { id: 'youtube', label: 'YouTube Shorts', maxSeconds: 180, maxBytes: 256_000_000_000, captionLimit: 5000, hashtagLimit: 60, source: 'https://support.google.com/youtube/answer/15424877', note: 'The caption becomes the description. Add a title of up to 100 characters when you upload.' },
-  { id: 'facebook', label: 'Facebook Reels', minSeconds: 3, maxSeconds: 90, maxBytes: 1_000_000_000, captionLimit: null, hashtagLimit: null, source: 'https://developers.facebook.com/documentation/video-api/guides/reels-publishing', note: 'Reels up to 90 seconds and 1 GB. Facebook gives no caption or hashtag limit.' },
+  { id: 'facebook', label: 'Facebook Reels', minSeconds: 3, maxSeconds: 90, maxBytes: 1_000_000_000, captionLimit: null, hashtagLimit: null, source: 'https://developers.facebook.com/documentation/video-api/guides/reels-publishing', note: 'Reels up to 90 seconds and 1 GB. Facebook gives no caption or hashtag limit.',
+    tryTwo: { tests: 'cover-caption', source: 'https://about.fb.com/news/2023/11/helping-creators-test-content-and-earn-rewards/', steps: "In the Facebook app, make the reel with the video. Before you share, add Try 2's cover and caption as a test. Facebook shows each to part of your audience and keeps the one that does better. No test option? Post Try 1." } },
   { id: 'threads', label: 'Threads', maxSeconds: 300, maxBytes: 1_000_000_000, maxAudioBitrate: 128_000, noEditLists: true, captionLimit: 500, hashtagLimit: null, source: 'https://developers.facebook.com/documentation/threads/posts', note: 'Only one hashtag becomes a link. Most emoji count as 4 characters.' },
   { id: 'x', label: 'X', minSeconds: 0.5, maxSeconds: 1200, maxBytes: 8_000_000_000, captionLimit: 280, hashtagLimit: null, source: 'https://docs.x.com/x-api/media/quickstart/best-practices', note: 'Every link counts as 23 characters. Check the caption length in X before posting.' },
   // LinkedIn's caption limit is the composer's: "Posts can contain up to 3,000 characters." (linkedin.com/help/linkedin/answer/a528176)
@@ -34,23 +38,100 @@ export function platformRule(platform: Platform): PlatformRule {
   return rule
 }
 
+/** One version of the post: which Version's video, which cover and which caption. */
+export interface PlatformTry {
+  version: number
+  caption: string
+  /** Seconds into the finished video, or null for that version's own cover. */
+  coverSeconds: number | null
+}
+
 export interface PlatformExportRequest {
   platforms: Platform[]
   caption: string
   /** Seconds into the finished video, or null for the project's own cover. */
   coverSeconds: number | null
+  /** Try 2, for the platforms that can test two versions themselves (`secondTryPlatforms`). */
+  second: PlatformTry | null
+}
+
+const validCover = (value: unknown): value is number | null =>
+  value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0)
+const validCaption = (value: unknown): value is string => typeof value === 'string' && value.length <= 100_000
+const validVersion = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0
+
+const badRequest = () => ({ code: 'BAD_EXPORT', userMessage: 'Choose at least one platform and a valid cover frame, then try again.' })
+
+function parseSecondTry(value: unknown): PlatformTry | null {
+  if (value === null) return null
+  if (!value || typeof value !== 'object' || !('version' in value) || !validVersion(value.version) ||
+      !('caption' in value) || !validCaption(value.caption) || !('coverSeconds' in value) || !validCover(value.coverSeconds)) throw badRequest()
+  return { version: value.version, caption: value.caption, coverSeconds: value.coverSeconds }
 }
 
 export function parsePlatformExportRequest(value: unknown): PlatformExportRequest {
   if (!value || typeof value !== 'object' || !('platforms' in value) || !Array.isArray(value.platforms) ||
       !value.platforms.length || value.platforms.length > PLATFORM_RULES.length ||
       !value.platforms.every((p): p is Platform => typeof p === 'string' && PLATFORM_RULES.some((r) => r.id === p)) ||
-      !('caption' in value) || typeof value.caption !== 'string' || value.caption.length > 100_000 ||
-      !('coverSeconds' in value) || (value.coverSeconds !== null &&
-        (typeof value.coverSeconds !== 'number' || !Number.isFinite(value.coverSeconds) || value.coverSeconds < 0))) {
-    throw { code: 'BAD_EXPORT', userMessage: 'Choose at least one platform and a valid cover frame, then try again.' }
+      !('caption' in value) || !validCaption(value.caption) || !('coverSeconds' in value) || !validCover(value.coverSeconds) ||
+      !('second' in value)) throw badRequest()
+  return { platforms: [...new Set(value.platforms)], caption: value.caption, coverSeconds: value.coverSeconds, second: parseSecondTry(value.second) }
+}
+
+export type TryChange = 'video' | 'cover' | 'caption'
+
+/**
+ * What decides which frame a cover saves: the render's frame rate, where its picture ends, and the time used for a
+ * try that keeps its version's cover when the version has no cover picture (null when it has one). Seconds.
+ */
+export interface CoverClock { fps: number; end: number; fallback: number | null }
+
+/** The frame the renderer falls back to for a cover (render.py fallback_cover), and so the export too. */
+export function fallbackCoverSeconds(duration: number): number {
+  return Math.min(duration * 0.25, 3)
+}
+
+/**
+ * The frame `export-cover` saves for a cover `seconds` into a render. engine/reelengine/export_media.py cover() moves a
+ * time in the last two frames back to `end - 2 / fps`, where a seek still decodes a frame. ffmpeg's accurate seek then
+ * takes the first frame at or after that time, not the nearest one: with ffmpeg 9.0.1 on a 30 fps clip with B-frames
+ * and an edit list, 1.0 s saved frame 30, and 1.0001 s and 1.01 s both saved frame 31.
+ */
+export function coverFrame(seconds: number, { fps, end }: CoverClock): number {
+  const at = Math.min(seconds, end - 2 / fps)
+  // ffmpeg rounds the time to the stream's time base first, so a time a hair past a frame still lands on that frame.
+  return Math.max(0, Math.ceil(at * fps - 1e-3))
+}
+
+/** Two covers count as the same when the engine saves the same frame for both. */
+export function tryChanges(first: PlatformTry, second: PlatformTry, clock: CoverClock): TryChange[] {
+  const frame = (seconds: number | null) => {
+    const at = seconds ?? clock.fallback
+    return at === null ? null : coverFrame(at, clock)
   }
-  return { platforms: [...new Set(value.platforms)], caption: value.caption, coverSeconds: value.coverSeconds }
+  const changes: TryChange[] = []
+  if (second.version !== first.version) changes.push('video')
+  if (frame(second.coverSeconds) !== frame(first.coverSeconds)) changes.push('cover')
+  if (second.caption !== first.caption) changes.push('caption')
+  return changes
+}
+
+/** The selected platforms that get Try 2. Every selected platform gets Try 1. */
+export function secondTryPlatforms(platforms: Platform[], sameVideo: boolean): Platform[] {
+  return platforms.filter((p) => {
+    const test = platformRule(p).tryTwo
+    return test !== undefined && (test.tests === 'video' || sameVideo)
+  })
+}
+
+/** Why Try 2 cannot be exported, or null. */
+export function secondTryProblem(platforms: Platform[], first: PlatformTry, second: PlatformTry, clock: CoverClock): string | null {
+  const changes = tryChanges(first, second, clock)
+  if (!changes.length) return 'Try 2 is the same as Try 1. Pick another version, cover or caption.'
+  if (secondTryPlatforms(platforms, !changes.includes('video')).length) return null
+  return changes.includes('video')
+    ? 'None of these platforms can test a different video. Choose Instagram, or turn off Try two versions.'
+    : 'None of these platforms can test two versions. Choose Instagram or Facebook, or turn off Try two versions.'
 }
 
 /** A platform limit the export goes over. Never a block: limits change and vary by account, so the creator decides. */
@@ -116,6 +197,9 @@ function xWeightedLength(text: string): number {
 /** What `export-probe` reports about the finished render. */
 export interface FinishedVideo {
   duration: number
+  /** Frames per second and where the picture ends, to tell whether two cover times save the same frame. */
+  fps: number
+  vduration: number
   sizeBytes: number
   audioBitrate: number | null
   editList: boolean

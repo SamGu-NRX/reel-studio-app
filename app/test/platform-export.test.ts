@@ -1,11 +1,11 @@
 import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, promises as fs, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, promises as fs, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { createEngineRunner } from '../src/main/engine'
-import { exportPlatforms, makeStagingFolder, sweepExportStaging } from '../src/main/platform-export'
-import { outputGroups, type PlatformExportRequest } from '../src/shared/platforms'
+import { exportPlatforms, makeStagingFolder, sweepExportStaging, type ExportTry } from '../src/main/platform-export'
+import { coverFrame, outputGroups, type Platform } from '../src/shared/platforms'
 import { PYTHON } from './helpers'
 
 const scratch = mkdtempSync(join(tmpdir(), 'rs-platform-export-'))
@@ -15,6 +15,10 @@ const runEngine = createEngineRunner({ python: () => PYTHON, env: () => ({
 }) })
 
 afterAll(() => fs.rm(scratch, { recursive: true, force: true }))
+
+type Request = { platforms: Platform[]; caption: string; coverSeconds: number | null }
+/** One try, as an export with Try two versions off sends it. */
+const oneTry = (source: string, chosenCover: string | null, name: string, request: Request): [ExportTry] => [{ version: 1, source, chosenCover, name, ...request }]
 
 /** A stand-in for the final render: 1080×1920 H.264 + AAC 192k at 30 fps with edit lists, like render.py writes. */
 function finalRender(path: string, seconds: number): string {
@@ -40,7 +44,7 @@ describe('platform files through the real engine', () => {
     execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:size=1080x1920', '-frames:v', '1', chosenCover])
     const folder = join(scratch, 'exports')
     const name = 'My reel - Version 2'
-    const run = (request: PlatformExportRequest) => exportPlatforms({ source, chosenCover, folder, name, request, runEngine })
+    const run = (request: Request) => exportPlatforms({ tries: oneTry(source, chosenCover, name, request), folder, runEngine })
 
     const first = await run({ platforms: ['instagram', 'tiktok', 'x', 'facebook'], caption: 'A creator caption #reel', coverSeconds: null })
     const [instagram, tiktok, x, facebook] = first.files
@@ -68,13 +72,13 @@ describe('platform files through the real engine', () => {
     const source = finalRender(join(scratch, 'short.mp4'), 2)
     const folder = join(scratch, 'over limits')
     const caption = `${'#tag'.repeat(31)} ${Array.from({ length: 21 }, (_, i) => `@person${i}`).join(' ')} ${'x'.repeat(2200)}`
-    const result = await exportPlatforms({ source, chosenCover: null, folder, name: 'Over', request: { platforms: ['instagram', 'linkedin'], caption, coverSeconds: null }, runEngine })
+    const result = await exportPlatforms({ tries: oneTry(source, null, 'Over', { platforms: ['instagram', 'linkedin'], caption, coverSeconds: null }), folder, runEngine })
     expect(result.files.map((file) => file.platform)).toEqual(['instagram', 'linkedin'])
     expect(await fs.readFile(result.files[0].captionFile, 'utf8')).toBe(`${caption}\n`)
   })
 
   it('fails if a render over a platform\'s size limit is not re-encoded under it, or one that fits is', () => {
-    const video = { duration: 600, sizeBytes: 400_000_000, audioBitrate: 128_000, editList: false }
+    const video = { duration: 600, vduration: 600, fps: 30, sizeBytes: 400_000_000, audioBitrate: 128_000, editList: false }
     // 300 MB × 0.94 × 8 bits / 600 s, less 128 kb/s for the audio
     expect(outputGroups(['instagram', 'facebook', 'x'], video)).toEqual([{ platforms: ['instagram'], bitrate: 3_632_000 }])
     // Too long for any bitrate the engine takes: the floor, then the size check after encoding.
@@ -88,7 +92,7 @@ describe('platform files through the real engine', () => {
     const source = join(scratch, 'sound only.mp4')
     execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'sine=duration=3', '-c:a', 'aac', source])
     const folder = join(scratch, 'sound only')
-    await expect(exportPlatforms({ source, chosenCover: null, folder, name: 'Sound', request: { platforms: ['tiktok'], caption: '', coverSeconds: null }, runEngine }))
+    await expect(exportPlatforms({ tries: oneTry(source, null, 'Sound', { platforms: ['tiktok'], caption: '', coverSeconds: null }), folder, runEngine }))
       .rejects.toMatchObject({ code: 'EXPORT_FAILED' })
   })
 
@@ -115,7 +119,7 @@ describe('platform files through the real engine', () => {
       if (command === 'export-probe') setTimeout(() => stop.abort(), 500)
       return runEngine(command, args, onProgress, signal)
     }
-    await expect(exportPlatforms({ source, chosenCover: null, folder, name: 'Slow', request: { platforms: ['tiktok'], caption: '', coverSeconds: null }, runEngine: reading, signal: stop.signal }))
+    await expect(exportPlatforms({ tries: oneTry(source, null, 'Slow', { platforms: ['tiktok'], caption: '', coverSeconds: null }), folder, runEngine: reading, signal: stop.signal }))
       .rejects.toMatchObject({ code: 'CANCELLED' })
     expect(await fs.readdir(folder)).toEqual([])
   }, 10_000)
@@ -125,12 +129,105 @@ describe('platform files through the real engine', () => {
     const folder = join(scratch, 'stopped')
     mkdirSync(folder)
     writeFileSync(join(folder, 'earlier export.mp4'), 'kept')
-    const request: PlatformExportRequest = { platforms: ['x', 'instagram'], caption: '', coverSeconds: null }
     const stop = new AbortController()
-    const running = exportPlatforms({ source, chosenCover: null, folder,
-      name: 'Long', request, runEngine, signal: stop.signal, onProgress: (_message, pct) => { if (pct > 0) stop.abort() } })
+    const running = exportPlatforms({ tries: oneTry(source, null, 'Long', { platforms: ['x', 'instagram'], caption: '', coverSeconds: null }), folder,
+      runEngine, signal: stop.signal, onProgress: (_message, pct) => { if (pct > 0) stop.abort() } })
     await expect(running).rejects.toMatchObject({ code: 'CANCELLED' })
     expect(await fs.readdir(folder)).toEqual(['earlier export.mp4'])
+  })
+
+  it('fails if a cover-only Try 2 writes a second video file, or its cover is Try 1\'s frame', async () => {
+    const source = finalRender(join(scratch, 'cover test.mp4'), 3)
+    const chosenCover = join(scratch, 'blue cover.png')
+    execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:size=1080x1920', '-frames:v', '1', chosenCover])
+    const folder = join(scratch, 'cover-only')
+    const platforms: Platform[] = ['instagram', 'facebook']
+    const one = { version: 2, source, chosenCover, name: 'My reel - Version 2', platforms, caption: 'Same caption' }
+    const tries: [ExportTry, ExportTry] = [{ ...one, coverSeconds: null }, { ...one, coverSeconds: 1 }]
+    const { files } = await exportPlatforms({ tries, folder, runEngine })
+
+    expect((await fs.readdir(folder)).filter((n) => n.endsWith('.mp4')).sort()).toEqual([
+      'My reel - Version 2 - Facebook Reels - Try 1.mp4', 'My reel - Version 2 - Instagram Reels - Try 1.mp4'])
+    const instagram = files.filter((f) => f.platform === 'instagram')
+    expect(instagram.map((f) => f.try)).toEqual([1, 2])
+    expect(instagram[1].video).toBe(instagram[0].video)
+    expect(instagram[1].cover).toBe(join(folder, 'My reel - Version 2 - Instagram Reels - Try 2 cover.jpg'))
+    expect((await fs.readFile(instagram[0].cover)).equals(jpeg(['-i', chosenCover], join(scratch, 'expected-blue.jpg')))).toBe(true)
+    expect((await fs.readFile(instagram[1].cover)).equals(jpeg(['-ss', '1', '-i', source], join(scratch, 'expected-second.jpg')))).toBe(true)
+  })
+
+  it('fails if Stop during Try 2\'s remux leaves any Try 1 file or the staging folder', async () => {
+    const first = finalRender(join(scratch, 'try 1.mp4'), 3)
+    const second = join(scratch, 'try 2 small.mp4')
+    execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=720x1280:rate=30:duration=20', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=20',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', second])
+    const folder = join(scratch, 'stopped-two')
+    mkdirSync(folder)
+    writeFileSync(join(folder, 'earlier export.mp4'), 'kept')
+    const tries: [ExportTry, ExportTry] = [
+      { version: 1, source: first, chosenCover: null, name: 'Mine - Version 1', platforms: ['instagram', 'tiktok'], caption: 'First', coverSeconds: null },
+      { version: 2, source: second, chosenCover: null, name: 'Mine - Version 2', platforms: ['instagram'], caption: 'First', coverSeconds: null }
+    ]
+    const stop = new AbortController()
+    let atStop: string[] = []
+    const running = exportPlatforms({ tries, folder, runEngine, signal: stop.signal, onProgress: (message, pct) => {
+      if (pct === 0 || !message.endsWith('for Try 2') || stop.signal.aborted) return
+      atStop = readdirSync(folder).filter((n) => !n.startsWith('.'))
+      stop.abort()
+    } })
+    await expect(running).rejects.toMatchObject({ code: 'CANCELLED' })
+    expect(atStop).toEqual(['earlier export.mp4'])
+    expect(await fs.readdir(folder)).toEqual(['earlier export.mp4'])
+  })
+
+  it('fails if a Try 2 cover that saves the same frame as Try 1\'s counts as a change', async () => {
+    const source = finalRender(join(scratch, 'same frame.mp4'), 3)
+    const platforms: Platform[] = ['instagram']
+    const one = { version: 1, source, chosenCover: null, name: 'Frame - Version 1', platforms, caption: 'Same' }
+    // The very end and 2.97 s both save frame 88 of 90: the engine moves a time in the last two frames back to 3 - 2/30 s.
+    await expect(exportPlatforms({ tries: [{ ...one, coverSeconds: 3 }, { ...one, coverSeconds: 2.97 }], folder: join(scratch, 'same frame'), runEngine }))
+      .rejects.toMatchObject({ code: 'BAD_EXPORT', userMessage: 'Try 2 is the same as Try 1. Pick another version, cover or caption.' })
+  })
+
+  it('fails if a Try 2 cover on the frame Try 1 falls back to, with no cover picture, counts as a change', async () => {
+    const source = finalRender(join(scratch, 'no cover.mp4'), 12)
+    const platforms: Platform[] = ['instagram']
+    const one = { version: 1, source, chosenCover: null, name: 'Fallback - Version 1', platforms, caption: 'Same' }
+    // With no cover picture, Try 1 gets the frame at a quarter of the video, at most 3 s.
+    await expect(exportPlatforms({ tries: [{ ...one, coverSeconds: null }, { ...one, coverSeconds: 3 }], folder: join(scratch, 'fallback'), runEngine }))
+      .rejects.toMatchObject({ code: 'BAD_EXPORT', userMessage: 'Try 2 is the same as Try 1. Pick another version, cover or caption.' })
+  })
+
+  it('fails if coverFrame names a different frame from the one export-cover saves', async () => {
+    // Each frame's brightness is its number, so the saved JPEG says which frame the engine took. B-frames and an
+    // edit list, like a final render.
+    const clip = join(scratch, 'numbered.mp4')
+    execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', "nullsrc=s=64x64:r=30:d=3,geq=lum='16+2*N':cb=128:cr=128",
+      '-f', 'lavfi', '-i', 'sine=duration=3', '-c:v', 'libx264', '-preset', 'medium', '-bf', '3', '-qp', '0', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-shortest', clip])
+    const saved = async (at: number): Promise<number> => {
+      const dest = join(scratch, `numbered ${at}.jpg`)
+      await runEngine('export-cover', [clip, '--at', String(at), '--dest', dest])
+      const [luma] = execFileSync('ffmpeg', ['-v', 'error', '-i', dest, '-f', 'rawvideo', '-pix_fmt', 'gray', '-'])
+      return Math.round(luma * 219 / 255 / 2) // cover() saves full range: 2N limited-range steps become 2N × 255/219
+    }
+    const clock = { fps: 30, end: 3, fallback: null }
+    for (const at of [0, 0.01, 1, 1.0001, 1.01, 1.03, 1.034, 2.9, 2.95, 2.97, 3]) expect([at, coverFrame(at, clock)]).toEqual([at, await saved(at)])
+  }, 60_000)
+
+  it('fails if one export gives its sets different numbers', async () => {
+    const source = finalRender(join(scratch, 'numbers.mp4'), 3)
+    const folder = join(scratch, 'numbers')
+    const run = async (platforms: Platform[]) => {
+      const one = { version: 1, source, chosenCover: null, name: 'Mine - Version 1', coverSeconds: null }
+      return exportPlatforms({ tries: [{ ...one, platforms, caption: 'First' }, { ...one, platforms: ['instagram'], caption: 'Second' }], folder, runEngine })
+    }
+    await run(['instagram'])
+    // The creator adds TikTok and exports again: Instagram's names are taken, TikTok's are not.
+    const again = await run(['instagram', 'tiktok'])
+    expect(again.files.map((f) => basename(f.captionFile))).toEqual([
+      'Mine - Version 1 - Instagram Reels - Try 1 (2) caption.txt', 'Mine - Version 1 - TikTok - Try 1 (2) caption.txt',
+      'Mine - Version 1 - Instagram Reels - Try 2 (2) caption.txt'])
   })
 
   it('fails if Stop as the second platform lands leaves files behind', async () => {
@@ -138,7 +235,6 @@ describe('platform files through the real engine', () => {
     const folder = join(scratch, 'late stop')
     mkdirSync(folder)
     writeFileSync(join(folder, 'earlier export.mp4'), 'kept')
-    const request: PlatformExportRequest = { platforms: ['tiktok', 'youtube'], caption: 'Hi', coverSeconds: null }
     const stop = new AbortController()
     const secondVideo = join(folder, 'Late - YouTube Shorts.mp4')
     const { copyFile, link } = fs
@@ -147,7 +243,7 @@ describe('platform files through the real engine', () => {
       vi.spyOn(fs, 'link').mockImplementation((from, to) => { if (to === secondVideo) stop.abort(); return link(from, to) })
     ]
     try {
-      await expect(exportPlatforms({ source, chosenCover: null, folder, name: 'Late', request, runEngine, signal: stop.signal }))
+      await expect(exportPlatforms({ tries: oneTry(source, null, 'Late', { platforms: ['tiktok', 'youtube'], caption: 'Hi', coverSeconds: null }), folder, runEngine, signal: stop.signal }))
         .rejects.toMatchObject({ code: 'CANCELLED' })
     } finally {
       for (const stub of stubs) stub.mockRestore()
@@ -169,7 +265,7 @@ describe('platform files through the real engine', () => {
         : rm(path, options))
     ]
     try {
-      await expect(exportPlatforms({ source, chosenCover: null, folder, name: 'Stuck', request: { platforms: ['tiktok', 'youtube'], caption: '', coverSeconds: null }, runEngine, signal: stop.signal }))
+      await expect(exportPlatforms({ tries: oneTry(source, null, 'Stuck', { platforms: ['tiktok', 'youtube'], caption: '', coverSeconds: null }), folder, runEngine, signal: stop.signal }))
         .rejects.toMatchObject({ code: 'CANCELLED' })
     } finally {
       for (const stub of stubs) stub.mockRestore()
@@ -180,7 +276,6 @@ describe('platform files through the real engine', () => {
     const source = finalRender(join(scratch, 'full drive.mp4'), 3)
     const folder = join(scratch, 'full drive')
     mkdirSync(folder)
-    const request: PlatformExportRequest = { platforms: ['tiktok', 'youtube'], caption: '', coverSeconds: null }
     const brokenVideo = join(folder, 'Full - YouTube Shorts.mp4')
     const { copyFile } = fs
     // An exFAT drive: no hard links, and it fills up while the second video is copied.
@@ -194,7 +289,7 @@ describe('platform files through the real engine', () => {
       })
     ]
     try {
-      await expect(exportPlatforms({ source, chosenCover: null, folder, name: 'Full', request, runEngine }))
+      await expect(exportPlatforms({ tries: oneTry(source, null, 'Full', { platforms: ['tiktok', 'youtube'], caption: '', coverSeconds: null }), folder, runEngine }))
         .rejects.toMatchObject({ code: 'ENOSPC' })
     } finally {
       for (const stub of stubs) stub.mockRestore()
@@ -238,7 +333,7 @@ describe('platform files through the real engine', () => {
       return link(from, to)
     })
     try {
-      await expect(exportPlatforms({ source, chosenCover: null, folder, name: 'Held', request: { platforms: ['tiktok', 'youtube'], caption: '', coverSeconds: null }, runEngine, signal: stop.signal }))
+      await expect(exportPlatforms({ tries: oneTry(source, null, 'Held', { platforms: ['tiktok', 'youtube'], caption: '', coverSeconds: null }), folder, runEngine, signal: stop.signal }))
         .rejects.toMatchObject({ code: 'CANCELLED' })
     } finally {
       stub.mockRestore()
