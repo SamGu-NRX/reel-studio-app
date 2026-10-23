@@ -1,10 +1,10 @@
 // The Reel player's work, counted rather than timed (notes/perf/player-audit.md, "Continuous checks"), so the
-// result does not depend on how fast the machine is. A probe installed before the app loads counts scrub-bar
+// result does not depend on how fast the machine is. A probe installed before the app loads counts timeline
 // writes and cover decodes, the way scripts/perf/player-probe.cjs on fork perf-player counts frames and commits.
 import { test, expect, type Page } from '@playwright/test'
 import { mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun } from './helpers'
+import { BASE, launch, makeMedia, makeReel, passFirstRun } from './helpers'
 
 declare global {
   interface Window {
@@ -16,8 +16,8 @@ function probe(): void {
   const c = (window.__perfCount = { pct: 0, decodes: [] as string[] })
   const setProperty = CSSStyleDeclaration.prototype.setProperty
   CSSStyleDeclaration.prototype.setProperty = function (this: CSSStyleDeclaration, name: string, ...rest: [string | null, string?]) {
-    // the phone's scrub bar only
-    if (name === '--pct' && this === document.querySelector<HTMLElement>('.phone input[aria-label="Position in the video"]')?.style) c.pct++
+    // the timeline's fill only
+    if (name === 'transform' && this === document.querySelector<HTMLElement>('.tl-fill')?.style) c.pct++
     return setProperty.call(this, name, ...rest)
   }
   const decode = HTMLImageElement.prototype.decode
@@ -27,12 +27,9 @@ function probe(): void {
   }
 }
 
-/** Opens the Versions sheet and plays version `n`. */
+/** Plays version `n` from its line in the notes. */
 async function watch(page: Page, n: number): Promise<void> {
-  await page.getByTestId('version-switch').click()
-  await page.getByTestId(`version-item-${n}`).locator('.vr').click()
-  await page.getByTestId(`watch-${n}`).click()
-  await expect(page.getByTestId('version-menu')).toHaveCount(0)
+  await page.getByTestId(`log-play-${n}`).click()
   await expect(page.getByTestId('player')).toHaveAttribute('src', new RegExp(`v${n}`), { timeout: 10_000 })
 }
 
@@ -45,9 +42,7 @@ test('the player writes the scrub bar at most once per presented frame and decod
     await app.context().addInitScript(probe)
     await page.reload()
     await passFirstRun(page)
-    await page.getByTestId('new-video').click()
-    await page.getByTestId('file-input').setInputFiles([media.video])
-    await expect(page.getByTestId('player')).toBeVisible({ timeout: 10 * 60_000 })
+    await makeReel(page, media.video, 10 * 60_000)
     // a second version, made by hand
     await page.getByTestId('edit-myself').click()
     await page.getByTestId('tab-captions').click()
@@ -56,7 +51,7 @@ test('the player writes the scrub bar at most once per presented frame and decod
     await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 })
     await expect(page.getByTestId('player')).toHaveAttribute('poster', /cover/) // the covers under test exist
 
-    // ---- playback: scrub-bar writes per presented video frame ----
+    // ---- playback: timeline writes per presented video frame ----
     const presented = () =>
       page.evaluate(
         () =>
@@ -79,9 +74,9 @@ test('the player writes the scrub bar at most once per presented frame and decod
     await page.evaluate(() => document.querySelector<HTMLVideoElement>('[data-testid="player"]')!.pause())
     const frames = f1 - f0
     const writes = w1 - w0
-    console.log(`scrub-bar writes ${writes} over ${frames} presented frames`)
+    console.log(`timeline writes ${writes} over ${frames} presented frames`)
     expect(frames, 'the video played').toBeGreaterThan(30)
-    expect(writes, 'scrub-bar writes per presented frame').toBeLessThanOrEqual(frames)
+    expect(writes, 'timeline writes per presented frame').toBeLessThanOrEqual(frames)
 
     // ---- version switches: a cover already seen is never decoded again ----
     await watch(page, 1)

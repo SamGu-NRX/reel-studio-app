@@ -1,6 +1,6 @@
 // Design critique flows (docs/design-critique.md): toasts that leave by themselves, the whole-window
-// drop target, the Working screen's time left and quiet Stop, the Reel screen's Instagram view, hold
-// for Original, the ⋯ menu with a confirm, keyboard shortcuts, and the connected-AI states.
+// drop target, Version 1 made on the Reel screen with a Stop that never asks, the Instagram view, holding the
+// video for the original, the ⋯ menu with a confirm, keyboard shortcuts, and the connected-AI states.
 //
 // Run: npx playwright test e2e/design.spec.ts (after npm run build). Same env as smoke.spec.ts.
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
@@ -62,38 +62,32 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await expect(page.getByTestId('drop-overlay')).toHaveCount(0)
   await dropOnWindow(page, [media.video, media.picture])
 
-  // ---- Working: first frame, time left, a quiet Stop that asks first ----
-  await expect(page.getByText('Making your reel')).toBeVisible()
-  await expect(page.getByTestId('working-frame')).toBeVisible({ timeout: 60_000 })
+  // ---- Version 1 on the Reel screen: the original plays, tagged; Stop pauses without asking; Resume ----
+  await expect(page.getByTestId('note-progress')).toContainText('Making Version 1')
+  await expect(page.getByTestId('first-tag')).toHaveText('Original', { timeout: 60_000 })
   // The picture went to the Library; that success toast leaves by itself and has no button.
   const toast = page.getByTestId('toast')
   await expect(toast).toContainText('Added 1 picture to your Library.')
   await expect(toast.locator('button')).toHaveCount(0)
   await expect(toast).toHaveCount(0, { timeout: 7000 })
   await page.getByTestId('stop').click()
-  await expect(page.getByTestId('confirm')).toContainText('Stop making this reel?')
-  await shot(page, 'd-02-stop-confirm')
-  // Tab stays in the dialog (aria-modal): it used to walk into the page behind it.
-  for (let i = 0; i < 4; i++) {
-    await page.keyboard.press('Tab')
-    await expect(page.getByTestId('confirm').locator(':focus')).toHaveCount(1)
-  }
-  await page.keyboard.press('Escape') // Esc = the safe choice: keep going
-  await expect(page.getByTestId('confirm')).toHaveCount(0)
-  await expect(page.getByText('Making your reel')).toBeVisible()
+  await expect(page.getByTestId('confirm')).toHaveCount(0) // Stop never asks: it never destroys anything
+  await expect(page.getByTestId('first-paused')).toContainText('Paused')
+  await shot(page, 'd-02-paused')
+  await page.getByTestId('resume').click()
+  await expect(page.getByTestId('note-progress')).toContainText('Making Version 1')
   // Time left shows once there is enough to go on (the stand-in engine can finish before that).
-  const left = page.getByTestId('time-left').filter({ hasText: /left|Almost done/ })
-  await expect(left.or(page.getByTestId('player'))).toBeVisible({ timeout: 10 * 60_000 })
-  if (await left.isVisible()) await shot(page, 'd-03-working-time-left')
+  const left = page.getByTestId('note-time-left').filter({ hasText: /left|Almost done|longer/ })
+  await expect(left.or(page.getByTestId('log-play-1'))).toBeVisible({ timeout: 10 * 60_000 })
+  if (await left.isVisible()) await shot(page, 'd-03-making-time-left')
 
-  // ---- Reel: the finish moment (plays muted with "Tap for sound") ----
-  await expect(page.getByTestId('player')).toBeVisible({ timeout: 10 * 60_000 })
-  await expect(page.getByTestId('tap-for-sound')).toBeVisible()
+  // ---- Reel: Version 1 lands and plays, with sound ----
+  await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 10 * 60_000 })
+  await expect.poll(() => page.evaluate(() => (document.querySelector('[data-testid=player]') as HTMLVideoElement).muted)).toBe(false)
   const fb = await app.evaluate(() => (globalThis as any).__reelFeedback)
   expect(fb.progress[fb.progress.length - 1]).toBe(-1) // taskbar progress cleared when done
 
   // Space plays and pauses.
-  await page.getByTestId('tap-for-sound').click()
   await page.locator('body').click({ position: { x: 600, y: 10 } }).catch(() => {})
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
   const paused = () => page.evaluate(() => (document.querySelector('[data-testid=player]') as HTMLVideoElement).paused)
@@ -110,13 +104,17 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await page.getByTestId('view-instagram').click()
   await expect(page.getByTestId('ig-overlay')).toBeVisible()
 
-  // Hold for original.
-  const hold = page.getByTestId('hold-original')
-  await hold.hover()
+  // Press and hold the video for the original; a click still only plays and pauses.
+  await page.getByTestId('player').hover()
   await page.mouse.down()
   await expect(page.getByTestId('original-video')).toHaveClass(/on/)
   await shot(page, 'd-05-hold-original')
   await page.mouse.up()
+  await expect(page.getByTestId('original-video')).not.toHaveClass(/on/)
+  // and O does the same from the keyboard
+  await page.keyboard.down('o')
+  await expect(page.getByTestId('original-video')).toHaveClass(/on/)
+  await page.keyboard.up('o')
   await expect(page.getByTestId('original-video')).not.toHaveClass(/on/)
 
   // ---- drawer: Esc closes, Ctrl/Cmd+Z undoes ----
@@ -141,7 +139,7 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await page.getByTestId('more').click()
   await shot(page, 'd-07-more-menu')
   await page.getByTestId('delete').click()
-  await expect(page.getByTestId('confirm')).toContainText('Delete this video?')
+  await expect(page.getByTestId('confirm')).toContainText('Delete this reel?')
   await expect(page.getByTestId('confirm-no')).toBeFocused() // the safe choice
   await shot(page, 'd-08-delete-confirm')
   await page.getByTestId('confirm-no').click()
@@ -208,7 +206,7 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await expect.poll(paused, { timeout: 1000 }).toBe(!wasPaused)
   expect(Date.now() - opened).toBeLessThan(1000)
   await expect(page.getByTestId('note-input')).toBeDisabled()
-  await expect(page.getByTestId('note-input')).toHaveAttribute('placeholder', 'Checking for your AI editor…')
+  await expect(page.getByTestId('note-input')).toHaveAttribute('placeholder', 'Checking for your editor…')
   await expect(page.getByTestId('composer-connect')).toHaveCount(0)
   // A picture dropped on the note box meanwhile is held: nothing can be sent until the check answers... (polish-pass)
   await dropFiles(page, 'note-drop', [media.picture])

@@ -1,14 +1,12 @@
 import { test, expect } from '@playwright/test'
-import { launch, makeMedia, passFirstRun } from './helpers'
+import { launch, makeMedia, makeReel, passFirstRun } from './helpers'
 
 test('Home reopens a running note or rerender on the Reel screen', async () => {
   const media = makeMedia()
   const { app, page } = await launch()
   try {
     await passFirstRun(page)
-    await page.getByTestId('new-video').click()
-    await page.getByTestId('file-input').setInputFiles([media.video])
-    await expect(page.getByTestId('player')).toBeVisible()
+    await makeReel(page, media.video)
     const detail = await page.evaluate(async () => {
       const [p] = await window.reel.projects.list()
       return window.reel.projects.get(p.slug)
@@ -33,31 +31,15 @@ test('Home reopens a running note or rerender on the Reel screen', async () => {
       await expect(page.getByTestId('note-progress')).toContainText('Reading your note')
     }
 
-    // Home can still have a working summary after the note has finished.
+    // Home can still have a working summary after the note has finished: the card opens the Reel screen, ready.
+    // (Home no longer reads a reel before opening it, so the old race with a slow read is gone.)
     await app.evaluate(({ ipcMain }, d) => {
-      let gets = 0
       ipcMain.removeHandler('projects:get')
-      ipcMain.handle('projects:get', () => {
-        if (++gets > 2) throw new Error('Home opened Working before Reel')
-        return { ok: true, value: d }
-      })
+      ipcMain.handle('projects:get', () => ({ ok: true, value: d }))
     }, detail)
     await page.getByTestId('nav-home').click()
     await page.getByTestId('project-card').click()
     await expect(page.getByTestId('export')).toBeEnabled()
-
-    await app.evaluate(({ ipcMain }, d) => {
-      ipcMain.removeHandler('projects:get')
-      ipcMain.handle('projects:get', async () => {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        return { ok: true, value: d }
-      })
-    }, detail)
-    await page.getByTestId('nav-home').click()
-    await page.getByTestId('project-card').click()
-    await page.getByTestId('new-video').click()
-    await page.waitForTimeout(750)
-    await expect(page.getByTestId('drop-zone')).toBeVisible()
   } finally {
     await app.close()
   }

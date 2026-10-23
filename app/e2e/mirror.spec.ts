@@ -9,7 +9,7 @@
 import { test, expect } from '@playwright/test'
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ROOT, SHOTS, launch, makeMedia, passFirstRun } from './helpers'
+import { ROOT, SHOTS, launch, makeMedia, makeReel, passFirstRun } from './helpers'
 
 const OUT = process.env.REELSTUDIO_E2E_SHOTS ?? SHOTS
 
@@ -28,9 +28,7 @@ test('flip a mirrored take from Edit it myself', async () => {
   const media = makeMedia()
   const { app, page } = await launch()
   await passFirstRun(page)
-  await page.getByTestId('new-video').click()
-  await page.getByTestId('file-input').setInputFiles([media.video])
-  await expect(page.getByTestId('player')).toBeVisible({ timeout: 15 * 60_000 })
+  await makeReel(page, media.video, 15 * 60_000)
   expect(project().sources[0].mirror).toBeUndefined()
 
   await page.getByTestId('edit-myself').click()
@@ -43,7 +41,7 @@ test('flip a mirrored take from Edit it myself', async () => {
   await expect(page.getByTestId('make-version')).toBeEnabled()
   await snap('mirror-02-drawer-on')
   await page.getByTestId('make-version').click()
-  await expect(page.getByTestId('versions').getByText('Version 2')).toBeVisible({ timeout: 10 * 60_000 })
+  await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 })
   await expect(page.getByText(/flipped the picture/).first()).toBeVisible()
   const p = project()
   expect(p.sources[0].mirror).toBe(true)
@@ -59,7 +57,7 @@ test('flip a mirrored take from Edit it myself', async () => {
   await expect(page.getByTestId('mirror-on')).toBeChecked()
   await page.getByTestId('mirror-on').uncheck()
   await page.getByTestId('make-version').click()
-  await expect(page.getByTestId('versions').getByText('Version 3')).toBeVisible({ timeout: 10 * 60_000 })
+  await expect(page.getByTestId('log-play-3')).toBeVisible({ timeout: 10 * 60_000 })
   await expect(page.getByText(/picture back the way you filmed it/).first()).toBeVisible()
   expect('mirror' in project().sources[0]).toBe(false)
   await app.close()

@@ -1,15 +1,15 @@
 // Pictures on a note (0.1.2 F2), end to end in the built app with the stand-in engine (dev/fake-engine,
-// whose `attach` takes JPG/PNG only) and the stand-in AI editor connected: in the change pop-up under the
-// player, a plain text paste stays text, a pasted screenshot (bytes, no file), a file dropped on the pop-up
-// (and a video dropped there does NOT start a new reel), the paperclip, at most four, remove, send, the
-// "you" bubble with its thumbnails and the note's mark on the scrub bar.
+// whose `attach` takes JPG/PNG only) and the stand-in AI editor connected: in the note box in the notes
+// column, a plain text paste stays text, a pasted screenshot (bytes, no file), a file dropped on the box
+// (and a video dropped there does NOT start a new reel), the paperclip, at most four, remove, send, and the
+// "you" bubble with its moment and thumbnails.
 //
 // Run: npm run build && npx playwright test e2e/attach.spec.ts
 import { test, expect } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, chooseClaudeCode, dropFiles, launch, makeMedia, passFirstRun, shot, openSettings } from './helpers'
+import { BASE, chooseClaudeCode, dropFiles, launch, makeMedia, makeReel, passFirstRun, shot, openSettings } from './helpers'
 
 const MINE = mkdtempSync(join(BASE, 'attach-'))
 const ROOT = join(MINE, 'Documents', 'Reel Studio')
@@ -29,9 +29,7 @@ test('note attachments: paste, drop, paperclip, chips, send', async () => {
   await openSettings(page)
   expect(await chooseClaudeCode(page)).toBe(true)
   await page.getByTestId('nav-home').click()
-  await page.getByTestId('new-video').click()
-  await page.getByTestId('file-input').setInputFiles([media.video])
-  await expect(page.getByTestId('player')).toBeVisible({ timeout: 240_000 })
+  await makeReel(page, media.video)
   expect(projects()).toHaveLength(1)
   const slug = projects()[0]
   // the reel autoplays on arrival: hold it at 0:00, so the moment and its words are the same every run
@@ -40,14 +38,14 @@ test('note attachments: paste, drop, paperclip, chips, send', async () => {
     v.pause()
     v.currentTime = 0
   })
-  await expect(page.getByTestId('change-at')).toContainText('0:00')
-  await page.getByTestId('change-at').click()
-  // the words on screen at the playhead, read from this render's timeline
-  await expect(page.getByTestId('change-context')).toContainText('Around "')
+  // the moment chip shows the playhead; one click attaches it
+  await expect(page.getByTestId('moment-suggest')).toContainText('0:00')
+  await page.getByTestId('moment-suggest').click()
+  await expect(page.getByTestId('moment-chip')).toContainText('0:00')
 
   // ---- a plain text paste is left to the box ----
   const handledText = await page.evaluate(() => {
-    const box = document.querySelector('[data-testid="change-input"]') as HTMLTextAreaElement
+    const box = document.querySelector('[data-testid="note-input"]') as HTMLTextAreaElement
     const dt = new DataTransfer()
     dt.setData('text/plain', 'make it louder')
     return !box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
@@ -60,7 +58,7 @@ test('note attachments: paste, drop, paperclip, chips, send', async () => {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
     const dt = new DataTransfer()
     dt.items.add(new File([bytes], 'image.png', { type: 'image/png' }))
-    const box = document.querySelector('[data-testid="change-input"]') as HTMLTextAreaElement
+    const box = document.querySelector('[data-testid="note-input"]') as HTMLTextAreaElement
     return !box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
   }, png)
   expect(handledPic).toBe(true)
@@ -68,12 +66,12 @@ test('note attachments: paste, drop, paperclip, chips, send', async () => {
   await expect(page.getByTestId('note-attachment').first()).toContainText('image.png')
   await expect(page.getByTestId('note-attachment').first().locator('img')).toBeVisible()
 
-  // ---- a file dropped on the pop-up is attached; nothing new starts ----
-  await dropFiles(page, 'change-pop', [pics[1]])
+  // ---- a file dropped on the note box is attached; nothing new starts ----
+  await dropFiles(page, 'note-drop', [pics[1]])
   await expect(page.getByTestId('note-attachment')).toHaveCount(2)
   await expect(page.getByTestId('drop-overlay')).toHaveCount(0)
-  // a video dropped on the pop-up is NOT a new reel (the stand-in engine refuses it as an attachment)
-  await dropFiles(page, 'change-pop', [media.video])
+  // a video dropped on the note box is NOT a new reel (the stand-in engine refuses it as an attachment)
+  await dropFiles(page, 'note-drop', [media.video])
   await expect(page.getByTestId('toast')).toContainText("That file type isn't supported")
   expect(projects()).toEqual([slug])
   await expect(page.getByTestId('player')).toBeVisible()
@@ -83,11 +81,11 @@ test('note attachments: paste, drop, paperclip, chips, send', async () => {
   await app.evaluate(({ dialog }, f) => {
     ;(dialog as any).showOpenDialog = async () => ({ canceled: false, filePaths: f })
   }, [pics[2], pics[0]])
-  await page.getByTestId('change-attach').click()
+  await page.getByTestId('note-attach').click()
   await expect(page.getByTestId('note-attachment')).toHaveCount(4)
   await shot(page, 'attach-01-chips')
   // a fifth does not fit
-  await page.getByTestId('change-attach').click()
+  await page.getByTestId('note-attach').click()
   await expect(page.getByTestId('toast')).toContainText('up to 4 files')
   await expect(page.getByTestId('note-attachment')).toHaveCount(4)
   await page.getByTestId('toast').getByRole('button', { name: 'Close' }).click()
@@ -99,31 +97,29 @@ test('note attachments: paste, drop, paperclip, chips, send', async () => {
   await expect.poll(() => assetsOf(slug).filter((f) => !f.endsWith('.json')).length).toBe(3)
   expect(assetsOf(slug).filter((f) => f.endsWith('.attach.json'))).toHaveLength(3)
 
-  // ---- a typed time past the end is caught in the pop-up, not sent ----
-  await page.getByTestId('change-input').fill('At 9:00: zoom in here')
-  await page.getByTestId('change-send').click()
+  // ---- a typed time past the end is caught in the note box, not sent, and nothing is lost ----
+  await page.getByTestId('note-input').fill('At 9:00: zoom in here')
+  await page.getByTestId('send').click()
   await expect(page.getByTestId('change-alert')).toContainText("There's no 9:00 in this video")
-  await page.getByTestId('change-input').fill('')
+  await expect(page.getByTestId('note-attachment')).toHaveCount(3)
+  await expect(page.getByTestId('moment-chip')).toContainText('0:00')
+  await page.getByTestId('note-input').fill('')
 
-  // ---- send: a note can be only files, at this moment; the bubble shows them; the moment gets a mark ----
-  await expect(page.getByTestId('change-send')).toBeEnabled()
-  await page.getByTestId('change-send').click()
-  await expect(page.getByTestId('change-pop')).toHaveCount(0)
-  const bubble = page.getByTestId('bubble-you').last()
+  // ---- send: a note can be only files, at this moment; the bubble shows them ----
+  await expect(page.getByTestId('send')).toBeEnabled()
+  await page.getByTestId('send').click()
+  await expect(page.getByTestId('moment-chip')).toHaveCount(0)
+  const bubble = page.getByTestId('log-note').last()
   // the person sees the time and their words; the AI reads the words on screen by id
-  await expect(bubble).toContainText(/^0:00 Put this here"[^"]+"$/)
+  await expect(bubble.locator('.bubble')).toHaveText(/^0:00Put this here$/)
   await expect(bubble).not.toContainText('w0')
   // the moment is stored with the word ids main read off this render (the AI's text is built from it)
   const sent = JSON.parse(readFileSync(join(ROOT, 'Projects', slug, 'app.json'), 'utf8')).chat.filter((m: { from: string }) => m.from === 'you').at(-1)
   expect([sent.text, sent.moment.at, sent.moment.words]).toEqual(['Put this here', 0, ['w0', 'w1', 'w2']])
-  await expect(bubble.getByTestId('bubble-attachments').locator('img')).toHaveCount(3)
-  // Whatever the stand-in AI answers, it makes no new version, so the note's mark says it didn't work.
+  await expect(bubble.locator('.q-att img')).toHaveCount(3)
   await expect(page.getByTestId('note-progress')).toHaveCount(0, { timeout: 60_000 })
-  await expect(page.getByTestId('scrub-mark')).toHaveAttribute('data-state', 'failed')
-  // a screen reader hears the state apart from the request; the mark sits where its middle word plays (w1)
-  await expect(page.getByTestId('scrub-mark')).toHaveAttribute('aria-label', "Didn't work, 0:01: Put this here")
   // the next note starts empty
-  await page.getByTestId('change-at').click()
+  await page.getByTestId('moment-suggest').click()
   await expect(page.getByTestId('note-attachment')).toHaveCount(0)
   await shot(page, 'attach-02-sent')
   await app.close()

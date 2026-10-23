@@ -6,7 +6,7 @@
 import { test, expect, type ElectronApplication } from '@playwright/test'
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, CLAUDE_CODE_LABEL, CLAUDE_CODE_MISNAMED, USE_CLAUDE_CODE, launch, makeMedia, passFirstRun, shot, openSettings } from './helpers'
+import { BASE, CLAUDE_CODE_LABEL, CLAUDE_CODE_MISNAMED, USE_CLAUDE_CODE, launch, makeMedia, makeReel, passFirstRun, shot, openSettings } from './helpers'
 
 // Its own Reel Studio folder: the smoke test leaves a song in the shared Library, and this test
 // needs the "No music yet" state.
@@ -42,22 +42,19 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   // Sidebar says plainly that no AI is on, and is a way in.
   await expect(page.getByTestId('ai-status')).toHaveText('No AI editor')
 
-  await page.getByTestId('new-video').click()
-  await page.getByTestId('file-input').setInputFiles([media.video])
-  await expect(page.getByTestId('player')).toBeVisible({ timeout: 10 * 60_000 })
+  await makeReel(page, media.video, 10 * 60_000)
   const aiSource = await page.evaluate(() => window.reel.app.info().then((i) => i.ai))
   const noAi = aiSource === 'mock' || !(await page.evaluate(() => window.reel.ai.active().then((a) => a.connected && a.id !== 'none')))
   expect(noAi).toBe(true)
 
-  // ---- 1. honest: Version 1 says it is a simple cut, and its rows say what changed ----
+  // ---- 1. honest: Version 1 says it is a basic version, and nobody says "I" ----
   await expect(page.getByTestId('log-video')).toContainText('Your video')
-  await page.getByTestId('what-changed-1').click()
-  await expect(page.locator('.detail').first()).toContainText('No AI editor yet, so I made a simple cut.')
+  await expect(page.locator('.nt-res[data-v="1"]')).toContainText('Basic version: pauses and retakes removed')
   // it offers what an AI would add, and never claims to have done it
   await expect(page.getByTestId('chat')).not.toContainText(/Kept your best takes|picked your best takes/i)
   await expect(page.getByTestId('chat')).not.toContainText('Wrote your post caption')
   await expect(page.getByTestId('edit-myself')).toContainText('Edit it myself')
-  await expect(page.getByTestId('version-switch')).toContainText('Version 1')
+  await expect(page.getByTestId('version-on-screen')).toContainText('Version 1')
   await shot(page, 'ux-01-reel-no-ai')
 
   // ---- 2. the post caption: typed by you under Edit it myself, never "written" for you; no new version ----
@@ -67,26 +64,22 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await shot(page, 'ux-02-post-editor')
   await page.getByTestId('make-version').click()
   await expect.poll(() => projectJson().post?.caption).toBe('Why mornings make me a better editor')
-  await expect(page.getByTestId('version-switch')).toContainText('Version 1')
+  await expect(page.getByTestId('version-on-screen')).toContainText('Version 1')
   if (await page.getByTestId('drawer').isVisible()) await page.getByTestId('drawer-close').click()
 
-  // ---- 3. no AI: nothing offers an AI change; one line in the note box is the way to connect ----
+  // ---- 3. no AI: nothing offers an AI change; the editor picker sits where the note box was ----
   await expect(page.getByTestId('note-input')).toHaveCount(0)
   await expect(page.getByTestId('moment-suggest')).toHaveCount(0)
-  await page.keyboard.press('n') // the shortcut opens nothing either
-  await expect(page.getByTestId('note-input')).toHaveCount(0)
+  await page.keyboard.press('c') // pointing at a spot opens nothing either
+  await expect(page.getByTestId('pointer')).toHaveCount(0)
+  const picker = page.getByTestId('composer-connect')
+  await expect(picker).toContainText('Connect an editor to leave notes')
+  await expect(picker.getByTestId('signin-chatgpt')).toBeVisible()
+  await expect(picker.getByTestId('claude-key-toggle')).toHaveText('Use an Anthropic API key (advanced)')
   await shot(page, 'ux-03-no-ai-connect')
-  await page.getByTestId('composer-connect').click()
-  await expect(page.getByTestId('connect-screen')).toBeVisible()
-  await expect(page.getByTestId('signin-chatgpt')).toBeVisible()
-  await expect(page.getByTestId('claude-key-toggle')).toHaveText('Use an Anthropic API key (advanced)')
-  await expect(page.getByTestId('without-ai')).toContainText('Without AI')
-  await shot(page, 'ux-05-connect')
-  await page.getByTestId('claude-key-toggle').click()
-  await expect(page.getByTestId('claude-key-input')).toBeVisible()
+  await picker.getByTestId('claude-key-toggle').click()
+  await expect(picker.getByTestId('claude-key-input')).toBeVisible()
   await shot(page, 'ux-06-connect-claude-key')
-  await page.getByText('Back to my video').click()
-  await expect(page.getByTestId('player')).toBeVisible()
 
   // ---- 4. subtitles under Edit it myself: a quick preview first, then the version, said in plain words ----
   await page.getByTestId('edit-myself').click()
@@ -111,14 +104,10 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 })
   const style = projectJson().captions.style
   expect([style.size, style.position, style.color, !!style.box]).toEqual([126, 0.66, '#FFD60A', false])
-  // The notes log and the Versions sheet say what changed (critique 1.8).
+  // The notes log says what changed (critique 1.8): the version's line, open on the newest.
   await expect(page.getByTestId('log-hand').last()).toContainText('You changed')
-  await page.getByTestId('what-changed-2').click()
+  await expect(page.locator('.nt-res[data-v="2"]')).toContainText(/bigger yellow subtitles, moved up/i)
   await expect(page.locator('.nt-res[data-v="2"] + .acc')).toContainText(/Subtitle/)
-  await page.getByTestId('version-switch').click()
-  await expect(page.getByTestId('version-item-2')).toContainText(/bigger yellow subtitles, moved up/i)
-  await page.keyboard.press('Escape')
-  await expect(page.getByTestId('version-menu')).toHaveCount(0)
 
   // ---- 5. a song: Music under Edit it myself, the picker, a new version with the song ----
   await answerFilePicker(app, media.song)

@@ -166,13 +166,13 @@ TAKES.forEach((take, i) => {
         await page.waitForTimeout(4000)
       }
       await page.getByTestId('nav-home').click()
-      await page.getByTestId('new-video').click()
+      await page.getByTestId('new-reel').click()
       const t0 = Date.now()
-      await dropFiles(page, 'drop-zone', [take])
-      await expect(page.getByText('Making your reel')).toBeVisible()
+      await dropFiles(page, 'planned-stage', [take])
+      await expect(page.getByTestId('note-progress')).toContainText('Making Version 1')
       let n = 0
-      const look = page.getByTestId('first-look')
-      while (!(await page.getByTestId('player').isVisible())) {
+      const look = page.getByTestId('first-tag').filter({ hasText: 'First look' })
+      while (!(await page.getByTestId('log-play-1').isVisible())) {
         if (await page.getByTestId('screen-error').isVisible()) throw new Error('screen error: ' + (await page.getByTestId('screen-error').innerText()))
         if (Date.now() - t0 > 60 * 60_000) throw new Error('first edit took over an hour')
         if (timings.firstLookSec === undefined && (await look.isVisible())) {
@@ -180,7 +180,7 @@ TAKES.forEach((take, i) => {
           result.firstLookLabel = await look.innerText()
           await page.waitForTimeout(2500)
           result.firstLookVideo = await page.evaluate(() => {
-            const v = document.querySelector('[data-testid=first-look-video]') as HTMLVideoElement | null
+            const v = document.querySelector('[data-testid=player]') as HTMLVideoElement | null
             return v ? { src: v.currentSrc, readyState: v.readyState, t: v.currentTime, w: v.videoWidth, h: v.videoHeight } : null
           })
           await snap(page, `${i}-01-first-look`)

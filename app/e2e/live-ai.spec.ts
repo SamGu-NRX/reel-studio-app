@@ -31,15 +31,15 @@ test('first edit and a note with a live AI provider', async () => {
   await page.getByTestId('nav-library').click()
   await page.getByTestId('file-input').setInputFiles([media.song])
   await page.getByTestId('nav-home').click()
-  await page.getByTestId('new-video').click()
-  await page.getByTestId('file-input').setInputFiles([media.video])
-  await expect(page.getByText('Making your reel')).toBeVisible()
+  await page.getByTestId('new-reel').click()
+  await page.getByTestId('planned-stage').getByTestId('file-input').setInputFiles([media.video])
+  await expect(page.getByTestId('note-progress')).toContainText('Making Version 1')
   for (let i = 0; i < 6; i++) {
     await page.waitForTimeout(20_000)
-    if (await page.getByTestId('player').isVisible()) break
+    if (await page.getByTestId('log-play-1').isVisible()) break
     await shot(page, `live/02-working-${i}`)
   }
-  await expect(page.getByTestId('player')).toBeVisible({ timeout: 45 * 60_000 })
+  await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 45 * 60_000 })
   await shot(page, 'live/03-reel')
   await page.getByTestId('edit-myself').click()
   await page.getByTestId('tab-broll').click()
