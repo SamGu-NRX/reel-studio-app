@@ -191,9 +191,9 @@ test('make a reel end to end', async () => {
 
   ;({ app, page } = await launch())
   await expect(page.getByText('Your videos')).toBeVisible()
-  await expect(page.locator('.badge.interrupted')).toBeVisible()
+  await expect(page.locator('[data-testid="project-card"][data-state="paused"]')).toBeVisible()
   await shot(page, '17-home-after-quit')
-  await page.locator('.card', { has: page.locator('.badge.interrupted') }).click()
+  await page.locator('[data-testid="project-card"][data-state="paused"]').click()
   await expect(page.getByText('This video is paused')).toBeVisible()
   await shot(page, '18-working-stopped')
   await page.getByTestId('resume').click()
@@ -224,7 +224,7 @@ test('a force quit mid-job recovers on the next start', async () => {
 
   ;({ app, page } = await launch())
   await expect(page.getByTestId('project-card')).toHaveCount(before + 1)
-  const stopped = page.locator('.card', { has: page.locator('.badge.interrupted') })
+  const stopped = page.locator('[data-testid="project-card"][data-state="paused"]')
   await expect(stopped).toHaveCount(1)
   await stopped.click()
   await page.getByTestId('resume').click()
