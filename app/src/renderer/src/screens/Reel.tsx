@@ -734,7 +734,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                       // from the keyboard the range keeps growing with Shift and the arrows, so focus stays put
                       if (!byKeyboard()) noteField.current?.focus()
                     }}
-                    onPlay={watch}
+                    onPlay={(n) => !drawer && watch(n)}
                   />
                   <TransportRow transport={transport} playhead={playhead}>
                     <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
