@@ -56,13 +56,30 @@ export function wordsAt(placed: PlacedWord[], t: number, radius = 1.1): MomentWo
 // The quote never carries the parentheses or quotes that delimit it in the AI's note text.
 const unquote = (w: string): string => w.replace(/["()]/g, '')
 
-export function noteMoment(at: number, version: number, words: MomentWord[]): NoteMoment {
-  return { at, version, words: words.map((x) => x.id), quote: words.map((x) => unquote(x.w)).join(' ') }
+export function noteMoment(at: number, version: number, words: MomentWord[], to?: number): NoteMoment {
+  return { at, ...(to !== undefined ? { to } : {}), version, words: words.map((x) => x.id), quote: words.map((x) => unquote(x.w)).join(' ') }
 }
+
+/** The words that play between `from` and `to`: a range dragged on the timeline. */
+export function wordsBetween(placed: PlacedWord[], from: number, to: number): MomentWord[] {
+  const out: MomentWord[] = []
+  const seen = new Set<string>()
+  for (const p of placed) {
+    if (p.s >= to || p.e <= from || seen.has(p.id)) continue
+    seen.add(p.id)
+    out.push({ id: p.id, w: p.w })
+  }
+  return out
+}
+
+/** "0:12" or "0:12–0:15". */
+export const momentLabel = (m: { at: number; to?: number }): string => (m.to !== undefined ? `${clock(m.at)}–${clock(m.to)}` : clock(m.at))
 
 /** What the AI reads for a note: `At 0:14 (around "you don't need a mixer", words w80, w81): cut this part`. */
 export function aiNoteText(text: string, moment?: NoteMoment): string {
-  return moment ? `At ${clock(moment.at)} (around "${unquote(moment.quote)}", words ${moment.words.join(', ')}): ${text}` : text
+  if (!moment) return text
+  const when = moment.to !== undefined ? `From ${clock(moment.at)} to ${clock(moment.to)}` : `At ${clock(moment.at)}`
+  return `${when} (around "${unquote(moment.quote)}", words ${moment.words.join(', ')}): ${text}`
 }
 
 // transcript word ids: project.schema.json wordId (^w[0-9]+$), with a length bound
@@ -76,9 +93,10 @@ export function parseMoment(x: unknown): NoteMoment {
     Number.isInteger(m.version) && (m.version as number) >= 0 &&
     Array.isArray(m.words) && m.words.length > 0 && m.words.length <= 200 &&
     m.words.every((w) => typeof w === 'string' && WORD_ID.test(w)) &&
-    typeof m.quote === 'string' && m.quote.length <= 2000
+    typeof m.quote === 'string' && m.quote.length <= 2000 &&
+    (m.to === undefined || (typeof m.to === 'number' && Number.isFinite(m.to) && m.to > (m.at as number)))
   if (!ok) throw new Error(`not a note moment: ${JSON.stringify(x)?.slice(0, 200)}`)
-  return { at: m.at as number, version: m.version as number, words: m.words as string[], quote: m.quote as string }
+  return { at: m.at as number, ...(m.to !== undefined ? { to: m.to as number } : {}), version: m.version as number, words: m.words as string[], quote: m.quote as string }
 }
 
 /** "At 1:00: zoom in" typed into the box: that time wins over the playhead, and is taken off the text. */
@@ -104,8 +122,8 @@ export async function momentRoute(typed: string, isSetting: (words: string) => P
   return (await isSetting(typed.trim())) ? 'fast' : 'moment'
 }
 
-export const NO_TIMELINE = "I can't tell which words play here in this version. Choose Whole reel, or switch to your newest version."
-export const noSpeech = (at: number): string => `I can't tell which words play at ${clock(at)}. Pick a moment where you're talking, or choose Whole reel.`
+export const NO_TIMELINE = "The words in this version can't be read. Remove the moment to ask about the whole reel, or switch to the newest version."
+export const noSpeech = (at: number): string => `No words play at ${clock(at)}. Pick a moment where you're talking, or remove the moment to ask about the whole reel.`
 
 /**
  * A parsed moment against the render it names (`timeline` null: that version or its timeline is
@@ -116,9 +134,10 @@ export const noSpeech = (at: number): string => `I can't tell which words play a
 export function checkMoment(m: NoteMoment, timeline: { duration: number; words: PlacedWord[] } | null): { moment: NoteMoment } | { refuse: string } {
   if (!timeline) return { refuse: NO_TIMELINE }
   if (m.at > timeline.duration) return { refuse: `There's no ${clock(m.at)} in this video. It's ${clock(timeline.duration)} long.` }
-  const words = wordsAt(timeline.words, m.at)
+  const to = m.to === undefined ? undefined : Math.min(m.to, timeline.duration)
+  const words = to === undefined ? wordsAt(timeline.words, m.at) : wordsBetween(timeline.words, m.at, to)
   if (!words.length) return { refuse: noSpeech(m.at) }
-  return { moment: noteMoment(m.at, m.version, words) }
+  return { moment: noteMoment(m.at, m.version, words, to) }
 }
 
 // The note text an earlier build of this branch wrote, with the moment inside it. Read for marks
