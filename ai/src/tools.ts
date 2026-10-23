@@ -1243,9 +1243,15 @@ const tools: ToolDef[] = [
       }
       if (args.treatment === 'text-pop' && !asset && !args.params?.text) throw new ToolInputError('text-pop needs params.text');
       let id = '';
+      // A match clip's commentary can start seconds in: the hook title on its first word leads in from the
+      // first frame, so the opening is never bare.
+      let leadIn = 0.13;
+      if (ctx.match && args.treatment === 'text-pop' && ctx.project && keptWords(t, ctx.project.cut.keep)[0]?.id === args.anchor.from) {
+        leadIn = Math.max(leadIn, approxOutputTimes(t, ctx.project.cut.keep, ctx.project.cut.gapCap).get(args.anchor.from)?.s ?? 0);
+      }
       await mutate(ctx, 'broll', (p) => {
         id = nextBrollId(p);
-        const b: Broll = { id, anchor: { from: args.anchor.from, to: args.anchor.to }, leadIn: 0.13, treatment: args.treatment, asset, params: stripNulls(args.params ?? {}) };
+        const b: Broll = { id, anchor: { from: args.anchor.from, to: args.anchor.to }, leadIn, treatment: args.treatment, asset, params: stripNulls(args.params ?? {}) };
         checkBrollAssets(ctx, b);
         p.broll.push(b);
       });

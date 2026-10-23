@@ -57,6 +57,17 @@ describe('a match edit', () => {
     expect((await loadProject(ctx.projectDir)).cut.keep).toEqual([{ source: 's1', start: 0, end: 30 }]);
   });
 
+  it('leads the hook title on the first kept word in from the first frame', async () => {
+    const ctx = await matchCtx();
+    const p = await loadProject(ctx.projectDir);
+    // the first line ends at 3.44 s and w9 starts the second at 4.42 s: from 3.5 s, w9 plays first, at 0.92 s
+    p.cut.keep = [{ source: 's1', start: 3.5, end: 30 }];
+    await saveProject(ctx.projectDir, p);
+    await executeTool(ctx, 'add_broll', { anchor: { from: 'w9', to: 'w11' }, treatment: 'text-pop', params: { text: 'Hook', style: 'label' } });
+    await executeTool(ctx, 'add_broll', { anchor: { from: 'w10', to: 'w11' }, treatment: 'text-pop', params: { text: 'Later', style: 'label' } });
+    expect((await loadProject(ctx.projectDir)).broll.map((b) => b.leadIn)).toEqual([0.92, 0.13]);
+  });
+
   it('aims punch-ins at the centre of the frame', async () => {
     const ctx = await matchCtx();
     expect((await executeTool(ctx, 'set_zoom', { zooms: [{ anchor: { from: 'w1', to: 'w3' }, scale: 1.15 }] })).isError).toBe(false);
