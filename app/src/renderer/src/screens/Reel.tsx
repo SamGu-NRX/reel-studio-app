@@ -440,7 +440,13 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
 
   const retry = (e: LogEntry) => {
     if (e.ask.kind !== 'note') return
-    const r = planned ? reel.projects.script(slug, e.ask.text).then(() => load()) : note(e.ask.text, undefined, e.ask.moment ?? undefined)
+    // a note that didn't finish waits at the head of the queue, with its moment and files: run it again
+    const kept = d.queue.some((q) => q.id === e.key)
+    const r = planned
+      ? reel.projects.script(slug, e.ask.text).then(() => load())
+      : kept
+        ? reel.queue.runNext(slug)
+        : note(e.ask.text, undefined, e.ask.moment ?? undefined)
     void r.catch((err) => setAlert(userMessage(err)))
   }
 
