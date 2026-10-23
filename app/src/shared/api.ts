@@ -4,6 +4,7 @@ import type { ChatAction } from './notes'
 import type { UpdateActionResult, UpdateBusy, UpdateState } from './update'
 import type { CoverCandidate } from './cover'
 import type { RenderSegment } from './moments'
+import type { Platform, PlatformExportRequest } from './platforms'
 export type { ChatAction } from './notes'
 export type { CoverCandidate } from './cover'
 
@@ -396,6 +397,11 @@ export interface ExportResult {
   caption: string
 }
 
+export interface PlatformExportResult {
+  folder: string
+  files: { platform: Platform; video: string; cover: string; captionFile: string; caption: string }[]
+}
+
 /** "Send to my phone": one network the phone could reach this computer on. */
 export interface PhoneAddress {
   address: string
@@ -515,6 +521,7 @@ export interface ReelApi {
     coverCandidates(slug: string, moments: number[], source: string): Promise<CoverCandidate[]>
     /** Stops the look, if one runs; resolves once the engine has exited. */
     stopCoverCandidates(slug: string): Promise<void>
+    exportPlatforms(slug: string, version: number, request: PlatformExportRequest): Promise<PlatformExportResult>
     remove(slug: string): Promise<void>
   }
   /** Pictures, GIFs and short clips on a note (0.1.2). Each call copies the files into the project. */

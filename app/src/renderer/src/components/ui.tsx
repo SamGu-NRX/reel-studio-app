@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { droppedPaths, reel } from '../api'
-import { Icon } from './icons'
+import { droppedPaths } from '../api'
+import { Icon, type IconName } from './icons'
 
 export function Progress({ pct, done, label }: { pct: number; done?: boolean; label?: string }) {
   return (
@@ -47,18 +47,9 @@ export function Toast({ text, kind, onClose }: { text: string; kind?: 'error' | 
   )
 }
 
-// Modals can stack (a Confirm over a dialog); the title bar stays dimmed until the last one closes.
-let openModals = 0
-
 /** A dialog. Esc and a click outside close it (when it can be closed); focus moves into it. */
 export function Modal({ children, onClose, wide, testid }: { children: ReactNode; onClose?: () => void; wide?: boolean; testid?: string }) {
   const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (openModals++ === 0) void reel.app.dimTitleBar(true)
-    return () => {
-      if (--openModals === 0) void reel.app.dimTitleBar(false)
-    }
-  }, [])
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null
     const first = ref.current?.querySelector<HTMLElement>('[data-autofocus]') ?? ref.current?.querySelector<HTMLElement>('button')
@@ -103,12 +94,27 @@ export function Confirm(props: { title: string; body: string; yes: string; no: s
   )
 }
 
-/** A small "more" menu for things that should not sit next to the main action (Delete). */
-export function MoreMenu({ items, label = 'More' }: { items: { label: string; run: () => void; danger?: boolean; testid?: string; disabled?: boolean }[]; label?: string }) {
+/**
+ * A small menu behind a button: "More" for things that should not sit next to the main action (Delete), or the
+ * other half of a split button. Focus moves into the menu when it opens; arrow keys move between items.
+ */
+export function MoreMenu({ items, label = 'More', icon = 'more', triggerClassName = 'icon-btn', testid = 'more', disabled, up }: {
+  items: { label: string; run: () => void; danger?: boolean; testid?: string; disabled?: boolean }[]
+  label?: string
+  icon?: IconName
+  triggerClassName?: string
+  testid?: string
+  disabled?: boolean
+  /** Open above the button, for a button near the bottom of the window. */
+  up?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (!open) return
+    const enabled = () => [...(ref.current?.querySelectorAll<HTMLButtonElement>('[role=menuitem]:not(:disabled)') ?? [])]
+    enabled()[0]?.focus()
     const away = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false)
     }
@@ -116,7 +122,13 @@ export function MoreMenu({ items, label = 'More' }: { items: { label: string; ru
       if (e.key === 'Escape') {
         e.stopPropagation()
         setOpen(false)
-      }
+        trigger.current?.focus()
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        const list = enabled()
+        const at = list.indexOf(document.activeElement as HTMLButtonElement)
+        list[(at + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length]?.focus()
+      } else if (e.key === 'Tab') setOpen(false)
     }
     window.addEventListener('mousedown', away)
     window.addEventListener('keydown', key, true)
@@ -127,11 +139,11 @@ export function MoreMenu({ items, label = 'More' }: { items: { label: string; ru
   }, [open])
   return (
     <div className="more" ref={ref}>
-      <button className="icon-btn" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-testid="more">
-        <Icon name="more" />
+      <button ref={trigger} className={triggerClassName} aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen((o) => !o)} data-testid={testid}>
+        <Icon name={icon} />
       </button>
       {open && (
-        <div className="more-menu" role="menu">
+        <div className={`more-menu${up ? ' up' : ''}`} role="menu" aria-label={label}>
           {items.map((it) => (
             <button
               key={it.label}
@@ -139,6 +151,8 @@ export function MoreMenu({ items, label = 'More' }: { items: { label: string; ru
               className={it.danger ? 'danger' : ''}
               disabled={it.disabled}
               onClick={() => {
+                // Back on the button first, so a dialog the item opens returns focus there when it closes.
+                trigger.current?.focus()
                 setOpen(false)
                 it.run()
               }}

@@ -67,11 +67,13 @@ import { createPidRegistry } from './orphans'
 import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
-import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord } from '../shared/api'
+import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord, PlatformExportResult, VersionInfo } from '../shared/api'
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
 import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment } from '../shared/moments'
+import { parsePlatformExportRequest } from '../shared/platforms'
+import { exportPlatforms, sweepExportStaging } from './platform-export'
 import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { displayPath } from '../shared/display-path'
@@ -436,7 +438,7 @@ function safeFileName(s: string): string {
   return t.slice(0, 80) || 'My video'
 }
 
-async function exportVersion(slug: string, n: number): Promise<ExportResult> {
+async function finishedExportVersion(slug: string, n: number): Promise<VersionInfo> {
   const dir = projectDir(slug)
   let versions = await listVersions(dir)
   let v = versions.find((x) => x.n === n) ?? versions[versions.length - 1]
@@ -445,7 +447,9 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
   if (v.draft) {
     // A preview is not the full-quality file: make it first, as a normal job (progress, Stop, and
     // nothing else can run on this video meanwhile) (review 25).
+    let stopped: AbortSignal | undefined
     jobs.start(slug, 'rerender', async (emit, signal, { id, owner }) => {
+      stopped = signal
       emit({ type: 'status', message: 'Making the full-quality video', pct: 1, phase: 'final' })
       const r: any = await runEngine(
         'render',
@@ -458,10 +462,16 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
       return { summary: '', version, chat: [] }
     })
     await jobs.forSlug(slug)?.done
+    if (stopped?.aborted) throw { code: 'CANCELLED', userMessage: 'Stopped.' }
     versions = await listVersions(dir)
     v = versions[versions.length - 1]
     if (!v || v.draft) throw { code: 'EXPORT_FAILED', userMessage: 'I could not make the full-quality video. Try Export again.' }
   }
+  return v
+}
+
+async function exportVersion(slug: string, n: number): Promise<ExportResult> {
+  const v = await finishedExportVersion(slug, n)
   const p = await readProject(slug)
   const exportsDir = binDir('exports')
   await fs.mkdir(exportsDir, { recursive: true })
@@ -803,6 +813,31 @@ function registerIpc(): void {
       exportsWriting--
     }
   })
+  // a job like any other, so the updater waits for it (main/updater.ts counts running jobs)
+  handle('projects:exportPlatforms', async (_e, slug: string, n: number, value: unknown) => {
+    const request = parsePlatformExportRequest(value)
+    if (!(await listVersions(projectDir(slug))).some((v) => v.n === n)) throw { code: 'NO_VERSION', userMessage: 'Choose an available version before exporting for platforms.' }
+    const version = await finishedExportVersion(slug, n)
+    const project = await readProject(slug)
+    const chosenCover = join(dirname(version.videoPath), 'cover.png')
+    let result: PlatformExportResult | null = null
+    let failure: unknown
+    jobs.start(slug, 'export', async (emit, signal) => {
+      emit({ type: 'status', message: 'Reading the finished video', pct: 1 })
+      try {
+        result = await exportPlatforms({
+          source: version.videoPath, chosenCover: existsSync(chosenCover) ? chosenCover : null, folder: binDir('exports'),
+          name: `${safeFileName(project.title || slug)} - Version ${version.n}`, request, runEngine, signal,
+          onProgress: (message, pct) => emit({ type: 'status', message, pct })
+        })
+        return { summary: '', chat: [] }
+      } catch (e) { failure = e; throw e }
+    })
+    await jobs.forSlug(slug)?.done
+    if (failure) throw failure
+    if (!result) throw { code: 'EXPORT_FAILED', userMessage: 'The export stopped. Try Export again.' }
+    return result
+  })
   handle('projects:coverCandidates', async (_e, slug: string, moments: number[], source: string): Promise<CoverCandidate[]> => {
     const at = moments.filter((t) => Number.isFinite(t) && t >= 0).slice(0, COVER_SUGGESTIONS)
     if (!at.length) return []
@@ -1101,8 +1136,11 @@ app.whenReady().then(async () => {
     fakes: TEST ? parseFakes(process.env.REELSTUDIO_TEST_PERMISSIONS) : undefined
   })
   if (TEST) Object.assign(globalThis, { __reelPermFakes: perms.fakes, __reelPermLog: paneLog })
-  // reading the queues reads every reel in the folder, which a first run has not made yet
-  if (settings.firstRunDone) await noteQueue.recover().catch((e) => log(`[queue] ${String(e)}`))
+  // reading the queues and the exports folder reads the Reel Studio folder, which a first run has not made yet
+  if (settings.firstRunDone) {
+    await noteQueue.recover().catch((e) => log(`[queue] ${String(e)}`))
+    await sweepExportStaging(binDir('exports')).catch((e) => log(`[export] ${String(e)}`))
+  }
   const loaded = await loadAI(
     {
       host,
