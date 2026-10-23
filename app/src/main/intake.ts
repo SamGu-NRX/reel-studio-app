@@ -7,8 +7,9 @@ export function filesFromArgv(argv: string[], cwd: string, defaultApp: boolean):
   return argv.slice(defaultApp ? 2 : 1).filter((arg) => !arg.startsWith('-')).map((arg) => isAbsolute(arg) ? arg : resolve(cwd, arg))
 }
 
-export async function clipboardFiles(): Promise<string[]> {
-  return filesFromClipboardItems(await clipboard.read())
+/** `read` is the system clipboard; tests hand in their own items so a run never reads or replaces the person's. */
+export async function clipboardFiles(read: () => Promise<readonly ClipboardEntry[]> = () => clipboard.read()): Promise<string[]> {
+  return filesFromClipboardItems(await read())
 }
 
 /** One entry of Electron's clipboard.read(). */

@@ -194,6 +194,9 @@ const feedback = createJobFeedback({
   notificationsOn: () => notificationsOn
 })
 if (TEST) (globalThis as { __reelFeedback?: unknown }).__reelFeedback = feedbackLog
+// Under test, a paste reads these stand-in items (the e2e sets them), never the system clipboard.
+const testClipboard: { items: Electron.ClipboardItem[] } = { items: [] }
+if (TEST) (globalThis as { __reelClipboard?: unknown }).__reelClipboard = testClipboard
 const workGate = createWorkGate()
 // Honest progress (main/progress.ts): phase times measured on this computer, per minute of video.
 const speedHistoryFile = (): string => join(settingsDir(), 'speed-history.json')
@@ -563,7 +566,7 @@ function registerIpc(): void {
     await saveSettings({ fasterExports: on })
     return appInfo()
   })
-  handle('app:clipboardFiles', () => clipboardFiles())
+  handle('app:clipboardFiles', () => clipboardFiles(TEST ? async () => testClipboard.items : undefined))
   handle('app:takeOpenFiles', async () => (await loadSettings()).firstRunDone ? pendingOpenFiles.splice(0) : [])
   handle('app:finishFirstRun', async () => {
     // Windows and Linux skip the "Your Mac" stage, so their folder is made here (on a Mac it already exists).
