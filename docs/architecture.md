@@ -206,6 +206,19 @@ backwards in the frames it looks at, or when a note says the video is mirrored),
 `set_cover(atSourceTime, text)`, `write_post(caption, hashtags[5], keywords)`, `add_style_rule(rule)`,
 `render_draft`, `look_at_frames(times)` (returns images for vision models), `finish(summary_for_user)`.
 
+`make_variant(variable, hook?, cover?, caption?, brightness?)` saves a trial changing one of
+`seed`, `hook`, `cover`, `caption`, or `brightness`. The editor supplies the alternative hook word
+range, cover, or post caption. Seed trials generate a new seed in the same style; brightness
+trials multiply footage exposure by 1.08 or 0.92. `trials.json` beside the project records
+`{parent_version, variable, from, to}`. The parent snapshot is preserved before the edit changes.
+
+For projects with `cutStyle`, one RNG resolves the framing scale, starting framing, card lead,
+cadence phase, tied accent choices, and existing J/L frame offsets. `set_zoom` accepts an optional
+`accentGroup` for equally suitable moments. The renderer returns the resolved decisions in
+`variation` and stores them in its render report. Projects without `cutStyle` retain their
+existing framing and timing. Preset values define the cadence band and two nominal framings;
+the seed changes neither the preset nor its budgets, transition options, or audio levels.
+
 Agent tasks:
 
 1. **First edit** after transcribe and analyze: pick takes (the "red thread": the best take of each beat,
