@@ -5,7 +5,7 @@ export const INSTAGRAM_GRAPH = `https://graph.instagram.com/${INSTAGRAM_VERSION}
 export const INSTAGRAM_SCOPES = ['instagram_business_basic', 'instagram_business_content_publish', 'instagram_business_manage_insights']
 
 export class InstagramError extends Error {
-  constructor(readonly code: string, readonly userMessage: string) {
+  constructor(readonly code: string, readonly userMessage: string, readonly status?: number) {
     super(userMessage)
   }
 }
@@ -54,6 +54,10 @@ export async function request(fetcher: InstagramFetch, url: string, init: Reques
     signal.throwIfAborted()
     throw new InstagramError('IG_NETWORK', 'Instagram could not be reached. Check your connection and try again.')
   }
+  if (response.status === 401) {
+    await response.body?.cancel()
+    throw new InstagramError('IG_TOKEN', 'Your Instagram connection has expired. Connect Instagram again in Settings.', 401)
+  }
   let data: unknown
   try { data = await response.json() } catch { data = null }
   if (response.ok && !(data && typeof data === 'object' && 'error' in data)) return data
@@ -61,7 +65,7 @@ export async function request(fetcher: InstagramFetch, url: string, init: Reques
   const code = error.code
   if (response.status === 429 || code === 4 || code === 17 || code === 32 || code === 613 || code === 80002)
     throw new InstagramError('IG_RATE_LIMIT', 'Instagram has reached a request limit. Wait a few minutes before trying again.')
-  if (response.status === 401 || code === 190)
+  if (code === 190)
     throw new InstagramError('IG_TOKEN', 'Your Instagram connection has expired. Connect Instagram again in Settings.')
   if (code === 10 || code === 200 || response.status === 403)
     throw new InstagramError('IG_PERMISSION', 'Instagram did not allow this action. Check the account permissions and app approval in Settings.')

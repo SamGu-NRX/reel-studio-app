@@ -26,6 +26,8 @@ export interface InstagramCredentials {
   installToken?: string
 }
 
+export interface PendingRevocation { installToken: string; appId: string; brokerUrl: string }
+
 export type PublishReceipt =
   | { state: 'processing'; accountId: string; containerId: string; inputHash: string }
   | { state: 'publishing'; accountId: string; containerId: string; inputHash: string }
@@ -61,7 +63,7 @@ export class InstagramTokenStore {
     if (!this.secrets.isEncryptionAvailable() || this.secrets.getSelectedStorageBackend?.() === 'basic_text')
       throw new InstagramError('IG_SECURE_STORAGE', 'This computer cannot store the Instagram connection securely. Enable its system keychain and try again.')
   }
-  async load(): Promise<InstagramCredentials | null> {
+  private async read(): Promise<{ credentials?: InstagramCredentials; pendingRevocations: PendingRevocation[] } | null> {
     let bytes: Buffer
     try { bytes = await fs.readFile(this.file()) } catch (e) {
       if (e && typeof e === 'object' && 'code' in e && e.code === 'ENOENT') return null
@@ -69,21 +71,38 @@ export class InstagramTokenStore {
     }
     this.secure()
     try {
-      const c = object(JSON.parse(this.secrets.decryptString(bytes)))
-      return {
-        accessToken: text(c.accessToken), expiresAt: positive(c.expiresAt), issuedAt: positive(c.issuedAt),
-        accountId: id(c.accountId), username: text(c.username), appId: id(c.appId), brokerUrl: text(c.brokerUrl),
-        ...(c.installToken === undefined ? {} : { installToken: text(c.installToken) })
+      const raw = object(JSON.parse(this.secrets.decryptString(bytes)))
+      const pendingRevocations = raw.pendingRevocations === undefined ? [] : this.pending(raw.pendingRevocations)
+      if (raw.accessToken === undefined && raw.pendingRevocations === undefined) return localDataError()
+      const source = raw
+      const credentials = source.accessToken === undefined ? undefined : {
+        accessToken: text(source.accessToken), expiresAt: positive(source.expiresAt), issuedAt: positive(source.issuedAt),
+        accountId: id(source.accountId), username: text(source.username), appId: id(source.appId), brokerUrl: text(source.brokerUrl),
+        ...(source.installToken === undefined ? {} : { installToken: text(source.installToken) })
       }
+      return { credentials, pendingRevocations }
     } catch { return localDataError() }
   }
-  async save(c: InstagramCredentials): Promise<void> {
-    this.secure()
-    const encrypted = this.secrets.encryptString(JSON.stringify(c))
-    await fs.mkdir(this.dir, { recursive: true })
-    await atomicInstagramFile(this.file(), encrypted)
+  private pending(value: unknown): PendingRevocation[] {
+    if (!Array.isArray(value)) return localDataError()
+    return value.map((v) => { const p = object(v); return { installToken: text(p.installToken), appId: id(p.appId), brokerUrl: text(p.brokerUrl) } })
   }
-  async clear(): Promise<void> { await fs.rm(this.file(), { force: true }) }
+  async load(): Promise<InstagramCredentials | null> { return (await this.read())?.credentials ?? null }
+  async pendingRevocations(): Promise<PendingRevocation[]> { return (await this.read())?.pendingRevocations ?? [] }
+  async save(c: InstagramCredentials, pendingRevocations?: PendingRevocation[]): Promise<void> {
+    await this.write({ credentials: c, pendingRevocations: pendingRevocations ?? await this.pendingRevocations() })
+  }
+  async savePending(pendingRevocations: PendingRevocation[]): Promise<void> { await this.write({ credentials: (await this.read())?.credentials, pendingRevocations }) }
+  private async write(data: { credentials?: InstagramCredentials; pendingRevocations: PendingRevocation[] }): Promise<void> {
+    this.secure()
+    // Keep the user-requested 20 most recent orphaned installs in the same encrypted, atomic write.
+    const encrypted = this.secrets.encryptString(JSON.stringify({ ...data.credentials, pendingRevocations: data.pendingRevocations.slice(-20) }))
+    await fs.mkdir(this.dir, { recursive: true }); await atomicInstagramFile(this.file(), encrypted)
+  }
+  async clear(): Promise<void> {
+    const pendingRevocations = await this.pendingRevocations()
+    if (pendingRevocations.length) await this.write({ pendingRevocations }); else await fs.rm(this.file(), { force: true })
+  }
   assertSecure(): void { this.secure() }
 }
 

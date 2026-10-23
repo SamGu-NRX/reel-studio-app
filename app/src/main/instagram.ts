@@ -10,7 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { InstagramMetrics, InstagramOutcome, InstagramPost, InstagramPublishInput, InstagramSession, InstagramSettings } from '../shared/instagram'
 import { instagramCallback } from './instagram-oauth'
 import { httpsUrl, id, INSTAGRAM_GRAPH, INSTAGRAM_SCOPES, INSTAGRAM_VERSION, InstagramError, invalidResponse, jsonPost, object, positive, request, text, type InstagramFetch } from './instagram-http'
-import { InstagramTokenStore, readObject, receipt, saveOutcome, saveReceipt, type InstagramCredentials, type InstagramSecretStore } from './instagram-store'
+import { InstagramTokenStore, readObject, receipt, saveOutcome, saveReceipt, type PendingRevocation, type InstagramCredentials, type InstagramSecretStore } from './instagram-store'
 
 const DAY = 24 * 60 * 60_000
 const METRICS = {
@@ -96,7 +96,32 @@ export class InstagramService {
       throw new InstagramError('IG_TOKEN', 'Connect Instagram again in Settings.')
     return saved
   }
-  private async broker(c: InstagramCredentials, path: '/api/instagram/uploads' | '/api/instagram/oauth/refresh' | '/api/install/revoke', body: unknown, signal: AbortSignal): Promise<unknown> {
+  start(): Promise<void> { return this.run((signal) => this.retryPending(signal)) }
+  private async retryPending(signal: AbortSignal): Promise<void> {
+    for (const pending of await this.tokens.pendingRevocations()) {
+      try { await this.revoke(pending, signal) } catch { continue }
+      const remaining = await this.tokens.pendingRevocations()
+      await this.tokens.savePending(remaining.filter((p) => p.installToken !== pending.installToken || p.brokerUrl !== pending.brokerUrl))
+    }
+  }
+  private async revoke(c: PendingRevocation, signal: AbortSignal): Promise<'revoked' | 'already-invalid'> {
+    try { await this.sendBroker(c, '/api/install/revoke', {}, signal); return 'revoked' } catch (e) {
+      // An invalid broker install permits local sign-out, not a claim about platform permissions.
+      if (e instanceof InstagramError && e.status === 401) return 'already-invalid'
+      throw e
+    }
+  }
+  private async revokeOrQueue(c: PendingRevocation): Promise<void> {
+    const pending = await this.tokens.pendingRevocations()
+    await this.tokens.savePending([...pending.filter((p) => p.installToken !== c.installToken || p.brokerUrl !== c.brokerUrl), c])
+    try { await this.revoke(c, AbortSignal.any([this.connection.signal, AbortSignal.timeout(30_000)])) } catch { return }
+    await this.tokens.savePending((await this.tokens.pendingRevocations()).filter((p) => p.installToken !== c.installToken || p.brokerUrl !== c.brokerUrl))
+  }
+  private async broker(c: InstagramCredentials, path: '/api/instagram/uploads' | '/api/instagram/oauth/refresh', body: unknown, signal: AbortSignal): Promise<unknown> {
+    await this.retryPending(signal)
+    return this.sendBroker(c, path, body, signal)
+  }
+  private async sendBroker(c: Pick<InstagramCredentials, 'installToken' | 'appId' | 'brokerUrl'>, path: '/api/instagram/uploads' | '/api/instagram/oauth/refresh' | '/api/install/revoke', body: unknown, signal: AbortSignal): Promise<unknown> {
     const config = await this.config()
     if (!c.installToken || c.brokerUrl !== config.instagramBrokerUrl || c.appId !== config.instagramAppId)
       throw new InstagramError('IG_TOKEN', 'Connect Instagram again in Settings.')
@@ -146,7 +171,10 @@ export class InstagramService {
       this.tokens.assertSecure()
       const state = randomBytes(32).toString('base64url')
       const verifier = randomBytes(32).toString('base64url')
+      await this.retryPending(signal)
       const listener = await instagramCallback(state, signal)
+      let issued: PendingRevocation | undefined
+      let committed = false
       try {
         await request(this.o.fetch, `${config.instagramBrokerUrl}/api/instagram/oauth/start`, jsonPost({
           app_id: config.instagramAppId, state, loopback_uri: listener.redirectUri,
@@ -158,7 +186,9 @@ export class InstagramService {
         signal.throwIfAborted()
         await this.o.openExternal(url.toString())
         const handoff = await listener.result
+        await this.retryPending(signal)
         const data = object(await request(this.o.fetch, `${config.instagramBrokerUrl}/api/instagram/oauth/complete`, jsonPost({ handoff, state, code_verifier: verifier }), signal))
+        issued = { installToken: text(data.install_token), appId: config.instagramAppId, brokerUrl: config.instagramBrokerUrl }
         const permissions = data.permissions
         if (String(data.token_type).toLowerCase() !== 'bearer' || !Array.isArray(permissions) || !INSTAGRAM_SCOPES.every((s) => permissions.includes(s)))
           throw new InstagramError('IG_PERMISSION', 'Allow publishing and insights when connecting your Instagram account.')
@@ -175,7 +205,13 @@ export class InstagramService {
           else await this.tokens.clear()
           throw new InstagramError('IG_CANCELLED', 'Instagram connection was cancelled.')
         }
+        committed = true
+        if (previous?.installToken && previous.installToken !== installToken)
+          await this.revokeOrQueue({ installToken: previous.installToken, appId: previous.appId, brokerUrl: previous.brokerUrl })
         return { connected: true, ...account, expiresAt }
+      } catch (e) {
+        if (issued && !committed) await this.revokeOrQueue(issued)
+        throw e
       } finally {
         listener.close()
         if (this.connecting === ac) this.connecting = undefined
@@ -188,8 +224,10 @@ export class InstagramService {
     this.stop()
     this.connection = new AbortController()
     const clear = async () => {
+      const signal = AbortSignal.any([this.connection.signal, AbortSignal.timeout(30_000)])
+      await this.retryPending(signal)
       const saved = await this.tokens.load()
-      if (saved?.installToken) await this.broker(saved, '/api/install/revoke', {}, AbortSignal.any([this.connection.signal, AbortSignal.timeout(30_000)]))
+      if (saved?.installToken) await this.revoke({ installToken: saved.installToken, appId: saved.appId, brokerUrl: saved.brokerUrl }, signal)
       await this.tokens.clear()
     }
     const result = this.queue.then(clear, clear)
