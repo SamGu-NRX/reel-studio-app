@@ -288,6 +288,8 @@ export type JobUpdate =
   /** pct restarts per step unless aggregate marks whole-job progress. thinking = waiting on AI. */
   | { type: 'status'; message: string; pct?: number; aggregate?: true; phase?: Phase; thinking?: boolean; /** the message is the wait for the editor itself (ai agent.ts waitWords) */ waiting?: boolean; noAI?: boolean }
   | { type: 'tool'; name: string; summary: string }
+  /** A line for main.log only: how a model turn spent its time (ai agent.ts turnTrace). */
+  | { type: 'trace'; text: string }
   /** A render finished. firstLook = the quick no-AI preview made while the AI still edits (not a version).
    * file = the engine's output path (absolute); main turns it into `video` for the renderer. */
   | { type: 'render'; version: number; draft: boolean; firstLook?: boolean; file?: string }

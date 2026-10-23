@@ -12,6 +12,8 @@ export type AgentEvent =
   | { type: 'render'; version: number; draft: boolean; /** the no-AI first look, shown while the AI edits */ firstLook?: boolean; file?: string }
   /** a note's reply, known before the render that makes it true (fast notes): the app shows it at once */
   | { type: 'reply'; text: string }
+  /** one line for the host's log: how a model turn spent its time (agent.ts) */
+  | { type: 'trace'; text: string }
 
 export interface AgentResult {
   summary: string; version: number;
@@ -106,9 +108,12 @@ export interface CompletionRequest {
   /** What the provider learns while it waits, from a provider that reports it (ModelProvider.reportsWaits). */
   onWait?: (w: WaitSignal) => void;
 }
-/** `retrying`: the service refused or did not answer and the CLI tries again after `delayMs`; `answering`: the
- * answer has started to arrive. */
-export type WaitSignal = { kind: 'retrying'; attempt: number; max: number; delayMs: number; status: number | null } | { kind: 'answering' };
+/** `retrying`: the service refused or did not answer and the CLI tries again after `delayMs`; `thinking`: the model is
+ * reasoning before it answers (its thinking block started); `answering`: the answer itself has started to arrive. */
+export type WaitSignal =
+  | { kind: 'retrying'; attempt: number; max: number; delayMs: number; status: number | null }
+  | { kind: 'thinking' }
+  | { kind: 'answering' };
 export interface TokenUsage { input?: number; output?: number; cacheRead?: number; cacheWrite?: number }
 export interface CompletionResponse {
   text: string; toolCalls: ToolCall[]; raw?: unknown; usage?: TokenUsage;
@@ -116,6 +121,9 @@ export interface CompletionResponse {
   malformed?: boolean;
   /** the calls were read from a non-protocol format (XML-style) */
   repaired?: 'xml';
+  /** where the turn's time went, from a provider that reports its waits: ms from sending to the first thinking and the
+   * first answer, to the whole reply, and how many times the service was retried */
+  timing?: { thinkingMs: number | null; answerMs: number | null; totalMs: number; retries: number };
 }
 
 export interface ModelProvider {

@@ -20,6 +20,7 @@ export function protocolPrompt(tools: ToolSchema[], jsonOnly: boolean): string {
     '- arguments must match the tool schema. Use null for optional fields you are not setting.',
     '- Calls that depend on the result of an earlier call must wait for the next reply.',
     '- When the task is complete, call the finish tool (alone, last).',
+    '- Write no XML and no <invoke> tags: the JSON object is the whole reply.',
     '',
     'TOOLS:',
     catalog,
@@ -247,24 +248,71 @@ function conversationKey(req: CompletionRequest): string {
   return `${req.system.length}:${req.system.slice(0, 200)}|${text.length}:${text.slice(0, 2000)}`;
 }
 
-interface Waiter { resolve: (r: any) => void; reject: (e: unknown) => void; onWait?: (w: WaitSignal) => void; answering?: boolean }
+interface Waiter { resolve: (r: any) => void; reject: (e: unknown) => void; watch: TurnWatch }
 
-/** A stream-json line's news for the caller while it waits: a retry (`system`/`api_retry`, Claude Code 2.1.308's
- * SDKAPIRetryMessage) or the first piece of the answer (`stream_event`, from --include-partial-messages). */
+/**
+ * A stream-json line's news for the caller while it waits: a retry (`system`/`api_retry`, Claude Code 2.1.308's
+ * SDKAPIRetryMessage), or a content block starting (`stream_event`, from --include-partial-messages): a thinking
+ * block is the model reasoning, any other block is the answer itself.
+ */
 export function waitSignal(j: any): WaitSignal | null {
   if (j?.type === 'system' && j.subtype === 'api_retry') {
     return { kind: 'retrying', attempt: Number(j.attempt) || 1, max: Number(j.max_retries) || 0, delayMs: Number(j.retry_delay_ms) || 0, status: typeof j.error_status === 'number' ? j.error_status : null };
   }
-  return j?.type === 'stream_event' ? { kind: 'answering' } : null;
+  if (j?.type !== 'stream_event' || j.event?.type !== 'content_block_start') return null;
+  const block = j.event.content_block?.type;
+  return block === 'thinking' || block === 'redacted_thinking' ? { kind: 'thinking' } : { kind: 'answering' };
 }
 
-/** Passes a line's wait news on, saying "answering" once per turn. */
-function relayWait(w: Pick<Waiter, 'onWait' | 'answering'>, j: any): void {
-  const sig = waitSignal(j);
-  if (!sig || !w.onWait) return;
-  if (sig.kind === 'answering') { if (w.answering) return; w.answering = true; }
-  else w.answering = false;
-  w.onWait(sig);
+/** Answers are one JSON object of a few KB; this is far past any real one. */
+const MAX_ANSWER_CHARS = 40_000;
+
+/**
+ * An answer that has gone wrong while it streams: empty placeholder tool tags repeating, or far longer than any real
+ * answer. Seen in a real run: sonnet wrote `<invoke name="placeholder"></invoke>` for 531 s until its output limit,
+ * then the CLI asked it to go on; that one turn of a first edit took 551 s and cost $1.65.
+ */
+export function runawayAnswer(text: string): boolean {
+  return text.length > MAX_ANSWER_CHARS || (text.match(/<invoke name="placeholder">\s*<\/invoke>/g)?.length ?? 0) >= 3;
+}
+const runawayError = () => new AIError('cli_runaway', 'Claude started repeating itself, so that answer was stopped.', { retryable: true });
+
+/** REELSTUDIO_CLI_TRACE=<file>: every stream-json line but the answer's text deltas, timed, for diagnosing a slow turn. */
+function trace(j: any): void {
+  const file = process.env.REELSTUDIO_CLI_TRACE;
+  if (!file || j?.event?.type === 'content_block_delta') return;
+  fs.appendFileSync(file, `${new Date().toISOString()} ${JSON.stringify(j).slice(0, 600)}\n`);
+}
+
+/** One turn: passes its wait news on (thinking and answering once, every retry) and notes where its time went. */
+export class TurnWatch {
+  private readonly t0 = Date.now();
+  private thinkingMs: number | null = null;
+  private answerMs: number | null = null;
+  private retries = 0;
+  private text = '';
+  /** set once the answer runs away (runawayAnswer); `stop` is then called to end the turn */
+  runaway = false;
+  stop: () => void = () => undefined;
+  constructor(private readonly onWait?: (w: WaitSignal) => void) {}
+  line(j: any): void {
+    const delta = j?.type === 'stream_event' && j.event?.type === 'content_block_delta' && j.event.delta?.type === 'text_delta' ? String(j.event.delta.text ?? '') : null;
+    if (delta !== null) {
+      this.text += delta;
+      if (!this.runaway && runawayAnswer(this.text)) { this.runaway = true; this.stop(); }
+      return;
+    }
+    const sig = waitSignal(j);
+    if (!sig) return;
+    const ms = Date.now() - this.t0;
+    if (sig.kind === 'retrying') this.retries++;
+    else if (sig.kind === 'thinking') { if (this.thinkingMs !== null) return; this.thinkingMs = ms; }
+    else { if (this.answerMs !== null) return; this.answerMs = ms; }
+    this.onWait?.(sig);
+  }
+  timing(): NonNullable<CompletionResponse['timing']> {
+    return { thinkingMs: this.thinkingMs, answerMs: this.answerMs, totalMs: Date.now() - this.t0, retries: this.retries };
+  }
 }
 
 interface LiveSession {
@@ -332,8 +380,9 @@ export class ClaudeCliProvider implements ModelProvider {
       while ((i = s.buf.indexOf('\n')) >= 0) {
         const l = s.buf.slice(0, i); s.buf = s.buf.slice(i + 1);
         let j: any; try { j = JSON.parse(l); } catch { continue; }
+        trace(j);
         if (j?.type === 'result' && s.waiter) { const w = s.waiter; s.waiter = null; w.resolve(j); }
-        else if (s.waiter) relayWait(s.waiter, j);
+        else s.waiter?.watch.line(j);
       }
     });
     const gone = (why: string) => {
@@ -347,7 +396,7 @@ export class ClaudeCliProvider implements ModelProvider {
     return s;
   }
 
-  private async sessionTurn(req: CompletionRequest): Promise<any> {
+  private async sessionTurn(req: CompletionRequest): Promise<{ result: any; watch: TurnWatch }> {
     const key = conversationKey(req);
     const cur = this.live;
     const continues = !!cur && !cur.closed && cur.key === key && cur.next > 0 && req.messages.length > cur.next
@@ -361,6 +410,7 @@ export class ClaudeCliProvider implements ModelProvider {
       rendered = renderConversation(req);
     }
     if (s.idle) { clearTimeout(s.idle); s.idle = null; }
+    const watch = new TurnWatch(req.onWait);
     const result = await new Promise<any>((resolve, reject) => {
       let settled = false;
       const finish = (fn: () => void) => { if (settled) return; settled = true; clearTimeout(timer); req.signal?.removeEventListener('abort', abort); fn(); };
@@ -368,7 +418,8 @@ export class ClaudeCliProvider implements ModelProvider {
       const abort = () => finish(() => { s.waiter = null; void this.dispose(); reject(new AIError('cancelled', 'Stopped.')); });
       if (req.signal?.aborted) return abort();
       req.signal?.addEventListener('abort', abort, { once: true });
-      s.waiter = { resolve: (r) => finish(() => resolve(r)), reject: (e) => finish(() => reject(e)), onWait: req.onWait };
+      s.waiter = { resolve: (r) => finish(() => resolve(r)), reject: (e) => finish(() => reject(e)), watch };
+      watch.stop = () => finish(() => { s.waiter = null; void this.dispose(); reject(runawayError()); });
       try { s.child.stdin.write(userLine(rendered.text, rendered.images)); } catch (e) {
         finish(() => { s.waiter = null; reject(new AIError('cli_error', 'The AI did not answer.', { retryable: true, detail: String(e) })); });
       }
@@ -377,29 +428,46 @@ export class ClaudeCliProvider implements ModelProvider {
     // an idle session must not outlive its run for long (a crashed caller never calls dispose)
     s.idle = setTimeout(() => { if (this.live === s) void this.dispose(); }, 120_000);
     s.idle.unref?.();
-    return result;
+    return { result, watch };
   }
 
   async complete(req: CompletionRequest): Promise<CompletionResponse> {
-    if (this.o.session && !req.jsonOnly) return this.toResponse(await this.sessionTurn(req), req);
+    if (this.o.session && !req.jsonOnly) {
+      const { result, watch } = await this.sessionTurn(req);
+      return this.toResponse(result, req, watch);
+    }
     const { text, images } = renderConversation(req);
     const line = userLine(text, images);
     const args = this.args();
     let r: RunResult;
+    const watch = new TurnWatch(req.onWait);
+    // a runaway answer stops the process the way Stop does, and is reported as itself
+    const stop = new AbortController();
+    const relay = () => stop.abort();
+    req.signal?.addEventListener('abort', relay, { once: true });
+    if (req.signal?.aborted) stop.abort();
+    watch.stop = relay;
     try {
-      const waiting: Pick<Waiter, 'onWait' | 'answering'> = { onWait: req.onWait };
-      const onLine = (l: string) => { try { relayWait(waiting, JSON.parse(l)); } catch { /* not JSON */ } };
-      r = await runProcess(this.o.bin ?? 'claude', args, line, { cwd: this.o.cwd ?? workDir(), signal: req.signal, timeoutMs: this.o.timeoutMs ?? 600_000, onLine });
+      const onLine = (l: string) => {
+        let j: any;
+        try { j = JSON.parse(l); } catch { return; }
+        trace(j);
+        watch.line(j);
+      };
+      r = await runProcess(this.o.bin ?? 'claude', args, line, { cwd: this.o.cwd ?? workDir(), signal: stop.signal, timeoutMs: this.o.timeoutMs ?? 600_000, onLine });
     } catch (e: any) {
+      if (watch.runaway) throw runawayError();
       if (e instanceof AIError) throw e;
       throw new AIError('cli_missing', 'The claude command line tool is not installed or not on PATH.', { detail: e?.message });
+    } finally {
+      req.signal?.removeEventListener('abort', relay);
     }
     const result = r.stdout.split('\n').map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter((x) => x && x.type === 'result').at(-1);
     if (!result) throw new AIError('cli_error', 'The AI did not answer.', { retryable: true, detail: `exit ${r.code}: ${r.stderr.slice(-500) || r.stdout.slice(-500)}` });
-    return this.toResponse(result, req);
+    return this.toResponse(result, req, watch);
   }
 
-  private toResponse(result: any, req: CompletionRequest): CompletionResponse {
+  private toResponse(result: any, req: CompletionRequest, watch: TurnWatch): CompletionResponse {
     if (result.is_error) {
       const text = String(result.result ?? '');
       const limited = /limit|quota|rate/i.test(text) || result.api_error_status === 429;
@@ -408,7 +476,7 @@ export class ClaudeCliProvider implements ModelProvider {
     }
     const reply = String(result.result ?? '');
     const parsed = req.jsonOnly ? { text: reply, toolCalls: [] } : parseProtocolReply(reply, req.tools);
-    return { ...parsed, raw: { reply }, usage: { input: result.usage?.input_tokens, output: result.usage?.output_tokens } };
+    return { ...parsed, raw: { reply }, usage: { input: result.usage?.input_tokens, output: result.usage?.output_tokens }, timing: watch.timing() };
   }
 }
 
