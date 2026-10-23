@@ -713,7 +713,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     <div className="reel-page">
       <TitleBarSlot title={title} actions={actions} />
       <div className="reel-b">
-        <section className="stage" aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
+        <section className={`stage${compare ? ' comparing' : ''}`} aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
           {planned ? (
             <PlannedStage title={d.title} onFiles={(p) => void addVideo(p)} />
           ) : (

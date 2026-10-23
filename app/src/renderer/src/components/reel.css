@@ -344,3 +344,5 @@ html.kb :is(.acc, .stripwrap, .steps, .tchip, .spot, .draghandle, .tl-mark, .tra
   .helper .hb i { animation: none; width: 100%; opacity: .5; }
 }
 @keyframes line-fade { from { opacity: 0; } }
+/* Comparing is its own mode: the switch takes the top of the video, so full screen waits until it is done. */
+.stage.comparing .fs-open { display: none; }

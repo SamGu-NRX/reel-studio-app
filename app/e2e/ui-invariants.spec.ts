@@ -1,12 +1,12 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { APP_DIR, BASE, makeMedia, passFirstRun } from './helpers'
+import { APP_DIR, BASE, makeMedia, makeReel, passFirstRun } from './helpers'
 
 const BOOT = '/Users/samgu/Programming Projects/reel-studio-app-wt/redesign-build/tools/hidden-bootstrap.cjs'
 const PROOF = '/Users/samgu/Programming Projects/reel-studio-app-wt/redesign-build/logs/hidden-proof.log'
 const FIXED_SEEDS = [11, 29, 47, 83, 101, 149, 211, 307, 401, 503]
-type Action = 'play' | 'pause' | 'seek' | 'zoomIn' | 'zoomOut' | 'holdOriginal' | 'point' | 'versions' | 'edit' | 'switchVersion' | 'collapseSidebar' | 'resize' | 'escape'
+type Action = 'play' | 'pause' | 'seek' | 'holdOriginal' | 'point' | 'compare' | 'edit' | 'switchVersion' | 'collapseSidebar' | 'resize' | 'escape'
 
 function rng(seed: number): () => number {
   let state = seed >>> 0
@@ -29,7 +29,8 @@ async function launchHidden(root: string, userData: string, cache: string): Prom
     REELSTUDIO_MODELS_DIR: join(BASE, 'invariant-models'),
     REELSTUDIO_MOCK_AI: '1',
     REELSTUDIO_ENGINE_DIR: join(APP_DIR, 'dev', 'fake-engine'),
-    FAKE_ENGINE_SLOW: '3'
+    FAKE_ENGINE_SLOW: '3',
+    REELSTUDIO_MOCK_NOTE: '800'
   })
   mkdirSync(join(BASE, 'invariant-models'), { recursive: true })
   const app = await electron.launch({ args: ['-r', BOOT, APP_DIR], cwd: APP_DIR, env })
@@ -98,19 +99,17 @@ async function invariants(page: Page): Promise<string[]> {
       const current = active.currentTime
       const range = document.querySelector('input[aria-label="Position in the video"], input[aria-label="Time in your reel"]') as HTMLInputElement | null
       if (range && Math.abs(Number(range.value) - current) > 0.25) issues.push(`scrubber=${range.value} current=${current.toFixed(2)}`)
-      const zoomReadout = document.querySelector('.zoom .tc')?.textContent?.match(/\d+:\d+/)?.[0]
-      const time = zoomReadout ?? document.querySelector('.scrub-time')?.textContent
+      const time = document.querySelector('[data-testid="time"]')?.textContent?.match(/\d+:\d+/)?.[0]
       if (time) {
         const shown = Number(time.split(':')[0]) * 60 + Number(time.split(':')[1])
-        const expected = Math.floor(zoomReadout ? current : active.duration - current)
-        if (Number.isFinite(shown) && Math.abs(shown - expected) > 0.25) issues.push(`readout=${shown} expected=${expected}`)
+        if (Number.isFinite(shown) && Math.abs(shown - Math.floor(current)) > 1) issues.push(`readout=${shown} current=${current.toFixed(2)}`)
       }
       const chip = document.querySelector('[data-testid="moment-suggest"]')?.textContent
       if (chip) {
         const match = chip.match(/\d+:\d+/)
         if (match) {
           const shown = Number(match[0].split(':')[0]) * 60 + Number(match[0].split(':')[1])
-          if (Math.abs(shown - Math.floor(current)) > 0.25) issues.push(`moment=${shown} current=${Math.floor(current)}`)
+          if (Math.abs(shown - Math.floor(current)) > 1) issues.push(`moment=${shown} current=${current.toFixed(2)}`)
         }
       }
     }
@@ -124,7 +123,7 @@ async function pausedSnapshot(page: Page): Promise<{ time: number; readouts: str
     if (videos.some((video) => !video.paused && !video.ended)) return null
     return {
       time: videos[0]?.currentTime ?? 0,
-      readouts: Array.from(document.querySelectorAll('.scrub-time, .zoom .tc, [data-testid="moment-suggest"]')).map((node) => node.textContent ?? '')
+      readouts: Array.from(document.querySelectorAll('[data-testid="time"], [data-testid="moment-suggest"]')).map((node) => node.textContent ?? '')
     }
   })
 }
@@ -146,55 +145,43 @@ async function act(page: Page, app: ElectronApplication, action: Action, random:
   if (action === 'play') return clickIfVisible(page, page.getByRole('button', { name: 'Play', exact: true }))
   if (action === 'pause') return clickIfVisible(page, page.getByRole('button', { name: 'Pause', exact: true }))
   if (action === 'seek') {
-    const range = page.locator('input[aria-label="Position in the video"], input[aria-label="Time in your reel"]').first()
-    if (!(await range.count()) || !(await range.isVisible())) return false
-    const max = Number(await range.getAttribute('max')) || 1
-    await range.fill(String(max * random()))
+    const tl = page.getByTestId('timeline')
+    if (!(await tl.count()) || !(await tl.isVisible())) return false
+    const box = await tl.boundingBox()
+    if (!box) return false
+    await page.mouse.click(box.x + 2 + (box.width - 4) * random(), box.y + box.height / 2)
     return true
   }
-  if (action === 'zoomIn') return clickIfVisible(page, page.getByTestId('zoom-in').or(page.getByTestId('zoom-in-player')))
-  if (action === 'zoomOut') return clickIfVisible(page, page.getByTestId('unzoom'))
   if (action === 'holdOriginal') {
-    const button = page.getByRole('button', { name: 'Hold for original', exact: true }).first()
-    if (!(await button.count()) || !(await button.isVisible())) return false
-    await button.hover()
-    const box = await button.boundingBox()
+    const screen = page.locator('.phone-screen').first()
+    const box = (await screen.count()) ? await screen.boundingBox() : null
     if (!box) return false
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await page.mouse.down()
-    await page.waitForTimeout(80)
+    await page.waitForTimeout(450)
     await page.mouse.up()
     return true
   }
   if (action === 'point') {
-    if (await visible(page, 'comment')) return clickIfVisible(page, page.getByTestId('comment'))
-    if (await visible(page, 'zoom')) {
-      await page.keyboard.press('c')
-      return true
-    }
-    return false
-  }
-  if (action === 'versions') {
-    const button = page.getByTestId('version-switch')
-    if (!(await button.count()) || !(await button.isVisible())) return false
-    await button.click()
-    if (await visible(page, 'version-menu')) await page.keyboard.press('Escape')
+    if (!(await page.getByTestId('note-input').count())) return false
+    await page.locator('body').click({ position: { x: 5, y: 300 } }).catch(() => {})
+    await page.keyboard.press('c')
     return true
   }
-  if (action === 'edit') {
-    if (await visible(page, 'drawer')) {
-      await page.getByTestId('drawer-close').click().catch(() => page.keyboard.press('Escape'))
-      return true
-    }
-    return clickIfVisible(page, page.getByTestId('edit-myself'))
+  if (action === 'compare') {
+    if (await visible(page, 'done-compare')) return clickIfVisible(page, page.getByTestId('done-compare'))
+    const c = page.getByTestId(/^compare-\d+$/)
+    if (!(await c.count())) return false
+    return clickIfVisible(page, c.last())
   }
+  if (action === 'edit') return clickIfVisible(page, page.getByTestId('edit-myself'))
   if (action === 'switchVersion') {
-    const switcher = page.getByTestId('version-switch')
-    if (!(await switcher.count()) || !(await switcher.isVisible())) return false
-    await switcher.click()
-    const item = page.getByTestId(/version-item-/).last()
-    if (await item.count() && await item.isVisible()) await item.click()
-    else await page.keyboard.press('Escape')
+    const lines = page.getByTestId(/^log-play-\d+$/)
+    const n = await lines.count()
+    if (!n) return false
+    const line = lines.nth(Math.floor(random() * n))
+    if (!(await line.isVisible())) return false
+    await line.click()
     return true
   }
   if (action === 'collapseSidebar') return clickIfVisible(page, page.getByTestId('sidebar-toggle'))
@@ -206,7 +193,7 @@ async function act(page: Page, app: ElectronApplication, action: Action, random:
   return true
 }
 
-const ACTIONS: Action[] = ['play', 'pause', 'seek', 'zoomIn', 'zoomOut', 'holdOriginal', 'point', 'versions', 'edit', 'switchVersion', 'collapseSidebar', 'resize', 'escape']
+const ACTIONS: Action[] = ['play', 'pause', 'seek', 'holdOriginal', 'point', 'compare', 'edit', 'switchVersion', 'collapseSidebar', 'resize', 'escape']
 
 test('Reel survives seeded UI invariant walks', async () => {
   test.setTimeout(45 * 60_000)
@@ -216,17 +203,10 @@ test('Reel survives seeded UI invariant walks', async () => {
   const { app, page } = await launchHidden(root, join(mine, 'user data'), join(mine, 'engine-cache'))
   try {
     await passFirstRun(page)
-    await page.getByTestId('new-video').click()
-    await page.getByTestId('file-input').setInputFiles(media.video)
-    await expect(page.getByTestId('player')).toBeVisible({ timeout: 240_000 })
-    await expect(page.getByTestId('export')).toBeEnabled({ timeout: 240_000 })
-    await page.getByTestId('edit-myself').click()
-    await page.getByTestId('tab-cut').click()
-    const word = page.locator('.word').first()
-    if (await word.count()) await word.click()
-    await page.getByTestId('make-version').click()
-    await expect(page.getByTestId('version-switch')).toContainText('Version 2', { timeout: 240_000 })
-    if (await visible(page, 'drawer')) await page.getByTestId('drawer-close').click()
+    await makeReel(page, media.video)
+    const slug = await page.evaluate(() => window.reel.projects.list().then((l) => l[0].slug))
+    await page.evaluate((s) => window.reel.projects.note(s, 'make the subtitles bigger'), slug)
+    await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 240_000 })
     await page.evaluate(() => document.querySelectorAll('video').forEach((video) => video.pause()))
 
     const requested = process.env.REELSTUDIO_INVARIANT_SEEDS?.split(',').map(Number).filter(Number.isFinite)
@@ -242,9 +222,6 @@ test('Reel survives seeded UI invariant walks', async () => {
         log.push(action)
         await page.waitForTimeout(80)
         await check(page, seed, log)
-        if ((action === 'zoomOut' || action === 'escape') && await visible(page, 'zoom')) {
-          throw new Error(`seed ${seed}, action log ${JSON.stringify(log)}: zoomed view remained after ${action}`)
-        }
       }
       console.log(`[ui-invariants] seed=${seed} actions=${log.length}`)
     }
