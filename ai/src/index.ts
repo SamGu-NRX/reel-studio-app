@@ -7,7 +7,7 @@ import {
   AgentEvent, AgentResult, AIError, EngineHost, ModelProvider, Part, ProviderId, ProviderStatus, ScriptResult, SecretStore, UserFacingError,
 } from './types';
 import { Prompts, defaultPromptsDir } from './prompts';
-import { StyleStore } from './style';
+import { StyleProposal, StyleStore } from './style';
 import { loadProject, writeFileAtomic } from './project';
 import { planFastNote } from './fastnote';
 import { AnthropicProvider, DEFAULT_CLAUDE_MODEL } from './providers/anthropic';
@@ -512,6 +512,12 @@ export function createAI(opts: CreateAIOptions) {
     async removeStyleRule(id: string) { return style.remove(id); },
     /** The user said Yes to a proposed rule (AgentResult.styleSuggestions). Returns the saved rule. */
     async addStyleRule(text: string) { return (await style.add(text)).rule; },
+    /** The user said Yes to AgentResult.styleProposal. */
+    async approveStyleProposal(p: StyleProposal) { return style.approve(p); },
+    /** The user said No to AgentResult.styleProposal. */
+    async declineStyleProposal(p: StyleProposal) { return style.decline(p); },
+    /** My style: the user edited a rule's words, or paused or resumed it. */
+    async updateStyleRule(id: string, patch: { text?: string; paused?: boolean }) { return style.update(id, patch); },
   };
 }
 

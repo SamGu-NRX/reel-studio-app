@@ -3,6 +3,7 @@
 Caption doctrine (ported from a captions pipeline shipped across 80 reels):
   * up to `maxWords` words per cue, breaking early on a sentence end; commas never break a line
   * a number never opens a line and is never orphaned from its unit ("DAY 1", "3,000 USERS")
+  * the words one phrase correction wrote ("TypeScript Pro") stay on one line
   * cues are built per SPEECH RUN: no cue ever spans a long silence
   * gap-hold: a cue stays up until just before the next one, so the rail never blinks in a pause
   * uniform size, shrink-only for over-wide lines
@@ -23,7 +24,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from . import tools
+from . import tools, verify
 from .proto import EngineError
 
 MAX_WORDS = 3
@@ -34,7 +35,17 @@ MIN_CUE = 0.30
 RUN_GAP = 0.80          # a silence longer than this splits caption runs
 MARGIN_FRAC = 0.065     # left/right safe margin, fraction of width
 MIN_SHRINK = 0.62       # below this fraction of the base size, wrap to two lines instead
-FADE = "\\fad(60,40)"
+FADE_IN, FADE_OUT = 60, 40
+POP_MS = 120
+
+
+def pop_in(offset_ms: int) -> str:
+    """"pop": the line grows from 80% to full size over its first 120 ms, decelerating (accel 0.5).
+    A highlighted line is one event per word, so an event that starts `offset_ms` into the line runs
+    the same transform shifted back by that much (libass accepts a negative start)."""
+    if offset_ms >= POP_MS:
+        return ""
+    return f"\\fscx80\\fscy80\\t({-offset_ms},{POP_MS - offset_ms},0.5,\\fscx100\\fscy100)"
 DEFAULT_FONT = "Montserrat SemiBold"
 DEFAULT_SIZE = 105       # the proven size on a 1080x1920 canvas
 DEFAULT_OUTLINE = 8      # solid black; load-bearing on bright walls
@@ -163,11 +174,32 @@ def digits_for_numbers(words: list) -> list:
     return out
 
 
-def normalize_corrections(corrections) -> dict:
-    """project.json's [{from, to}] -> {"single": {...}, "spans": [...]}"""
-    single, spans = {}, []
+def _heard_key(text: str) -> list:
+    return [_bare(x).lower() for x in str(text).split()]
+
+
+def _heard_now(words_heard: dict, at: str, through: Optional[str]):
+    """What the transcript hears from word `at` through word `through` (both kept), or None."""
+    if at not in words_heard or (through and through not in words_heard):
+        return None
+    ids = list(words_heard)
+    i, j = ids.index(at), ids.index(through or at)
+    return " ".join(words_heard[x] for x in ids[i:j + 1])
+
+
+def normalize_corrections(corrections, words_heard: Optional[dict] = None) -> dict:
+    """project.json's [{from, to, at?, through?}] -> {"single": {...}, "spans": [...], "at": {word id:
+    (text, through id)}}. A fix made in the subtitle editor ("at") holds only while the transcript still
+    hears those words as `from`: listened to again, the same ids can be different words."""
+    single, spans, at = {}, [], {}
     for c in corrections or []:
         heard, meant = str(c.get("from", "")).strip(), str(c.get("to", "")).strip()
+        if c.get("at"):
+            through = str(c["through"]) if c.get("through") else None
+            now = _heard_now(words_heard or {}, str(c["at"]), through)
+            if now is None or _heard_key(now) == _heard_key(heard):
+                at[str(c["at"])] = (meant, through)
+            continue
         if not heard:
             continue
         hw, mw = heard.split(), meant.split()
@@ -175,16 +207,32 @@ def normalize_corrections(corrections) -> dict:
             single[_bare(hw[0]).lower()] = mw[0]
         else:
             spans.append({"from": hw, "to": mw})
-    return {"single": single, "spans": spans}
+    return {"single": single, "spans": spans, "at": at}
 
 
 def apply_corrections(words: list, corrections: dict, stats: Optional[dict] = None) -> list:
-    """Phrase corrections first, then single words, and a word a phrase already produced is never
-    corrected again: with "script" -> "TypeScript" AND "type script" -> "TypeScript", the single
-    word applied first used to leave "type TypeScript" on screen."""
+    """A fix made on one word ("at" its id, from the subtitle editor) first, then phrase corrections,
+    then single words. A word already fixed is never corrected again: with "script" -> "TypeScript"
+    AND "type script" -> "TypeScript", the single word applied first used to leave "type TypeScript"
+    on screen. A word fixed to nothing is marked `gone`: it keeps its place, so the lines around it
+    group as before, and build_cues leaves it out of the text."""
     words = [dict(w) for w in words]
     single = corrections.get("single") or {}
     spans = corrections.get("spans") or []
+    fixes = corrections.get("at") or {}
+    k = 0
+    while k < len(words):
+        ids = words[k].get("ids", [words[k].get("id")])
+        prev = words[k - 1].get("ids", [words[k - 1].get("id")]) if k else []
+        fix = next((fixes[i] for i in ids if i in fixes and i not in prev), None)
+        if fix is not None:
+            text, through = fix
+            # "at" through "through" become one word, as the phrase correction that drew them as one did
+            j = next((j for j in range(k, len(words)) if through in words[j].get("ids", [words[j].get("id")])), k) if through else k
+            merged = [x for w in words[k:j + 1] for x in w.get("ids", [w.get("id")])]
+            words[k:j + 1] = [dict(words[k], e=words[j]["e"], ids=list(dict.fromkeys(merged)), _fixed=True,
+                                   **({"w": text} if text else {"gone": True}))]
+        k += 1
     if spans:
         norm = [([_bare(x).lower() for x in sp["from"]], list(sp["to"])) for sp in spans]
         if stats is not None:
@@ -194,7 +242,7 @@ def apply_corrections(words: list, corrections: dict, stats: Optional[dict] = No
         while i < len(words):
             for idx, (src, dst) in enumerate(norm):
                 n = len(src)
-                if n and [_bare(x["w"]).lower() for x in words[i:i + n]] == src:
+                if n and [_bare(x["w"]).lower() for x in words[i:i + n]] == src and not any(x.get("_fixed") for x in words[i:i + n]):
                     s, e = words[i]["s"], words[i + n - 1]["e"]
                     ids = [x for w in words[i:i + n] for x in w.get("ids", [w.get("id")])]
                     tail = re.search(_STRIP_TAIL, words[i + n - 1]["w"])
@@ -232,7 +280,7 @@ def apply_corrections(words: list, corrections: dict, stats: Optional[dict] = No
                         stats[base.lower()] += 1
     for w in words:
         w.pop("_fixed", None)
-    return words
+    return [w for w in words if w["w"].strip()]
 
 
 def split_runs(words: list, max_gap: float = RUN_GAP) -> list:
@@ -255,6 +303,7 @@ def chunk(words: list, max_words: int = MAX_WORDS) -> list:
     def flush():
         if cur:
             cues.append({"s": cur[0]["s"], "e": cur[-1]["e"], "words": [w["w"] for w in cur],
+                         "starts": [w["s"] for w in cur], "wids": [w.get("ids", [w.get("id")]) for w in cur],
                          "ids": [x for w in cur for x in w.get("ids", [w.get("id")]) if x]})
             cur.clear()
 
@@ -269,6 +318,8 @@ def chunk(words: list, max_words: int = MAX_WORDS) -> list:
         if len(cur) < max_words:
             continue
         nxt = words[i] if i < len(words) else None
+        if nxt is not None and nxt.get("ids") and nxt.get("ids") == cur[-1].get("ids"):
+            continue    # the words one phrase correction wrote stay on one line
         if nxt is not None and len(cur) < max_words + 1:
             if is_number(nxt["w"]):
                 continue
@@ -291,6 +342,41 @@ def hold(cues: list) -> list:
             nxt_s = cues[k + 1]["s"] - GAP_LEAD if k + 1 < len(cues) else None
             c["e"] = c["s"] + MIN_CUE if nxt_s is None else max(c["e"], min(c["s"] + MIN_CUE, nxt_s))
     return cues
+
+
+def _first_carrier(wids: list, k: int, before: list, wid: str) -> bool:
+    """Word k is the first word carrying transcript word `wid` (a phrase correction gives every word
+    it writes the ids of all the words it replaced)."""
+    return wid in wids[k] and wid not in (wids[k - 1] if k else before)
+
+
+def edit_lines(cues: list, split, join, gone=frozenset()) -> list:
+    """The subtitle editor's line edits, anchored on transcript word ids so they survive a recut: a
+    line starts at each word in `split`; join {from, to} puts the line starting at `to` onto the line
+    before while that line still ends at `from` (its last word not `gone`). Lines in different runs (a
+    long silence or hidden words between them) never join. Every other line stays as chunk() made it."""
+    split = set(split or ())
+    joins = {(j["from"], j["to"]) for j in join or ()}
+    merged: list = []
+    for c in cues:
+        prev = merged[-1] if merged else None
+        last = next((w for w in reversed(prev["wids"]) if tuple(w) not in gone), []) if prev else []
+        if prev and prev["run"] == c["run"] and any(f in last and _first_carrier(c["wids"], 0, last, t) for f, t in joins):
+            for key in ("words", "starts", "wids", "ids"):
+                prev[key] = prev[key] + c[key]
+            prev["e"] = c["e"]
+            continue
+        merged.append(dict(c))
+    out: list = []
+    for c in merged:
+        cuts = [k for k in range(1, len(c["words"])) if any(_first_carrier(c["wids"], k, [], x) for x in split)]
+        bounds = [0] + cuts + [len(c["words"])]
+        for a, b in zip(bounds, bounds[1:]):
+            s = c["s"] if a == 0 else c["starts"][a]
+            e = c["e"] if b == len(c["words"]) else min(max(s + 0.01, c["starts"][b] - GAP_LEAD), c["starts"][b])
+            out.append({"s": s, "e": e, "run": c["run"], "words": c["words"][a:b], "starts": c["starts"][a:b],
+                        "wids": c["wids"][a:b], "ids": [x for w in c["wids"][a:b] for x in w if x]})
+    return out
 
 
 def apply_case(text: str, case: str) -> str:
@@ -398,12 +484,20 @@ class Measurer:
 
 def fit(text: str, base: float, safe_w: float, outline: float, meas: Measurer):
     """(size, lines). Shrink-only; wrap to two lines rather than shrink below MIN_SHRINK."""
+    def shrunk(fs: float, lines: list) -> int:
+        # The ratio scales the outline along with the letters, and drawn widths are not linear in size,
+        # so the estimate can still overhang by a few pixels.
+        fs = max(10, int(fs))
+        while fs > 10 and max(meas.width(t, fs, outline) for t in lines) > safe_w:
+            fs -= 1
+        return fs
+
     w = meas.width(text, base, outline)
     if w <= safe_w:
         return int(base), [text]
-    fs = base * safe_w / w
+    fs = shrunk(base * safe_w / w, [text])
     if fs >= base * MIN_SHRINK or " " not in text:
-        return max(10, int(fs)), [text]
+        return fs, [text]
     parts = text.split(" ")
     best = None
     for k in range(1, len(parts)):
@@ -412,8 +506,9 @@ def fit(text: str, base: float, safe_w: float, outline: float, meas: Measurer):
         if best is None or widest < best[0]:
             best = (widest, [a, b])
     widest, lines = best
-    fs = base if widest <= safe_w else base * safe_w / widest
-    return max(10, int(fs)), lines
+    if widest <= safe_w:
+        return int(base), lines
+    return shrunk(base * safe_w / widest, lines), lines
 
 
 # --- ASS --------------------------------------------------------------------------------------
@@ -448,22 +543,66 @@ def ass_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("{", "(").replace("}", ")")
 
 
+def inline_color(hexcol: str) -> str:
+    """'#FFD60A' -> '&H0AD6FF&', the colour override form of ass_color (alpha left to the style)."""
+    return f"&H{ass_color(hexcol)[4:]}&"
+
+
+def word_spans(c: dict, text_lines: list):
+    """[(start, end)] of each spoken word of a cue, for the word-by-word highlight: a word is lit from
+    its start until the next one starts, the last one until the cue ends. None when the cue's text no
+    longer has one spoken word per token (a word that was only punctuation was stripped from the
+    line, or is still in it)."""
+    starts = c.get("starts") or []
+    tokens = [tok for t in text_lines for tok in t.split(" ")]
+    if len(tokens) != len(starts) or not all(re.search(r"\w", tok) for tok in tokens):
+        return None
+    ends = starts[1:] + [c["e"]]
+    return [(c["s"] if k == 0 else s, e) for k, (s, e) in enumerate(zip(starts, ends))]
+
+
+def line_text(text_lines: list, active: int, marks: tuple) -> str:
+    """The cue's lines with word number `active` in the highlight colour. Every event of a cue has
+    the same text and size, so libass lays it out identically and only the colour moves."""
+    on, off = marks
+    out, k = [], 0
+    for line in text_lines:
+        toks = []
+        for tok in line.split(" "):
+            toks.append(f"{{\\1c{on}}}{ass_escape(tok)}{{\\1c{off}}}" if k == active else ass_escape(tok))
+            k += 1
+        out.append(" ".join(toks))
+    return "\\N".join(out)
+
+
 def build_cues(words_out: list, cap: dict, hidden_ids: Optional[set] = None, stats=None) -> list:
     style = cap.get("style") or {}
     max_words = int(style.get("maxWords") or MAX_WORDS)
     words = [{"s": w["s"], "e": w["e"], "w": w["w"], "id": w["id"]} for w in words_out]
     words = stitch_numbers(words)
-    words = apply_corrections(words, normalize_corrections(cap.get("corrections")), stats)
+    heard = {w["id"]: w["w"] for w in words_out}
+    words = apply_corrections(words, normalize_corrections(cap.get("corrections"), heard), stats)
     if cap.get("digits", True):
         words = digits_for_numbers(words)
-    cues = []
+    gone = {tuple(w["ids"]) for w in words if w.get("gone")}
+
+    def hidden(c):
+        return bool(hidden_ids) and set(c["ids"]) <= hidden_ids
+
+    # `run` groups the lines that may join: a long silence or a hidden line starts a new group
+    cues, group = [], 0
     for run in split_runs(words):
-        cues.extend(hold(chunk(run, max_words)))
-    if hidden_ids:
-        cues = [c for c in cues if not set(c["ids"]) <= hidden_ids]
+        group += 1
+        for c in hold(chunk(run, max_words)):
+            if hidden(c):
+                group += 1
+            else:
+                cues.append(dict(c, run=group))
+    cues = [c for c in edit_lines(cues, cap.get("split"), cap.get("join"), gone) if not hidden(c)]
     case = style.get("case") or "upper"
     for c in cues:
-        c["t"] = cue_text(c["words"], case)
+        c["gone"] = [tuple(ids) in gone for ids in c["wids"]]
+        c["t"] = cue_text([w for w, g in zip(c["words"], c["gone"]) if not g], case)
     return [c for c in cues if c["t"]]
 
 
@@ -499,7 +638,9 @@ def render_ass(cues: list, cap: dict, width: int, height: int, position_spans=No
     outline *= scale
     shadow *= scale
     margin = MARGIN_FRAC * width
-    safe_w = width - 2 * margin
+    # a centred line also stays clear of verify's right edge, by one more pixel because the cue
+    # report rounds each box to whole pixels
+    safe_w = 2 * min(width / 2 - margin, verify.ig_right_limit(width) - width / 2 - 1)
     meas = Measurer(fpath, metrics)
     head = (
         "[Script Info]\n"
@@ -524,12 +665,21 @@ def render_ass(cues: list, cap: dict, width: int, height: int, position_spans=No
     )
     lines = [head.rstrip("\n")]
     report = []
+    highlight = style.get("highlight")
+    marks = (inline_color(highlight), inline_color(style.get("color") or "#FFFFFF")) if highlight else None
+    pop = bool(style.get("pop"))
     for c in cues:
         cx, cy = width / 2.0, height * cue_position(c, pos_y, position_spans)
         fs, text_lines = fit(c["t"], base, safe_w, outline, meas)
-        text = "\\N".join(ass_escape(t) for t in text_lines)
-        lines.append(f"Dialogue: 0,{ts(c['s'])},{ts(c['e'])},Cap,,0,0,0,,"
-                     f"{{\\an5\\pos({cx:.0f},{cy:.0f})\\fs{fs}{FADE}}}{text}")
+        spans = word_spans(c, text_lines) if marks else None
+        lit = spans is not None
+        spans = spans or [(c["s"], c["e"])]
+        last = len(spans) - 1
+        for k, (t0, t1) in enumerate(spans):
+            text = line_text(text_lines, k, marks) if lit else "\\N".join(ass_escape(t) for t in text_lines)
+            lines.append(f"Dialogue: 0,{ts(t0)},{ts(t1)},Cap,,0,0,0,,"
+                         f"{{\\an5\\pos({cx:.0f},{cy:.0f})\\fs{fs}\\fad({FADE_IN if k == 0 else 0},{FADE_OUT if k == last else 0})"
+                         f"{pop_in(10 * (round(t0 * 100) - round(c['s'] * 100))) if pop else ''}}}{text}")
         wpx = max(meas.width(t, fs, outline) for t in text_lines)
         hpx = fs * len(text_lines) + 2 * outline
         report.append({"s": round(c["s"], 3), "e": round(c["e"], 3), "text": c["t"], "size": fs,
@@ -557,6 +707,17 @@ def build_for_timeline(tl, proj: dict, width: int, height: int, words_out=None, 
     cues = build_cues(words_out if words_out is not None else tl.words_out, cap,
                       hidden_set(tl, cap), stats)
     ass, report, warns, font = render_ass(cues, cap, width, height, position_spans)
+    # the subtitle editor shows and edits each word as drawn, by the transcript words it came from; the
+    # words one phrase correction wrote share their ids and are edited as one; a word fixed to nothing is ""
+    for r, c in zip(report, cues):
+        r["run"] = c["run"]
+        r["tokens"] = []
+        for w, ids, g in zip(c["words"], c["wids"], c["gone"]):
+            w, ids = "" if g else w, [i for i in ids if i]
+            if r["tokens"] and r["tokens"][-1]["ids"] == ids:
+                r["tokens"][-1]["w"] += " " + w
+            else:
+                r["tokens"].append({"w": w, "ids": ids})
     unused = [k for k, v in stats.items() if v == 0]
     if unused:
         warns.append("caption corrections that matched nothing: " + ", ".join(unused))

@@ -3,13 +3,13 @@
 // Anything with a place in the video, a second request, a lasting preference or a word we are not
 // sure about goes to the full AI editor instead. Missing a fast path costs ~20 s; a wrong one costs
 // the user's trust, so this list stays short and strict.
-import type { Project } from './project';
+import { lowestCaptionPosition, type Project } from './project';
 
 export interface FastCall { name: string; args: Record<string, unknown> }
 export interface FastPlan { kind: string; calls: FastCall[]; summary: string }
 
 /** Words that mean "a specific place", "more than one thing", or "remember this": never fast. */
-const NOT_FAST = /\b(when|where|while|whenever|start|starting|beginning|begin|intro|end|ending|middle|part|parts|after|before|during|first|last|second|seconds|minute|word|words|say|says|said|saying|line|always|every|everywhere|from now|next time|remember|future|and|but|also|plus|then|instead|except|picture|photo|image|cover|zoom|cut|font|color|colour|hashtag|post|song|track|different|change|another|why)\b|\d|["“”?]/;
+const NOT_FAST = /\b(when|where|while|whenever|start|starting|beginning|begin|intro|end|ending|middle|part|parts|after|before|during|first|last|second|seconds|minute|word|words|say|says|said|saying|line|case|always|every|everywhere|from now|next time|remember|future|and|but|also|plus|then|instead|except|picture|photo|image|cover|zoom|cut|font|color|colour|hashtag|post|song|track|different|change|another|why)\b|\d|["“”?]/;
 
 const NEGATED = /\b(not|cannot|can not|dont|don['’]t|never|no longer|keep|leave|stop|without changing)\b|\b\w+n['’]t\b/;
 
@@ -42,7 +42,9 @@ export function planFastNote(note: string, p: Project): FastPlan | null {
     if (/\b(bigger|larger|too small|too tiny|hard to read|enlarge)\b/.test(n)) {
       const next = Math.round(clamp(size * 1.15, 80, 160));
       if (next <= size) return null;
-      return { kind: 'captions-bigger', calls: [{ name: 'set_caption_style', args: { size: next, enabled: true } }], summary: 'I made the captions a bit bigger.' };
+      // a bigger line is taller: keep its bottom above Instagram's caption, as set_caption_style requires
+      const position = Math.min(Number(style.position) || 0.75, lowestCaptionPosition(p.format, { ...style, size: next }));
+      return { kind: 'captions-bigger', calls: [{ name: 'set_caption_style', args: { size: next, position, enabled: true } }], summary: 'I made the captions a bit bigger.' };
     }
     const pos = Number(style.position) || 0.75;
     if (/\b(higher|up|too low)\b/.test(n)) {
@@ -51,7 +53,7 @@ export function planFastNote(note: string, p: Project): FastPlan | null {
       return { kind: 'captions-up', calls: [{ name: 'set_caption_style', args: { position: next } }], summary: 'I moved the captions up a little.' };
     }
     if (/\b(lower|down|too high)\b/.test(n)) {
-      const next = Math.round(clamp(pos + 0.06, 0.5, 0.85) * 100) / 100;
+      const next = Math.round(clamp(pos + 0.06, 0.5, lowestCaptionPosition(p.format, style)) * 100) / 100;
       if (next <= pos) return null;
       return { kind: 'captions-down', calls: [{ name: 'set_caption_style', args: { position: next } }], summary: 'I moved the captions down a little.' };
     }

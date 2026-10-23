@@ -19,6 +19,7 @@ export function Outs({
   why,
   onExport,
   onPhone,
+  onPlatforms,
   exportFile
 }: {
   label: string
@@ -26,6 +27,8 @@ export function Outs({
   why?: string
   onExport: () => void
   onPhone: () => void
+  /** opens Export for other platforms (TikTok, YouTube Shorts and the rest) */
+  onPlatforms: () => void
   /** exports the version on screen without the dialog, for a cloud save */
   exportFile: () => Promise<ExportResult>
 }) {
@@ -60,6 +63,9 @@ export function Outs({
           </button>
         ))}
       </div>
+      <button className="btn ghost" onClick={onPlatforms} disabled={disabled} title={why} data-testid="export-platforms">
+        Export for other platforms
+      </button>
       <SaveHelper saving={saving} name={saving ? driveName(saving.drive) : ''} onClose={reset} />
     </div>
   )

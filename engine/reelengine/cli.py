@@ -10,6 +10,7 @@ import hashlib
 import json
 import sys
 import traceback
+import uuid
 from pathlib import Path
 
 from . import proto
@@ -46,6 +47,23 @@ def _in_work(args, option: str):
 def cmd_probe(args):
     from . import probe
     return probe.probe(Path(args.file))
+
+
+def cmd_export_probe(args):
+    from . import export_media
+    return export_media.inspect(Path(args.file))
+
+
+def cmd_export_media(args):
+    from . import export_media
+    if args.width is None and args.height is None and args.bitrate is None:
+        return export_media.remux(Path(args.file), Path(args.dest))
+    return export_media.encode(Path(args.file), Path(args.dest), args.width, args.height, args.bitrate)
+
+
+def cmd_export_cover(args):
+    from . import export_media
+    return export_media.cover(Path(args.file), Path(args.dest), args.at)
 
 
 def cmd_classify(args):
@@ -146,7 +164,7 @@ def cmd_search_images(args):
     return res
 
 
-def _thumb(proj: Path, out: Path) -> str | None:
+def _thumb(proj: Path, out: Path, stem: str | None = None) -> str | None:
     """A small still the AI LOOKS at before placing a picture: a matching title can hide a wrong one."""
     try:
         from PIL import Image
@@ -158,13 +176,33 @@ def _thumb(proj: Path, out: Path) -> str | None:
             bg.alpha_composite(im)
             bg = bg.convert("RGB")
             bg.thumbnail((320, 320))
-            thumb = tdir / f"{out.stem}.jpg"
+            thumb = tdir / f"{stem or out.stem}.jpg"
             bg.save(thumb, "JPEG", quality=80)
         return str(thumb)
     except Exception as e:  # noqa: BLE001 -- a missing thumbnail never costs the picture
         from .compose_util import log
         log(f"no thumbnail for {out.name}: {e}")
         return None
+
+
+def cmd_inspect_image(args):
+    """A picture the AI is choosing (Library, attachment or download), read where it is: its size and
+    a still of its own, so candidates inspected side by side never share one."""
+    from PIL import Image
+    from .safepath import safe_resolve
+    proj = _project(args)
+    src = safe_resolve(proj, args.asset, root=Path(args.root) if args.root else None, what="image")
+    with Image.open(src) as im:
+        width, height = im.size
+    thumb = _thumb(proj, src, stem=f"candidate-{uuid.uuid4().hex}")
+    if not thumb:
+        raise EngineError("NOT_AN_IMAGE", f"no still for {src.name}", "I couldn't open that picture. Try another one.")
+    return {"previewPath": _rel_to(Path(thumb), proj), "width": width, "height": height}
+
+
+def cmd_inspect_media(args):
+    from .asset_preview import inspect
+    return inspect(_project(args), Path(args.root) if args.root else None, args.asset, args.command == 'inspect-video', args.preview)
 
 
 def cmd_register_capture(args):
@@ -321,6 +359,11 @@ NOT_PROJECT_WRITES = {"probe", "doctor", "verify", "search-images", "analyze-mus
                       "classify", "attach"}
 
 
+def cmd_import_reference(args):
+    from . import reference_import
+    return reference_import.run(Path(args.file), Path(args.output) if args.output else None)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = _Parser(prog="reelengine", description="Reel Studio media engine")
     sub = p.add_subparsers(dest="command", parser_class=_Parser)
@@ -334,6 +377,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = add("probe", cmd_probe, "describe a media file")
     sp.add_argument("file")
+    sp = add("export-probe", cmd_export_probe, "probe a finished edit against platform video rules")
+    sp.add_argument("file")
+    sp = add("export-media", cmd_export_media, "encode a finished edit for a platform, or only redo its audio")
+    sp.add_argument("file")
+    sp.add_argument("--dest", required=True)
+    sp.add_argument("--width", type=int, help="with --height and --bitrate: re-encode; none of them: copy the video")
+    sp.add_argument("--height", type=int)
+    sp.add_argument("--bitrate", type=int)
+    sp = add("export-cover", cmd_export_cover, "save a JPEG cover from a video frame or a picture")
+    sp.add_argument("file")
+    sp.add_argument("--dest", required=True)
+    sp.add_argument("--at", type=float, help="seconds into a video (default: the whole picture)")
     sp = add("classify", cmd_classify, "sort dropped files into the Library")
     sp.add_argument("--root", help="Reel Studio root (default REELENGINE_ROOT or ~/Documents/Reel Studio)")
     sp.add_argument("--move", action="store_true", help="move instead of copy")
@@ -383,12 +438,23 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--file")
     add("captions", cmd_captions, "write the caption file only (debug)")
     add("doctor", cmd_doctor, "check the install")
+    sp = add("import-reference", cmd_import_reference, "import FCPXML or Premiere FCP7 XML")
+    sp.add_argument("file")
+    sp.add_argument("--output", help="write the import record as JSON")
     sp = add("search-images", cmd_search_images, "find freely licensed pictures on the web")
     sp.add_argument("--query")
     sp.add_argument("--n", type=int, default=8)
     sp.add_argument("--copyrighted", action="store_true",
                     help="also posters/stills of shows and films (copyrighted; labelled as such)")
     sp.add_argument("words", nargs="*")
+    sp = add("inspect-image", cmd_inspect_image, "a picture's size and a still of it for the AI to look at")
+    sp.add_argument("--asset", required=True)
+    sp.add_argument("--root")
+    for name in ('inspect-video', 'inspect-audio'):
+        sp = add(name, cmd_inspect_media, 'a local contact sheet or waveform for an asset candidate')
+        sp.add_argument('--asset', required=True)
+        sp.add_argument('--root')
+        sp.add_argument('--preview')
     sp = add("register-capture", cmd_register_capture, "credit a website screenshot saved in work/assets")
     sp.add_argument("--asset", required=True)
     sp.add_argument("--url", required=True)

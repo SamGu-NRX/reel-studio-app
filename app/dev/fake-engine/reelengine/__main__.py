@@ -10,6 +10,7 @@ Extra test hooks (env):
   FAKE_ENGINE_DOWNLOAD_STEP=<seconds>  pause per 10% of download-model (default 0.05)
   FAKE_ENGINE_OFFLINE=1        download-model stops at 30% with the real engine's "no internet" error
   FAKE_ENGINE_SPEECH_CHECK=<seconds>   how long speech-check takes (default 1)
+  FAKE_ENGINE_SLOW_RENDER=<seconds>   a full-quality render waits this long first, in small steps (Stop tests)
 """
 from __future__ import annotations
 
@@ -71,7 +72,9 @@ def probe(path: str) -> dict:
     v = next((s for s in streams if s.get("codec_type") == "video" and s.get("disposition", {}).get("attached_pic") != 1), None)
     a = next((s for s in streams if s.get("codec_type") == "audio"), None)
     dur = float(info.get("format", {}).get("duration") or 0)
-    res = {"path": str(p), "duration": dur, "hasAudio": a is not None}
+    res = {"path": str(p), "duration": dur, "hasAudio": a is not None, "sizeBytes": p.stat().st_size,
+           "vcodec": v.get("codec_name") if v else None, "acodec": a.get("codec_name") if a else None,
+           "pixFmt": v.get("pix_fmt") if v else None}
     if v:
         num, _, den = (v.get("avg_frame_rate") or "30/1").partition("/")
         fps = float(num) / float(den or 1) if float(den or 1) else 30.0
@@ -256,6 +259,43 @@ def run_ffmpeg(cmd: list[str], total: float, stage: str, message: str, lo: float
         raise Fail("RENDER_FAILED", "I could not finish your video. Please try again.", err[-2000:])
 
 
+def write_captions(proj: Path, data: dict) -> None:
+    """work/captions.json as the real engine writes it, with simpler lines: the kept words three to a line
+    (one speech run), the one-word fixes applied (a word fixed to nothing keeps its place as ""), then the
+    subtitle editor's split and join applied as the engine does (captions.edit_lines)."""
+    cap = data.get("captions") or {}
+    transcript = proj / "work" / "transcript.json"
+    # a reel rendered straight after init (the note-queue tests) has no transcript yet
+    if cap.get("enabled") is False or not transcript.exists():
+        return
+    words = json.loads(transcript.read_text("utf-8"))["words"]
+    index = {w["id"]: i for i, w in enumerate(words)}
+    fixes = {c["at"]: c["to"] for c in cap.get("corrections") or [] if c.get("at")}
+    tokens = [{"w": fixes.get(w["id"], w["w"]), "ids": [w["id"]]}
+              for r in (data.get("cut") or {}).get("keep") or [] for w in words[index[r["from"]]:index[r["to"]] + 1]]
+    split = set(cap.get("split") or [])
+    joins = {(j["from"], j["to"]) for j in cap.get("join") or []}
+
+    def shown(line):
+        return [t["ids"][0] for t in line if t["w"]]
+
+    joined: list = []
+    for line in (tokens[i:i + 3] for i in range(0, len(tokens), 3)):
+        if joined and shown(joined[-1]) and shown(line) and (shown(joined[-1])[-1], shown(line)[0]) in joins:
+            joined[-1] += line
+        else:
+            joined.append(line)
+    lines: list = []
+    for line in joined:
+        lines.append([line[0]])
+        for t in line[1:]:
+            if t["ids"][0] in split:
+                lines.append([])
+            lines[-1].append(t)
+    cues = [{"run": 0, "ids": [t["ids"][0] for t in line], "tokens": line} for line in lines if shown(line)]
+    (proj / "work" / "captions.json").write_text(json.dumps({"cues": cues}), "utf-8")
+
+
 def cmd_render(args: list[str]) -> dict:
     draft = "--draft" in args
     proj = Path(take(args, "--project"))
@@ -263,6 +303,10 @@ def cmd_render(args: list[str]) -> dict:
     data = load(proj, file)
     if os.environ.get("FAKE_ENGINE_FAIL") == "render":
         raise Fail("RENDER_FAILED", "I could not finish your video. Please try again.")
+    slow = 0.0 if draft else float(os.environ.get("FAKE_ENGINE_SLOW_RENDER", "0") or 0)
+    for i in range(int(slow * 10)):
+        progress("render", i / slow, "Putting it all together")
+        time.sleep(0.1)
     # docs/versions.md: a draft goes to --out (default versions/preview/); only a final makes
     # versions/vN/, starting afresh when an earlier attempt that was never saved left one there
     n = int(data.get("version", 0)) + 1
@@ -295,6 +339,7 @@ def cmd_render(args: list[str]) -> dict:
     (vdir / "project.json").write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
     (vdir / ".rendering").unlink()
     if not draft:
+        write_captions(proj, data)
         data["version"] = n
         save(proj, data, file)
     progress("render", 100, "Done")
@@ -327,6 +372,32 @@ def cmd_cover_candidates(args: list[str]) -> dict:
 def cmd_probe(args: list[str]) -> dict:
     files = [a for a in args if not a.startswith("--")]
     return probe(files[0])
+
+
+def cmd_export_probe(args: list[str]) -> dict:
+    info = cmd_probe(args)
+    out = subprocess.run([FFPROBE, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=bit_rate", "-of", "csv=p=0", args[0]],
+                         capture_output=True, text=True).stdout.strip()
+    # The real engine reads the edit list and keyframes from the file; assume the worst, so platforms that care remux.
+    return {**info, "audioBitrate": int(out) if out.isdigit() else None, "editList": True, "maxKeyframeGap": info["duration"]}
+
+
+def cmd_export_media(args: list[str]) -> dict:
+    dest = take(args, "--dest")
+    width, height, bitrate = take(args, "--width"), take(args, "--height"), take(args, "--bitrate")
+    video = (["-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+              "-c:v", "libx264", "-preset", "ultrafast", "-b:v", bitrate, "-pix_fmt", "yuv420p"] if width else ["-c:v", "copy"])
+    run_ffmpeg([FFMPEG, "-y", "-v", "error", "-i", args[0], *video, "-c:a", "aac", "-b:a", "128k", "-use_editlist", "0", dest],
+               float(probe(args[0])["duration"]), "export", "Saving platform files", 0, 100)
+    return {"video": dest, "sizeBytes": Path(dest).stat().st_size}
+
+
+def cmd_export_cover(args: list[str]) -> dict:
+    dest = take(args, "--dest")
+    at = take(args, "--at")
+    subprocess.run([FFMPEG, "-y", "-v", "error", *(["-ss", at] if at else []), "-i", args[0], "-frames:v", "1", "-q:v", "2", dest],
+                   check=True, capture_output=True)
+    return {"cover": dest}
 
 
 def cmd_download_model(args: list[str]) -> dict:
@@ -388,7 +459,8 @@ COMMANDS = {
     "probe": cmd_probe, "classify": cmd_classify, "init": cmd_init, "transcribe": cmd_transcribe,
     "analyze": cmd_analyze, "autocut": cmd_autocut, "render": cmd_render, "doctor": cmd_doctor,
     "download-model": cmd_download_model, "speech-check": cmd_speech_check, "attach": cmd_attach,
-    "cover-candidates": cmd_cover_candidates,
+    "cover-candidates": cmd_cover_candidates, "export-cover": cmd_export_cover, "export-probe": cmd_export_probe,
+    "export-media": cmd_export_media,
 }
 
 

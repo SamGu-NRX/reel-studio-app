@@ -7,6 +7,7 @@ import type { RenderSegment } from './moments'
 import type { VersionRow } from './version-diff'
 import type { Step } from './steps'
 export type { VersionRow } from './version-diff'
+import type { Platform, PlatformExportRequest } from './platforms'
 export type { ChatAction } from './notes'
 export type { CoverCandidate } from './cover'
 
@@ -44,6 +45,14 @@ export interface Word {
   source?: string
 }
 
+/** A caption word as the engine drew it, the transcript words it came from, and its speech run (lines in
+ * different runs have a long silence between them). */
+export interface CaptionToken {
+  w: string
+  ids: string[]
+  run: number
+}
+
 export interface ChecklistItem {
   key: string
   label: string
@@ -73,6 +82,8 @@ export interface ChatMessage {
   actions?: ChatAction[]
   /** A My style rule the AI suggested; saved only if the user answers Yes (remember-yes). */
   suggestion?: string
+  /** A typed My style rule to ask about instead (lowercase captions after a note made them so). */
+  proposal?: StyleProposal
   /** Pictures, GIFs or clips the user attached to this note (a "you" message). */
   attachments?: NoteAttachment[]
   /** Where a note asked "Just here" points: shown as a muted "0:08" before the words and placed as a mark (shared/moments.ts). */
@@ -157,6 +168,8 @@ export interface ProjectDetail extends ProjectSummary {
   versions: VersionInfo[]
   words: Word[]
   keptIds: string[]
+  /** The caption lines of the last full render, word by word (engine work/captions.json). */
+  captionLines: CaptionToken[][]
   checklist: ChecklistItem[]
   versionsMade: VersionMade[]
   chat: ChatMessage[]
@@ -190,7 +203,11 @@ export interface ProjectJson {
   captions?: {
     enabled: boolean
     style?: Record<string, unknown>
-    corrections?: { from: string; to: string }[]
+    /** `at` (through `through`): fixes only that word, made of those words, while it is heard as `from` (the Subtitles list). */
+    corrections?: { from: string; to: string; at?: string; through?: string }[]
+    /** word ids that start a caption line; lines starting at `to` that go onto the line ending at `from` */
+    split?: string[]
+    join?: { from: string; to: string }[]
   }
   music?: {
     enabled: boolean
@@ -392,6 +409,18 @@ export interface StyleRule {
   id: string
   text: string
   createdAt: string
+  /** Set: the app applies this rule itself when a new video is made. Otherwise the AI reads it on every edit. */
+  payload?: { kind: 'caption-case'; case: 'lower' }
+  paused?: boolean
+  source?: { project: string; title: string; version: number }
+  consent?: { proposal: string; at: string }
+}
+
+export interface StyleProposal {
+  id: string
+  text: string
+  payload: { kind: 'caption-case'; case: 'lower' }
+  source: { project: string; title: string; version: number }
 }
 
 export interface ExportResult {
@@ -400,6 +429,12 @@ export interface ExportResult {
   cover: string | null
   captionFile: string
   caption: string
+}
+
+export interface PlatformExportResult {
+  folder: string
+  /** `try` is set only when two versions were exported. A Try 2 on Try 1's video shares Try 1's `video` file. */
+  files: { platform: Platform; try?: 1 | 2; video: string; cover: string; captionFile: string; caption: string }[]
 }
 
 /** "Send to my phone": one network the phone could reach this computer on. */
@@ -520,6 +555,7 @@ export interface ReelApi {
     coverCandidates(slug: string, moments: number[], source: string): Promise<CoverCandidate[]>
     /** Stops the look, if one runs; resolves once the engine has exited. */
     stopCoverCandidates(slug: string): Promise<void>
+    exportPlatforms(slug: string, version: number, request: PlatformExportRequest): Promise<PlatformExportResult>
     remove(slug: string): Promise<void>
   }
   /** Pictures, GIFs and short clips on a note (0.1.2). Each call copies the files into the project. */
@@ -573,6 +609,8 @@ export interface ReelApi {
   style: {
     rules(): Promise<StyleRule[]>
     remove(id: string): Promise<void>
+    /** Change a rule's words, or pause or resume it. */
+    update(id: string, patch: { text?: string; paused?: boolean }): Promise<StyleRule>
     /** Answer "Remember this for next time?" on a chat message: Yes saves the rule, No only says so. */
     answer(slug: string, messageId: string, yes: boolean): Promise<void>
   }

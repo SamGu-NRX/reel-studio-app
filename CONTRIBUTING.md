@@ -22,7 +22,7 @@ npm ci
 npm run build -w ai
 cd engine
 uv venv --python 3.11
-uv pip install --python .venv -c requirements.txt -e ".[dev]"
+uv pip install --python .venv -c requirements.txt -e ".[dev,reference]"
 cd ..
 ```
 

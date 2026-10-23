@@ -54,6 +54,30 @@ describe('fast notes (no model turns)', () => {
     expect((await loadProject(dir)).music.level).toBe('under-voice');
   });
 
+  it('"lower case captions" means the letters, so it goes to the AI instead of moving the captions down', async () => {
+    const { dir } = await setup();
+    expect(planFastNote('make the captions lower case', await loadProject(dir))).toBeNull();
+  });
+
+  it('moves default captions down only as far as Instagram\'s caption and username allow, still without the model', async () => {
+    const { dir, host, settingsDir } = await setup();
+    const model = new ScriptedModel([new Error('the model must not be called for a fast note')]);
+    const r: any = await createAI({ host, settingsDir, providerOverride: model }).applyNote(dir, 'captions lower', () => {});
+    expect(r.fast).toBe('captions-down');
+    expect((await loadProject(dir)).captions.style.position).toBe(0.77);
+  });
+
+  it('makes captions bigger after they were moved as low as they go, still without the model', async () => {
+    const { dir, host, settingsDir } = await setup();
+    const p = await loadProject(dir);
+    p.captions.style = { ...p.captions.style, size: 126, outline: 12, position: 0.77 }; // Bold pop, after "captions lower"
+    await saveProject(dir, p);
+    const model = new ScriptedModel([new Error('the model must not be called for a fast note')]);
+    const r: any = await createAI({ host, settingsDir, providerOverride: model }).applyNote(dir, 'bigger captions', () => {});
+    expect(r.fast).toBe('captions-bigger');
+    expect((await loadProject(dir)).captions.style).toMatchObject({ size: 145, position: 0.76 });
+  });
+
   it('applies a simple note with one direct change and one final render, no model', async () => {
     const { dir, host, settingsDir } = await setup();
     const model = new ScriptedModel([new Error('the model must not be called for a fast note')]);

@@ -12,14 +12,15 @@ A note asked at a moment of the video starts like `At 0:14 (around "you don't ne
 
 Common notes and the tool that handles them:
 - "Music is too loud at the start" or "too loud when I say X": set_music_automation on those words, about -4 to -8. "Too loud overall": choose_music with level quiet. "Too quiet": a gentle lift, or level under-voice.
-- "Different music", "more upbeat", "sadder song": list_library with kind music, then choose_music with a track that fits the mood asked for.
+- "Different music", "more upbeat", "sadder song": list_library with kind music, then resolve_asset kind music for a track that fits the mood, inspect its waveform and measurements, commit it, and choose_music with its assetId.
 - "Put the price on '20 bucks'": add_broll anchored to those exact words with text-pop, or make_animation with price-tag. The number on screen must be exactly what was said.
-- "Show a picture of X when I say X": find it (list_library, then search_images and fetch_image), then add_broll anchored on X.
+- "Show a picture of X when I say X": find it (list_library, then search_images), resolve_asset it, LOOK at the still and commit it, then add_broll with its assetId anchored on X.
 - "That picture is in the wrong place", "make it bigger", "move it to the side": update_broll (anchor, treatment or params). "Get rid of that picture": remove_broll.
 - "Cut the part where I talk about X", "that line is a repeat": set_cut with the new keep list, dropping only those words. "Bring back the part where...": set_cut adding those words back.
 - "Too slow", "too many pauses": set_gap_cap lower. "Too rushed", "it cut my joke": set_gap_cap higher, or restore the words.
 - "The caption says X but I said Y": add_caption_correction from X to Y. "Captions are too big", "move them down": set_caption_style.
 - "Zoom in when I say X", "too much zooming": set_zoom on those words, or remove the zoom.
+- "Add a whoosh when the picture comes in", "a pop on that", "no sound effects": set_sfx on those moments, or an empty list. Add sound effects only when the note asks for them.
 - "My video is mirrored", "it's backwards", "the writing is backwards", "flip it": set_mirror with on true. "It wasn't mirrored", "flip it back", "undo the flip": set_mirror with on false. Look at the frames to confirm text in the room now reads the right way.
 - "Different cover": set_cover at a better face frame in raw-take seconds. "Change the caption or hashtags": write_post (always exactly 5 hashtags).
 

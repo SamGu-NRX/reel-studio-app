@@ -1,14 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { TOOLS, TOOL_NAMES, executeTool, newToolState, loadProject, StyleStore, ToolContext, AgentEvent } from '../src';
 import { saveProject } from '../src/project';
 import { isStrict, validate } from '../src/schema';
-import { FakeHost, makeProject, tinyPng } from './helpers';
+import { FakeHost, makeProject, tinyPng, tinyMp3, commitImage, commitLocalAsset } from './helpers';
 
 const SPEC_TOOLS = ['get_project', 'get_transcript', 'set_cut', 'set_gap_cap', 'set_caption_style', 'add_caption_correction', 'remove_caption_correction',
-  'list_library', 'choose_music', 'set_music_automation', 'add_broll', 'update_broll', 'remove_broll', 'search_images',
-  'fetch_image', 'capture_website', 'make_animation', 'set_zoom', 'set_mirror', 'cover_candidates', 'set_cover', 'write_post', 'add_style_rule', 'render_draft', 'look_at_frames', 'finish'];
+  'list_library', 'choose_music', 'set_music_automation', 'add_broll', 'update_broll', 'remove_broll', 'resolve_asset', 'list_assets', 'preview_asset',
+  'export_asset_credits', 'search_images', 'fetch_image', 'capture_website', 'make_animation', 'set_zoom', 'set_sfx', 'set_mirror', 'cover_candidates', 'set_cover', 'write_post', 'add_style_rule', 'render_draft', 'look_at_frames', 'finish'];
 
 async function ctxFor(): Promise<{ ctx: ToolContext; host: FakeHost; dir: string; root: string; events: AgentEvent[] }> {
   const { root, dir } = await makeProject();
@@ -132,6 +133,20 @@ describe('tool implementations', () => {
     expect(await fsp.readFile(path.join(dir, 'project.json'))).toEqual(before);
   });
 
+  it('fails if the correction check treats a one-place fix as a whole-reel correction', async () => {
+    const { ctx, dir } = await ctxFor();
+    await executeTool(ctx, 'set_cut', { keep: [{ from: 'w16', to: 'w56' }] });
+    const seeded = await loadProject(dir);
+    seeded.captions.corrections = [{ from: 'and', to: '', at: 'w35' }];
+    await saveProject(dir, seeded);
+    expect((await executeTool(ctx, 'add_caption_correction', { from: 'and', to: 'plus' })).isError).toBe(false);
+    seeded.captions.corrections = [{ from: 'flour', to: 'Flour', at: 'w34' }];
+    await saveProject(dir, seeded);
+    const result = await executeTool(ctx, 'add_caption_correction', { from: 'flour', to: 'flower' });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content).error).toMatch(/no matches after existing corrections: "flour"/);
+  });
+
   it('fails if unrelated missing assets block b-roll removal', async () => {
     const { ctx, dir } = await ctxFor();
     const p = await loadProject(dir);
@@ -202,16 +217,17 @@ describe('tool implementations', () => {
     expect(r.content).toMatch(/RESPELLED FROM THE USER'S OWN WORDS[^\n]*\nw1: "Nave" -> "Neve" \[title\]/);
   });
 
-  it('music: list, choose by path or bare name, automation anchors', async () => {
+  it('music: list, commit, choose and automate', async () => {
     const { ctx, root, dir } = await ctxFor();
-    await fsp.writeFile(path.join(root, 'Library', 'Music', 'calm piano.mp3'), 'x');
+    await fsp.writeFile(path.join(root, 'Library', 'Music', 'calm piano.mp3'), tinyMp3());
     const lib = JSON.parse((await executeTool(ctx, 'list_library', { kind: 'music' })).content);
     expect(lib.files).toEqual(['Library/Music/calm piano.mp3']);
     expect((await executeTool(ctx, 'choose_music', { track: 'nope.mp3', startAt: null, level: null })).isError).toBe(true);
-    const r = await executeTool(ctx, 'choose_music', { track: 'calm piano.mp3', startAt: 4, level: 'quiet' });
+    const track = await commitLocalAsset(ctx, 'Library/Music/calm piano.mp3', 'music');
+    const r = await executeTool(ctx, 'choose_music', { track, startAt: 4, level: 'quiet' });
     expect(r.summary).toBe('Added the song "calm piano"');
     const p = await loadProject(dir);
-    expect(p.music).toMatchObject({ track: 'Library/Music/calm piano.mp3', startAt: 4, level: 'quiet', enabled: true });
+    expect(p.music).toMatchObject({ track, startAt: 4, level: 'quiet', enabled: true });
     expect((await executeTool(ctx, 'set_music_automation', { automation: [{ fromWord: 'w0', toWord: 'wX', gainDb: -6 }] })).isError).toBe(true);
     expect((await executeTool(ctx, 'set_music_automation', { automation: [{ fromWord: 'w0', toWord: 'w8', gainDb: -6 }] })).isError).toBe(false);
     // CLI-style call with missing nullable fields is accepted
@@ -219,35 +235,58 @@ describe('tool implementations', () => {
     expect((await loadProject(dir)).music.enabled).toBe(false);
   });
 
-  it('b-roll: text-pop, library asset, animation, search, update, remove', async () => {
+  it('b-roll: text-pop, committed image, animation, update, remove', async () => {
     const { ctx, root, dir, host } = await ctxFor();
     await fsp.writeFile(path.join(root, 'Library', 'Images', 'flour.png'), tinyPng());
     const nullP = { tilt: null, scale: null, text: null };
-    const a = await executeTool(ctx, 'add_broll', { anchor: { from: 'w29', to: 'w30' }, treatment: 'text-pop', asset: null, search: null, animation: null, params: { ...nullP, text: '$20' } });
+    const a = await executeTool(ctx, 'add_broll', { anchor: { from: 'w29', to: 'w30' }, treatment: 'text-pop', asset: null, animation: null, params: { ...nullP, text: '$20' } });
     expect(a.isError).toBe(false);
     expect(a.summary).toBe('Added a visual on "twenty bucks"');
-    const b = await executeTool(ctx, 'add_broll', { anchor: { from: 'w33', to: 'w34' }, treatment: 'card-above-head', asset: 'flour.png', search: null, animation: null, params: { ...nullP, tilt: -2.5 } });
-    expect(JSON.parse(b.content).asset).toBe('Library/Images/flour.png');
-    const c = await executeTool(ctx, 'add_broll', { anchor: { from: 'w48', to: 'w52' }, treatment: 'full-frame', asset: null, search: null, animation: { template: 'stat-count-up', params: { text: 'hours', value: '18', items: null } }, params: nullP });
+    const committed = await commitImage(ctx, 'flour.png');
+    const b = await executeTool(ctx, 'add_broll', { anchor: { from: 'w33', to: 'w34' }, treatment: 'card-above-head', asset: committed, animation: null, params: { ...nullP, tilt: -2.5 } });
+    expect(JSON.parse(b.content).asset).toBe(committed);
+    const c = await executeTool(ctx, 'add_broll', { anchor: { from: 'w48', to: 'w52' }, treatment: 'full-frame', asset: null, animation: { template: 'stat-count-up', params: { text: 'hours', value: '18', items: null } }, params: nullP });
     expect(c.isError).toBe(false);
     expect(host.animations[0]).toMatchObject({ template: 'stat-count-up', params: { text: 'hours', value: '18' } });
-    // search: engine returns a local path result
-    const img = path.join(dir, 'work', 'found.png');
-    await fsp.writeFile(img, tinyPng());
-    host.searchResults = [{ url: 'https://example.com/x.png', path: 'work/found.png', title: 'x' }];
-    const d = await executeTool(ctx, 'add_broll', { anchor: { from: 'w39', to: 'w41' }, treatment: 'side-card', asset: null, search: 'bread brick', animation: null, params: nullP });
-    expect(d.isError).toBe(false);
-    const noAsset = await executeTool(ctx, 'add_broll', { anchor: { from: 'w39', to: 'w41' }, treatment: 'side-card', asset: null, search: null, animation: null, params: nullP });
+    const noAsset = await executeTool(ctx, 'add_broll', { anchor: { from: 'w39', to: 'w41' }, treatment: 'side-card', asset: null, animation: null, params: nullP });
     expect(noAsset.isError).toBe(true);
     let p = await loadProject(dir);
-    expect(p.broll.map((x) => x.id)).toEqual(['b1', 'b2', 'b3', 'b4']);
+    expect(p.broll.map((x) => x.id)).toEqual(['b1', 'b2', 'b3']);
     expect(p.broll[0].params).toEqual({ text: '$20' });
     expect((await executeTool(ctx, 'update_broll', { id: 'b2', anchor: null, treatment: 'side-card', asset: null, params: { tilt: 0, scale: null, text: null } })).isError).toBe(false);
     expect((await executeTool(ctx, 'remove_broll', { id: 'b9' })).isError).toBe(true);
     expect((await executeTool(ctx, 'remove_broll', { id: 'b1' })).isError).toBe(false);
     p = await loadProject(dir);
-    expect(p.broll.map((x) => x.id)).toEqual(['b2', 'b3', 'b4']);
+    expect(p.broll.map((x) => x.id)).toEqual(['b2', 'b3']);
     expect(p.broll[0]).toMatchObject({ treatment: 'side-card', params: { tilt: 0 } });
+  });
+
+  it('sound effects: on a word, a b-roll or a cut that exist; an empty list leaves no trace', async () => {
+    const { ctx, dir } = await ctxFor();
+    await executeTool(ctx, 'set_cut', { keep: [{ from: 'w16', to: 'w40' }, { from: 'w44', to: 'w56' }] });
+    const nullP = { tilt: null, scale: null, text: null };
+    await executeTool(ctx, 'add_broll', { anchor: { from: 'w29', to: 'w30' }, treatment: 'text-pop', asset: null, animation: null, params: { ...nullP, text: '$20' } });
+    const id = (await loadProject(dir)).broll[0].id;
+    const none = { word: null, broll: null, cut: null };
+    const ok = await executeTool(ctx, 'set_sfx', { sfx: [
+      { sound: 'whoosh-soft', at: { ...none, cut: 'w44' }, gainDb: null },
+      { sound: 'pop-plop', at: { ...none, broll: id }, gainDb: -3 },
+      { sound: 'click-soft', at: { ...none, word: 'w53' }, gainDb: null },
+    ] });
+    expect(ok.isError).toBe(false);
+    expect((await loadProject(dir)).sfx).toEqual([
+      { at: { cut: 'w44' }, sound: 'whoosh-soft' }, { at: { broll: id }, sound: 'pop-plop', gainDb: -3 }, { at: { word: 'w53' }, sound: 'click-soft' },
+    ]);
+    for (const at of [{ ...none, cut: 'w45' }, { ...none, cut: 'w16' }, { ...none, broll: 'nope' }, { ...none, word: 'w53', cut: 'w44' }, none]) {
+      expect((await executeTool(ctx, 'set_sfx', { sfx: [{ sound: 'pop-plop', at, gainDb: null }] })).isError).toBe(true);
+    }
+    expect((await loadProject(dir)).sfx).toHaveLength(3);
+    await executeTool(ctx, 'set_sfx', { sfx: [] });
+    expect('sfx' in JSON.parse(await fsp.readFile(path.join(dir, 'project.json'), 'utf8'))).toBe(false);
+  });
+
+  it('offers exactly the sounds the engine ships', () => {
+    execFileSync(process.execPath, [path.resolve(__dirname, '..', 'scripts', 'gen-sfx.mjs'), '--check']);
   });
 
   it('fetch_image downloads images only', async () => {
@@ -277,14 +316,15 @@ describe('tool implementations', () => {
   it('choose_music asks the engine where a new song should start', async () => {
     const { ctx, root, dir, host } = await ctxFor();
     host.engineAssets = true;
-    await fsp.writeFile(path.join(root, 'Library', 'Music', 'calm piano.mp3'), 'x');
-    const r = JSON.parse((await executeTool(ctx, 'choose_music', { track: 'calm piano.mp3', startAt: null, level: null })).content);
+    await fsp.writeFile(path.join(root, 'Library', 'Music', 'calm piano.mp3'), tinyMp3());
+    const track = await commitLocalAsset(ctx, 'Library/Music/calm piano.mp3', 'music');
+    const r = JSON.parse((await executeTool(ctx, 'choose_music', { track, startAt: null, level: null })).content);
     expect(r.song).toMatchObject({ bpm: 92, energy: 'calm', suggestedStartAt: 7.5 });
     expect(r.song.curve).toBeUndefined();
     expect((await loadProject(dir)).music.startAt).toBe(7.5);
     // an explicit start wins, and re-choosing the same song does not re-analyze
     const n = host.calls.filter((c) => c.command === 'analyze-music').length;
-    await executeTool(ctx, 'choose_music', { track: 'calm piano.mp3', startAt: 3, level: 'quiet' });
+    await executeTool(ctx, 'choose_music', { track, startAt: 3, level: 'quiet' });
     expect((await loadProject(dir)).music.startAt).toBe(3);
     expect(host.calls.filter((c) => c.command === 'analyze-music').length).toBe(n);
   });
@@ -343,7 +383,30 @@ describe('tool implementations', () => {
     expect((await executeTool(ctx, 'set_cover', { atSourceTime: 6.2, source: 's9', text: null })).isError).toBe(true);
     expect((await executeTool(ctx, 'set_caption_style', { size: 70, maxWords: 2, case: 'title', color: '#AABBCC88', position: 0.72 })).isError).toBe(false);
     expect((await loadProject(dir)).captions.style).toMatchObject({ size: 70, maxWords: 2, case: 'title', color: '#AABBCC88', position: 0.72 });
-    expect((await executeTool(ctx, 'add_caption_correction', { from: 'flour', to: 'flower' })).isError).toBe(false);
+    // an eval's first edit put them at 0.88, every line under Instagram's caption and username
+    const low = await executeTool(ctx, 'set_caption_style', { size: 105, position: 0.88 });
+    expect(low.isError).toBe(true);
+    expect(low.content).toMatch(/the lowest position is 0\.77/);
+    expect((await loadProject(ctx.projectDir)).captions.style).toMatchObject({ size: 70, position: 0.72 });
+    expect((await executeTool(ctx, 'set_caption_style', { size: 105, position: 0.77 })).isError).toBe(false);
+    // a reel left at 0.85 by an older version can still be moved up, even if not yet all the way
+    const older = await loadProject(ctx.projectDir);
+    older.captions.style.position = 0.85;
+    await saveProject(ctx.projectDir, older);
+    expect((await executeTool(ctx, 'set_caption_style', { position: 0.8 })).isError).toBe(false);
+    await executeTool(ctx, 'set_caption_style', { highlight: '#34C759' });
+    expect(ctx.project!.captions.style.highlight).toBe('#34C759');
+    expect((await executeTool(ctx, 'set_caption_style', { highlight: '#34C75980' })).isError).toBe(true); // the engine draws no see-through highlight
+    expect((await executeTool(ctx, 'set_caption_style', { highlight: '' })).isError).toBe(true);
+    await executeTool(ctx, 'set_caption_style', { highlight: 'none' });
+    expect(ctx.project!.captions.style).not.toHaveProperty('highlight');
+    const seeded = await loadProject(dir);
+    seeded.captions.corrections = [{ from: 'and', to: 'And', at: 'w35' }];
+    await saveProject(dir, seeded);
+    expect((await executeTool(ctx, 'add_caption_correction', { from: 'and', to: 'plus' })).isError).toBe(false);
+    await executeTool(ctx, 'remove_caption_correction', { from: 'and' });
+    // the person's fix of one word in the Subtitles list outlives the editor's whole-reel corrections
+    expect((await loadProject(dir)).captions.corrections).toEqual([{ from: 'and', to: 'And', at: 'w35' }]);
     // no note asking to remember: proposed once (deduped), nothing saved
     await executeTool(ctx, 'add_style_rule', { rule: 'keep music quieter under talking' });
     const again = await executeTool(ctx, 'add_style_rule', { rule: 'Keep music quieter under talking.' });

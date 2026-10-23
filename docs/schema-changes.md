@@ -52,3 +52,40 @@ All additive (optional fields only), per docs/architecture.md section 3. Schema:
   never flipped; every reader of the face box in output pixels mirrors x (`x' = W - x - w`). Written by the AI's
   `set_mirror` tool and by the "Flip picture (it's mirrored)" toggle in "Edit it myself"; turning it off removes
   the field, so the project matches one that never had it.
+
+## 2026-10-22 (subtitle editing)
+
+- `captions.corrections[].at` (word id, optional): the fix applies to that one word only, before any other
+  correction, and only while the transcript still hears it as `from` (after a re-transcription the same id can
+  be another word, and the fix then does nothing). With `through` (word id), the words from `at` through
+  `through` become one word, as when the subtitle editor fixes a word a phrase correction made of several. An
+  empty `to` takes the word off the captions; it is still heard, and it keeps its place, so the lines around it
+  are grouped as before. Written when a word is fixed in the Subtitles list of "Edit it myself".
+- `captions.split` (word ids): each starts a new caption line. `captions.join` (`{from, to}` word ranges): the
+  line that starts at `to` goes onto the line before while that line still ends at `from`. Lines with a long
+  silence or a hidden line between them never join. Both change only the lines they touch; every other line is
+  grouped as before. Anchored on word ids, so a recut keeps them.
+- `work/captions.json` cues gain `tokens` (each word as drawn, before upper-casing, with the transcript word ids
+  it came from; a word taken off the captions is `""`) and `run` (lines with different runs can't be joined).
+
+## 2026-10-22 (caption presets)
+
+- `captions.style.highlight` (`#RRGGBB`, no alpha, absent = none): the word being spoken is drawn in this colour, one
+  word at a time. Each word is lit from its start until the next word starts. A line whose text lost a token
+  (a word that was only punctuation) is drawn without the highlight.
+- `captions.style.pop` (boolean, absent = false): each line grows from 80% to full size over its first 120 ms,
+  carrying on across the word events of a highlighted line.
+- `captions.style.preset` names the look the line started from in "Edit it myself" (`clean`, `bold-pop`,
+  `karaoke`, `boxed`, `minimal`). The engine draws only the style fields; the name is for the picker.
+
+## 2026-10-22 (sound effects)
+
+- `sfx` (array, absent = none): built-in sound effects, `{at, sound, gainDb?}`. `sound` is an id from
+  `engine/reelengine/sfx/pack.json`. `at` names one moment: `{word}` (that word starts, if the cut keeps it),
+  `{broll}` (that b-roll appears, its lead-in included) or `{cut}` (the cut into a kept range after the first whose
+  `from` is that word). The engine lines the sound's measured hit (`onsetMs`) up with that moment on the frame grid
+  and plays one at a time, at most one every 2 seconds; an effect that breaks that, or whose build-up would start
+  before the video, is left out with a render warning. Its level comes from the measured voice: 10 dB under the
+  voice's speech loudness, 6 dB more while the voice is talking, `gainDb` (-24 to +12) on top but never above 4 dB
+  under the voice, and its sample peak stays 3 dB under the voice's loudest peak. Word and cut anchors are
+  remapped after a re-transcription like the others. Written by the AI's `set_sfx`; an empty list removes the field.

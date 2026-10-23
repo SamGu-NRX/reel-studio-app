@@ -41,6 +41,8 @@ import {
   readProject,
   readWords,
   recoverInterrupted,
+  serialized,
+  stamp,
   titleFromFile,
   uniqueSlug,
   updateAppState,
@@ -54,7 +56,7 @@ import { createNoteQueue, type NoteToRun } from './note-queue'
 import { withRenderSlot } from './render-slot'
 import { clearStaleLocks } from './owner'
 import { createLiveVideos } from './live-video'
-import { replyChat, styleConsent, type ChatLine } from './style-consent'
+import { answerStyleQuestion, replyChat, styleConsent, type ChatLine } from './style-consent'
 import type { AgentResult } from './ai-types'
 import { loadAI } from './ai'
 import type { AI, EngineHost } from './ai-types'
@@ -66,11 +68,13 @@ import { loadSettings, saveSettings, settleLibraryRoot } from './settings'
 import { createPidRegistry } from './orphans'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
-import type { AppInfo, DropResult, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord } from '../shared/api'
+import type { AppInfo, DropResult, ExportResult, JobEvent, PlatformExportResult, ProjectJson, VersionInfo, SettingsPane, CoverCandidate, NoteMoment, PlacedWord } from '../shared/api'
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
 import { aiNoteText, checkMoment, forPerson, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment } from '../shared/moments'
+import { parsePlatformExportRequest, secondTryPlatforms, type Platform, type PlatformTry } from '../shared/platforms'
+import { checkPlatformExport, exportPlatforms, sweepExportStaging, type ExportTry } from './platform-export'
 import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { displayPath } from '../shared/display-path'
@@ -428,12 +432,13 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
 /** The editor's reply into the chat, then one "Remember this for next time?" per My style rule the AI
  * proposed or saved (a saved one is taken out again until the user says Yes): main/style-consent.ts. */
 async function replyAskingAboutStyle(r: AgentResult, summary: string): Promise<{ summary: string; version: number; chat: ChatLine[] }> {
-  const c = styleConsent(summary, r.styleRulesAdded, r.styleSuggestions)
+  const c = styleConsent(summary, r.styleRulesAdded, r.styleSuggestions, r.styleProposal)
   if (c.undo.length) {
     const rules = await ai.styleRules().catch(() => [])
-    for (const rule of rules) if (c.undo.includes(rule.text)) await ai.removeStyleRule(rule.id).catch(() => undefined)
+    // a typed rule was saved with the person's Yes; only sentences the AI saved on its own are undone
+    for (const rule of rules) if (c.undo.includes(rule.text) && !rule.payload) await ai.removeStyleRule(rule.id).catch(() => undefined)
   }
-  return { summary: c.summary, version: r.version, chat: replyChat(c, r.version) }
+  return { summary: c.summary, version: r.version, chat: replyChat(c, r.version, r.styleProposal) }
 }
 
 const EDITABLE: (keyof ProjectJson)[] = ['title', 'cut', 'captions', 'music', 'broll', 'zooms', 'cover', 'post']
@@ -443,7 +448,7 @@ function safeFileName(s: string): string {
   return t.slice(0, 80) || 'My video'
 }
 
-async function exportVersion(slug: string, n: number): Promise<ExportResult> {
+async function finishedExportVersion(slug: string, n: number): Promise<VersionInfo> {
   const dir = projectDir(slug)
   let versions = await listVersions(dir)
   let v = versions.find((x) => x.n === n) ?? versions[versions.length - 1]
@@ -452,7 +457,9 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
   if (v.draft) {
     // A preview is not the full-quality file: make it first, as a normal job (progress, Stop, and
     // nothing else can run on this video meanwhile) (review 25).
+    let stopped: AbortSignal | undefined
     jobs.start(slug, 'rerender', async (emit, signal, { owner }) => {
+      stopped = signal
       emit({ type: 'status', message: 'Making the full-quality video', pct: 1, phase: 'final' })
       const r: any = await runEngine(
         'render',
@@ -465,10 +472,16 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
       return { summary: '', version, chat: [] }
     })
     await jobs.forSlug(slug)?.done
+    if (stopped?.aborted) throw { code: 'CANCELLED', userMessage: 'Stopped.' }
     versions = await listVersions(dir)
     v = versions[versions.length - 1]
     if (!v || v.draft) throw { code: 'EXPORT_FAILED', userMessage: 'I could not make the full-quality video. Try Export again.' }
   }
+  return v
+}
+
+async function exportVersion(slug: string, n: number): Promise<ExportResult> {
+  const v = await finishedExportVersion(slug, n)
   const p = await readProject(slug)
   const exportsDir = binDir('exports')
   await fs.mkdir(exportsDir, { recursive: true })
@@ -841,6 +854,45 @@ function registerIpc(): void {
     return parseCoverCandidates(r, source, projectDir(slug))
   })
   handle('projects:stopCoverCandidates', (_e, slug: string) => coverScans.stop(slug))
+  handle('projects:exportPlatforms', async (_e, slug: string, n: number, value: unknown) => {
+    const request = parsePlatformExportRequest(value)
+    updates.assertCanStartWork()
+    const versions = await listVersions(projectDir(slug))
+    if (![n, request.second?.version ?? n].every((m) => versions.some((v) => v.n === m))) throw { code: 'NO_VERSION', userMessage: 'Choose an available version before exporting for platforms.' }
+    const version = await finishedExportVersion(slug, n)
+    const project = await readProject(slug)
+    const exportTry = (v: VersionInfo, platforms: Platform[], { caption, coverSeconds }: Pick<PlatformTry, 'caption' | 'coverSeconds'>): ExportTry => {
+      const chosenCover = join(dirname(v.videoPath), 'cover.png')
+      return { version: v.n, source: v.videoPath, chosenCover: existsSync(chosenCover) ? chosenCover : null,
+        name: `${safeFileName(project.title || slug)} - Version ${v.n}`, platforms, caption, coverSeconds }
+    }
+    const first = exportTry(version, request.platforms, request)
+    const { second } = request
+    const secondVersion = second && (second.version === n ? version : await finishedExportVersion(slug, second.version))
+    const tries = await checkPlatformExport(second && secondVersion
+      ? [first, exportTry(secondVersion, secondTryPlatforms(request.platforms, second.version === n), second)]
+      : [first], runEngine)
+    let result: PlatformExportResult | null = null
+    let failure: unknown
+    exportsWriting++ // the updater will not restart the app while an export writes its files
+    try {
+      jobs.start(slug, 'export', async (emit, signal) => {
+        emit({ type: 'status', message: 'Saving platform files', pct: 1 })
+        try {
+          result = await exportPlatforms({
+            tries, folder: binDir('exports'), runEngine, signal, onProgress: (message, pct) => emit({ type: 'status', message, pct })
+          })
+          return { summary: '', quiet: true }
+        } catch (e) { failure = e; throw e }
+      })
+      await jobs.forSlug(slug)?.done
+    } finally {
+      exportsWriting--
+    }
+    if (failure) throw failure
+    if (!result) throw { code: 'EXPORT_FAILED', userMessage: 'The export stopped. Try Export again.' }
+    return result
+  })
   handle('projects:remove', async (_e, slug: string) => {
     await coverScans.stop(slug)
     const running = jobs.forSlug(slug)
@@ -883,21 +935,34 @@ function registerIpc(): void {
 
   handle('style:rules', () => ai.styleRules())
   handle('style:remove', (_e, id: string) => ai.removeStyleRule(id))
-  // "Remember this for next time?" Yes saves the rule; either answer replaces the buttons with a plain reply.
-  handle('style:answer', async (_e, slug: string, messageId: string, yes: boolean) => {
-    const st = await readAppState(slug)
-    const m = st.chat.find((x) => x.id === messageId)
-    if (!m?.suggestion || !m.actions?.includes('remember-yes')) return
-    if (yes) {
-      if (!ai.addStyleRule) throw { code: 'NOT_READY', userMessage: 'I could not save that to My style. Try again later.' }
-      await ai.addStyleRule(m.suggestion)
-    }
-    await updateAppState(slug, (s) => {
-      const x = s.chat.find((y) => y.id === messageId)
-      if (x) delete x.actions
-    })
-    await addChat(slug, 'editor', yes ? "Saved. I'll do that in your next videos too. You can remove it in My style." : 'OK, only for this video.')
+  handle('style:update', (_e, id: string, patch: { text?: unknown; paused?: unknown }) => {
+    if (!ai.updateStyleRule) throw { code: 'NOT_READY', userMessage: 'I could not change that in My style. Try again later.' }
+    const text = typeof patch?.text === 'string' ? patch.text : undefined
+    if (text !== undefined && !text.trim()) throw { code: 'EMPTY', userMessage: 'Type the rule first, or press Remove.' }
+    return ai.updateStyleRule(id, { text, paused: typeof patch?.paused === 'boolean' ? patch.paused : undefined })
   })
+  handle('style:answer', (_e, slug: string, messageId: string, yes: boolean) =>
+    answerStyleQuestion(
+      {
+        chat: async (s) => (await readAppState(s)).chat,
+        addStyleRule: ai.addStyleRule?.bind(ai),
+        approveStyleProposal: ai.approveStyleProposal?.bind(ai),
+        declineStyleProposal: ai.declineStyleProposal?.bind(ai),
+        // one write: a crash can never leave the question without its buttons and without the reply
+        settle: async (s, id, reply) => {
+          await updateAppState(s, (st) => {
+            const x = st.chat.find((y) => y.id === id)
+            if (x) delete x.actions
+            st.chat.push(stamp({ from: 'editor', text: reply }))
+          })
+        },
+        serialized
+      },
+      slug,
+      messageId,
+      !!yes
+    )
+  )
 
   handle('script:write', (_e, idea: string) => {
     if (!String(idea ?? '').trim()) throw { code: 'EMPTY', userMessage: 'Tell me your idea in a sentence or two first.' }
@@ -1138,6 +1203,7 @@ app.whenReady().then(async () => {
       return []
     })
     if (recovered.length) log(`[recover] cleaned up ${recovered.join(', ')}`)
+    await sweepExportStaging(binDir('exports')).catch((e) => log(`[export] ${String(e)}`))
     await noteQueue.recover().catch((e) => log(`[queue] ${String(e)}`))
   }
   const loaded = await loadAI(

@@ -64,7 +64,12 @@ The root `package.json` is an npm workspace (`app`, `ai`).
 Projects live in `<Documents>/Reel Studio/Projects/<slug>/`. The shared **Library** lives in
 `<Documents>/Reel Studio/Library/` with subfolders `Raw takes/`, `B-roll/`, `Music/`, `Images/`, `Exports/`
 (plain folder names on purpose, so anyone can open them in Finder or Explorer). User style lives in
-`<Documents>/Reel Studio/My style.json`.
+`<Documents>/Reel Studio/My style.json`. Its rules are sentences the AI reads; a rule may also carry a typed
+`payload` the app applies itself when a new video is made (only `{"kind":"caption-case","case":"lower"}` so
+far), plus `paused`, `source` (project, title, version) and `consent` (the question the person said Yes to).
+`forgotten` lists the questions of removed rules, so answering one again cannot bring a rule back. All of
+these are optional. An older version reads a typed rule as a plain sentence, applies paused rules, cannot answer
+a typed question, and drops `forgotten` if it rewrites the file.
 
 ```
 <slug>/
@@ -161,6 +166,7 @@ Exit code 0 on done, 1 on error. The `message` in progress events is user-facing
 | `search-images`, `fetch-image`, `download-media` | find a freely licensed image, fetch one by URL, download a video or song from a link |
 | `attach --project <dir> <file> [--name N]` | a picture, GIF or short clip the user attached to a note -> `work/assets/attach-<id>-<stem>.<ext>` + sidecar `<asset>.attach.json` (name, kind, bytes, size, duration, sound, thumb) + a 320 px still in `work/thumbs/`. JPG/PNG copied; HEIC, still GIF/WebP, BMP -> PNG; animated GIF/WebP -> silent H.264 mp4 (looped to at least 3 s); clips copied. Limits: pictures 25 MB, clips and GIFs 200 MB and 60 s; anything else is refused with a plain message and nothing is written |
 | `doctor` | checks ffmpeg, the speech model, fonts, GPU; prints a human report |
+| `import-reference <file> [--output F]` | reads a Final Cut Pro (`.fcpxml`, `.fcpxmld`) or Premiere FCP7 `.xml` export through OpenTimelineIO (the `reference` extra) into a timeline record: tracks, clip positions and source ranges, markers, transitions, effects and media, with exact FCPXML timing. The adapter runs in a child process stopped after 60 s or 2 GiB. `losses` lists what the adapters are known to drop and `rawMetadata` what they keep only as metadata. Writes nothing into a project |
 
 Everything must work with paths that contain spaces and non-ASCII characters, on macOS arm64 and Windows
 x64. Encoders: libx264 for the final export; drafts use `h264_videotoolbox` on macOS and, on Windows, the first of
@@ -204,7 +210,9 @@ small TypeScript project API and then ask the main process to re-render. The set
 `set_gap_cap`, `set_caption_style`, `add_caption_correction`, `list_library(kind)`, `choose_music(track,
 startAt, level)`, `set_music_automation`, `add_broll(anchor, treatment, asset, params)`, `update_broll`,
 `remove_broll`, `set_mirror(on, source)` (flip a mirrored take; the editor calls it when text in the room reads
-backwards in the frames it looks at, or when a note says the video is mirrored), `search_images(query)` / `fetch_image(url)`, `capture_website(url)` (a screenshot of a public web page in a locked-down offscreen window, for an app or site the speaker names), `make_animation(template, params)`, `set_zoom`,
+backwards in the frames it looks at, or when a note says the video is mirrored), `resolve_asset(kind, intent, phase, candidateId)`, `list_assets`, `preview_asset`, `export_asset_credits`, `search_images(query)` / `fetch_image(url)`, `capture_website(url)` (a screenshot of a public web page in a locked-down offscreen window, for an app or site the speaker names), `make_animation(template, params)`, `set_zoom`,
+`set_sfx` (built-in sound effects, each hitting on a word, a b-roll's appearance or a cut; the engine plays at
+most one every 2 seconds, under the voice),
 `set_cover(atSourceTime, text)`, `write_post(caption, hashtags[5], keywords)`, `add_style_rule(rule)`,
 `render_draft`, `look_at_frames(times)` (returns images for vision models), `finish(summary_for_user)`.
 
@@ -324,3 +332,11 @@ export function createAI(opts: { host: EngineHost; settingsDir: string; dev?: bo
 With no provider connected, `firstEdit` still runs the deterministic path (engine `autocut`, default captions,
 music if a track is in the Library, a cover and a render) and returns a summary saying the AI is not connected.
 See `ai/README.md` for the extra methods beyond this list.
+
+### Frozen image assets
+
+Pictures reach the edit through `resolve_asset`. It offers candidates, each with a still, read where they
+are (the Library, an attachment, or a fresh download), and only a committed candidate can be placed.
+Commit copies the bytes to `work/assets/frozen/<kind>/<sha256>.<ext>` (reusing a file with the same hash)
+and appends one record of source, licence, credit and intent to `work/assets/manifest.jsonl`. `add_broll`
+takes a committed picture's `assetId` or path; video clips and animations are placed as before.

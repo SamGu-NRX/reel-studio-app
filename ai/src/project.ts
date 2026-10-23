@@ -22,7 +22,8 @@ export interface CaptionStyle {
   case?: 'upper' | 'lower' | 'as-is' | 'title' | string; color?: string; outline?: number; outlineColor?: string; shadow?: number; box?: boolean; position?: number;
   [k: string]: unknown;
 }
-export interface CaptionCorrection { from: string; to: string }
+/** at: a fix the person made to that one word in the Subtitles list (engine captions.py apply_corrections). */
+export interface CaptionCorrection { from: string; to: string; at?: string; through?: string }
 /** vocabulary: names/jargon the user or the AI supplies; the engine respells sound-alikes to them after
  * transcription (engine/reelengine/vocab.py). */
 export interface Captions { enabled: boolean; style: CaptionStyle; corrections: CaptionCorrection[]; vocabulary?: string[]; [k: string]: unknown }
@@ -46,6 +47,9 @@ export interface Broll {
   asset: string | null; assets?: string[]; params: BrollParams; [k: string]: unknown;
 }
 export interface Zoom { anchor: WordAnchor; scale: number; [k: string]: unknown }
+/** A built-in sound effect (engine/reelengine/sfx) whose hit lands on one moment: a word's start, a b-roll's
+ * appearance, or the cut into the kept range that starts with that word. */
+export interface Sfx { at: { word: string } | { broll: string } | { cut: string }; sound: string; gainDb?: number }
 export interface Cover { atSourceTime: number; source: string; text: string | null; [k: string]: unknown }
 export interface Post { caption: string; hashtags: string[]; keywords: string[]; [k: string]: unknown }
 export interface NoteEntry {
@@ -71,6 +75,8 @@ export interface Project {
   music: Music;
   broll: Broll[];
   zooms: Zoom[];
+  /** absent = no sound effects */
+  sfx?: Sfx[];
   cover: Cover;
   post: Post;
   notes: NoteEntry[];
@@ -122,6 +128,18 @@ export function withDefaults(p: Partial<Project>): Project {
   } as Project;
 }
 
+/**
+ * The lowest the centre of a one-line caption can sit, as a fraction of the height, with its box still above
+ * Instagram's caption and username (engine/reelengine/verify.py IG_BOTTOM_FRAC, the bottom 19%). The box is
+ * captions.render_ass's: size plus the outline (box padding for a box) top and bottom, scaled from 1080 wide,
+ * and a pixel more because the engine's cue report rounds it.
+ */
+export function lowestCaptionPosition(format: Format, style: CaptionStyle): number {
+  const outline = style.box ? Math.max(style.outline ?? 8, 18) : (style.outline ?? 8);
+  const half = (((style.size ?? 105) + 2 * outline) * format.width) / 1080 / 2;
+  return Math.floor(((0.81 * format.height - half - 1) / format.height) * 100) / 100;
+}
+
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isStr = (v: unknown): v is string => typeof v === 'string';
 
@@ -154,6 +172,10 @@ export function validateProject(p: unknown, transcript?: Transcript): string[] {
     q.broll.forEach((b: any, i: number) => check(b.anchor, `broll[${i}] (${b.id})`));
     q.zooms.forEach((z: any, i: number) => check(z.anchor, `zooms[${i}]`));
     (q.music?.automation ?? []).forEach((m: any, i: number) => check({ from: m.fromWord, to: m.toWord }, `music.automation[${i}]`));
+    (q.sfx ?? []).forEach((e: any, i: number) => {
+      const w = e.at?.word ?? e.at?.cut;
+      if (w) check({ from: w, to: w }, `sfx[${i}]`);
+    });
     const ids = new Set<string>();
     for (const b of q.broll) { if (ids.has(b.id)) out.push(`duplicate broll id ${b.id}`); ids.add(b.id); }
   }
@@ -174,16 +196,18 @@ export async function writeFileAtomic(file: string, data: string | Buffer, mode?
   } finally {
     await fh.close();
   }
+  // About 7 s in all, the same as the app's renameWithRetry (app/src/main/store.ts). The old 0.9 s was too short for a
+  // Windows tester's program holding My style.json open; how long antivirus or sync tools really hold a file is unmeasured.
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt <= 40; attempt++) {
     try {
       await beforeRename?.();
       await fsp.rename(tmp, file);
       return;
     } catch (err: any) {
       lastErr = err;
-      if (!['EPERM', 'EBUSY', 'EACCES'].includes(err?.code)) break;
-      await new Promise((r) => setTimeout(r, 25 * (attempt + 1)));
+      if (attempt === 40 || !['EPERM', 'EBUSY', 'EACCES'].includes(err?.code)) break;
+      await new Promise((r) => setTimeout(r, Math.min(250, 10 + attempt * 10)));
     }
   }
   await fsp.rm(tmp, { force: true });
@@ -319,33 +343,45 @@ export function isKept(t: Transcript, keep: WordAnchor[], wordId: string): boole
 
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}' ]+/gu, '').trim();
 
-/** Mirrors captions.py's stitch_numbers, normalize_corrections and apply_corrections matching. */
+/** Mirrors captions.py's stitch_numbers, normalize_corrections and apply_corrections matching. A fix
+ * made on one word in the Subtitles list (`at`) only claims the words it was made on, so they take no
+ * other correction. */
 export function captionCorrectionProblem(kept: readonly Word[], corrections: CaptionCorrection[], proposed: CaptionCorrection): string | null {
   const bare = (word: string) => word.trim().replace(/^["'(\[¿¡]+/, '').replace(/[.,!?;:"')\]…]+$/, '').toLowerCase();
-  const words: string[] = [];
+  const tokens = (text: string) => text.trim().split(/\s+/).filter(Boolean);
+  const applied = new Set<string>();
+  const fixedHere = new Set<string>();
+  for (const correction of corrections) {
+    if (!correction.at) continue;
+    const i = kept.findIndex((w) => w.id === correction.at);
+    const j = correction.through ? kept.findIndex((w) => w.id === correction.through) : i;
+    if (i < 0 || j < i) continue;
+    const heard = kept.slice(i, j + 1);
+    if (heard.map((w) => bare(w.w)).join(' ') !== tokens(correction.from).map(bare).join(' ')) continue;
+    heard.forEach((w) => fixedHere.add(w.id));
+    applied.add(correction.from);
+  }
+  const remaining: { w: string; fixed: boolean }[] = [];
   for (let i = 0; i < kept.length; i++) {
     const word = kept[i].w;
     const next = kept[i + 1]?.w;
     if (/^\$?\p{Decimal_Number}+$/u.test(word.trim()) && next && /^,\p{Decimal_Number}{3}/u.test(next.trim())) {
-      words.push(word.trim() + next.trim());
+      remaining.push({ w: word.trim() + next.trim(), fixed: fixedHere.has(kept[i].id) || fixedHere.has(kept[i + 1].id) });
       i++;
-    } else words.push(word);
+    } else remaining.push({ w: word, fixed: fixedHere.has(kept[i].id) });
   }
-  const tokens = (text: string) => text.trim().split(/\s+/).filter(Boolean);
   const single = new Map<string, CaptionCorrection>();
   const spans: { correction: CaptionCorrection; from: string[]; to: string[] }[] = [];
   for (const correction of corrections) {
     const from = tokens(correction.from).map(bare);
     const to = tokens(correction.to);
-    if (!from.length) continue;
+    if (!from.length || correction.at) continue;
     if (from.length === 1 && to.length === 1) single.set(from[0], correction);
     else spans.push({ correction, from, to });
   }
-  const remaining = words.map((w) => ({ w, fixed: false }));
-  const applied = new Set<string>();
   for (let i = 0; i < remaining.length; i++) {
     for (const span of spans) {
-      if (!span.from.every((word, k) => remaining[i + k] && bare(remaining[i + k].w) === word)) continue;
+      if (!span.from.every((word, k) => remaining[i + k] && !remaining[i + k].fixed && bare(remaining[i + k].w) === word)) continue;
       if (span.correction === proposed) return null;
       applied.add(span.correction.from);
       remaining.splice(i, span.from.length, ...span.to.map((w) => ({ w, fixed: true })));

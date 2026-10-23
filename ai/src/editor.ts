@@ -4,9 +4,10 @@ import { AgentEvent, AgentResult, AIError, EngineHost, ModelProvider, Phase, Scr
 import { runAgent, RunAgentResult } from './agent';
 import type { LookupFn } from './safety';
 import { Prompts } from './prompts';
-import { StyleStore } from './style';
+import { StyleProposal, StyleStore, captionCaseProposal } from './style';
 import { RenderInfo, ToolContext, ToolState, captionWithCredits, captionsForProofread, doRender, unsureWords, executeTool, load, newToolState, resolveAsset, cleanSummary, renderEvent } from './tools';
 import { planFastNote } from './fastnote';
+import { LEDGER } from './assets';
 import { AttachmentInfo, attachmentStills, attachmentsSection, earlierUnplaced, placedAssets, validateAttachments } from './attachments';
 import {
   Analysis, NoteEntry, PROJECT_FILE, Project, withDefaults, Transcript, WordAnchor, hasTranscript, loadProject, normalizeAnalysis, normalizeKeep, saveProject,
@@ -133,6 +134,9 @@ async function removeStyleRules(deps: EditorDeps, state: ToolState): Promise<voi
   state.styleRuleIds = []; state.styleRulesAdded = [];
 }
 
+/** The asset ledger's size, or null when there is none yet: a note that fails takes its records back out. */
+const ledgerBytes = (projectDir: string) => fsp.stat(path.join(projectDir, LEDGER)).then((s) => s.size, () => null);
+
 /** The caption's credit line follows the pictures the edit ends with (one removed after write_post
  * loses its credit, one added gains it). */
 async function refreshCredits(ctx: ToolContext): Promise<void> {
@@ -225,8 +229,23 @@ async function firstLook(deps: EditorDeps, ctx: ToolContext, onEvent: (e: AgentE
   } catch { /* an older engine, or a failed preview: the AI edit goes on */ }
 }
 
+/** A new video starts from the person's typed My style rules. They go through the caption tool like any AI
+ * call, before the AI edits, so the AI (and later notes) can still change them. */
+async function applyMyStyle(deps: EditorDeps, projectDir: string): Promise<boolean> {
+  if (await deps.style.captionCase() !== 'lower') return false;
+  return !(await executeTool(newCtx(deps, projectDir, null, () => undefined), 'set_caption_style', { case: 'lower' })).isError;
+}
+
 export async function firstEdit(deps: EditorDeps, provider: ModelProvider | null, projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<EditResult> {
   await ensureAnalyzed(deps, projectDir, onEvent, signal);
+  const applied = await applyMyStyle(deps, projectDir);
+  const r = await editNewVideo(deps, provider, projectDir, onEvent, signal);
+  // the AI may still pick another case for this video; only say so when the video kept it
+  const kept = applied && (await loadProject(projectDir)).captions.style.case === 'lower';
+  return kept ? { ...r, summary: `${r.summary} I used lowercase captions from your My style.` } : r;
+}
+
+async function editNewVideo(deps: EditorDeps, provider: ModelProvider | null, projectDir: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<EditResult> {
   if (!provider) return deterministicEdit(deps, projectDir, onEvent, signal);
   const ctx = newCtx(deps, projectDir, provider, onEvent, signal, 3);
   const { p } = await load(ctx);
@@ -314,6 +333,7 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
   const dir = path.join(projectDir, 'work', 'notes', id);
   const base = await fsp.readFile(path.join(projectDir, PROJECT_FILE));
   const baseVersion = withDefaults(JSON.parse(base.toString('utf8'))).version;
+  const ledgerBefore = await ledgerBytes(projectDir);
   const begin = async (): Promise<ToolContext> => {
     const file = path.join(dir, 'edit.json');
     await writeFileAtomic(file, base);
@@ -359,14 +379,27 @@ export async function applyNote(deps: EditorDeps, provider: ModelProvider | null
     }
     const summary = withStyleEcho(r.finished || 'I saved your preference.', ctx.state);
     // this note's files, plus files attached to an earlier note that THIS note put in the video ("when I say X")
-    const placedNow = placedAssets(await loadProject(projectDir, ctx.note!.file));
+    const placedNow = await placedAssets(projectDir, await loadProject(projectDir, ctx.note!.file));
     const recorded = [...refs, ...earlier.map((a) => a.asset).filter((r) => placedNow.has(r) && !refs.includes(r))];
     return await saveNote(deps, ctx, base, baseVersion, { text: note.trim(), label, summary, attachments: recorded }, opts.saveStyleRules !== false);
+  } catch (e) {
+    // the note was not saved: the asset records it appended go too
+    if (ledgerBefore !== null) await fsp.truncate(path.join(projectDir, LEDGER), ledgerBefore).catch(() => undefined);
+    throw e;
   } finally {
     // only what this note made under its own id; a final it started stays above project.json's
     // version, never shown, and the app's job lane clears it (app store.ts cleanPartialVersions)
     await fsp.rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+/** A note that turned the captions lowercase, now committed in `version`: ask to keep that for new videos.
+ * Read from the saved project, so a case the AI set and then changed back asks nothing, and the question's
+ * words are fixed here, never taken from the note or the AI. */
+async function rememberCaptionCase(deps: EditorDeps, before: Project, after: Project, version: number): Promise<StyleProposal | null> {
+  if (after.captions.style.case !== 'lower' || before.captions.style.case === 'lower') return null;
+  if (await deps.style.hasCaptionCase()) return null;
+  return captionCaseProposal({ project: after.id, title: after.title, version });
 }
 
 /** The final video (none when the note only saved or proposed a My style rule), then the one write that saves the note
@@ -404,14 +437,16 @@ async function saveNote(deps: EditorDeps, ctx: ToolContext, base: Buffer, baseVe
     }
     if (ctx.signal?.aborted) throw new AIError('cancelled', 'Stopped.');
   });
+  let styleProposal: StyleProposal | null = null;
   try {
+    styleProposal = await rememberCaptionCase(deps, withDefaults(JSON.parse(base.toString('utf8'))), p, version);
     if (saveStyle) for (const rule of styleRulesAdded) await deps.style.add(rule);
     if (final) ctx.emit(renderEvent(final));
     ctx.emit({ type: 'status', message: 'Done', pct: 100 });
   } catch {
     // the note is saved: a My style write or a listener that fails now must not report it as failed
   }
-  return { summary: n.summary, version, styleRulesAdded, styleSuggestions, changed: [...ctx.state.changed] };
+  return { summary: n.summary, version, styleRulesAdded, styleSuggestions, changed: [...ctx.state.changed], ...(styleProposal ? { styleProposal } : {}) };
 }
 
 // ---------------------------------------------------------------- idea -> script

@@ -10,8 +10,10 @@ import type { Go } from '../nav'
 import { Confirm, FOLDER_APP, Modal, Spinner } from '../components/ui'
 import { SendToPhone } from '../components/SendToPhone'
 import { CloudSave } from '../components/CloudSave'
+import { PlatformExportDialog } from '../components/PlatformExportDialog'
 import { Icon } from '../components/icons'
-import { PhonePlayer, type SubtitleLook } from '../components/Player'
+import { PhonePlayer } from '../components/Player'
+import type { SubtitleLook } from '../../../shared/caption-presets'
 import { PhoneViewSwitch, usePhoneView } from '../components/Phone'
 import { createPlayhead } from '../components/playhead'
 import { versionOnScreen } from '../components/videoLayers'
@@ -70,6 +72,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const [steps, setSteps] = useState<string[]>([])
   const [drawer, setDrawer] = useState<Tab | null>(null)
   const [exporting, setExporting] = useState<'busy' | ExportResult | null>(null)
+  const [platformPicker, setPlatformPicker] = useState(false)
   const [phoneFirst, setPhoneFirst] = useState(false)
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
   const [providerChecked, setProviderChecked] = useState(false)
@@ -97,6 +100,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   const [chip, setChip] = useState<Chip>(null)
   const [alert, setAlert] = useState<string | null>(null)
   const noteField = useRef<HTMLTextAreaElement>(null)
+  const [answerError, setAnswerError] = useState<{ id: string; text: string } | null>(null)
   const att = useNoteAttachments(slug, notify)
   // Files dropped on the note box before the AI check answers: attached once it does, as any drop is.
   const heldDrops = useRef<{ files: File[]; types: string[] }[]>([])
@@ -151,7 +155,8 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
       } else if (e.type === 'done' || e.type === 'error' || e.type === 'cancelled') {
         setJob(null)
         setCompare(null)
-        void load(e.type === 'done')
+        // an export ends with no new version
+        void load(e.type === 'done' && e.version !== undefined)
       }
     })
     return () => {
@@ -225,10 +230,10 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   )
 
   useEffect(() => {
-    const fn = () => void doExport()
+    const fn = () => { if (!platformPicker) void doExport() }
     window.addEventListener(EXPORT_EVENT, fn)
     return () => window.removeEventListener(EXPORT_EVENT, fn)
-  }, [doExport])
+  }, [doExport, platformPicker])
 
   // N: ask about the moment on screen.
   useEffect(() => {
@@ -364,8 +369,13 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     if (a === 'remember-yes' || a === 'remember-no') {
       reel.style
         .answer(slug, messageId, a === 'remember-yes')
-        .then(() => load())
-        .catch((e) => notify(userMessage(e), 'error'))
+        .then(async () => {
+          setAnswerError(null)
+          await load()
+          // the buttons are gone: keep focus on the answered question, not lost to the page
+          document.getElementById(`msg-${messageId}`)?.focus()
+        })
+        .catch((e) => setAnswerError({ id: messageId, text: userMessage(e) }))
     } else if (a === 'connect') connect()
     else openDrawer(ACTION_TAB[a] ?? 'cut')
   }
@@ -429,6 +439,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
         onAction={runAction}
         onRetry={(text, moment) => void note(text, undefined, moment ?? undefined).catch((e) => setAlert(userMessage(e)))}
         onError={(m) => notify(m, 'error')}
+        answerError={answerError}
       />
       <div
         className="cwrap"
@@ -651,6 +662,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
             why={job ? 'Wait for this version to finish' : undefined}
             onExport={() => void doExport()}
             onPhone={() => void doExport(true)}
+            onPlatforms={() => setPlatformPicker(true)}
             exportFile={exportFile}
           />
         </div>
@@ -730,6 +742,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
         />
       )}
 
+      {platformPicker && version && <PlatformExportDialog slug={slug} version={version} versions={d.versions} fps={d.project.format?.fps ?? 30} post={d.project.post} jobId={job?.jobId || undefined} status={job?.message} onClose={() => setPlatformPicker(false)} />}
       {exporting && <ExportDialog result={exporting} phoneFirst={phoneFirst} onClose={() => setExporting(null)} onSaveCaption={(t) => savePost(t)} />}
     </div>
   )
