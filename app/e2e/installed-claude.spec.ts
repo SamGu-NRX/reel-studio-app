@@ -21,7 +21,7 @@ test('installed app: the Claude choice, in this computer\'s real state', async (
     if (EXE) expect(info.engine.mode).toBe('real')
     expect(info.ai).toBe('package')
     // one build: no flavour field, just these
-    expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'fasterExports', 'firstRunDone', 'models', 'platform', 'root', 'rootDisplay', 'sharing', 'test', 'userName', 'version'])
+    expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'fasterExports', 'firstRunDone', 'models', 'phoneView', 'platform', 'root', 'rootDisplay', 'sharing', 'test', 'userName', 'version'])
 
     const providers = (await page.evaluate(() => (window as any).reel.ai.providers())) as { id: string; label: string; detail?: string }[]
     expect(providers.map((p) => p.id)).toEqual(['chatgpt', 'claude', 'claude-cli', 'none'])
@@ -36,8 +36,8 @@ test('installed app: the Claude choice, in this computer\'s real state', async (
 
     await openSettings(page)
     await expect(page.getByTestId('signin-chatgpt')).toBeVisible()
-    await expect(page.getByTestId('claude-key-toggle')).toBeVisible()
-    const panel = page.locator('#sec-ai')
+    await expect(page.getByTestId('settings-advanced')).toBeVisible()
+    const panel = page.locator('#sec-editor')
     if (st.state === 'ready') {
       // what the person already has comes first
       await expect(page.getByTestId('use-claude-code')).toHaveAccessibleName(USE_CLAUDE_CODE)
@@ -47,19 +47,22 @@ test('installed app: the Claude choice, in this computer\'s real state', async (
       await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'signin-chatgpt')
       await expect(page.getByTestId('signin-chatgpt')).toHaveClass(/primary/)
       if (st.state === 'signed_out') await expect(page.getByTestId('claude-code-signin')).toHaveAccessibleName('Sign in to your Claude Code app')
-      if (st.state === 'broken') await expect(page.locator('[data-testid=claude-code-choice][data-state=broken]')).toBeVisible()
-      if (st.state === 'missing') {
+      if (st.state === 'missing' || st.state === 'broken') {
         await page.getByTestId('claude-code-toggle').click()
         await expect(page.getByTestId('claude-code-install').locator('a')).toHaveAttribute('href', 'https://code.claude.com/docs/en/setup')
       }
     }
-    await expect(panel).toContainText('your own Claude plan and its usage limits')
     expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)
     await shot(page, `installed/connect-${st.state}`)
 
     if (st.state === 'ready') {
+      // main sends Claude one short message before the row may say Connected
+      const asked = Date.now()
       await page.getByTestId('use-claude-code').click()
-      await expect(page.getByTestId('ai-connected')).toHaveText('Using Claude through your Claude Code app.')
+      await expect(panel).toContainText('Checking Claude…')
+      await shot(page, 'installed/connect-checking-claude')
+      await expect(page.getByTestId('ai-connected')).toHaveText('Connected', { timeout: 60_000 })
+      console.log(`claude check took ${Date.now() - asked} ms`)
       await page.getByTestId('nav-home').click() // the sidebar re-reads the AI editor on every screen change
     await expect(page.getByTestId('ai-status')).toHaveText('AI editor: Claude')
       expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)

@@ -66,7 +66,7 @@ import { closeAnimationRenderer, renderAnimation, TEST_TEMPLATE } from './animat
 import { captureWebsite } from './capture'
 import { createModelManager } from './models'
 import { createWorkGate } from './work-gate'
-import { loadSettings, saveSettings } from './settings'
+import { loadSettings, saveSettings, settleLibraryRoot } from './settings'
 import { createPidRegistry } from './orphans'
 import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
@@ -104,8 +104,9 @@ const rendererUrl = !app.isPackaged && process.env.ELECTRON_RENDERER_URL
 if (process.env.REELSTUDIO_USER_DATA) app.setPath('userData', process.env.REELSTUDIO_USER_DATA)
 // The self-test must never read or write the person's own data: a throw-away folder stands in for both.
 else if (SELF_TEST.selfTest) app.setPath('userData', mkdtempSync(join(tmpdir(), 'reel-studio-self-test-')))
-// Test builds: a stand-in Documents folder, so first run makes the real default "Documents › Reel Studio".
+// Test builds: stand-in Documents and Movies folders, so first run makes the real default folder inside them.
 if (TEST && process.env.REELSTUDIO_DOCUMENTS) app.setPath('documents', process.env.REELSTUDIO_DOCUMENTS)
+if (TEST && process.env.REELSTUDIO_MOVIES) app.setPath('videos', process.env.REELSTUDIO_MOVIES)
 // Tests that save a key (safeStorage) must not write to the login keychain of the Mac they run on.
 if (TEST && process.platform === 'darwin') app.commandLine.appendSwitch('use-mock-keychain')
 
@@ -115,6 +116,7 @@ initPaths({
   isPackaged: app.isPackaged,
   resourcesPath: process.resourcesPath,
   documentsDir: app.getPath('documents'),
+  moviesDir: app.getPath('videos'),
   userDataDir: app.getPath('userData'),
   appDir: app.getAppPath(),
   rootOverride: SELF_TEST.selfTest ? join(app.getPath('userData'), 'Reel Studio') : null

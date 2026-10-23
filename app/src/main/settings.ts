@@ -1,7 +1,7 @@
 // App settings (not user content): first-run flag and storage location.
-import { promises as fs } from 'node:fs'
+import { existsSync, promises as fs } from 'node:fs'
 import { dirname } from 'node:path'
-import { settingsFile } from './paths'
+import { defaultRoot, legacyRoot, settingsFile } from './paths'
 import { writeJson } from './store'
 import type { SpeechCheckResult } from './models'
 import type { ReleaseEntry } from '../shared/update'
@@ -74,4 +74,18 @@ export function saveSettings(patch: Partial<Settings>): Promise<Settings> {
   const p = queue.then(run, run)
   queue = p.catch(() => undefined)
   return p
+}
+
+/**
+ * The library folder, decided on an install's first launch and saved, so it never moves by itself. An install made
+ * before ~/Movies became the default already has a settings file and keeps its library in Documents. Call it before
+ * anything else in this launch writes settings.
+ */
+export async function settleLibraryRoot(): Promise<string> {
+  const installedBefore = existsSync(settingsFile())
+  const saved = (await loadSettings()).root
+  if (saved) return saved
+  const root = installedBefore ? legacyRoot() : defaultRoot()
+  await saveSettings({ root })
+  return root
 }

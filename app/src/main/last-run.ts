@@ -6,7 +6,7 @@ import { basename, join } from 'node:path'
 import type { createPidRegistry } from './orphans'
 import { clearStaleLocks, OWNER_LOCK } from './owner'
 import { setRootOverride } from './paths'
-import { loadSettings, type Settings } from './settings'
+import { loadSettings, settleLibraryRoot, type Settings } from './settings'
 import { ensureRoot, recoverInterrupted } from './store'
 
 /** `keepClosed`: a video something of the last run's may still write to (jobs.ts). `reopen`: one whose
@@ -17,8 +17,9 @@ export async function settleLastRun(
   log: (line: string) => void,
   reopen: (slug: string) => void = () => undefined
 ): Promise<Settings> {
+  // the library folder is decided on an install's first launch, before anything else writes settings
+  setRootOverride(await settleLibraryRoot())
   const settings = await loadSettings()
-  if (settings.root) setRootOverride(settings.root)
   // Touching the folder in Documents is what makes macOS ask, so first run explains it before it is made (permissions.ts)
   // and a first run has no videos to recover.
   const touchRoot = settings.firstRunDone

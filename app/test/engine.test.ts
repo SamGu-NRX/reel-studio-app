@@ -8,7 +8,7 @@ import { engineEnv, initPaths } from '../src/main/paths'
 
 it('applies engine cache precedence', () => {
   const userDataDir = join(APP_DIR, 'isolated user data')
-  const base = { isPackaged: false, resourcesPath: '', documentsDir: APP_DIR, userDataDir, appDir: APP_DIR }
+  const base = { isPackaged: false, resourcesPath: '', documentsDir: APP_DIR, moviesDir: APP_DIR, userDataDir, appDir: APP_DIR }
 
   initPaths({ ...base, env: { REELSTUDIO_USER_DATA: userDataDir, REELENGINE_CACHE: '/explicit/cache', REELENGINE_CACHE_DIR: '/explicit/assets' } })
   expect(engineEnv().REELENGINE_CACHE).toBe('/explicit/cache')

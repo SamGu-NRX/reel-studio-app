@@ -79,13 +79,15 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await page.getByTestId('composer-connect').click()
   await expect(page.getByTestId('connect-screen')).toBeVisible()
   await expect(page.getByTestId('signin-chatgpt')).toBeVisible()
-  await expect(page.getByTestId('claude-key-toggle')).toHaveText('Use an Anthropic API key (advanced)')
-  await expect(page.getByTestId('without-ai')).toContainText('Without AI')
+  await expect(page.getByTestId('without-ai')).toHaveText('Without an editor, Reel Studio makes a basic version: pauses and retakes removed, subtitles and a cover.')
+  await expect(page.getByTestId('claude-key-toggle')).toBeHidden() // under Advanced
   await shot(page, 'ux-05-connect')
+  await page.getByTestId('ai-advanced').click()
+  await expect(page.getByTestId('claude-key-toggle')).toHaveText('Add key')
   await page.getByTestId('claude-key-toggle').click()
   await expect(page.getByTestId('claude-key-input')).toBeVisible()
   await shot(page, 'ux-06-connect-claude-key')
-  await page.getByText('Back to my video').click()
+  await page.getByText('Back to the reel').click()
   await expect(page.getByTestId('player')).toBeVisible()
 
   // ---- 4. subtitles under Edit it myself: a quick preview first, then the version, said in plain words ----
@@ -179,21 +181,22 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
 
 // The one build offers the person's own Claude Code app in its real state. The mock AI plays each state
 // (REELSTUDIO_MOCK_CLAUDE); no terminal ever opens in mock mode, the launcher file is still written and checked.
-async function claudeScreen(state: string) {
+async function claudeScreen(state: string, env: Record<string, string> = {}) {
   const mine = mkdtempSync(join(BASE, `claude-${state}-`))
   const userData = join(mine, 'user data')
   const { app, page } = await launch({
     REELSTUDIO_MOCK_CLAUDE: state,
     REELSTUDIO_ROOT: join(mine, 'Documents', 'Reel Studio'),
-    REELSTUDIO_USER_DATA: userData
+    REELSTUDIO_USER_DATA: userData,
+    ...env
   })
   await passFirstRun(page)
   const info = await page.evaluate(() => window.reel.app.info())
   // one build: no flavour field, just these
-  expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'fasterExports', 'firstRunDone', 'models', 'platform', 'root', 'rootDisplay', 'sharing', 'test', 'userName', 'version'])
+  expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'fasterExports', 'firstRunDone', 'models', 'phoneView', 'platform', 'root', 'rootDisplay', 'sharing', 'test', 'userName', 'version'])
   await openSettings(page)
   await expect(page.getByTestId('signin-chatgpt')).toBeVisible()
-  return { app, page, info, userData, panel: page.locator('#sec-ai') }
+  return { app, page, info, userData, panel: page.locator('#sec-editor') }
 }
 
 test('Claude Code app ready: "Use Claude (your Claude Code app)" comes first, but only a click turns it on', async () => {
@@ -203,11 +206,11 @@ test('Claude Code app ready: "Use Claude (your Claude Code app)" comes first, bu
   await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-claude-code')
   await expect(page.getByTestId('use-claude-code')).toHaveClass(/primary/)
   await expect(page.getByTestId('signin-chatgpt')).not.toHaveClass(/primary/)
-  await expect(panel).toContainText('It uses your own Claude plan and its usage limits.')
+  await expect(panel).toContainText(/Found on this (Mac|PC)/)
   expect((await page.evaluate(() => window.reel.ai.active())).id).toBe('none') // never picked on its own
   await shot(page, 'ux-15-connect-claude-ready')
   await page.getByTestId('use-claude-code').click()
-  await expect(page.getByTestId('ai-connected')).toHaveText('Using Claude through your Claude Code app.')
+  await expect(page.getByTestId('ai-connected')).toHaveText('Connected')
   await page.getByTestId('nav-home').click() // the sidebar re-reads the AI editor on every screen change
   await expect(page.getByTestId('ai-status')).toHaveText('AI editor: Claude')
   expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)
@@ -222,15 +225,14 @@ test('Claude Code app not signed in: a sign-in window, then it waits and connect
   await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'signin-chatgpt')
   await expect(page.getByTestId('signin-chatgpt')).toHaveClass(/primary/)
   await expect(page.getByTestId('claude-code-signin')).toHaveAccessibleName('Sign in to your Claude Code app')
-  await expect(panel).toContainText('A window opens. Sign in there with your Claude account. Reel Studio never sees it.')
-  await expect(panel).toContainText('It uses your own Claude plan and its usage limits.')
+  await expect(panel).toContainText('Sign in with your plan')
   expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)
   await shot(page, 'ux-17-connect-claude-signed-out')
   await page.getByTestId('claude-code-signin').click()
   await expect(page.getByTestId('claude-code-waiting')).toBeVisible()
   await shot(page, 'ux-18-connect-claude-waiting')
   // the mock "signs in" 1.5 s after the window opens; the 3 s re-check notices and switches to it
-  await expect(page.getByTestId('ai-connected')).toHaveText('Using Claude through your Claude Code app.', { timeout: 15_000 })
+  await expect(page.getByTestId('ai-connected')).toHaveText('Connected', { timeout: 15_000 })
   const launcher = join(userData, 'claude-sign-in', process.platform === 'win32' ? 'Sign in to Claude.cmd' : 'Sign in to Claude.command')
   const script = readFileSync(launcher, 'utf8')
   expect(script).toContain('auth login --claudeai')
@@ -246,9 +248,9 @@ test('Claude Code app not installed: a quiet "Use Claude instead" with plain ins
   await page.getByTestId('claude-code-toggle').click()
   const steps = page.getByTestId('claude-code-install')
   await expect(steps.locator('a')).toHaveAttribute('href', 'https://code.claude.com/docs/en/setup')
-  await expect(steps).toContainText('Follow the steps for your computer.')
+  await expect(steps).toContainText(/Follow the steps for your (Mac|PC)\./)
   await expect(steps).toContainText('Come back here and click Check again.')
-  await expect(panel).toContainText('It needs a paid Claude plan (Pro or Max).')
+  await expect(steps).toContainText('The Claude Code app needs a paid Claude plan (Pro or Max).')
   await expect(page.getByTestId('claude-code-check')).toBeVisible()
   expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)
   await shot(page, 'ux-19-connect-claude-missing')
@@ -256,11 +258,30 @@ test('Claude Code app not installed: a quiet "Use Claude instead" with plain ins
 })
 
 test('Claude Code app broken: a plain line and the install page', async () => {
-  const { app, page, info } = await claudeScreen('broken')
+  const { app, page, info, panel } = await claudeScreen('broken')
   test.skip(info.ai !== 'mock', 'the mock plays the Claude Code states')
+  await expect(panel).toContainText("Your Claude Code app didn't start")
+  await page.getByTestId('claude-code-toggle').click()
   const choice = page.locator('[data-testid=claude-code-choice][data-state=broken]')
-  await expect(choice).toContainText('did not start')
   await expect(choice.locator('a')).toHaveAttribute('href', 'https://code.claude.com/docs/en/setup')
   await shot(page, 'ux-20-connect-claude-broken')
   await app.close()
+})
+
+test('fails if "Use Claude" says Connected before the check call answers, or a failed check hides why', async () => {
+  const slow = await claudeScreen('ready', { REELSTUDIO_MOCK_CLAUDE_CHECK: '2500' })
+  test.skip(slow.info.ai !== 'mock', 'the mock plays the Claude Code states')
+  await slow.page.getByTestId('use-claude-code').click()
+  await expect(slow.panel).toContainText('Checking Claude…')
+  await expect(slow.page.getByTestId('ai-connected')).toHaveCount(0)
+  await expect(slow.page.getByTestId('ai-connected')).toHaveText('Connected', { timeout: 10_000 })
+  await slow.app.close()
+
+  const limited = await claudeScreen('ready', { REELSTUDIO_MOCK_CLAUDE_CHECK: 'limited' })
+  await limited.page.getByTestId('use-claude-code').click()
+  await expect(limited.panel.getByRole('alert')).toHaveText('Your Claude plan is at its limit. Try again after it resets.')
+  await expect(limited.page.getByTestId('claude-try-again')).toBeVisible()
+  await expect(limited.page.getByTestId('ai-connected')).toHaveCount(0)
+  expect((await limited.page.evaluate(() => window.reel.ai.active())).id).toBe('none')
+  await limited.app.close()
 })
