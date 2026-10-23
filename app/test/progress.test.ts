@@ -93,6 +93,15 @@ describe('honest progress', () => {
     expect(t.snapshot().overall).toBeLessThan(99)
   })
 
+  it('fails if the AI taking far longer than estimated still shows a time left (real note: 543 s waiting on Claude)', () => {
+    let now = 0
+    const t = new ProgressTracker('note', 39, empty(), () => now)
+    t.update('edit', 5)
+    expect(t.snapshot().etaSec).toBeGreaterThan(0)
+    now = 543_000
+    expect(t.snapshot()).toMatchObject({ etaSec: null, overdue: true })
+  })
+
   it('recalibrates remaining engine defaults from a slow first step', () => {
     let now = 0
     const onTime = new ProgressTracker('first-edit-basic', 60, empty(), () => now)
