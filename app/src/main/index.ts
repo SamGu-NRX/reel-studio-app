@@ -396,9 +396,10 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
         (p) => emit({ type: 'status', message: 'Copying your video', pct: Math.round(p.pct * 0.01) }),
         signal
       )
-      // a reel planned before it had a video: the editor reads its script from project.json
-      await carryScript(slug)
     }
+    // a reel planned before it had a video: the editor reads its script from project.json (again on a resume,
+    // in case the app closed between the copy and this)
+    await carryScript(slug)
     const provider = basic ? null : await ai.active().catch(() => null)
     // A render event with firstLook = the quick no-AI draft is ready while the AI keeps editing; the
     // Reel screen plays it (shared/live.ts) and says what it is. Once listening is done (the first
@@ -732,13 +733,11 @@ function registerIpc(): void {
   handle('projects:plan', async () => ({ slug: await createPlanned() }))
   handle('projects:addVideo', async (_e, slug: string, files: string[]) => {
     const st = await readAppState(slug)
-    if (st.status !== 'planned' || jobs.forSlug(slug)) throw { code: 'HAS_VIDEO', userMessage: 'This reel already has its video. Drop it on Reels to make a new reel.' }
+    if (st.status !== 'planned') throw { code: 'HAS_VIDEO', userMessage: 'This reel already has its video. Drop it on Reels to make a new reel.' }
     const { videos, skipped } = await takeVideos(files)
     const title = st.title && st.title !== PLANNED_TITLE ? st.title : titleFromFile(videos[0])
-    await updateAppState(slug, (s) => {
-      s.status = 'working'
-      s.title = title
-    })
+    await updateAppState(slug, (s) => void (s.title = title))
+    // refused while a script is still being written; the reel stays planned until its first edit starts
     return { jobId: startFirstEdit(slug, { title, files: videos }), skipped }
   })
   // The editor writes a script for a planned reel. Its title becomes the reel's, unless the person named it.

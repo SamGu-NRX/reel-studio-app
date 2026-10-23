@@ -53,13 +53,18 @@ const INSTAGRAM_URL = 'https://www.instagram.com/'
 const NOTIFY_ASKED = 'rs.notify-asked'
 const fileName = (p: string): string => p.split(/[\\/]/).pop() ?? p
 const pinsKey = (slug: string): string => `rs.pins.${slug}`
+/** After closing something from the keyboard, focus lands on the timeline rather than the page. */
+const keyboardBackToTimeline = (): void => {
+  if (byKeyboard()) requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="timeline"]')?.focus())
+}
 const typing = (t: EventTarget | null): boolean => {
   const el = t as HTMLElement | null
   return !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)
 }
-// How long the landing crossfade (reel.css, 200 ms) stays armed: the new version fades in once it has loaded, which
-// takes a moment after its job ends. 1.5 s is a guess with no measurement behind it.
-const LANDING_MS = 1500
+// How long a landed version's line keeps its entering state, so a re-render soon after does not replay it.
+const LANDED_MS = 1500
+// The landing crossfade (reel.css, 200 ms) stays armed until the new version is on screen, plus the fade.
+const FADE_DONE_MS = 300
 
 /** A spot someone pointed at on the picture, kept on this computer with its note. */
 interface Pin {
@@ -104,7 +109,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const [compare, setCompare] = useState<{ a: number; b: number } | null>(null)
   const [landed, setLanded] = useState<number | null>(null)
   const [unwatched, setUnwatched] = useState<number | null>(null)
-  const [landing, setLanding] = useState(false)
+  // the version whose arrival crosses over the one on screen
+  const [landing, setLanding] = useState<number | null>(null)
   const [pointing, setPointing] = useState(false)
   const [pins, setPins] = useState<Pin[]>(() => {
     try {
@@ -141,16 +147,21 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const watching = useRef({ compare: false, drawer: false })
   watching.current = { compare: !!compare, drawer: !!drawer }
 
-  // Reads overlap (a job's first status and its end each ask): only the newest read may land.
+  // Reads overlap (a job's first status and its end each ask): only the newest read may land, and a read
+  // that asked to show the newest version passes that on to whichever read lands.
   const loads = useRef(0)
+  const wantLatest = useRef(false)
   const load = useCallback(
     async (selectLatest = false) => {
       const n = ++loads.current
+      if (selectLatest) wantLatest.current = true
       try {
         const got = await reel.projects.get(slug)
         if (n !== loads.current) return null
-        // while Version 1 is made, its draft renders are the first look, not a version
-        const next = got.job?.kind === 'first-edit' ? { ...got, versions: got.versions.filter((v) => !v.draft) } : got
+        // Until a reel is ready, a draft render is a first look, not a version: Version 1 is still to come.
+        const next = got.status === 'ready' ? got : { ...got, versions: got.versions.filter((v) => !v.draft) }
+        selectLatest = wantLatest.current
+        wantLatest.current = false
         setD(next)
         if (next.job) {
           setJob((cur) => (cur?.jobId === next.job!.id ? cur : liveFromDetail(next.job!)))
@@ -161,6 +172,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
         setSelected((cur) => (selectLatest || cur === null || !next.versions.some((v) => v.n === cur) ? latest : cur))
         return next
       } catch (e) {
+        if (n !== loads.current) return null
         notify(userMessage(e), 'error')
         go({ name: 'home' })
         return null
@@ -179,11 +191,12 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       const v = n ?? next?.versions[next.versions.length - 1]?.n
       if (v === undefined) return
       setLanded(v)
-      window.setTimeout(() => setLanded((l) => (l === v ? null : l)), LANDING_MS)
+      window.setTimeout(() => setLanded((l) => (l === v ? null : l)), LANDED_MS)
       if (busyElsewhere) return setUnwatched(v)
       if (!byKeyboard() && !reducedMotion()) {
-        setLanding(true)
-        window.setTimeout(() => setLanding(false), LANDING_MS)
+        setLanding(v)
+        // a version that never takes the screen (it was already on it) must not leave the crossfade armed
+        window.setTimeout(() => setLanding((l) => (l === v ? null : l)), 10_000)
       }
       play(v)
     },
@@ -326,8 +339,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       const k = e.key.toLowerCase()
       if (k === 'o' && !e.repeat) setHolding(true)
       else if (k === 'c' && !e.repeat && canPoint) setPointing((p) => !p)
-      else if (e.key === 'Escape' && pointing) setPointing(false)
-      else if (e.key === 'Escape' && compare) setCompare(null)
+      else if (e.key === 'Escape' && pointing) (setPointing(false), keyboardBackToTimeline())
+      else if (e.key === 'Escape' && compare) (setCompare(null), keyboardBackToTimeline())
       else return
       e.preventDefault()
     }
@@ -659,7 +672,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
               </button>
             ))}
           </div>
-          <button className="cmp-done" onClick={() => setCompare(null)} data-testid="done-compare">
+          <button className="cmp-done" onClick={() => (setCompare(null), keyboardBackToTimeline())} data-testid="done-compare">
             Done comparing
           </button>
         </div>
@@ -673,7 +686,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       {pointing && (
         <Pointer
           playhead={playhead}
-          onCancel={() => setPointing(false)}
+          onCancel={() => (setPointing(false), keyboardBackToTimeline())}
           onDrop={(x, y) => {
             if (transport.get().playing) transport.toggle()
             setPointing(false)
@@ -698,7 +711,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                 <PhonePlayer
                   src={src}
                   poster={hasVersions ? version?.cover : null}
-                  className={[landing && 'landing', tag === 'Original' && d.project.sources?.[0]?.mirror === true && 'mirrored-original'].filter(Boolean).join(' ') || undefined}
+                  className={[landing !== null && 'landing', tag === 'Original' && d.project.sources?.[0]?.mirror === true && 'mirrored-original'].filter(Boolean).join(' ') || undefined}
                   autoPlayMuted={!!changePreview || !hasVersions}
                   playRequest={!changePreview && playRequest?.n === version?.n ? playRequest?.ask : undefined}
                   onPlayRequestHandled={() => setPlayRequest(null)}
@@ -717,7 +730,11 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   playhead={playhead}
                   transport={transport}
                   bare
-                  onShown={setShownSrc}
+                  onShown={(shown) => {
+                    setShownSrc(shown)
+                    if (landing !== null && shown && shown === d.versions.find((v) => v.n === landing)?.video)
+                      window.setTimeout(() => setLanding((l) => (l === landing ? null : l)), FADE_DONE_MS)
+                  }}
                   keepTime={!!compare}
                   onFailed={() => {
                     notify('That version could not be found. It may have been moved or deleted.', 'error')
@@ -741,7 +758,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     onRange={(r) => {
                       if (!hasVersions || aiOff) return
                       setChip(r)
-                      noteField.current?.focus()
+                      // from the keyboard the range keeps growing with Shift and the arrows, so focus stays put
+                      if (!byKeyboard()) noteField.current?.focus()
                     }}
                     onPlay={watch}
                   />

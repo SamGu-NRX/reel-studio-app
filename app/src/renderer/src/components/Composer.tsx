@@ -183,7 +183,7 @@ export function Composer({
             </button>}
             <div className="cfield">
               {plain ? null : chip ? (
-                <span className={`tchip${chip.spot ? ' spot' : ''}`} data-testid="moment-chip">
+                <span className="tchip" data-testid="moment-chip">
                   {chip.spot && <span className="spot-n">{chip.spot.n}</span>}
                   {chipLabel(chip)}
                   <button

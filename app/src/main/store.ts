@@ -438,7 +438,8 @@ export async function settleInterrupted(slug: string): Promise<'settled' | 'unre
   if (saved === UNREADABLE) return 'unreadable'
   await cleanPartialVersions(dir)
   await updateAppState(slug, (st) => {
-    if (st.job?.kind !== 'script') st.status = st.job?.kind === 'first-edit' || !existsSync(join(dir, 'versions')) ? 'interrupted' : 'ready'
+    if (st.job?.kind === 'script') settleNote(st, st.job.id, 'stopped')
+    else st.status = st.job?.kind === 'first-edit' || !existsSync(join(dir, 'versions')) ? 'interrupted' : 'ready'
     if (saved) {
       const reply = saved.reply ?? `I made your change. It is Version ${saved.version}.`
       st.chat.push(...replyChat(styleConsent(reply, saved.styleRulesAdded, saved.styleSuggestions), saved.version).map(stamp))

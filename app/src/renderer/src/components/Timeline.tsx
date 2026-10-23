@@ -100,10 +100,18 @@ export function Timeline({
         transport.seek(t)
       }
     }
-    const up = (e: PointerEvent) => {
+    const stop = () => {
       el.removeEventListener('pointermove', move)
       el.removeEventListener('pointerup', up)
-      el.removeEventListener('pointercancel', up)
+      el.removeEventListener('pointercancel', cancel)
+    }
+    const cancel = () => {
+      stop()
+      setSel(null)
+      if (mode === 'scrub' && wasPlaying) transport.toggle()
+    }
+    const up = (e: PointerEvent) => {
+      stop()
       const t = tAt(e.clientX)
       setSel(null)
       if (mode === 'press') transport.seek(t)
@@ -116,25 +124,37 @@ export function Timeline({
     }
     el.addEventListener('pointermove', move)
     el.addEventListener('pointerup', up)
-    el.addEventListener('pointercancel', up)
+    el.addEventListener('pointercancel', cancel)
   }
 
   const key = (e: React.KeyboardEvent) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') {
+    if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault()
+      return transport.seek(e.key === 'Home' ? 0 : duration)
+    }
+    const d = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0
+    if (!d) {
       if (e.key === 'Shift') keyRange.current = null
       return
     }
     e.preventDefault()
-    const d = e.key === 'ArrowRight' ? 1 : -1
     if (!e.shiftKey) return transport.seek(clamp(playhead.get() + d, 0, duration))
+    // the range grows either way from where Shift was first held with an arrow
     const r = keyRange.current ?? { at: Math.floor(playhead.get()), to: Math.floor(playhead.get()) }
     const to = clamp(r.to + d, 0, duration)
     keyRange.current = { at: r.at, to }
     transport.seek(to)
-    if (to > r.at) onRange({ at: r.at, to })
+    if (to !== r.at) onRange({ at: Math.min(r.at, to), to: Math.max(r.at, to) })
   }
 
   const pct = (t: number): string => `${(clamp(t, 0, duration) / (duration || 1)) * 100}%`
+  // marks closer than 2% of the timeline share one target, which plays the newest version among them
+  const groups: { at: number; items: TimelineMark[] }[] = []
+  for (const m of [...marks].sort((a, b) => a.at - b.at)) {
+    const last = groups[groups.length - 1]
+    if (last && duration && (m.at - last.at) / duration < 0.02) last.items.push(m)
+    else groups.push({ at: m.at, items: [m] })
+  }
   return (
     <div
       ref={track}
@@ -162,29 +182,37 @@ export function Timeline({
         </>
       )}
       {duration > 0 &&
-        marks.map((m) => (
-          <button
-            key={m.id}
-            className={`tl-mark${m.v ? ' made' : ' waiting'}${lit === m.id ? ' lit' : ''}`}
-            style={{ left: pct(m.at) }}
-            tabIndex={m.v ? 0 : -1}
-            aria-label={m.v ? `Play Version ${m.v}: ${m.text}` : `Waiting, ${clock(m.at)}: ${m.text}`}
-            onPointerEnter={() => setLit(m.id)}
-            onPointerLeave={() => setLit(null)}
-            onFocus={() => setLit(m.id)}
-            onBlur={() => setLit(null)}
-            onClick={() => (m.v ? onPlay(m.v) : transport.seek(m.at))}
-            data-testid="timeline-mark"
-          >
-            {m.v ? <Icon name="check" size={9} stroke={3} /> : null}
-            {lit === m.id && (
-              <span className={`tl-tip${m.at / duration < 0.2 ? ' start' : m.at / duration > 0.8 ? ' end' : ''}`}>
-                {m.v ? <b>Version {m.v}</b> : <b>Waiting</b>}
-                <span>{m.text}</span>
-              </span>
-            )}
-          </button>
-        ))}
+        groups.map(({ at, items }) => {
+          const id = items[0].id
+          const v = Math.max(0, ...items.map((m) => m.v ?? 0))
+          return (
+            <button
+              key={id}
+              className={`tl-mark${v ? ' made' : ' waiting'}`}
+              style={{ left: pct(at) }}
+              tabIndex={v ? 0 : -1}
+              aria-label={items.map((m) => (m.v ? `Version ${m.v}: ${m.text}` : `Waiting, ${clock(m.at)}: ${m.text}`)).join('; ')}
+              onPointerEnter={() => setLit(id)}
+              onPointerLeave={() => setLit(null)}
+              onFocus={() => setLit(id)}
+              onBlur={() => setLit(null)}
+              onClick={() => (v ? onPlay(v) : transport.seek(at))}
+              data-testid="timeline-mark"
+            >
+              {v ? <Icon name="check" size={9} stroke={3} /> : null}
+              {items.length > 1 && <span className="n">{items.length}</span>}
+              {lit === id && (
+                <span className={`tl-tip${at / duration < 0.2 ? ' start' : at / duration > 0.8 ? ' end' : ''}`}>
+                  {items.map((m) => (
+                    <span key={m.id}>
+                      <b>{m.v ? `Version ${m.v}` : 'Waiting'}</b> {m.text}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </button>
+          )
+        })}
       <span className="tl-head" ref={head} aria-hidden>
         <i />
       </span>

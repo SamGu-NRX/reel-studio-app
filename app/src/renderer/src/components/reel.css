@@ -70,7 +70,7 @@
 .spot {
   position: absolute; width: 24px; height: 24px; margin: -24px 0 0 -2px; border-radius: 50% 50% 50% 2px; background: var(--marker); color: var(--marker-ink);
   font-size: var(--fs-sm); font-weight: 760; display: grid; place-items: center; box-shadow: 0 4px 14px rgba(0, 0, 0, .35), 0 0 0 2px #fff; pointer-events: none;
-  transition: opacity 180ms ease, transform 180ms cubic-bezier(.2, .8, .2, 1);
+  transition: opacity 180ms cubic-bezier(.2, .8, .2, 1), transform 180ms cubic-bezier(.2, .8, .2, 1);
 }
 @starting-style { .spot.pending { opacity: 0; transform: translateY(-6px) scale(.9); } }
 .spot.away { opacity: 0; transform: scale(.9); }
@@ -101,11 +101,15 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .tl-sel { position: absolute; top: 12px; height: 8px; border-radius: 3px; background: var(--marker); pointer-events: none; }
 .tl-mark {
   position: absolute; top: 9px; width: 14px; height: 14px; margin-left: -7px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center;
-  box-shadow: 0 0 0 2px var(--paper); cursor: pointer; z-index: 1; transition: transform 120ms var(--ease-out);
+  box-shadow: 0 0 0 2px var(--paper); cursor: pointer; z-index: 1;
 }
 .tl-mark.made { background: var(--green-tint); color: var(--green-ink); }
 .tl-mark.waiting { background: var(--marker); cursor: default; }
-.tl-mark.lit { transform: scale(1.15); }
+@media (hover: hover) and (pointer: fine) {
+  .tl-mark { transition: transform 150ms var(--ease-out); }
+  .tl-mark:hover { transform: scale(1.15); }
+}
+.tl-mark .n { position: absolute; top: -5px; right: -6px; min-width: 12px; height: 12px; border-radius: 6px; background: var(--ink); color: #fff; font-size: 9px; font-weight: 700; line-height: 12px; padding: 0 3px; }
 .tl-tip {
   position: absolute; bottom: calc(100% + 8px); left: 50%; translate: -50% 0; z-index: 5; display: grid; gap: 1px; text-align: left; white-space: nowrap; max-width: 260px;
   background: var(--surface); color: var(--ink); box-shadow: var(--e2); border-radius: 8px; padding: 6px 9px; font-size: var(--fs-sm); line-height: 16px; pointer-events: none;
@@ -134,7 +138,7 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .planned { flex: 1; min-height: 0; display: flex; justify-content: center; padding-bottom: 10px; }
 .planned-frame {
   height: 100%; aspect-ratio: 9 / 16; max-width: 100%; border-radius: var(--r-lg); background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--line-strong);
-  display: flex; flex-direction: column; padding: 28px 24px 26px; transition: box-shadow 150ms ease, background-color 150ms ease;
+  display: flex; flex-direction: column; padding: 28px 24px 26px;
 }
 .planned.over .planned-frame { background: var(--surface); box-shadow: inset 0 0 0 2px var(--ink); }
 .planned-title { font-size: 26px; line-height: 31px; font-weight: 650; font-stretch: 112%; letter-spacing: -.015em; overflow-wrap: anywhere; }
@@ -331,7 +335,7 @@ html.kb .tl:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; 
 .scrub-speed.on { background: #fff; color: var(--ink); }
 
 /* What the keyboard opens or folds just appears. */
-html.kb :is(.acc, .stripwrap, .steps, .tchip, .spot, .draghandle, .planned-frame, .tl-mark) { transition: none !important; }
+html.kb :is(.acc, .stripwrap, .steps, .tchip, .spot, .draghandle, .tl-mark, .transport .pp, .cmp-done, .send) { transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
   .acc, .stripwrap, .steps { transition: none !important; }
   .phone.landing .phone-screen > video.layer.loading { filter: none; }

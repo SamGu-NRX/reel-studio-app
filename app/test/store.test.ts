@@ -23,6 +23,7 @@ import {
   carryScript,
   createPlanned,
   readProject,
+  settleInterrupted,
   stamp
 } from '../src/main/store'
 import { classifyByExtension } from '../src/main/library'
@@ -340,5 +341,18 @@ describe('a reel planned before it has a video', () => {
     await carryScript(slug)
     expect((await readProject(slug)).script).toEqual(newest)
     expect((await detail(slug)).chat.filter((m) => m.script).map((m) => m.script)).toEqual([older, newest])
+  })
+
+  // fails if quitting while a script is written leaves the idea with no answer and no way to send it again
+  it('settles a script cut short by a quit as stopped, and stays planned', async () => {
+    setupPaths()
+    const slug = await createPlanned()
+    await updateAppState(slug, (s) => {
+      s.chat.push(stamp({ from: 'you', text: 'an idea', plan: true, jobId: 'j9' }))
+      s.job = { id: 'j9', kind: 'script', startedAt: '' }
+    })
+    expect(await settleInterrupted(slug)).toBe('settled')
+    const st = await readAppState(slug)
+    expect([st.status, st.job, st.chat[0].outcome]).toEqual(['planned', null, 'stopped'])
   })
 })
