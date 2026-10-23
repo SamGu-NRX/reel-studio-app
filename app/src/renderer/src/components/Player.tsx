@@ -356,10 +356,8 @@ export function PhonePlayer({
   const [dur, setDur] = useState(0)
   const [started, setStarted] = useState(false)
   const dragOrigin = useRef<EventTarget | null>(null)
-  const [rate, setRate] = useState(() => {
-    const r = Number(localStorage.getItem(RATE_KEY))
-    return RATES.includes(r) ? r : 1
-  })
+  // Demo build: every reel opens at normal speed (the launch film is already cut at 1.5x).
+  const [rate, setRate] = useState(1)
 
   const toggle = useCallback(() => {
     const v = video.current
