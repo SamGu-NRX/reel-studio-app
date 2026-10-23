@@ -104,7 +104,7 @@ export const createMockAI: CreateAI = ({ host }) => {
         }
         return { added: false, rule: dup }
       }
-      const rule: StyleRule = { id: randomUUID(), text, createdAt: new Date().toISOString(), ...from }
+      const rule: StyleRule = { id: randomUUID(), text: cleanRule(text), createdAt: new Date().toISOString(), ...from }
       await saveRules(s, [...s.rules, rule])
       return { added: true, rule }
     })
