@@ -9,6 +9,11 @@ import type { ReelApi, UserError } from './api'
 
 /** Bumped when a call or event changes shape; the server refuses clients of another version. */
 export const CONTRACT_VERSION = 1
+/** The WebSocket subprotocol a browser offers (main/server). */
+export const WS_PROTOCOL = `reel-contract.${CONTRACT_VERSION}`
+
+/** The longest note the editor takes. Far above anything typed; it bounds what one call can make main store. */
+export const NOTE_MAX_CHARS = 10_000
 
 const SLUG = /^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u
 
@@ -30,12 +35,37 @@ const slugOnly: Check = (args) => {
   return [slug(args[0])]
 }
 
+/** A page's id for one submission, so a retry after a lost reply does not run the same note twice. */
+const REQUEST_ID = /^[A-Za-z0-9-]{8,64}$/
+
+/** projects.note(slug, text, attachments?, requestId?): the shape only; main re-reads each attachment from the project. */
+const note: Check = (args) => {
+  if (args.length < 2 || args.length > 4) throw new BadRequest('takes two to four arguments')
+  const [s, text, attachments, requestId] = args
+  if (typeof text !== 'string' || text.length > NOTE_MAX_CHARS) throw new BadRequest('bad note text')
+  if (attachments !== undefined && attachments !== null) {
+    if (!Array.isArray(attachments) || attachments.length > 8 || !attachments.every((a) => typeof a === 'string' && a.length <= 300)) {
+      throw new BadRequest('bad attachments')
+    }
+  }
+  if (requestId !== undefined && requestId !== null && (typeof requestId !== 'string' || !REQUEST_ID.test(requestId))) throw new BadRequest('bad request id')
+  return [slug(s), text, attachments ?? undefined, requestId ?? undefined]
+}
+
+const jobId: Check = (args) => {
+  if (args.length !== 1 || typeof args[0] !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(args[0])) throw new BadRequest('bad job id')
+  return [args[0]]
+}
+
 export function slug(v: unknown): string {
   if (typeof v !== 'string' || v.length > 200 || !SLUG.test(v)) throw new BadRequest('bad slug')
   return v
 }
 
-/** Every call in the contract, with its argument check. The IPC channel is the name with ':' (`projects:get`). */
+/**
+ * Every call in the contract, with its argument check. The IPC channel is the name with ':' (`projects:get`).
+ * Reads, plus the two commands a browser needs to work on a reel: send a note, and Stop.
+ */
 export const METHODS = {
   'app.info': none,
   'projects.list': none,
@@ -45,7 +75,9 @@ export const METHODS = {
   'ai.claudeCodeStatus': none,
   'model.status': none,
   'update.status': none,
-  'style.rules': none
+  'style.rules': none,
+  'projects.note': note,
+  'jobs.cancel': jobId
 } satisfies Record<string, Check>
 
 export type Method = keyof typeof METHODS
@@ -84,12 +116,12 @@ export const channelFor = (m: Method): string => m.replace('.', ':')
 /** The contract's half of ReelApi: what any page can do, wherever it runs. */
 export interface ContractClient {
   app: Pick<ReelApi['app'], 'info'>
-  projects: Pick<ReelApi['projects'], 'list' | 'get'>
+  projects: Pick<ReelApi['projects'], 'list' | 'get' | 'note'>
   ai: Pick<ReelApi['ai'], 'active' | 'providers' | 'claudeCodeStatus'>
   model: Pick<ReelApi['model'], 'status' | 'onProgress'>
   update: Pick<ReelApi['update'], 'status' | 'onChange'>
   style: Pick<ReelApi['style'], 'rules'>
-  jobs: Pick<ReelApi['jobs'], 'onEvent'>
+  jobs: Pick<ReelApi['jobs'], 'onEvent' | 'cancel'>
 }
 
 export interface Transport {
@@ -109,11 +141,11 @@ export function createContractClient(t: Transport): ContractClient {
       t.on(e, (p) => cb(p as EventPayload<E>))
   return {
     app: { info: call('app.info') },
-    projects: { list: call('projects.list'), get: call('projects.get') },
+    projects: { list: call('projects.list'), get: call('projects.get'), note: call('projects.note') },
     ai: { active: call('ai.active'), providers: call('ai.providers'), claudeCodeStatus: call('ai.claudeCodeStatus') },
     model: { status: call('model.status'), onProgress: on('model') },
     update: { status: call('update.status'), onChange: on('update') },
     style: { rules: call('style.rules') },
-    jobs: { onEvent: on('job') }
+    jobs: { onEvent: on('job'), cancel: call('jobs.cancel') }
   }
 }

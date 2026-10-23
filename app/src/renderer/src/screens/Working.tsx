@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { mediaSrc, reel, userMessage } from '../api'
+import { mediaSrc, onReconnect, reel, userMessage } from '../api'
 import type { Go } from '../nav'
 import { Confirm, Progress, Spinner, Thinking } from '../components/ui'
 import { Icon } from '../components/icons'
@@ -50,26 +50,30 @@ export function Working({ slug, go }: { slug: string; go: Go }) {
 
   useEffect(() => {
     let live = true
-    reel.projects
-      .get(slug)
-      .then((d) => {
-        if (!live) return
-        setTitle(d.title)
-        if (d.sourceVideo) setSource(d.sourceVideo)
-        setMirrored(d.project.sources?.[0]?.mirror === true)
-        if (d.words.length) setHeard(d.words.map((w) => w.w))
-        if (d.job) {
-          jobRef.current = d.job.id
-          setState({ kind: 'running', jobId: d.job.id, message: d.job.message, pct: d.job.pct })
-          stageRef.current = stageIndex(d.job.message, stageRef.current)
-          setStage(stageRef.current)
-          setLive(liveFromDetail(d.job))
-        } else if (d.versions.length) go({ name: 'reel', slug })
-        else if (d.status === 'failed')
-          setState({ kind: 'failed', message: d.lastError?.userMessage ?? "I couldn't finish this video.", code: d.lastError?.code })
-        else setState({ kind: 'stopped' })
-      })
-      .catch((e) => live && setState({ kind: 'failed', message: userMessage(e) }))
+    // on open, and again when a dropped link comes back (the job may have finished or failed meanwhile)
+    const sync = () =>
+      reel.projects
+        .get(slug)
+        .then((d) => {
+          if (!live) return
+          setTitle(d.title)
+          if (d.sourceVideo) setSource(d.sourceVideo)
+          setMirrored(d.project.sources?.[0]?.mirror === true)
+          if (d.words.length) setHeard(d.words.map((w) => w.w))
+          if (d.job) {
+            jobRef.current = d.job.id
+            setState({ kind: 'running', jobId: d.job.id, message: d.job.message, pct: d.job.pct })
+            stageRef.current = stageIndex(d.job.message, stageRef.current)
+            setStage(stageRef.current)
+            setLive(liveFromDetail(d.job))
+          } else if (d.versions.length) go({ name: 'reel', slug })
+          else if (d.status === 'failed')
+            setState({ kind: 'failed', message: d.lastError?.userMessage ?? "I couldn't finish this video.", code: d.lastError?.code })
+          else setState({ kind: 'stopped' })
+        })
+        .catch((e) => live && setState({ kind: 'failed', message: userMessage(e) }))
+    void sync()
+    const offReconnect = onReconnect(() => void sync())
 
     const off = reel.jobs.onEvent((e) => {
       if (e.slug !== slug) return
@@ -91,6 +95,7 @@ export function Working({ slug, go }: { slug: string; go: Go }) {
     return () => {
       live = false
       off()
+      offReconnect()
       clearInterval(tick)
     }
   }, [slug, go])

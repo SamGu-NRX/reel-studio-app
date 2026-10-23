@@ -416,6 +416,7 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
 .post-how p { flex: 1; color: var(--ink-2); }
 .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 50; background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 12px; box-shadow: var(--shadow); display: flex; gap: 10px; align-items: center; max-width: min(640px, 80vw); animation: toast-in .2s var(--ease); }
 .toast.error { background: #7d2618; padding-right: 8px; }
+.toast.stays { padding-right: 8px; }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 /* ---- first run ---- */
@@ -455,3 +456,19 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
   .progress > div::after, .phone-scan { display: none; }
 }
+
+/* ---- in a browser (renderer/src/browser-reel.ts) ---- */
+/* The link to the computer dropped. Slides a few pixels from the top edge it lives on. When it is back the text is
+   already gone, so the banner hides at once instead of fading an empty pill. Reduced motion: the global rule above
+   makes the entrance instant too. */
+.conn-banner {
+  position: fixed; top: 12px; left: 50%; z-index: 60; transform: translateX(-50%);
+  max-width: min(560px, calc(100vw - 32px)); padding: 10px 16px; border-radius: 14px;
+  background: var(--amber-soft); color: var(--amber-ink); box-shadow: var(--shadow); font-weight: 500; text-align: center;
+  transition: opacity .2s var(--ease), transform .2s var(--ease);
+}
+.conn-banner.error { background: var(--red-soft); color: var(--red-ink); }
+.conn-banner:empty { opacity: 0; transform: translate(-50%, -6px); pointer-events: none; transition: none; }
+.local-only { display: flex; gap: 14px; align-items: flex-start; }
+.local-only h2 { font-size: 16px; margin: 0 0 6px; }
+.local-only > svg { flex: none; margin-top: 2px; color: var(--ink-3); }

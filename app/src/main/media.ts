@@ -1,10 +1,10 @@
 // The reel-media: protocol of the desktop window: reel-media://f/<MediaRef>. Streams files with HTTP range support
 // so <video> can seek. Which files it may serve is media-files.ts's decision, shared with the browser server.
 import { protocol } from 'electron'
-import { createReadStream } from 'node:fs'
+import { closeSync, createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
 import { MEDIA_SCHEME } from '../shared/media-ref'
-import { parseRange, resolveMediaRef } from './media-files'
+import { openMediaRef, parseRange } from './media-files'
 
 export function registerMediaScheme(): void {
   protocol.registerSchemesAsPrivileged([
@@ -15,13 +15,17 @@ export function registerMediaScheme(): void {
 export function handleMediaProtocol(): void {
   protocol.handle(MEDIA_SCHEME, async (req) => {
     const u = new URL(req.url)
-    const media = resolveMediaRef(u.pathname.replace(/^\//, ''))
+    const media = openMediaRef(u.pathname.replace(/^\//, ''))
     if (!media.ok) return new Response(null, { status: media.status })
-    const { file, type, size } = media
+    const { fd, type, size } = media
     const range = parseRange(req.headers.get('range'), size)
-    if (range === 'unsatisfiable') return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } })
+    if (range === 'unsatisfiable' || size === 0) {
+      closeSync(fd)
+      return range === 'unsatisfiable' ? new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } }) : new Response(null, { status: 200, headers: { 'Content-Type': type, 'Content-Length': '0' } })
+    }
+    // the descriptor openMediaRef checked, never the path again
     if (range) {
-      const body = Readable.toWeb(createReadStream(file, { start: range.start, end: range.end })) as ReadableStream
+      const body = Readable.toWeb(createReadStream('', { fd, start: range.start, end: range.end })) as ReadableStream
       return new Response(body, {
         status: 206,
         headers: {
@@ -32,7 +36,7 @@ export function handleMediaProtocol(): void {
         }
       })
     }
-    const body = Readable.toWeb(createReadStream(file)) as ReadableStream
+    const body = Readable.toWeb(createReadStream('', { fd })) as ReadableStream
     return new Response(body, {
       status: 200,
       headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' }

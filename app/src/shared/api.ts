@@ -109,19 +109,20 @@ export interface ProjectDetail extends ProjectSummary {
 // Loose mirror of project.json (docs/architecture.md section 3). The engine owns validation.
 export interface ProjectJson extends ProjectFields {
   /** `mirror`: the take is mirrored, the engine flips the picture (absent = as filmed) */
-  sources?: { id: string; path: string; duration?: number; rotation?: number; mirror?: boolean }[]
+  sources?: { id: string; path: string; originalName?: string; duration?: number; fps?: number; width?: number; height?: number; rotation?: number; hdr?: boolean; mirror?: boolean }[]
   transcript?: { file: string; language?: string }
   [k: string]: unknown
 }
 
 /**
- * project.json as the page gets it (store.ts `clientProject`): only the fields the page uses, and no path on the
- * computer (a take's file, an absolute Library path). Unknown fields are left out, not passed through.
+ * project.json as the page gets it (store.ts `clientProject`): the fields engine/reelengine/schema/project.schema.json
+ * declares, and no path on the computer (a take's file, an absolute Library path). Unknown fields are left out.
  */
 export interface ClientProject extends ProjectFields {
-  sources?: { id: string; duration?: number; rotation?: number; mirror?: boolean }[]
+  sources?: Omit<NonNullable<ProjectJson['sources']>[number], 'path'>[]
 }
 
+/** The project's fields as the engine's schema declares them (docs/architecture.md section 3). */
 export interface ProjectFields {
   schemaVersion: number
   id: string
@@ -131,9 +132,10 @@ export interface ProjectFields {
   updatedAt: string
   version: number
   format?: { width: number; height: number; fps: number }
-  cut?: { keep: { from: string; to: string }[]; gapCap?: number; minSaving?: number }
+  cut?: { keep: { from: string; to: string }[]; gapCap?: number; minSaving?: number; source?: string }
   captions?: {
     enabled: boolean
+    hidden?: boolean
     style?: Record<string, unknown>
     corrections?: { from: string; to: string }[]
   }
@@ -142,7 +144,7 @@ export interface ProjectFields {
     track: string | null
     startAt?: number
     level?: string
-    automation?: unknown[]
+    automation?: { fromWord: string; toWord: string; gainDb: number }[]
     fadeOut?: number
   }
   broll?: {
@@ -151,12 +153,13 @@ export interface ProjectFields {
     treatment: string
     /** Library path, project path or animation id; null for text-only treatments. */
     asset: string | null
+    leadIn?: number
     params?: Record<string, unknown>
   }[]
-  zooms?: unknown[]
-  cover?: { atSourceTime: number; source: string; text: string | null }
+  zooms?: { anchor: { from: string; to: string }; scale?: number }[]
+  cover?: { atSourceTime: number; source: string; text: string | null; exact?: boolean }
   post?: { caption: string; hashtags: string[]; keywords: string[] }
-  notes?: { version: number; text: string; applied: string[]; at: string }[]
+  notes?: { version: number; text: string; applied: string[]; at: string; attachments?: string[] }[]
 }
 
 export type JobKind = 'first-edit' | 'note' | 'rerender' | 'export' | 'script'
@@ -329,6 +332,8 @@ export interface UserError {
  * (desktop or browser); the rest are capabilities of the desktop app on this computer.
  */
 export interface ReelApi {
+  /** Where the page runs: the desktop app's window, or a browser talking to the app's server. */
+  host: 'desktop' | 'browser'
   app: {
     info(): Promise<AppInfo>
     /** Where videos are kept on this computer. */
@@ -369,8 +374,9 @@ export interface ReelApi {
     create(files: string[]): Promise<{ slug: string; jobId: string; skipped: DropResult[] }>
     resume(slug: string): Promise<{ jobId: string }>
     /** jobId null = no AI connected: the note and a plain reply were added to the chat, nothing runs.
-     * `attachments`: `work/assets/attach-*` refs from notes.attach* (main re-checks each one). */
-    note(slug: string, text: string, attachments?: string[]): Promise<{ jobId: string | null }>
+     * `attachments`: `work/assets/attach-*` refs from notes.attach* (main re-checks each one).
+     * `requestId`: the same id on a retry returns the first call's answer instead of sending the note again. */
+    note(slug: string, text: string, attachments?: string[], requestId?: string): Promise<{ jobId: string | null }>
     update(slug: string, patch: Partial<ClientProject>): Promise<ProjectDetail>
     /** `change`: what changed, in plain words ("bigger yellow subtitles"), for the chat and the version button.
      * `label`: what to call the work while it runs ("Updating your subtitles"). Render only, never the AI. */

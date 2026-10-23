@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { AppCommand, AppInfo, ProviderInfo } from '../../shared/api'
-import { reel, userMessage } from './api'
+import { browserLink, droppedPaths, LOCAL, onReconnect, reel, userMessage } from './api'
 import type { Screen } from './nav'
 import { IS_MAC, Toast } from './components/ui'
 import { draggingOut } from './components/Player'
 import { Icon, type IconName } from './components/icons'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { ConnectionBanner } from './components/ConnectionBanner'
 import { UpdateNotice } from './components/UpdateNotice'
 import { Home } from './screens/Home'
 import { NewVideo } from './screens/NewVideo'
@@ -18,8 +19,11 @@ import { FirstRun } from './screens/FirstRun'
 import { Script } from './screens/Script'
 import { Connect } from './screens/Connect'
 import { createFromFiles, describeSorted } from './screens/create'
+import { BrowserSettings } from './screens/BrowserSettings'
+import { LocalOnly } from './components/LocalOnly'
 
-type Notify = (text: string, kind?: 'error' | 'info') => void
+/** 'notice': stays until closed, like an error, but is not one (renderer/src/api.ts onDesktop). */
+type Notify = (text: string, kind?: 'error' | 'info' | 'notice') => void
 const NotifyCtx = createContext<Notify>(() => {})
 export const useNotify = (): Notify => useContext(NotifyCtx)
 
@@ -41,7 +45,7 @@ const hasFiles = (e: DragEvent): boolean => !!e.dataTransfer && Array.from(e.dat
 export function App() {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [screen, setScreen] = useState<Screen>({ name: 'home' })
-  const [toast, setToast] = useState<{ text: string; kind?: 'error' | 'info'; id: number } | null>(null)
+  const [toast, setToast] = useState<{ text: string; kind?: 'error' | 'info' | 'notice'; id: number } | null>(null)
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
   const [dragging, setDragging] = useState(false)
   const [overNote, setOverNote] = useState(false) // a drag over the note box (Reel.tsx): it attaches, no overlay
@@ -55,14 +59,18 @@ export function App() {
   }, [])
   const screenRef = useRef(screen)
   screenRef.current = screen
+  // In a browser: bumped when the link to the computer comes back, so the app info and the AI editor are read again.
+  // Screens re-read their own data (api.ts onReconnect) without being remounted.
+  const [generation, setGeneration] = useState(0)
 
   useEffect(() => {
-    reel.app.info().then(setInfo)
-  }, [])
+    reel.app.info().then(setInfo).catch(() => {})
+  }, [generation])
+  useEffect(() => onReconnect(() => setGeneration((g) => g + 1)), [])
   // The sidebar says which AI editor is on, and is a way in when none is.
   useEffect(() => {
     reel.ai.active().then(setProvider).catch(() => {})
-  }, [screen, info?.firstRunDone])
+  }, [screen, info?.firstRunDone, generation])
 
   // Menu items (macOS) and notification clicks.
   useEffect(
@@ -134,7 +142,7 @@ export function App() {
         return
       }
       if (!firstRunDone || !e.dataTransfer) return
-      const paths = Array.from(e.dataTransfer.files).map((f) => reel.app.pathForFile(f)).filter(Boolean)
+      const paths = droppedPaths(e)
       if (!paths.length) return
       if (screenRef.current.name === 'library') {
         reel.library
@@ -160,9 +168,25 @@ export function App() {
     }
   }, [firstRunDone, go, notify])
 
-  if (!info) return null
+  const banner = browserLink && <ConnectionBanner link={browserLink} />
+  if (!info) return banner
   const platform = `platform-${info.platform}`
   const toastEl = toast && <Toast key={toast.id} text={toast.text} kind={toast.kind} onClose={closeToast} />
+
+  // First run (the listening model, an AI editor) happens in the desktop app; a browser waits for it.
+  if (!info.firstRunDone && !LOCAL) {
+    return (
+      <div className={`first-shell ${platform}`}>
+        <div className="page narrow" data-testid="browser-setup">
+          <div className="page-head">
+            <h1>Finish setting up in the Reel Studio app</h1>
+          </div>
+          <p className="muted">Open Reel Studio on this computer and follow its first steps. Then reload this page.</p>
+        </div>
+        {banner}
+      </div>
+    )
+  }
 
   if (!info.firstRunDone) {
     return (
@@ -235,14 +259,14 @@ export function App() {
         <main className="main">
           <ErrorBoundary resetKey={JSON.stringify(screen)} onReset={() => go({ name: 'home' })}>
             {screen.name === 'home' && <Home go={go} />}
-            {screen.name === 'new' && <NewVideo go={go} />}
+            {screen.name === 'new' && (LOCAL ? <NewVideo go={go} /> : <LocalOnly title="New video" what="Adding a video" />)}
             {screen.name === 'script' && <Script go={go} />}
             {screen.name === 'working' && <Working key={screen.slug} slug={screen.slug} go={go} />}
             {screen.name === 'reel' && <Reel key={screen.slug} slug={screen.slug} go={go} fresh={screen.fresh} />}
-            {screen.name === 'library' && <Library refreshKey={libraryTick} />}
+            {screen.name === 'library' && (LOCAL ? <Library refreshKey={libraryTick} /> : <LocalOnly title="Library" what="The Library" />)}
             {screen.name === 'style' && <MyStyle />}
-            {screen.name === 'settings' && <Settings info={info} go={go} />}
-            {screen.name === 'connect' && <Connect back={screen.back} go={go} />}
+            {screen.name === 'settings' && (LOCAL ? <Settings info={info} go={go} /> : <BrowserSettings info={info} />)}
+            {screen.name === 'connect' && (LOCAL ? <Connect back={screen.back} go={go} /> : <LocalOnly title="Connect an AI editor" what="Connecting an AI editor" />)}
           </ErrorBoundary>
         </main>
       </div>
@@ -259,6 +283,7 @@ export function App() {
         </div>
       )}
       {toastEl}
+      {banner}
     </NotifyCtx.Provider>
   )
 }

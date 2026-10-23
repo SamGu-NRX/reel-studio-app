@@ -38,8 +38,6 @@ import { startBrowserServer, type BrowserServer } from './server'
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { createJobManager } from './jobs'
 import { createLiveVideos } from './live-video'
-import { rememberQuestion, styleConsent } from './style-consent'
-import type { AgentResult } from './ai-types'
 import { loadAI } from './ai'
 import type { AI, EngineHost } from './ai-types'
 import { closeAnimationRenderer, renderAnimation, TEST_TEMPLATE } from './animation'
@@ -50,12 +48,11 @@ import { createPidRegistry } from './orphans'
 import { openSignInWindow } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
 import type { AppInfo, ClientProject, DropResult, ExportResult, JobEvent, ProjectJson, StorageInfo } from '../shared/api'
-import { noAiReply } from '../shared/notes'
 import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { displayPath } from '../shared/display-path'
 import { registerPhoneIpc, stopPhoneShare } from './phone-ipc'
-import { checkNoteAttachments, forChat, pickClipboardType, registerAttachmentIpc } from './attachments'
+import { pickClipboardType, registerAttachmentIpc } from './attachments'
 import { createUpdateService } from './update-check'
 import { createJobFeedback, createMainWindow, feedbackLog, installMenu, startDragOut, windowStateFile, type AppCommand } from './window'
 
@@ -146,6 +143,8 @@ function openInBrowser(): void {
   if (TEST) (globalThis as { __reelPairingUrl?: string }).__reelPairingUrl = url
   else void shell.openExternal(url)
 }
+// tests drop the browser's link to check that the page survives it (e2e/browser.spec.ts)
+if (TEST) (globalThis as { __reelDropBrowsers?: () => void }).__reelDropBrowsers = () => browser?.dropSockets()
 
 // The window, menu, Dock/taskbar and notifications (window.ts) hear about every job too.
 const sendCommand = (c: AppCommand): void => broadcast('app:command', c)
@@ -270,21 +269,8 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
       s.aiEdited = aiEdited
     })
     if (r.notice?.userMessage) await addChat(slug, 'editor', r.notice.userMessage)
-    return replyAskingAboutStyle(slug, r, r.summary)
+    return service.replyAskingAboutStyle(slug, r, r.summary)
   })
-}
-
-/** The editor's reply into the chat, then one "Remember this for next time?" per My style rule the AI
- * proposed or saved (a saved one is taken out again until the user says Yes): main/style-consent.ts. */
-async function replyAskingAboutStyle(slug: string, r: AgentResult, summary: string): Promise<{ summary: string; version: number; quiet: true }> {
-  const c = styleConsent(summary, r.styleRulesAdded, r.styleSuggestions)
-  if (c.undo.length) {
-    const rules = await ai.styleRules().catch(() => [])
-    for (const rule of rules) if (c.undo.includes(rule.text)) await ai.removeStyleRule(rule.id).catch(() => undefined)
-  }
-  await addChat(slug, 'editor', c.summary, r.version)
-  for (const rule of c.suggestions) await addChat(slug, 'editor', rememberQuestion(rule), undefined, ['remember-yes', 'remember-no'], rule)
-  return { summary: c.summary, version: r.version, quiet: true }
 }
 
 const EDITABLE: (keyof ProjectJson)[] = ['title', 'cut', 'captions', 'music', 'broll', 'zooms', 'cover', 'post']
@@ -461,35 +447,6 @@ function registerIpc(): void {
     }
     return { jobId: startFirstEdit(slug, null) }
   })
-  handle('projects:note', async (_e, slug: string, text: string, attachments?: unknown) => {
-    const note = String(text ?? '').trim()
-    const dir = projectDir(slug)
-    // never trust the page: every attached ref is re-read from THIS project's own sidecars
-    const files = await checkNoteAttachments(dir, attachments)
-    if (!note && !files.length) throw { code: 'EMPTY', userMessage: 'Type what you would like changed first.' }
-    if (jobs.forSlug(slug)) throw { code: 'BUSY', userMessage: 'I am still working on this video. Give me a moment, or press Stop.' }
-    await addChat(slug, 'you', note, undefined, undefined, undefined, files.map(forChat))
-    const active = await ai.active().catch(() => null)
-    if (!active || !active.connected || active.id === 'none') {
-      // No AI editor: nothing can apply the note, so do not pretend. Say what they can do instead
-      // and offer the matching manual control plus "Connect ChatGPT" (grandma test, finding 8).
-      const reply = noAiReply(note, files.length)
-      await addChat(slug, 'editor', reply.text, undefined, reply.actions)
-      return { jobId: null }
-    }
-    const jobId = jobs.start(
-      slug,
-      'note',
-      async (emit, signal) => {
-        const opts = files.length ? { attachments: files.map((f) => f.asset) } : undefined
-        const r: AgentResult = await ai.applyNote(dir, note, (e) => emit(e), signal, opts)
-        const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
-        return replyAskingAboutStyle(slug, r, r.summary + extra)
-      },
-      { note: note || files.map((f) => f.name).join(', ') }
-    )
-    return { jobId }
-  })
   handle('projects:update', async (_e, slug: string, patch: Partial<ClientProject>) => {
     if (jobs.forSlug(slug)) throw { code: 'BUSY', userMessage: 'I am still working on this video. Give me a moment, or press Stop.' }
     const p = await readProject(slug)
@@ -542,8 +499,6 @@ function registerIpc(): void {
     }
     await fs.rm(projectDir(slug), { recursive: true, force: true })
   })
-
-  handle('jobs:cancel', (_e, id: string) => jobs.cancel(id))
 
   handle('library:list', async () => {
     await ensureRoot()
@@ -683,7 +638,12 @@ app.whenReady().then(async () => {
   handleMediaProtocol()
   registerIpc()
   if (BROWSER) {
-    browser = await startBrowserServer({ port: Number(process.env.REELSTUDIO_BROWSER_PORT) || 0, service, log })
+    browser = await startBrowserServer({
+      port: Number(process.env.REELSTUDIO_BROWSER_PORT) || 0,
+      service,
+      rendererDir: join(__dirname, '../renderer'), // the built page; `npm run dev` serves it from vite instead, so build first
+      log
+    })
     log(`[browser] serving ${browser.auth.origin} (this computer only)`)
   }
   createWindow()

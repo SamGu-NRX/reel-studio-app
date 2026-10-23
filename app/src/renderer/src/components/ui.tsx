@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { droppedPaths } from '../api'
+import { droppedPaths, reel } from '../api'
 import { Icon } from './icons'
 
 export function Progress({ pct, done, label }: { pct: number; done?: boolean; label?: string }) {
@@ -29,16 +29,18 @@ export function Thinking() {
  * Toasts: a success line goes away by itself after 4 s and has no button to press. An error stays
  * until it is closed or the screen changes (App clears toasts on every screen change).
  */
-export function Toast({ text, kind, onClose }: { text: string; kind?: 'error' | 'info'; onClose: () => void }) {
+export function Toast({ text, kind, onClose }: { text: string; kind?: 'error' | 'info' | 'notice'; onClose: () => void }) {
+  // an error, or a notice that explains why something cannot happen here, stays until it is closed
+  const stays = kind === 'error' || kind === 'notice'
   useEffect(() => {
-    if (kind === 'error') return
+    if (stays) return
     const t = setTimeout(onClose, 4000)
     return () => clearTimeout(t)
-  }, [text, kind, onClose])
+  }, [text, stays, onClose])
   return (
-    <div className={`toast${kind === 'error' ? ' error' : ''}`} role={kind === 'error' ? 'alert' : 'status'} data-testid="toast">
+    <div className={`toast${kind === 'error' ? ' error' : stays ? ' stays' : ''}`} role={kind === 'error' ? 'alert' : 'status'} data-testid="toast">
       <span>{text}</span>
-      {kind === 'error' && (
+      {stays && (
         <button className="icon-btn on-dark" onClick={onClose} aria-label="Close" title="Close">
           <Icon name="x" />
         </button>
@@ -195,7 +197,7 @@ export function PickFiles({ label, accept, onFiles, className, icon }: { label: 
         style={{ display: 'none' }}
         data-testid="file-input"
         onChange={(e) => {
-          const files = Array.from(e.target.files ?? []).map((f) => window.reel.app.pathForFile(f))
+          const files = Array.from(e.target.files ?? []).map((f) => reel.app.pathForFile(f))
           e.target.value = ''
           if (files.length) onFiles(files)
         }}

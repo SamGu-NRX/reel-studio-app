@@ -3,7 +3,7 @@ import type { ChatAction, ChecklistItem, ExportResult, ProjectDetail, ProviderIn
 import { ACTION_LABELS } from '../../../shared/notes'
 import { clock } from '../../../shared/progress'
 import { EMPTY_LIVE, liveFromDetail, reduceLive, timeLeftWords, type LiveState } from '../../../shared/live'
-import { mediaSrc, reel, userMessage } from '../api'
+import { LOCAL, mediaSrc, onDesktop, onReconnect, reel, userMessage } from '../api'
 import type { Go } from '../nav'
 import { Check, Confirm, FOLDER_APP, Modal, MoreMenu, Progress, Spinner, Thinking } from '../components/ui'
 import { SendToPhone } from '../components/SendToPhone'
@@ -59,17 +59,22 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   // Live subtitle preview from the drawer's Subtitles tab.
   const [preview, setPreview] = useState<{ look: SubtitleLook; text: string; at: number } | null>(null)
   const chatEnd = useRef<HTMLDivElement>(null)
+  // The id of a note whose send failed: sending the same text again reuses it, so a note that did reach the computer
+  // (only its answer was lost) is not run twice (main/service.ts receipts).
+  const unsent = useRef<{ text: string; id: string } | null>(null)
   // pictures, GIFs and clips on the note being written (components/NoteAttachments.tsx)
   const att = useNoteAttachments(slug, notify)
   const [noteDrop, setNoteDrop] = useState(false)
   const noteDropDepth = useRef(0)
 
   const load = useCallback(
-    async (selectLatest = false) => {
+    async (selectLatest = false, resync = false) => {
       try {
         const next = await reel.projects.get(slug)
         setD(next)
         if (next.job) setJob((cur) => (cur?.jobId === next.job!.id ? cur : liveFromDetail(next.job!)))
+        // back from a dropped link: a job that ended meanwhile sent its last event to nobody
+        else if (resync) setJob(null)
         const latest = next.versions[next.versions.length - 1]?.n ?? null
         setSelected((cur) => (selectLatest || cur === null || !next.versions.some((v) => v.n === cur) ? latest : cur))
       } catch (e) {
@@ -83,7 +88,8 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   useEffect(() => {
     void load(true)
     reel.ai.active().then(setProvider).catch(() => {})
-    return reel.jobs.onEvent((e) => {
+    const offReconnect = onReconnect(() => void load(false, true))
+    const offEvents = reel.jobs.onEvent((e) => {
       if (e.slug !== slug) return
       if (e.type === 'status' || e.type === 'reply' || e.type === 'tool') setJob((cur) => reduceLive(cur ?? EMPTY_LIVE, e))
       // a quick preview of the change: play it in the phone until the full-quality version is done
@@ -96,6 +102,10 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
         void load(e.type === 'done')
       }
     })
+    return () => {
+      offReconnect()
+      offEvents()
+    }
   }, [slug, load])
 
   // Scroll only the chat box to its last message. scrollIntoView would also scroll the page and
@@ -140,6 +150,12 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   if (!d) return <div className="page"><Spinner /></div>
 
   const aiOff = !provider || !provider.connected || provider.id === 'none'
+  // In a browser the hand-editing drawer, renaming, the post caption and deleting say they need the desktop app
+  // before anything opens, rather than failing at the end (renderer/src/browser-reel.ts).
+  const openDrawer = (tab: Tab) => onDesktop('Editing it yourself', () => setDrawer(tab), notify)()
+  const startRename = onDesktop('Renaming', () => setRenaming(d.title), notify)
+  const editPost = onDesktop('Writing the post caption', () => setPostDraft(d.project.post?.caption ?? ''), notify)
+  const askDelete = onDesktop('Deleting a video', () => setConfirmDelete(true), notify)
   const connect = () => go({ name: 'connect', back: { name: 'reel', slug } })
   // What each version changed, from the chat ("Version 3: bigger yellow subtitles."), for the button tooltips.
   const versionNote = new Map<number, string>()
@@ -151,12 +167,15 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
     if ((!text && !files.length) || att.busy) return
     setNote('')
     att.clear()
+    const requestId = unsent.current?.text === text ? unsent.current.id : crypto.randomUUID()
     try {
-      const r = await reel.projects.note(slug, text, files.length ? files.map((f) => f.asset) : undefined)
+      const r = await reel.projects.note(slug, text, files.length ? files.map((f) => f.asset) : undefined, requestId)
+      unsent.current = null
       // null = no AI editor: the note and a plain answer are in the chat, nothing is running.
       if (r.jobId) setJob((cur) => (cur?.jobId === r.jobId ? cur : { ...EMPTY_LIVE, jobId: r.jobId, message: 'Reading your note' }))
       await load()
     } catch (e) {
+      unsent.current = { text, id: requestId }
       setNote(text)
       att.restore(files)
       notify(userMessage(e), 'error')
@@ -252,7 +271,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
         .then(() => load())
         .catch((e) => notify(userMessage(e), 'error'))
     } else if (a === 'connect') connect()
-    else setDrawer(ACTION_TAB[a] ?? 'cut')
+    else openDrawer(ACTION_TAB[a] ?? 'cut')
   }
 
   // "What I did": what is done (filled checks, each with a way to change it), then optional extras
@@ -263,18 +282,18 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
         return {
           label: d.aiEdited ? 'Kept your best takes' : 'Cut the pauses and repeated starts',
           detail: duration ? `${clock(duration)} long` : undefined,
-          act: { label: 'See what I cut', run: () => setDrawer('cut'), testid: 'check-cut' }
+          act: { label: 'See what I cut', run: () => openDrawer('cut'), testid: 'check-cut' }
         }
       case 'captions':
-        return { label: c.label, act: { label: 'Change', run: () => setDrawer('captions'), testid: 'change-captions' } }
+        return { label: c.label, act: { label: 'Change', run: () => openDrawer('captions'), testid: 'change-captions' } }
       case 'music':
-        return { label: c.label, detail: c.detail, act: { label: 'Change', run: () => setDrawer('music'), testid: 'change-music' } }
+        return { label: c.label, detail: c.detail, act: { label: 'Change', run: () => openDrawer('music'), testid: 'change-music' } }
       case 'broll':
-        return { label: c.label, act: { label: 'Change', run: () => setDrawer('broll'), testid: 'change-pictures' } }
+        return { label: c.label, act: { label: 'Change', run: () => openDrawer('broll'), testid: 'change-pictures' } }
       case 'cover':
-        return { label: c.label, act: { label: 'Change', run: () => setDrawer('cover'), testid: 'change-cover' } }
+        return { label: c.label, act: { label: 'Change', run: () => openDrawer('cover'), testid: 'change-cover' } }
       case 'post':
-        return { label: c.label, act: { label: 'Edit', run: () => setPostDraft(d.project.post?.caption ?? ''), testid: 'write-post' } }
+        return { label: c.label, act: { label: 'Edit', run: editPost, testid: 'write-post' } }
       default:
         return { label: c.label, detail: c.detail }
     }
@@ -283,9 +302,9 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
   for (const c of d.checklist) {
     if (c.done) continue
     if (c.key === 'music') extras.push({ key: c.key, label: 'Add a song', run: () => void addSong(), testid: 'add-song' })
-    if (c.key === 'broll') extras.push({ key: c.key, label: 'Add pictures', run: () => setDrawer('broll'), testid: 'add-pictures' })
-    if (c.key === 'post') extras.push({ key: c.key, label: 'Write a post caption', run: () => setPostDraft(d.project.post?.caption ?? ''), testid: 'write-post' })
-    if (c.key === 'captions') extras.push({ key: c.key, label: 'Turn subtitles on', run: () => setDrawer('captions'), testid: 'change-captions' })
+    if (c.key === 'broll') extras.push({ key: c.key, label: 'Add pictures', run: () => openDrawer('broll'), testid: 'add-pictures' })
+    if (c.key === 'post') extras.push({ key: c.key, label: 'Write a post caption', run: editPost, testid: 'write-post' })
+    if (c.key === 'captions') extras.push({ key: c.key, label: 'Turn subtitles on', run: () => openDrawer('captions'), testid: 'change-captions' })
   }
   const done = d.checklist.filter((c) => c.done)
 
@@ -309,7 +328,7 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
             original={d.sourceVideo}
             holdingOriginal={holding}
             onDuration={setDuration}
-            dragFile={version && !version.draft ? version.video : null}
+            dragFile={LOCAL && version && !version.draft ? version.video : null}
           />
           {changePreview && (
             <p className="muted-sm center" data-testid="change-preview">Here's your change. I'm making the full-quality version.</p>
@@ -380,10 +399,10 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
               </button>
               {renaming === null ? (
                 <div className="row" style={{ gap: 4 }}>
-                  <h1 className="reel-title" title="Click to rename" onClick={() => setRenaming(d.title)} data-testid="title">
+                  <h1 className="reel-title" title="Click to rename" onClick={startRename} data-testid="title">
                     {d.title}
                   </h1>
-                  <button className="btn small ghost" onClick={() => setRenaming(d.title)} data-testid="rename">
+                  <button className="btn small ghost" onClick={startRename} data-testid="rename">
                     Rename
                   </button>
                 </div>
@@ -404,14 +423,14 @@ export function Reel({ slug, go, fresh }: { slug: string; go: Go; fresh?: boolea
                 />
               )}
             </div>
-            <button className="btn" onClick={() => setDrawer('cut')} data-testid="edit-myself">
+            <button className="btn" onClick={() => openDrawer('cut')} data-testid="edit-myself">
               <Icon name="pencil" size={16} /> Edit it myself
             </button>
             <MoreMenu
               label="More for this video"
               items={[
-                { label: 'Rename', run: () => setRenaming(d.title) },
-                { label: 'Delete this video…', run: () => setConfirmDelete(true), danger: true, disabled: !!job, testid: 'delete' }
+                { label: 'Rename', run: startRename },
+                { label: 'Delete this video…', run: askDelete, danger: true, disabled: !!job, testid: 'delete' }
               ]}
             />
           </div>

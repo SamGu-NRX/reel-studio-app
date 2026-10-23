@@ -1,17 +1,22 @@
 // The read contract (shared/contract.ts + main/service.ts): what a page may ask, and that what it gets back names
 // no place on this computer. A browser page is a less trusted client than the desktop window, so both matter.
 import { describe, expect, it } from 'vitest'
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, readSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { checkArgs, METHODS } from '../src/shared/contract'
+import { checkArgs, METHODS, NOTE_MAX_CHARS } from '../src/shared/contract'
 import { createService } from '../src/main/service'
 import { createJobManager } from '../src/main/jobs'
 import { createMockAI } from '../src/main/ai-mock'
-import { parseRange, resolveMediaRef } from '../src/main/media-files'
+import { openMediaRef, parseRange, resolveMediaRef } from '../src/main/media-files'
+import { clientProject } from '../src/main/store'
+import type { AI } from '../src/main/ai-types'
+import type { ProjectJson } from '../src/shared/api'
+import { reelStudioRoot } from '../src/main/paths'
 import { setupPaths } from './helpers'
 
-function service() {
-  const ai = createMockAI({ host: {} as never, settingsDir: '', dev: false, secretStore: null as never })
+function service(over: Partial<AI> = {}) {
+  const nothing = () => Promise.reject(new Error('the read contract runs nothing'))
+  const ai = { ...createMockAI({ host: { runEngine: nothing, renderAnimation: nothing, reelStudioRoot }, settingsDir: '' }), ...over }
   return createService({
     info: async () => ({ version: 't', platform: 'test', firstRunDone: true, engine: { mode: 'fake' }, ai: 'mock', test: true, dev: false }),
     ai: () => ai,
@@ -61,10 +66,21 @@ describe('contract arguments', () => {
     expect(checkArgs('projects.get', ['my-réel_2.v'])).toEqual(['my-réel_2.v'])
   })
 
-  it('covers the reads the renderer needs and nothing that changes state', () => {
+  it('covers the reads the renderer needs, and only two commands: a note and Stop', () => {
     expect(Object.keys(METHODS).sort()).toEqual(
-      ['ai.active', 'ai.claudeCodeStatus', 'ai.providers', 'app.info', 'model.status', 'projects.get', 'projects.list', 'style.rules', 'update.status']
+      ['ai.active', 'ai.claudeCodeStatus', 'ai.providers', 'app.info', 'jobs.cancel', 'model.status', 'projects.get', 'projects.list', 'projects.note', 'style.rules', 'update.status']
     )
+  })
+
+  it('bounds a note and a job id', () => {
+    expect(checkArgs('projects.note', ['a', 'bigger subtitles'])).toEqual(['a', 'bigger subtitles', undefined, undefined])
+    expect(checkArgs('projects.note', ['a', '', ['work/assets/attach-1.png']])).toEqual(['a', '', ['work/assets/attach-1.png'], undefined])
+    expect(checkArgs('projects.note', ['a', 'x', null, 'f3b1c2d4-0000-4000-8000-000000000001'])).toEqual(['a', 'x', undefined, 'f3b1c2d4-0000-4000-8000-000000000001'])
+    for (const bad of [['a'], ['a', 5], ['a', 'x'.repeat(NOTE_MAX_CHARS + 1)], ['a', 'x', 'work/assets/a.png'], ['a', 'x', [1]], ['a', 'x', Array(9).fill('r')], ['../a', 'x'], ['a', 'x', null, 'short'], ['a', 'x', null, 'has space in it'], ['a', 'x', null, 'id', 'extra']]) {
+      expect(() => checkArgs('projects.note', bad), JSON.stringify(bad).slice(0, 60)).toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }))
+    }
+    expect(checkArgs('jobs.cancel', ['0b8f2c1e-9d4a-4f7e-8a3b-1c2d3e4f5a6b'])).toHaveLength(1)
+    for (const bad of [[], [''], ['a b'], [{}], ['x'.repeat(65)]]) expect(() => checkArgs('jobs.cancel', bad)).toThrow(expect.objectContaining({ code: 'BAD_REQUEST' }))
   })
 
   it('a bad slug never reaches the disk', async () => {
@@ -102,7 +118,76 @@ describe('contract results name no place on this computer', () => {
   })
 })
 
+describe('contract results name no place on this computer, even for fields nobody listed', () => {
+  it('clientProject keeps only the schema\'s fields, at every level', () => {
+    const { root, home } = setupPaths()
+    mkdirSync(join(root, 'Library', 'Images'), { recursive: true })
+    writeFileSync(join(home, 'font.ttf'), 'x')
+    const leaky = {
+      schemaVersion: 1, id: 'p', title: 'T', slug: 'p', createdAt: '', updatedAt: '', version: 1,
+      localPath: `${home}/x`,
+      sources: [{ id: 's1', path: 'media/take01.mp4', originalPath: `${home}/Desktop/take.mov`, originalName: 'take.mov', duration: 3 }],
+      transcript: { file: `${home}/t.json` },
+      music: { enabled: true, track: 'Library/Music/a.mp3', localPath: `${home}/a.mp3`, automation: [{ fromWord: 'w1', toWord: 'w2', gainDb: -6, file: `${home}/x` }] },
+      broll: [{ id: 'b1', anchor: { from: 'w1', to: 'w2', path: `${home}/x` }, treatment: 'card', asset: 'Library/Images/a.png', path: `${home}/b.png`, params: { text: '/r/videos', image: join(home, 'font.ttf') } }],
+      captions: { enabled: true, style: { size: 90, font: join(home, 'font.ttf'), fontFile: `${home}/f.ttf` }, corrections: [{ from: 'a', to: 'b', source: `${home}/x` }] },
+      cut: { keep: [{ from: 'w1', to: 'w2', file: `${home}/x` }], cache: `${home}/x` },
+      zooms: [{ anchor: { from: 'w1', to: 'w2' }, scale: 1.2, cache: `${home}/x` }],
+      cover: { atSourceTime: 1, source: 's1', text: null, file: `${home}/c.png` },
+      post: { caption: 'hi', hashtags: [], keywords: [], draft: `${home}/x` },
+      notes: [{ version: 1, text: 'n', applied: [], at: '', attachments: ['work/assets/attach-1.png'], file: `${home}/x` }]
+    } as unknown as ProjectJson
+    const out = clientProject(leaky)
+    expect(JSON.stringify(out)).not.toContain(home)
+    expect(out.sources).toEqual([{ id: 's1', originalName: 'take.mov', duration: 3 }])
+    expect(out.broll?.[0]).toEqual({ id: 'b1', anchor: { from: 'w1', to: 'w2' }, treatment: 'card', asset: 'Library/Images/a.png', params: { text: '/r/videos' } })
+    expect(out.captions?.style).toEqual({ size: 90 })
+    expect(out.music).toEqual({ enabled: true, track: 'Library/Music/a.mp3', automation: [{ fromWord: 'w1', toWord: 'w2', gainDb: -6 }] })
+  })
+
+  it('a browser gets provider status without detail (an account email, a dev fixture\'s path)', async () => {
+    setupPaths()
+    const replay = { id: 'replay' as const, connected: true, label: 'Replay', detail: '/Users/someone/fixtures/run.json' }
+    const s = service({ providers: async () => [replay], active: async () => replay })
+    expect(await s.dispatch('ai.providers', [], { browser: true })).toEqual([{ id: 'replay', connected: true, label: 'Replay' }])
+    expect(await s.dispatch('ai.active', [], { browser: true })).toEqual({ id: 'replay', connected: true, label: 'Replay' })
+    expect(await s.dispatch('ai.active', [])).toEqual(replay) // the desktop window still shows it
+  })
+})
+
 describe('media refs: only media inside Projects/ or Library/', () => {
+  it('streams the file it checked, even if the folder changes while it is being opened', () => {
+    const { root, home } = setupPaths()
+    realisticProject(root, 'p')
+    writeFileSync(join(home, 'secret.mp4'), 'secret')
+    const take = join(root, 'Projects', 'p', 'media', 'take01.mp4')
+    const ref = 'Projects/p/media/take01.mp4'
+    const swap = () => {
+      renameSync(take, `${take}.old`)
+      symlinkSync(join(home, 'secret.mp4'), take)
+    }
+    const unswap = () => {
+      renameSync(take, `${take}.link`)
+      renameSync(`${take}.old`, take)
+    }
+    // swapped for a symlink out of the root right after the open: the open file is no longer what the path is
+    expect(openMediaRef(ref, swap)).toEqual({ ok: false, status: 403 })
+    unswap()
+    // pointing out of the root while it is opened, and back inside before the checks: only the open file counts
+    swap()
+    expect(openMediaRef(ref, unswap)).toEqual({ ok: false, status: 403 })
+    // swapped after the checks: the stream reads the checked descriptor, never the path again
+    const opened = openMediaRef(ref)
+    if (!opened.ok) throw new Error('not opened')
+    renameSync(take, `${take}.old2`)
+    symlinkSync(join(home, 'secret.mp4'), take)
+    const buf = Buffer.alloc(16)
+    const n = readSync(opened.fd, buf, 0, 16, 0)
+    closeSync(opened.fd)
+    expect(buf.subarray(0, n).toString()).toBe('raw')
+  })
+
+
   it('serves a real file and refuses anything that leaves the folders', () => {
     const { root, home } = setupPaths()
     realisticProject(root, 'p')

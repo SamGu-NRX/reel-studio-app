@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ProjectSummary } from '../../../shared/api'
-import { mediaSrc, niceDate, reel } from '../api'
+import { LOCAL, mediaSrc, niceDate, onReconnect, reel } from '../api'
 import type { Go } from '../nav'
 import { Icon } from '../components/icons'
 
@@ -31,10 +31,12 @@ export function Home({ go }: { go: Go }) {
     const off = reel.jobs.onEvent((e) => {
       if (e.type !== 'status') void load()
     })
+    const offReconnect = onReconnect(() => void load())
     return () => {
       live = false
       opening.current = null
       off()
+      offReconnect()
     }
   }, [])
 
@@ -55,7 +57,7 @@ export function Home({ go }: { go: Go }) {
       <div className="page-head">
         <div>
           <h1>Your videos</h1>
-          <p className="muted">Drop in a raw video and I'll turn it into a reel.</p>
+          <p className="muted">{LOCAL ? "Drop in a raw video and I'll turn it into a reel." : 'Your reels, from Reel Studio on this computer.'}</p>
         </div>
         <button className="btn primary big" onClick={() => go({ name: 'new' })} data-testid="new-video">
           <Icon name="plus" /> New video
@@ -68,7 +70,9 @@ export function Home({ go }: { go: Go }) {
             <Icon name="video" size={28} />
           </div>
           <h2>Make your first reel</h2>
-          <p className="muted">Drag your video anywhere onto this window, or click New video.</p>
+          <p className="muted">
+            {LOCAL ? 'Drag your video anywhere onto this window, or click New video.' : 'Add a video in the Reel Studio app on this computer and it shows up here.'}
+          </p>
         </div>
       )}
 

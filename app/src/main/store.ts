@@ -549,12 +549,46 @@ function chatThumb(dir: string, a: NoteAttachment): NoteAttachment {
 }
 
 /**
- * project.json for the page: the fields it edits or shows, with no path on this computer. A take is named by its id
- * (never its file); a b-roll file outside the project is named from the Reel Studio root ("Library/Images/a.png"),
- * and one outside the root (an old absolute path) is left out. Unknown fields are dropped, not passed through.
+ * project.json for the page, built only from the fields engine/reelengine/schema/project.schema.json declares, level by
+ * level, so a field nobody listed (an old build's `localPath`, an engine's `originalPath`) never reaches a browser. No
+ * path on this computer: a take is named by its id, never its file; a Library file by its place under the root
+ * ("Library/Images/a.png"); one outside the root (an old absolute path) becomes null. The free-form `params` of a
+ * picture and the subtitle `font` lose any value that names an existing file by absolute path.
  */
 export function clientProject(p: ProjectJson): ClientProject {
-  const music = p.music?.track && isAbsolute(p.music.track) ? { ...p.music, track: rootRelativeOrNull(p.music.track) } : p.music
+  const pick = <T extends object>(o: unknown, keys: readonly (keyof T)[]): T | undefined => {
+    if (!o || typeof o !== 'object') return undefined
+    const out: Record<string, unknown> = {}
+    for (const k of keys) if ((o as Record<string, unknown>)[k as string] !== undefined) out[k as string] = (o as Record<string, unknown>)[k as string]
+    return out as T
+  }
+  const list = <T extends object>(a: unknown, keys: readonly (keyof T)[]): T[] | undefined =>
+    Array.isArray(a) ? a.map((x) => pick<T>(x, keys)).filter((x): x is T => !!x) : undefined
+  const range = (r: unknown) => pick<{ from: string; to: string }>(r, ['from', 'to'])
+  const noFiles = (o: unknown): Record<string, unknown> | undefined => {
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return undefined
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(o)) if (!(typeof v === 'string' && isAbsolute(v) && existsSync(v))) out[k] = v
+    return out
+  }
+  type Music = NonNullable<ClientProject['music']>
+  type Broll = NonNullable<ClientProject['broll']>[number]
+  type Captions = NonNullable<ClientProject['captions']>
+  const music = pick<Music>(p.music, ['enabled', 'track', 'startAt', 'level', 'fadeOut'])
+  if (music) {
+    if (music.track && isAbsolute(music.track)) music.track = rootRelativeOrNull(music.track)
+    const automation = list<{ fromWord: string; toWord: string; gainDb: number }>(p.music?.automation, ['fromWord', 'toWord', 'gainDb'])
+    if (automation) music.automation = automation
+  }
+  const captions = pick<Captions>(p.captions, ['enabled', 'hidden'])
+  if (captions && p.captions) {
+    const style = pick<Record<string, unknown>>(p.captions.style, ['box', 'case', 'color', 'font', 'maxWords', 'outline', 'outlineColor', 'position', 'preset', 'shadow', 'size'])
+    if (style) captions.style = noFiles(style)
+    const corrections = list<{ from: string; to: string }>(p.captions.corrections, ['from', 'to'])
+    if (corrections) captions.corrections = corrections
+  }
+  const cut = pick<NonNullable<ClientProject['cut']>>(p.cut, ['gapCap', 'minSaving', 'source'])
+  if (cut && p.cut) cut.keep = (p.cut.keep ?? []).map(range).filter((r): r is { from: string; to: string } => !!r)
   return {
     schemaVersion: p.schemaVersion,
     id: p.id,
@@ -563,16 +597,26 @@ export function clientProject(p: ProjectJson): ClientProject {
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     version: p.version,
-    format: p.format,
-    sources: p.sources?.map(({ path: _path, ...s }) => s),
-    cut: p.cut,
-    captions: p.captions,
+    format: pick(p.format, ['width', 'height', 'fps']),
+    sources: list(p.sources, ['id', 'duration', 'rotation', 'mirror', 'fps', 'width', 'height', 'hdr', 'originalName']),
+    cut,
+    captions,
     music,
-    broll: p.broll?.map((b) => (typeof b.asset === 'string' && isAbsolute(b.asset) ? { ...b, asset: rootRelativeOrNull(b.asset) } : b)),
-    zooms: p.zooms,
-    cover: p.cover,
-    post: p.post,
-    notes: p.notes
+    broll: Array.isArray(p.broll)
+      ? p.broll.map((b): Broll => {
+          const asset = typeof b?.asset === 'string' && isAbsolute(b.asset) ? rootRelativeOrNull(b.asset) : (b?.asset ?? null)
+          return {
+            ...pick<Broll>(b, ['id', 'treatment', 'leadIn']),
+            anchor: range(b?.anchor)!,
+            asset,
+            ...(b?.params ? { params: noFiles(b.params) } : {})
+          } as Broll
+        })
+      : undefined,
+    zooms: Array.isArray(p.zooms) ? p.zooms.map((z) => ({ ...pick<{ scale?: number }>(z, ['scale']), anchor: range(z?.anchor)! })) : undefined,
+    cover: pick(p.cover, ['atSourceTime', 'source', 'text', 'exact']),
+    post: pick(p.post, ['caption', 'hashtags', 'keywords']),
+    notes: list(p.notes, ['version', 'text', 'applied', 'at', 'attachments'])
   }
 }
 

@@ -164,7 +164,9 @@ export const createMockAI: CreateAI = ({ host }) => {
       }
     },
 
-    async applyNote(projectDir, note, onEvent, _signal, opts): Promise<AgentResult> {
+    // Runs only when a provider is connected (the mock Claude Code app, REELSTUDIO_MOCK_CLAUDE=ready, chosen): like a
+    // real editor it makes a new version, here an unchanged re-render through the engine, with its progress.
+    async applyNote(projectDir, note, onEvent, signal, opts): Promise<AgentResult> {
       onEvent({ type: 'status', message: 'Reading your note', pct: 10, phase: 'edit' })
       const p = await readProject(projectDir)
       const added: string[] = []
@@ -177,12 +179,16 @@ export const createMockAI: CreateAI = ({ host }) => {
       const attachments = opts?.attachments?.length ? { attachments: opts.attachments } : {}
       p.notes = [...(p.notes ?? []), { version: p.version ?? 0, text: note, applied: [], at: new Date().toISOString(), ...attachments }]
       await writeProject(projectDir, p)
+      onEvent({ type: 'status', message: 'Putting it all together', pct: 0, phase: 'final' })
+      const r = await host.runEngine('render', ['--project', projectDir], (pr) => onEvent({ type: 'status', message: pr.message || 'Putting it all together', pct: pr.pct, phase: 'final' }), signal)
+      const version = Number(r?.version ?? (await readProject(projectDir)).version ?? 0)
+      onEvent({ type: 'render', version, draft: false, ...(r?.file ? { file: String(r.file) } : {}) })
       onEvent({ type: 'status', message: 'Done', pct: 100 })
       return {
         summary: added.length
-          ? 'I saved that to My style. Connect ChatGPT in Settings and I can change this video from your notes too.'
-          : 'I saved your note. Connect ChatGPT in Settings and I can change the video from notes like this one. You can also tweak it yourself under "Show me how".',
-        version: p.version ?? 0,
+          ? `I saved that to My style and made Version ${version}. The stand-in editor does not change the video itself.`
+          : `I made Version ${version} with your note. The stand-in editor does not change the video itself.`,
+        version,
         styleRulesAdded: added,
         changed: []
       }

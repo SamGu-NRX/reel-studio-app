@@ -25,6 +25,7 @@ const contract = createContractClient({
 })
 
 const api: ReelApi = {
+  host: 'desktop',
   app: {
     ...contract.app,
     storage: () => call('app:storage'),
@@ -55,7 +56,6 @@ const api: ReelApi = {
     ...contract.projects,
     create: (files) => call('projects:create', files),
     resume: (slug) => call('projects:resume', slug),
-    note: (slug, text, attachments) => call('projects:note', slug, text, attachments),
     update: (slug, patch) => call('projects:update', slug, patch),
     rerender: (slug, change, label) => call('projects:rerender', slug, change, label),
     exportVersion: (slug, n) => call('projects:export', slug, n),
@@ -68,10 +68,7 @@ const api: ReelApi = {
     choose: (slug) => call('notes:chooseAttachment', slug),
     remove: (slug, asset) => call('notes:removeAttachment', slug, asset)
   },
-  jobs: {
-    ...contract.jobs,
-    cancel: (id) => call('jobs:cancel', id)
-  },
+  jobs: contract.jobs,
   phone: {
     start: (video, caption, address) => call('phone:start', video, caption, address),
     stop: () => call('phone:stop'),
