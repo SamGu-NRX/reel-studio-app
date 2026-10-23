@@ -6,7 +6,7 @@ import { performance } from 'node:perf_hooks'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { JobEvent } from '../src/shared/api'
-import { EMPTY_LIVE, PREVIEW_LABEL, STILL_WORKING, liveFromDetail, reduceLive, timeLeftWords, type LiveState } from '../src/shared/live'
+import { EMPTY_LIVE, STILL_WORKING, liveFromDetail, reduceLive, timeLeftWords, type LiveState } from '../src/shared/live'
 import { createLiveVideos, LIVE_DIR } from '../src/main/live-video'
 import { createJobManager } from '../src/main/jobs'
 import { pathFromMediaUrl } from '../src/main/media-url'
@@ -39,7 +39,6 @@ describe('reduceLive (the renderer side of the contract)', () => {
     // a render with no playable file, and a final render, change nothing on screen
     expect(fold([{ ...look, video: null }]).preview).toBeNull()
     expect(fold([look, { ...J, type: 'render', version: 1, draft: false, firstLook: false, video: 'reel-media://f/v1' }]).preview?.kind).toBe('first-look')
-    expect(PREVIEW_LABEL['first-look']).toBe("Here's a first look. I'm still adding pictures and music.")
   })
 
   it('heard words, a fast reply, and the end', () => {

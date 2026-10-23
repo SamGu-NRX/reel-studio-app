@@ -1,5 +1,5 @@
-// Working-screen progress, shared by the renderer (the bar, time left) and main (Dock / taskbar
-// progress). Keep free of Node and DOM imports.
+// Time left and clock words, shared by the renderer and main (Dock / taskbar progress). Keep free of Node and
+// DOM imports.
 
 /**
  * "About 3 minutes left", from how fast the bar has moved so far. Says nothing until there is

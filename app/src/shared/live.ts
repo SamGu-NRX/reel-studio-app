@@ -1,6 +1,6 @@
 // The live state of a running job, folded from job events (the contract in shared/api.ts). The ONLY
-// reader of job events in the renderer: the Working screen and the Reel screen's note progress both
-// use it, so a field the job flow adds is wired in one place. Pure (no DOM, no Node): unit-tested.
+// reader of job events in the renderer (the Reel screen's progress strip), so a field the job flow adds is
+// wired in one place. Pure (no DOM, no Node): unit-tested.
 import type { JobEvent } from './api'
 import { timeLeftText } from './progress'
 
@@ -46,12 +46,6 @@ export const EMPTY_LIVE: LiveState = {
   tools: [],
   reply: null,
   end: null
-}
-
-/** Labels the Working screen puts under the preview. */
-export const PREVIEW_LABEL: Record<Preview['kind'], string> = {
-  'first-look': "Here's a first look. I'm still adding pictures and music.",
-  'ai-draft': "Here's my edit so far. I'm checking it now."
 }
 
 /** Folds one event in. Events for another job (an older one still talking) start fresh state. */
