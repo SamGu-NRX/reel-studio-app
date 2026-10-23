@@ -37,6 +37,7 @@ import {
   detail,
   ensureRoot,
   listProjects,
+  searchProjects,
   listVersions,
   PREVIEW_DIR,
   projectDir,
@@ -720,6 +721,7 @@ function registerIpc(): void {
   })
 
   handle('projects:list', () => listProjects())
+  handle('projects:search', (_e, query: string) => searchProjects(query))
   handle('projects:get', async (_e, slug: string) => {
     const d = await detail(slug)
     const running = jobs.forSlug(slug)

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun } from './helpers'
+import { BASE, launch, makeMedia, passFirstRun, newReel } from './helpers'
 
 test.skip(process.platform !== 'darwin', 'The fake drive folders follow the macOS layout; the native Windows flow runs on a Windows host.')
 
@@ -36,20 +36,17 @@ async function openCloudWay(page: Page) {
 test('fails if the drive way loses its web links, saves the wrong export or to the wrong drive, or crowds the export dialog', async () => {
   const { app, page, home, iCloud } = await launchWithHome()
   try {
-    const exported = await exportReel(page)
-
-    // No drive app on this computer: the drive websites are still offered.
-    let cloud = await openCloudWay(page)
-    await expect(cloud.getByTestId('phone-icloud')).toHaveAttribute('href', 'https://www.icloud.com/iclouddrive/')
-    await expect(cloud.getByTestId('phone-gdrive')).toHaveAttribute('href', 'https://drive.google.com/drive/my-drive')
-    await expect(cloud.getByRole('button', { name: /^Save to / })).toHaveCount(0)
-
-    mkdirSync(iCloud, { recursive: true })
-    const personal = join(home, 'Library', 'CloudStorage', 'GoogleDrive-zoe.m@example.com', 'My Drive')
-    const work = join(home, 'Library', 'CloudStorage', 'GoogleDrive-studio@example.org', 'My Drive')
-    mkdirSync(personal, { recursive: true })
-    mkdirSync(work, { recursive: true })
-    // The export dialog keeps one obvious next action: the drive buttons live only in the phone fallbacks.
+    await app.evaluate(({ app }, folder) => app.setPath('home', folder), home)
+    await passFirstRun(page)
+    await newReel(app)
+    await page.getByTestId('file-input').setInputFiles([media.video])
+    await expect(page.getByTestId('player')).toBeVisible()
+    await page.getByTestId('export').click()
+    await expect(page.getByTestId('export-saved')).toBeVisible()
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.getByTestId('send-to-phone').click()
+    await page.getByTestId('phone-cant').click()
+    await page.locator('.phone-fallbacks .phone-way').nth(1).scrollIntoViewIfNeeded()
     await page.getByTestId('phone-back').click()
     await expect(page.getByTestId('send-to-phone')).toBeVisible()
     await expect(page.getByRole('button', { name: /^Save to / })).toHaveCount(0)

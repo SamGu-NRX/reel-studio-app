@@ -98,10 +98,17 @@ export async function modelReady(page: Page): Promise<void> {
   await expect(page.getByTestId('model-line')).toContainText('Listening model ready', { timeout: 30_000 })
 }
 
+/** New reel, as File > New Video (Cmd+N) sends it: the app's own command, wherever its button sits on screen. */
+export async function newReel(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ BrowserWindow }) => {
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send('app:command', { type: 'new-video' })
+  })
+}
+
 /** Gets past the first-run screens if this is a fresh profile. */
 export async function passFirstRun(page: Page): Promise<void> {
   const welcome = page.getByTestId('get-started')
-  const home = page.getByRole('heading', { name: 'Your videos' })
+  const home = page.getByRole('heading', { name: 'Reels' })
   await expect(welcome.or(home)).toBeVisible()
   if (await welcome.isVisible()) {
     await passSample(page)
@@ -114,10 +121,10 @@ export async function passFirstRun(page: Page): Promise<void> {
 }
 
 /**
- * Drops real files on an element, like dragging them from Finder/Explorer. The files come from a
+ * Drops real files on an element (`release` false: drags them over it and holds), like dragging them from Finder/Explorer. The files come from a
  * scratch <input type=file> so they are disk-backed (Electron can resolve their paths).
  */
-export async function dropFiles(page: Page, testId: string, paths: string[]): Promise<void> {
+export async function dropFiles(page: Page, testId: string, paths: string[], release = true): Promise<void> {
   await page.evaluate(() => {
     const i = document.createElement('input')
     i.type = 'file'
@@ -127,16 +134,16 @@ export async function dropFiles(page: Page, testId: string, paths: string[]): Pr
     document.body.appendChild(i)
   })
   await page.locator('#__drop_source').setInputFiles(paths)
-  await page.evaluate((id) => {
+  await page.evaluate(([id, drop]) => {
     const src = document.getElementById('__drop_source') as HTMLInputElement
     const dt = new DataTransfer()
     for (const f of Array.from(src.files ?? [])) dt.items.add(f)
     const target = document.querySelector(`[data-testid="${id}"]`)!
-    for (const type of ['dragenter', 'dragover', 'drop']) {
+    for (const type of drop ? ['dragenter', 'dragover', 'drop'] : ['dragenter', 'dragover']) {
       target.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }))
     }
     src.remove()
-  }, testId)
+  }, [testId, release] as const)
 }
 
 /** The labels the one build uses for the person's own Claude Code app. Reel Studio itself is never "Claude Code". */

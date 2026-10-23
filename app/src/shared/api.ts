@@ -28,6 +28,16 @@ export interface ProjectSummary {
   status: ScreenStatus
   /** Notes waiting their turn (not counting one that is running). */
   waiting: number
+  /** A planned reel: no video brought in yet, nothing made, nothing running. */
+  noVideo: boolean
+  /** Before Version 1 has a cover: the video it is made from (reel-media URL), for a frame of it. Null once there's a cover or no video. */
+  take: string | null
+  /** When the newest version was made (ISO), or null before Version 1. */
+  versionAt: string | null
+  /** project.json `series`: the group it belongs to on Reels, or null. */
+  series: string | null
+  /** A Paused reel that continues on its own at this time (ISO; app.json `pausedUntil`), or null when it waits for you. */
+  continuesAt: string | null
 }
 
 export interface VersionInfo {
@@ -216,6 +226,8 @@ export interface ProjectJson {
   format?: { width: number; height: number; fps: number }
   /** `mirror`: the take is mirrored, the engine flips the picture (absent = as filmed) */
   sources?: { id: string; path: string; duration?: number; rotation?: number; mirror?: boolean }[]
+  /** The group this reel belongs to on Reels ("Sourdough basics"). */
+  series?: string
   transcript?: { file: string; language?: string }
   cut?: { keep: { from: string; to: string }[]; gapCap?: number; minSaving?: number }
   captions?: {
@@ -558,6 +570,8 @@ export interface ReelApi {
   }
   projects: {
     list(): Promise<ProjectSummary[]>
+    /** Slugs of the reels whose title or spoken words contain every word of `query`, newest first. */
+    search(query: string): Promise<string[]>
     get(slug: string): Promise<ProjectDetail>
     create(files: string[]): Promise<{ slug: string; jobId: string; skipped: DropResult[] }>
     resume(slug: string): Promise<{ jobId: string }>

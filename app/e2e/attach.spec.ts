@@ -9,7 +9,7 @@ import { test, expect } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, chooseClaudeCode, dropFiles, launch, makeMedia, passFirstRun, shot, openSettings } from './helpers'
+import { BASE, chooseClaudeCode, dropFiles, launch, makeMedia, passFirstRun, shot, openSettings, newReel } from './helpers'
 
 const MINE = mkdtempSync(join(BASE, 'attach-'))
 const ROOT = join(MINE, 'Documents', 'Reel Studio')
@@ -29,7 +29,7 @@ test('note attachments: paste, drop, paperclip, chips, send', async () => {
   await openSettings(page)
   expect(await chooseClaudeCode(page)).toBe(true)
   await page.getByTestId('nav-home').click()
-  await page.getByTestId('new-video').click()
+  await newReel(app)
   await page.getByTestId('file-input').setInputFiles([media.video])
   await expect(page.getByTestId('player')).toBeVisible({ timeout: 240_000 })
   expect(projects()).toHaveLength(1)

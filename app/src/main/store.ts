@@ -44,6 +44,8 @@ export interface AppState {
   queue?: QueuedNote[]
   /** The queue waits for Resume: after Stop, a failed note, or a restart. */
   queueHeld?: boolean
+  /** Paused without you (ISO): the job continues on its own at this time. */
+  pausedUntil?: string
 }
 
 const EMPTY_STATE: AppState = { chat: [], job: null, status: 'new', lastError: null }
@@ -553,13 +555,20 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
       version: 0,
       thumbnail: null,
       status: st.job ? 'working' : st.status === 'ready' ? 'failed' : st.status,
-      waiting: (st.queue ?? []).filter((q) => !q.attempt).length
+      waiting: (st.queue ?? []).filter((q) => !q.attempt).length,
+      noVideo: false,
+      take: null,
+      versionAt: null,
+      series: null,
+      continuesAt: null
     }
   }
   const versions = await listVersions(dir)
   // Home still lists a video whose app.json can't be read right now; opening it says so
   const st = await readAppState(slug).catch((): AppState => ({ ...EMPTY_STATE, chat: [] }))
   const last = versions[versions.length - 1]
+  const src = p.sources?.[0]
+  const srcPath = src && (isAbsolute(src.path) ? src.path : join(dir, ...src.path.split('/')))
   const status: ScreenStatus = st.job
     ? 'working'
     : versions.length
@@ -576,7 +585,12 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
     version: last?.n ?? 0,
     thumbnail: last?.cover ?? null,
     status,
-    waiting: (st.queue ?? []).filter((q) => !q.attempt).length
+    waiting: (st.queue ?? []).filter((q) => !q.attempt).length,
+    noVideo: !st.job && !versions.length && !p.sources?.length,
+    take: !last?.cover && srcPath && existsSync(srcPath) ? mediaUrl(srcPath) : null,
+    versionAt: last?.createdAt ?? null,
+    series: typeof p.series === 'string' && p.series.trim() ? p.series.trim() : null,
+    continuesAt: status === 'interrupted' && st.pausedUntil ? st.pausedUntil : null
   }
 }
 
@@ -598,6 +612,42 @@ export async function listProjects(): Promise<ProjectSummary[]> {
     if (s) out.push(s)
   }
   return out.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+}
+
+/** Lower case, accents and punctuation gone: "Crème-brûlée!" -> "creme brulee". */
+const searchable = (t: string): string =>
+  t
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+
+/** Each reel's spoken words, kept while its transcript file is unchanged: search reads every reel on each query. */
+const spoken = new Map<string, { file: string; mtimeMs: number; words: string }>()
+
+async function spokenWords(slug: string, p: ProjectJson): Promise<string> {
+  const dir = projectDir(slug)
+  const file = join(dir, p.transcript?.file ?? 'work/transcript.json')
+  const st = await fs.stat(file).catch(() => null)
+  if (!st) return ''
+  const hit = spoken.get(slug)
+  if (hit && hit.file === file && hit.mtimeMs === st.mtimeMs) return hit.words
+  const words = searchable((await readWords(dir, p)).map((w) => w.w).join(' '))
+  spoken.set(slug, { file, mtimeMs: st.mtimeMs, words })
+  return words
+}
+
+/** Every word of the query starts a word of the reel's title or of what was said in it. */
+export async function searchProjects(query: string): Promise<string[]> {
+  const terms = searchable(query).split(' ').filter(Boolean)
+  if (!terms.length) return []
+  const out: string[] = []
+  for (const s of await listProjects()) {
+    const p = await readProject(s.slug).catch(() => null)
+    const words = ` ${searchable(s.title)} ${p ? await spokenWords(s.slug, p) : ''} `
+    if (terms.every((t) => words.includes(` ${t}`))) out.push(s.slug)
+  }
+  return out
 }
 
 export async function detail(slug: string): Promise<ProjectDetail> {

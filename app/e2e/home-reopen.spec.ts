@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test'
-import { launch, makeMedia, passFirstRun } from './helpers'
+import { launch, makeMedia, passFirstRun, newReel } from './helpers'
 
 test('Home reopens a running note or rerender on the Reel screen', async () => {
   const media = makeMedia()
   const { app, page } = await launch()
   try {
     await passFirstRun(page)
-    await page.getByTestId('new-video').click()
+    await newReel(app)
     await page.getByTestId('file-input').setInputFiles([media.video])
     await expect(page.getByTestId('player')).toBeVisible()
     const detail = await page.evaluate(async () => {
@@ -30,7 +30,9 @@ test('Home reopens a running note or rerender on the Reel screen', async () => {
       await expect(page.getByTestId('card-status')).toContainText('Making')
       await page.getByTestId('project-card').focus()
       await page.keyboard.press('Enter')
-      await expect(page.getByTestId('note-progress')).toContainText('Reading your note')
+      // the Reel screen's strip, not the first edit's Working screen (the strip's own words belong to the Reel screen)
+      await expect(page.getByTestId('note-progress')).toBeVisible()
+      await expect(page.getByTestId('working-screen')).toHaveCount(0)
     }
 
     // Home can still have a working summary after the note has finished.
@@ -55,7 +57,7 @@ test('Home reopens a running note or rerender on the Reel screen', async () => {
     }, detail)
     await page.getByTestId('nav-home').click()
     await page.getByTestId('project-card').click()
-    await page.getByTestId('new-video').click()
+    await newReel(app)
     await page.waitForTimeout(750)
     await expect(page.getByTestId('drop-zone')).toBeVisible()
   } finally {

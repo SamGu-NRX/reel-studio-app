@@ -11,7 +11,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { APP_DIR, BASE, ROOT, SHOTS, chooseClaudeCode, dropFiles, launch, passFirstRun, shot, openSettings } from './helpers'
+import { APP_DIR, BASE, ROOT, SHOTS, chooseClaudeCode, dropFiles, launch, passFirstRun, shot, openSettings, newReel } from './helpers'
 
 const TESTSET = process.env.REELSTUDIO_E2E_TAKES
 const takes: { file: string; path: string }[] = TESTSET ? JSON.parse(readFileSync(TESTSET, 'utf8')).takes : []
@@ -82,7 +82,7 @@ takes.forEach((take, i) => {
       }
 
       await page.getByTestId('nav-home').click()
-      await page.getByTestId('new-video').click()
+      await newReel(app)
       const t0 = Date.now()
       await dropFiles(page, 'drop-zone', [take.path])
       await expect(page.getByText('Making your reel')).toBeVisible()

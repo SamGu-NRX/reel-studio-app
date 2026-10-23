@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test'
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { clock } from '../src/shared/progress'
-import { BASE, launch, makeMedia, passFirstRun } from './helpers'
+import { BASE, launch, makeMedia, passFirstRun, newReel } from './helpers'
 
 const MINE = mkdtempSync(join(BASE, 'cover-'))
 const ROOT = join(MINE, 'Documents', 'Reel Studio')
@@ -14,7 +14,7 @@ test('cover suggestions say when and why, mark the chosen frame, and save it as 
   const media = makeMedia()
   const { app, page } = await launch({ REELSTUDIO_ROOT: ROOT, REELSTUDIO_USER_DATA: join(MINE, 'user data') })
   await passFirstRun(page)
-  await page.getByTestId('new-video').click()
+  await newReel(app)
   await page.getByTestId('file-input').setInputFiles([media.video])
   await expect(page.getByTestId('player')).toBeVisible({ timeout: 10 * 60_000 })
 

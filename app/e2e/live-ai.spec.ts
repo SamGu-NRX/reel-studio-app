@@ -5,7 +5,7 @@
 import { test, expect } from '@playwright/test'
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, SHOTS, launch, makeMedia, passFirstRun, shot, openSettings } from './helpers'
+import { BASE, SHOTS, launch, makeMedia, passFirstRun, shot, openSettings, newReel } from './helpers'
 
 const PROVIDER = process.env.REELSTUDIO_E2E_LIVE_AI
 
@@ -31,7 +31,7 @@ test('first edit and a note with a live AI provider', async () => {
   await page.getByTestId('nav-library').click()
   await page.getByTestId('file-input').setInputFiles([media.song])
   await page.getByTestId('nav-home').click()
-  await page.getByTestId('new-video').click()
+  await newReel(app)
   await page.getByTestId('file-input').setInputFiles([media.video])
   await expect(page.getByText('Making your reel')).toBeVisible()
   for (let i = 0; i < 6; i++) {

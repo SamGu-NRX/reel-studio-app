@@ -56,7 +56,7 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
 
   // ---- the whole window is a drop target ----
   await dropOnWindow(page, [media.video], false)
-  await expect(page.getByTestId('drop-overlay')).toContainText('Drop to make a reel')
+  await expect(page.getByTestId('drop-overlay')).toContainText('Make a reel')
   await shot(page, 'd-01-drop-overlay')
   await page.evaluate(() => window.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true })))
   await expect(page.getByTestId('drop-overlay')).toHaveCount(0)
@@ -206,6 +206,10 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await expect(page.getByTestId('note-input')).toHaveAttribute('placeholder', 'Checking for your AI editor…')
   await expect(page.getByTestId('composer-connect')).toHaveCount(0)
   // A picture dropped on the note box meanwhile is held: nothing can be sent until the check answers... (polish-pass)
+  // held over the note box, only that box answers, and says the file goes on the note
+  await dropFiles(page, 'note-drop', [media.picture], false)
+  await expect(page.getByTestId('drop-overlay')).toHaveAttribute('data-intent', 'note')
+  await expect(page.getByTestId('drop-overlay')).toContainText('Attach to your note')
   await dropFiles(page, 'note-drop', [media.picture])
   await expect(page.getByTestId('note-attachment-busy')).toBeVisible()
   await page.waitForTimeout(2000) // a picture copies in about 0.2 s, so an early attach would have landed by now
@@ -221,7 +225,7 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   // ---- Library: a drop anywhere on the window lands in the Library ----
   await page.getByTestId('nav-library').click()
   await dropOnWindow(page, [media.song], false)
-  await expect(page.getByTestId('drop-overlay')).toContainText('Drop to add to your Library')
+  await expect(page.getByTestId('drop-overlay')).toContainText('Add to Library')
   await page.evaluate(() => window.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true })))
   await dropOnWindow(page, [media.song])
   await expect(page.getByTestId('toast')).toContainText('Added 1 song to your Library.')

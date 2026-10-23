@@ -6,7 +6,7 @@
 import { test, expect } from '@playwright/test'
 import { mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun, shot } from './helpers'
+import { BASE, launch, makeMedia, passFirstRun, shot, newReel } from './helpers'
 
 const MINE = mkdtempSync(join(BASE, 'wire-'))
 
@@ -21,7 +21,7 @@ test('wire: first look plays on the Working screen, thinking + time left, then t
   })
   try {
     await passFirstRun(page)
-    await page.getByTestId('new-video').click()
+    await newReel(app)
     await page.getByTestId('file-input').setInputFiles([media.video])
     await expect(page.getByText('Making your reel')).toBeVisible()
 

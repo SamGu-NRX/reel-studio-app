@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { APP_DIR, BASE, launch, makeMedia, passFirstRun, passMacStage, passSample } from './helpers'
+import { APP_DIR, BASE, dropFiles, launch, makeMedia, passFirstRun, passMacStage, passSample } from './helpers'
 
 const media = makeMedia()
 function profile() {
@@ -68,6 +68,35 @@ for (const source of ['paste', 'open-file before ready', 'second-instance argv']
     }
   })
 }
+
+test('fails if the drop overlay does not say what letting go will do, or a drop does something else', async () => {
+  const { app, page } = await launch(profile())
+  try {
+    await passFirstRun(page)
+    const overlay = page.getByTestId('drop-overlay')
+    const leave = () => page.evaluate(() => document.querySelector('[data-testid="reels"]')!.dispatchEvent(new DragEvent('dragleave', { bubbles: true })))
+    for (const [file, intent, words] of [
+      [media.video, 'reel', 'Make a reel'],
+      [media.picture, 'library', 'Add to Library'],
+      [media.doc, 'refuse', 'That’s a text file, not a video']
+    ] as const) {
+      await dropFiles(page, 'reels', [file], false)
+      await expect(overlay).toHaveAttribute('data-intent', intent)
+      await expect(overlay).toContainText(words)
+      await leave()
+      await expect(overlay).toHaveCount(0)
+    }
+    // a picture outside a reel goes into the Library; a file Reel Studio can't use is refused and stays where it is
+    await dropFiles(page, 'reels', [media.picture])
+    await expect(page.getByTestId('toast')).toContainText('Added 1 picture to your Library.')
+    await dropFiles(page, 'reels', [media.doc])
+    await expect(overlay).toHaveAttribute('role', 'alert')
+    await expect(overlay).toContainText('That’s a text file, not a video')
+    expect(await page.evaluate(() => window.reel.projects.list())).toEqual([])
+  } finally {
+    await app.close()
+  }
+})
 
 declare global {
   var __reelClipboard: { items: Electron.ClipboardItem[] }
