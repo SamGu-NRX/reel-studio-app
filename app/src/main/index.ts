@@ -74,6 +74,7 @@ import { createPauser, pauseFor, quitQuestion } from './pause'
 import { createNoteQueue, noteOutcome, type NoteToRun, type StartHand } from './note-queue'
 import { handEditJob, HAND_MESSAGE } from './hand-edit'
 import { parseHandEdit } from '../shared/hand-edit'
+import { learnPicker } from '../shared/style-editors'
 import { checkPlan, planFromEditor, planReply, planTurns, titleFromTopic } from '../shared/plan'
 import type { SoundEffect } from '../shared/sfx'
 import { mediaUrl } from './media-url'
@@ -1288,11 +1289,13 @@ function registerIpc(): void {
     removedRules.delete(id)
   })
   handle('style:learn', async () => {
+    const mac = process.platform === 'darwin'
+    const picker = learnPicker(mac)
     const r = await showOpenDialog({
-      title: 'Choose exports from Final Cut Pro or Premiere Pro',
+      title: picker.title,
       // a .fcpxmld is a folder unless Final Cut Pro is installed to make it a package
-      properties: process.platform === 'darwin' ? ['openFile', 'openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'],
-      filters: [{ name: 'Final Cut Pro or Premiere Pro exports', extensions: ['fcpxml', 'fcpxmld', 'xml'] }]
+      properties: mac ? ['openFile', 'openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'],
+      filters: [{ name: picker.filter, extensions: ['fcpxml', 'fcpxmld', 'xml'] }]
     })
     if (r.canceled || !r.filePaths.length) return null
     return readLesson(r.filePaths, (file) => runEngine('import-reference', [file]))
