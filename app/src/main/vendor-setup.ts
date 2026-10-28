@@ -19,7 +19,7 @@ export const INSTALL_SCRIPTS: Record<Vendor, { mac: string; win: string }> = {
 
 
 const VENDOR_NAME: Record<Vendor, string> = { claude: 'Anthropic', chatgpt: 'OpenAI' }
-const APP_NAME: Record<Vendor, string> = { claude: "Anthropic's Claude Code app", chatgpt: "OpenAI's Codex app" }
+const APP_NAME: Record<Vendor, string> = { claude: "Anthropic’s Claude Code app", chatgpt: "OpenAI’s Codex app" }
 
 export const INSTALL_TIMEOUT_MS = 10 * 60_000
 
@@ -123,7 +123,7 @@ export async function runInstall(d: InstallDeps): Promise<void> {
   const fileName = join(d.dir, win32.basename(planned.fileName))
   const plan = { ...planned, fileName, args: planned.args.map((a) => (a === planned.fileName ? fileName : a)) }
   assertRunsAFile(plan)
-  const cantReach = `${APP_NAME[d.vendor]} didn't install: this computer couldn't reach ${VENDOR_NAME[d.vendor]}. Check your internet, then try again.`
+  const cantReach = `${APP_NAME[d.vendor]} didn’t install: this computer couldn’t reach ${VENDOR_NAME[d.vendor]}. Check your internet, then try again.`
   let bytes: Buffer
   try {
     const res = await d.fetch(plan.url, { signal: d.signal })
@@ -161,7 +161,7 @@ export async function runInstall(d: InstallDeps): Promise<void> {
     d.signal?.addEventListener('abort', stop, { once: true })
     child.on('error', (e) => {
       clearTimeout(timer)
-      reject(new VendorError('install_failed', `${APP_NAME[d.vendor]} didn't install. Try again, or install it yourself.`, String(e?.message ?? e)))
+      reject(new VendorError('install_failed', `${APP_NAME[d.vendor]} didn’t install. Try again, or install it yourself.`, String(e?.message ?? e)))
     })
     child.on('close', (code) => {
       clearTimeout(timer)
@@ -174,7 +174,7 @@ export async function runInstall(d: InstallDeps): Promise<void> {
           'install_failed',
           timedOut
             ? `${APP_NAME[d.vendor]} took too long to install. Try again, or install it yourself.`
-            : `${APP_NAME[d.vendor]} didn't install. Your antivirus or your company's settings may have stopped it. Try again, or install it yourself.`,
+            : `${APP_NAME[d.vendor]} didn’t install. Your antivirus or your company’s settings may have stopped it. Try again, or install it yourself.`,
           tail
         )
       )

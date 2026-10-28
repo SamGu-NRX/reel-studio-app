@@ -21,7 +21,7 @@ export const USING_CODEX = 'Using ChatGPT through your Codex app.'
 
 const NAME: Record<VendorId, string> = { claude: 'Claude', chatgpt: 'ChatGPT' }
 const MAKER: Record<VendorId, string> = { claude: 'Anthropic', chatgpt: 'OpenAI' }
-const APP: Record<VendorId, string> = { claude: "Anthropic's Claude Code app", chatgpt: "OpenAI's Codex app" }
+const APP: Record<VendorId, string> = { claude: "Anthropic’s Claude Code app", chatgpt: "OpenAI’s Codex app" }
 const PROVIDER: Record<VendorId, ProviderInfo['id']> = { claude: 'claude-cli', chatgpt: 'codex-cli' }
 const MARK: Record<VendorId, 'claude' | 'openai'> = { claude: 'claude', chatgpt: 'openai' }
 const PLAN_LINE: Record<VendorId, string> = {
@@ -29,14 +29,14 @@ const PLAN_LINE: Record<VendorId, string> = {
   chatgpt: 'It uses your own ChatGPT plan and its usage limits.'
 }
 const PITCH: Record<VendorId, string> = {
-  claude: "Needs Claude Pro or Max. Installs Anthropic's Claude Code app if you don't have it.",
-  chatgpt: "Works with your ChatGPT plan, free ones too. Installs OpenAI's Codex app if you don't have it."
+  claude: "Needs Claude Pro or Max. Installs Anthropic’s Claude Code app if you don’t have it.",
+  chatgpt: "Works with your ChatGPT plan, free ones too. Installs OpenAI’s Codex app if you don’t have it."
 }
 const HERE = IS_MAC ? 'this Mac' : 'this PC'
 
 // OpenAI's docs: "Enable device code login in your ChatGPT security settings (personal account) or ChatGPT workspace
 // permissions (workspace admin)." Until then OpenAI's page refuses the code, and Codex just keeps waiting.
-const DEVICE_CODE_HINT = "Turn on device code login in ChatGPT's security settings first (work accounts: your workspace admin)."
+const DEVICE_CODE_HINT = "Turn on device code login in ChatGPT’s security settings first (work accounts: your workspace admin)."
 
 const running = (i: VendorInfo | null): boolean => !!i && ['installing', 'signing_in', 'checking'].includes(i.step)
 
@@ -236,7 +236,7 @@ function VendorRow({
 
   if (!info && lookFailed) {
     tone = 'error'
-    status = `Couldn't look for ${APP[v]} on ${HERE}.`
+    status = `Couldn’t look for ${APP[v]} on ${HERE}.`
     action = (
       <Button size="small" onClick={onLook} data-testid={`vendor-look-${v}`}>
         Try again
@@ -300,8 +300,8 @@ function VendorRow({
           <Step state="now">
             {dc ? (
               <>
-                <b>Enter this code on {MAKER[v]}'s page.</b>
-                <span>Come back here when the page says you're signed in.</span>
+                <b>Enter this code on {MAKER[v]}’s page.</b>
+                <span>Come back here when the page says you’re signed in.</span>
               </>
             ) : (
               <b>Getting a sign-in code from {MAKER[v]}…</b>
@@ -341,15 +341,13 @@ function VendorRow({
           <Step state={installing ? 'later' : 'now'}>
             {signing ? (
               <>
-                <b>Finish signing in in your browser.</b>
-                <span>
-                  It's {MAKER[v]}'s page. Come back here when it says you're signed in.
-                </span>
+                <b>Finish signing in on {MAKER[v]}’s page.</b>
+                <span>Come back here when it says you’re signed in.</span>
               </>
             ) : step === 'checking' ? (
               <b>Checking that it worked…</b>
             ) : (
-              <b>Sign in to {NAME[v]} in your browser</b>
+              <b>Sign in on {MAKER[v]}’s page</b>
             )}
           </Step>
         </ol>
@@ -360,14 +358,14 @@ function VendorRow({
             </Button>
             {v === 'claude' && (
               <button className="link inline" onClick={windowFallback} data-testid="claude-window-fallback">
-                The page shows a code? Sign in in a window instead
+                Page shows a code? Use a sign-in window instead
               </button>
             )}
           </div>
         )}
         {signing && v === 'claude' && (
           <p className="vsteps-hint" data-testid="claude-free-hint">
-            Does {MAKER[v]}'s page say you need Claude Pro or Max? The free Claude plan can't be used here.{' '}
+            Does {MAKER[v]}’s page say you need Claude Pro or Max? The free Claude plan can’t be used here.{' '}
             <a href={CLAUDE_PLANS_URL} target="_blank" rel="noreferrer">
               See Claude plans
             </a>{' '}
@@ -419,7 +417,7 @@ function VendorRow({
       more = (
         <div className="pv-more vendor-steps">
           <div className="row wrap vsteps-acts">{codeFirst ? retry('secondary') : code('secondary')}</div>
-          {codeFirst && <p className="vsteps-hint">Trying again won't help until Windows lets go of the port, usually after a restart.</p>}
+          {codeFirst && <p className="vsteps-hint">Trying again won’t help until Windows lets go of the port, usually after a restart.</p>}
         </div>
       )
     else if (installProblem || free)
@@ -438,7 +436,7 @@ function VendorRow({
             )}
           </div>
           {installProblem && (
-            <p className="vsteps-hint">“Install it myself” opens {MAKER[v]}'s install page. Come back here and it checks again by itself.</p>
+            <p className="vsteps-hint">“Install it myself” opens {MAKER[v]}’s install page. Come back here and it checks again by itself.</p>
           )}
           {free && <p className="vsteps-hint">Or connect ChatGPT. Its free plan works, with limits.</p>}
         </div>
@@ -469,10 +467,10 @@ function VendorRow({
   const said = !info || !running(info) ? ''
     : info.signIn === 'code'
       ? info.deviceCode
-        ? `Your sign-in code is ${info.deviceCode.code.split('').join(' ')}. Enter it on ${MAKER[v]}'s page.`
+        ? `Your sign-in code is ${info.deviceCode.code.split('').join(' ')}. Enter it on ${MAKER[v]}’s page.`
         : 'Getting a sign-in code.'
     : step === 'installing' ? `Installing ${APP[v]}. Takes a minute or two.`
-    : step === 'signing_in' ? `Finish signing in in your browser. It's ${MAKER[v]}'s page.`
+    : step === 'signing_in' ? `Finish signing in on ${MAKER[v]}’s page.`
     : 'Checking that it worked.'
   return (
     <div

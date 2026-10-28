@@ -132,14 +132,14 @@ describe('installing the vendor app: the vendor\'s own script, as a FILE', () =>
     const { spawn, calls } = fakeSpawn((c) => setTimeout(() => c.finish(1, 'boom'), 5))
     await expect(runInstall({ vendor: 'claude', platform: 'darwin', dir: tmp(), env: ENV, fetch: script(), spawn })).rejects.toMatchObject({
       code: 'install_failed',
-      userMessage: expect.stringContaining("Anthropic's Claude Code app didn't install")
+      userMessage: expect.stringContaining("Anthropic’s Claude Code app didn’t install")
     })
     const html = fakeSpawn()
     await expect(runInstall({ vendor: 'chatgpt', platform: 'darwin', dir: tmp(), env: ENV, fetch: script('<!doctype html><html>' + 'x'.repeat(400)), spawn: html.spawn }))
-      .rejects.toMatchObject({ userMessage: expect.stringContaining("couldn't reach OpenAI") })
+      .rejects.toMatchObject({ userMessage: expect.stringContaining("couldn’t reach OpenAI") })
     expect(html.calls).toHaveLength(0)
     const offline = async () => { throw new Error('getaddrinfo ENOTFOUND') }
-    await expect(runInstall({ vendor: 'claude', platform: 'win32', dir: tmp(), env: ENV, fetch: offline, spawn })).rejects.toMatchObject({ userMessage: expect.stringContaining("couldn't reach Anthropic") })
+    await expect(runInstall({ vendor: 'claude', platform: 'win32', dir: tmp(), env: ENV, fetch: offline, spawn })).rejects.toMatchObject({ userMessage: expect.stringContaining("couldn’t reach Anthropic") })
     expect(calls).toHaveLength(1)
   })
 
@@ -229,7 +229,7 @@ describe('signing in with a code (codex login --device-auth)', () => {
   // Codex 0.163.0's own words, captured on this machine; only the one-time code is replaced (same shape, 10 characters).
   const CODE = 'Q42W-7R5TB'
   const PROMPT =
-    "\nWelcome to Codex [v\x1b[90m0.163.0\x1b[0m]\n\x1b[90mOpenAI's command-line coding agent\x1b[0m\n\nFollow these steps to sign in with ChatGPT using device code authorization:\n\n" +
+    "\nWelcome to Codex [v\x1b[90m0.163.0\x1b[0m]\n\x1b[90mOpenAI’s command-line coding agent\x1b[0m\n\nFollow these steps to sign in with ChatGPT using device code authorization:\n\n" +
     '1. Open this link in your browser and sign in to your account\n   \x1b[94mhttps://auth.openai.com/codex/device\x1b[0m\n\n' +
     `2. Enter this one-time code \x1b[90m(expires in 15 minutes)\x1b[0m\n   \x1b[94m${CODE}\x1b[0m\n\n` +
     '\x1b[90mContinue only if you started this login in Codex. If a website or another person gave you this code, cancel.\x1b[0m\n\n'
@@ -396,7 +396,7 @@ describe('Connect: install if missing, sign in, check, choose', () => {
   })
 
   it('sign-in ended without signing in, port busy, or nobody came back in time', async () => {
-    expect(await flow({ states: [out, out], login: async () => ({ code: 1 }) }).vc.connect('claude')).toMatchObject({ problem: 'sign_in_failed', message: "The sign-in didn't finish. Try again." })
+    expect(await flow({ states: [out, out], login: async () => ({ code: 1 }) }).vc.connect('claude')).toMatchObject({ problem: 'sign_in_failed', message: "The sign-in didn’t finish. Try again." })
     expect(await flow({ states: [out], login: async () => ({ code: 1, portBusy: true }) }).vc.connect('chatgpt')).toMatchObject({ problem: 'port_busy', message: PORT_LINE() })
     const slow = flow({ states: [out], login: hang, loginTimeoutMs: 20 })
     expect(await slow.vc.connect('claude')).toMatchObject({ problem: 'sign_in_timeout' })
@@ -500,7 +500,7 @@ describe('Connect: install if missing, sign in, check, choose', () => {
     expect(inUse.portReserved).toBeUndefined()
   })
 
-  it("ChatGPT's port held: plain words; Sign in with a code instead runs the code sign-in, shows its code, then checks and chooses", async () => {
+  it("ChatGPT’s port held: plain words; Sign in with a code instead runs the code sign-in, shows its code, then checks and chooses", async () => {
     const page = { url: 'https://auth.openai.com/codex/device', code: 'Q42W-7R5TB' }
     const f = flow({
       states: [out, out, ready], // the browser try, the code try, then the check
@@ -513,7 +513,7 @@ describe('Connect: install if missing, sign in, check, choose', () => {
     })
     expect(await f.vc.connect('chatgpt')).toMatchObject({ step: 'failed', problem: 'port_busy', message: PORT_LINE() })
     // in use or reserved, the same plain line: something else holds the port
-    expect(PORT_LINE()).toBe(process.platform === 'win32' ? "Another program or Windows is holding the port ChatGPT's sign-in uses." : "Another program is holding the port ChatGPT's sign-in uses.")
+    expect(PORT_LINE()).toBe(process.platform === 'win32' ? "Another program or Windows is holding the port ChatGPT’s sign-in uses." : "Another program is holding the port ChatGPT’s sign-in uses.")
     const end = await f.vc.signInWithCode('chatgpt')
     expect(end).toMatchObject({ step: 'done', state: 'ready' })
     expect(f.selected).toEqual(['chatgpt'])
@@ -538,16 +538,16 @@ describe('Connect: install if missing, sign in, check, choose', () => {
   it('code sign-in turned off: says where to turn it on, not a generic failure', async () => {
     const f = flow({ states: [out], login: async () => ({ code: 1, deviceCodeOff: true }) })
     expect(await f.vc.signInWithCode('chatgpt')).toMatchObject({ step: 'failed', problem: 'device_code_off', message: DEVICE_CODE_OFF_LINE() })
-    expect(DEVICE_CODE_OFF_LINE()).toContain("ChatGPT's security settings")
+    expect(DEVICE_CODE_OFF_LINE()).toContain("ChatGPT’s security settings")
   })
 
   // A sign-in makes Codex clear the credentials it has first, so an unclear status (slow, an error answer) must never
   // start one on its own: only the person's "Sign in" does.
   const unknown = { state: 'signed_out', bin: '/x/codex', version: '0.165.0', unknown: true } as CliStatus
 
-  it("ChatGPT's status unknown: Connect says so and starts no sign-in (and no install)", async () => {
+  it("ChatGPT’s status unknown: Connect says so and starts no sign-in (and no install)", async () => {
     const f = flow({ states: [unknown] })
-    expect(await f.vc.connect('chatgpt')).toMatchObject({ step: 'failed', problem: 'status_unknown', message: "Couldn't tell whether ChatGPT is signed in." })
+    expect(await f.vc.connect('chatgpt')).toMatchObject({ step: 'failed', problem: 'status_unknown', message: "Couldn’t tell whether ChatGPT is signed in." })
     expect(f.counts()).toEqual({ logins: 0, installs: 0 })
     expect(f.selected).toEqual([])
   })
@@ -560,7 +560,7 @@ describe('Connect: install if missing, sign in, check, choose', () => {
 
   it('the card shows it before any click; Sign in is the person\'s explicit choice and does start the sign-in', async () => {
     const f = flow({ states: [unknown, unknown, ready] })
-    expect(await f.vc.status('chatgpt')).toMatchObject({ step: 'idle', problem: 'status_unknown', message: "Couldn't tell whether ChatGPT is signed in." })
+    expect(await f.vc.status('chatgpt')).toMatchObject({ step: 'idle', problem: 'status_unknown', message: "Couldn’t tell whether ChatGPT is signed in." })
     expect(await f.vc.signIn('chatgpt')).toMatchObject({ step: 'done' })
     expect(f.counts().logins).toBe(1)
     expect(f.selected).toEqual(['chatgpt'])

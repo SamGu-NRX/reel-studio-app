@@ -278,8 +278,8 @@ export const createMockAI: CreateAI = ({ host }) => {
           throw new VendorError(
             'install_failed',
             v === 'claude'
-              ? "Anthropic's Claude Code app didn't install: this computer couldn't reach Anthropic. Check your internet, then try again."
-              : "OpenAI's Codex app didn't install: this computer couldn't reach OpenAI. Check your internet, then try again.",
+              ? "Anthropic’s Claude Code app didn’t install: this computer couldn’t reach Anthropic. Check your internet, then try again."
+              : "OpenAI’s Codex app didn’t install: this computer couldn’t reach OpenAI. Check your internet, then try again.",
             'mock'
           )
         }

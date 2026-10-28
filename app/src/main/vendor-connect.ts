@@ -37,17 +37,17 @@ export const LOGIN_TIMEOUT_MS = 10 * 60_000
 const APP: Record<Vendor, string> = { claude: 'Claude Code app', chatgpt: 'Codex app' }
 
 export const VENDOR_MESSAGES: Record<Exclude<VendorProblem, 'install_failed' | 'cancelled'>, (v: Vendor) => string> = {
-  not_found_after_install: (v) => `Your ${APP[v]} installed, but we can't find it. Click Check again, or install it yourself.`,
-  sign_in_failed: () => "The sign-in didn't finish. Try again.",
-  sign_in_timeout: () => "We stopped waiting for the sign-in. Try again when you're ready.",
+  not_found_after_install: (v) => `Your ${APP[v]} installed, but we can’t find it. Click Check again, or install it yourself.`,
+  sign_in_failed: () => "The sign-in didn’t finish. Try again.",
+  sign_in_timeout: () => "We stopped waiting for the sign-in. Try again when you’re ready.",
   // in use (another program, often a sign-in left open) or reserved (Windows' excluded port ranges): the same way out
   port_busy: () =>
-    process.platform === 'win32' ? "Another program or Windows is holding the port ChatGPT's sign-in uses." : "Another program is holding the port ChatGPT's sign-in uses.",
-  free_plan: () => "You're signed in, but your Claude plan doesn't include the Claude Code app. It needs Claude Pro or Max.",
+    process.platform === 'win32' ? "Another program or Windows is holding the port ChatGPT’s sign-in uses." : "Another program is holding the port ChatGPT’s sign-in uses.",
+  free_plan: () => "You’re signed in, but your Claude plan doesn’t include the Claude Code app. It needs Claude Pro or Max.",
   // OpenAI: "Enable device code login in your ChatGPT security settings (personal account) or ChatGPT workspace
   // permissions (workspace admin)." (learn.chatgpt.com/docs/auth, 2026-10-28; it names no menu path)
-  device_code_off: () => "Sign-in with a code is turned off. Turn on device code login in ChatGPT's security settings, or ask your workspace admin.",
-  status_unknown: () => "Couldn't tell whether ChatGPT is signed in."
+  device_code_off: () => "Sign-in with a code is turned off. Turn on device code login in ChatGPT’s security settings, or ask your workspace admin.",
+  status_unknown: () => "Couldn’t tell whether ChatGPT is signed in."
 }
 
 /** Choosing Claude sends it one short message first (ai index.ts setActive): why that failed, in plain words. */
@@ -57,17 +57,17 @@ export function claudeCheckWords(e: unknown, platform: NodeJS.Platform): string 
     case 'cli_limited':
       return 'Your Claude plan is at its limit. Try again after it resets.'
     case 'cli_timeout':
-      return "Claude took too long to answer. Check you're online, then try again."
+      return "Claude took too long to answer. Check you’re online, then try again."
     case 'cli_error':
-      return "Claude didn't answer. Open your Claude Code app once to check it works, then try again."
+      return "Claude didn’t answer. Open your Claude Code app once to check it works, then try again."
     case 'cli_missing':
-      return `The Claude Code app isn't on ${platform === 'darwin' ? 'this Mac' : 'this PC'} any more.`
+      return `The Claude Code app isn’t on ${platform === 'darwin' ? 'this Mac' : 'this PC'} any more.`
     default:
       return typeof x.userMessage === 'string' && x.userMessage ? x.userMessage : VENDOR_MESSAGES.sign_in_failed('claude')
   }
 }
 
-export const MOVED_NOTE = "ChatGPT now connects through OpenAI's Codex app. Click Connect ChatGPT once."
+export const MOVED_NOTE = "ChatGPT now connects through OpenAI’s Codex app. Click Connect ChatGPT once."
 
 interface Run {
   ctrl: AbortController
@@ -112,7 +112,7 @@ export function createVendorConnect(deps: VendorDeps) {
         if (signal.aborted) return emit(info(v, st, 'idle', { problem: 'cancelled' }))
         const err = e instanceof VendorError ? e : null
         deps.log?.(`[vendor] ${v} install failed: ${err?.detail ?? String((e as Error)?.message ?? e)}`.slice(0, 1500))
-        return fail(v, st, 'install_failed', err?.userMessage ?? `Your ${APP[v]} didn't install. Try again, or install it yourself.`)
+        return fail(v, st, 'install_failed', err?.userMessage ?? `Your ${APP[v]} didn’t install. Try again, or install it yourself.`)
       }
       st = await deps.status(v)
       if (st.state === 'missing' || st.state === 'broken') return fail(v, st, 'not_found_after_install', VENDOR_MESSAGES.not_found_after_install(v))
