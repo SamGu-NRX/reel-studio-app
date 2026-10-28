@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { inflateSync } from 'node:zlib'
 
 export const APP_DIR = resolve(__dirname, '..')
 export const SHOTS = join(APP_DIR, 'e2e', 'screenshots')
@@ -83,6 +84,19 @@ export async function expectOneCheckbox(box: Locator, on: boolean): Promise<void
     return { width: Math.round(r.width), height: Math.round(r.height), corners: cs.borderTopLeftRadius, fill: cs.backgroundColor }
   })
   expect(look).toEqual({ width: 16, height: 16, corners: '4px', fill: on ? 'rgb(30, 94, 75)' : 'rgb(255, 255, 255)' })
+}
+
+/** The colour painted at one point of the window, read from a 1 px screenshot (an 8-bit RGB or RGBA PNG). */
+export async function painted(page: Page, x: number, y: number): Promise<number[]> {
+  const png = await page.screenshot({ clip: { x, y, width: 1, height: 1 } })
+  const idat: Buffer[] = []
+  for (let at = 8; at < png.length; ) {
+    const len = png.readUInt32BE(at)
+    if (png.toString('latin1', at + 4, at + 8) === 'IDAT') idat.push(png.subarray(at + 8, at + 8 + len))
+    at += len + 12
+  }
+  // one row: its filter byte, then the pixel (any filter leaves a lone first pixel as it is)
+  return [...inflateSync(Buffer.concat(idat)).subarray(1, 4)]
 }
 
 export async function shot(page: Page, name: string): Promise<void> {
