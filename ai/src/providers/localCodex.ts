@@ -20,6 +20,9 @@ export interface LocalCodex {
   version?: string;
   /** how it is signed in: "chatgpt" or "api_key". Never the key, never the account. */
   authMethod?: 'chatgpt' | 'api_key';
+  /** with state 'signed_out': `codex login status` was slow or its answer unclear. Never start a sign-in on this alone:
+   * the sign-in clears the credentials Codex has (classifyCodexLoginStatus). */
+  unknown?: boolean;
   reason?: string;
 }
 
@@ -125,7 +128,30 @@ export const CODEX_MESSAGES = {
   slow: 'Your Codex app took too long to answer. Click Check again.',
 } as const;
 
-/** Installed = `codex --version` exits 0. Signed in = `codex login status` exits 0 and says "Logged in". */
+export type CodexLoginStatus = { kind: 'signed_in'; authMethod?: 'chatgpt' | 'api_key' } | { kind: 'signed_out' } | { kind: 'unknown' };
+
+/**
+ * What `codex login status` answered (codex-rs/cli/src/login.rs run_login_status; it writes to stderr):
+ *   signed in:  exit 0, "Logged in using ChatGPT" / "Logged in using an API key - sk-…" (0.163) / "API key configured -
+ *               sk-…" (0.165) / "Logged in using <other kind>"
+ *   signed out: exit 1, "Not logged in"
+ *   anything else, e.g. exit 1 "Error checking login status: …" (an auth file it cannot read): unknown.
+ * Only a clear "Not logged in" is signed out: a sign-in makes Codex clear and revoke the credentials it has before it
+ * starts (clear_existing_auth_before_login), so an answer Reel Studio cannot read must never lead to one on its own.
+ */
+export function classifyCodexLoginStatus(a: { code: number | null; stdout: string; stderr: string }): CodexLoginStatus {
+  const lines = `${a.stdout}\n${a.stderr}`.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (a.code === 0) {
+    if (lines.some((l) => /^api key configured\b/i.test(l) || /^logged in using an api key\b/i.test(l))) return { kind: 'signed_in', authMethod: 'api_key' };
+    if (lines.some((l) => /^logged in using chatgpt\b/i.test(l))) return { kind: 'signed_in', authMethod: 'chatgpt' };
+    if (lines.some((l) => /^logged in using\b/i.test(l))) return { kind: 'signed_in' };
+    return { kind: 'unknown' };
+  }
+  if (a.code === 1 && lines.length > 0 && lines.every((l) => /^not logged in$/i.test(l))) return { kind: 'signed_out' };
+  return { kind: 'unknown' };
+}
+
+/** Installed = `codex --version` exits 0. Signed in or out: classifyCodexLoginStatus; anything unclear is unknown. */
 export async function detectCodex(o: CodexDetectOptions = {}): Promise<LocalCodex> {
   const env = o.env ?? process.env;
   const run: Runner = o.run ?? (async (cmd, args, ro) => {
@@ -153,14 +179,11 @@ export async function detectCodex(o: CodexDetectOptions = {}): Promise<LocalCode
     a = await run(bin, ['login', 'status'], { timeoutMs: RUN_TIMEOUT_MS });
   } catch (e: any) {
     const slow = e?.code === 'cli_timeout';
-    return { ...base, state: 'signed_out', signedIn: false, reason: slow ? CODEX_MESSAGES.slow : CODEX_MESSAGES.unknown };
+    return { ...base, state: 'signed_out', signedIn: false, unknown: true, reason: slow ? CODEX_MESSAGES.slow : CODEX_MESSAGES.unknown };
   }
   // Keep ONLY the yes/no and the kind of sign-in. An API-key answer can carry part of the key: it is dropped here.
-  const text = `${a.stdout}\n${a.stderr}`;
-  if (a.code === 0 && /logged in/i.test(text) && !/not logged in/i.test(text)) {
-    const authMethod = /api key/i.test(text) ? 'api_key' as const : /chatgpt/i.test(text) ? 'chatgpt' as const : undefined;
-    return { ...base, state: 'ready', signedIn: true, ...(authMethod ? { authMethod } : {}) };
-  }
-  if (/not logged in|logged out/i.test(text) || a.code === 1) return { ...base, state: 'signed_out', signedIn: false, reason: CODEX_MESSAGES.signed_out };
-  return { ...base, state: 'signed_out', signedIn: false, reason: CODEX_MESSAGES.unknown };
+  const answer = classifyCodexLoginStatus(a);
+  if (answer.kind === 'signed_in') return { ...base, state: 'ready', signedIn: true, ...(answer.authMethod ? { authMethod: answer.authMethod } : {}) };
+  if (answer.kind === 'signed_out') return { ...base, state: 'signed_out', signedIn: false, reason: CODEX_MESSAGES.signed_out };
+  return { ...base, state: 'signed_out', signedIn: false, unknown: true, reason: CODEX_MESSAGES.unknown };
 }

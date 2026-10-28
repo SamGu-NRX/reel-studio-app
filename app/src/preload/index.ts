@@ -45,6 +45,7 @@ const api: ReelApi = {
     vendorConnect: (v) => call('ai:vendorConnect', v),
     vendorCancel: (v) => call('ai:vendorCancel', v),
     vendorSignInAgain: (v) => call('ai:vendorSignInAgain', v),
+    vendorSignIn: (v) => call('ai:vendorSignIn', v),
     onVendor: (cb) => on<VendorInfo>('ai:vendor', cb)
   },
   projects: {

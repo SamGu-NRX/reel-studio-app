@@ -22,8 +22,9 @@ const NOT_CONNECTED: ProviderStatus = { id: 'none', connected: true, label: 'No 
 //   signs_in       signed out; the terminal window's sign-in finishes 1.5 s after it "opens" (no terminal opens)
 //   free           the sign-in finishes on a plan the app reports as "free"
 //   ready          installed and signed in
-type MockMode = 'missing' | 'installing' | 'install_failed' | 'broken' | 'signed_out' | 'browser' | 'signs_in' | 'free' | 'ready'
-const MODES: MockMode[] = ['missing', 'installing', 'install_failed', 'broken', 'signed_out', 'browser', 'signs_in', 'free', 'ready']
+//   status_unknown installed, but its status cannot be told (slow, unclear) until a sign-in finishes
+type MockMode = 'missing' | 'installing' | 'install_failed' | 'broken' | 'signed_out' | 'browser' | 'signs_in' | 'free' | 'ready' | 'status_unknown'
+const MODES: MockMode[] = ['missing', 'installing', 'install_failed', 'broken', 'signed_out', 'browser', 'signs_in', 'free', 'ready', 'status_unknown']
 const CLAUDE_LABEL = 'Claude (your Claude Code app)'
 const CODEX_LABEL = 'ChatGPT (your Codex app)'
 const REASONS: Record<'claude' | 'chatgpt', Record<ClaudeCodeStatus['state'], string | undefined>> = {
@@ -88,7 +89,7 @@ export const createMockAI: CreateAI = ({ host }) => {
   const modeOf = (v: string | undefined): MockMode => MODES.find((m) => m === v) ?? 'missing'
   const mode = { claude: modeOf(process.env.REELSTUDIO_MOCK_CLAUDE), chatgpt: modeOf(process.env.REELSTUDIO_MOCK_CODEX) }
   const startState = (m: MockMode): ClaudeCodeStatus['state'] =>
-    m === 'ready' ? 'ready' : m === 'broken' ? 'broken' : ['signed_out', 'browser', 'signs_in', 'free'].includes(m) ? 'signed_out' : 'missing'
+    m === 'ready' ? 'ready' : m === 'broken' ? 'broken' : ['signed_out', 'browser', 'signs_in', 'free', 'status_unknown'].includes(m) ? 'signed_out' : 'missing'
   const state = { claude: startState(mode.claude), chatgpt: startState(mode.chatgpt) }
   const plan: { claude?: string; chatgpt?: string } = {}
   let chosen: 'claude-cli' | 'codex-cli' | null = null
@@ -97,6 +98,7 @@ export const createMockAI: CreateAI = ({ host }) => {
     ...(state[v] === 'missing' ? {} : { bin: MOCK_BIN[v] }),
     ...(state[v] === 'signed_out' || state[v] === 'ready' ? { version: v === 'claude' ? '2.1.0' : '0.164.0' } : {}),
     ...(plan[v] ? { plan: plan[v] } : {}),
+    ...(mode[v] === 'status_unknown' && state[v] === 'signed_out' ? { unknown: true } : {}),
     ...(REASONS[v][state[v]] ? { reason: REASONS[v][state[v]] } : {})
   })
   const claudeStatus = (): ClaudeCodeStatus => cliStatus('claude')

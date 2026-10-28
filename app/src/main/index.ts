@@ -421,6 +421,7 @@ function registerIpc(): void {
   handle('ai:vendorConnect', (_e, v) => vendors.connect(vendorOf(v)))
   handle('ai:vendorCancel', (_e, v) => vendors.cancel(vendorOf(v)))
   handle('ai:vendorSignInAgain', (_e, v) => void vendors.signInAgain(vendorOf(v)))
+  handle('ai:vendorSignIn', (_e, v) => vendors.signIn(vendorOf(v)))
 
   handle('projects:list', () => listProjects())
   handle('projects:get', async (_e, slug: string) => {

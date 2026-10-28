@@ -75,6 +75,11 @@ export function VendorCards({ activeId, onConnected }: { activeId?: ProviderInfo
     setInstalled((s) => ({ ...s, [v]: false }))
     reel.ai.vendorConnect(v).catch((e) => setError(userMessage(e)))
   }
+  // Status unknown: Sign in is the person's own choice (Codex clears what it has when a sign-in starts).
+  const signIn = (v: VendorId): void => {
+    setError(null)
+    reel.ai.vendorSignIn(v).catch((e) => setError(userMessage(e)))
+  }
 
   // Recommend what they already have; otherwise Claude first.
   const order: VendorId[] = info.chatgpt?.state === 'ready' && info.claude?.state !== 'ready' ? ['chatgpt', 'claude'] : ['claude', 'chatgpt']
@@ -89,6 +94,8 @@ export function VendorCards({ activeId, onConnected }: { activeId?: ProviderInfo
           primary={k === 0}
           installed={installed[v]}
           onConnect={() => connect(v)}
+          onCheck={() => refresh(v)}
+          onSignIn={() => signIn(v)}
           onOther={shown.length > 1 ? () => connect(shown[1 - k]) : undefined}
         />
       ))}
@@ -103,6 +110,8 @@ function VendorCard({
   primary,
   installed,
   onConnect,
+  onCheck,
+  onSignIn,
   onOther
 }: {
   vendor: VendorId
@@ -110,6 +119,9 @@ function VendorCard({
   primary: boolean
   installed: boolean
   onConnect: () => void
+  /** asks the app's status again, nothing else */
+  onCheck: () => Promise<void>
+  onSignIn: () => void
   onOther?: () => void
 }) {
   const cancel = (): void => void reel.ai.vendorCancel(v)
@@ -123,6 +135,8 @@ function VendorCard({
   const attrs = { 'data-testid': testid, 'data-step': info?.step ?? 'loading', 'data-state': info?.state ?? 'loading' }
 
   if (!info) return <div className="vendor" {...attrs} />
+
+  if (info.problem === 'status_unknown' && !busy(info)) return <StatusUnknown v={v} info={info} attrs={attrs} onCheck={onCheck} onSignIn={onSignIn} />
 
   if (busy(info)) {
     const installing = info.step === 'installing'
@@ -245,6 +259,32 @@ function VendorCard({
           {info.message}
         </p>
       )}
+    </div>
+  )
+}
+
+/** The app could not tell whether it is signed in. Nothing starts on its own: Check again only asks again, and Sign in
+ * is the person's explicit choice (a sign-in makes Codex clear the credentials it has). */
+function StatusUnknown({ v, info, attrs, onCheck, onSignIn }: { v: VendorId; info: VendorInfo; attrs: Record<string, string>; onCheck: () => Promise<void>; onSignIn: () => void }) {
+  const [checking, setChecking] = useState(false)
+  const check = (): void => {
+    setChecking(true)
+    void onCheck().finally(() => setChecking(false))
+  }
+  return (
+    <div className="vendor flow" {...attrs} data-problem={info.problem}>
+      <h3>Connect {NAME[v]}</h3>
+      <div className="banner" role="status" data-testid={`vendor-message-${v}`}>
+        {info.message}
+      </div>
+      <div className="row wrap">
+        <button className="btn small primary" onClick={check} disabled={checking} data-testid={`vendor-check-${v}`}>
+          {checking ? 'Checking…' : 'Check again'}
+        </button>
+        <button className="btn small" onClick={onSignIn} disabled={checking} data-testid={`vendor-signin-${v}`}>
+          Sign in
+        </button>
+      </div>
     </div>
   )
 }

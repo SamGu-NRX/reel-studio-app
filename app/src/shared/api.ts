@@ -245,6 +245,8 @@ export type VendorProblem =
   | 'port_busy'
   | 'free_plan'
   | 'cancelled'
+  /** ChatGPT: `codex login status` was slow or unclear, so no sign-in starts until the person chooses Sign in */
+  | 'status_unknown'
 
 /** What the page learns about a vendor's app. Never the account, a path, a sign-in link or a code. */
 export interface VendorInfo {
@@ -366,6 +368,9 @@ export interface ReelApi {
     vendorCancel(v: VendorId): Promise<void>
     /** Restarts a waiting sign-in so the vendor's app opens a fresh page. */
     vendorSignInAgain(v: VendorId): Promise<void>
+    /** Connect, starting the sign-in even though the app could not tell whether it is signed in (status_unknown):
+     * only on the person's own click, since Codex clears the credentials it has when a sign-in starts. */
+    vendorSignIn(v: VendorId): Promise<VendorInfo>
     onVendor(cb: (i: VendorInfo) => void): () => void
   }
   projects: {

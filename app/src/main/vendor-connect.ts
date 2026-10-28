@@ -11,6 +11,9 @@ export interface CliStatus {
   plan?: string
   reason?: string
   chatgptMoved?: boolean
+  /** with 'signed_out': the app could not tell (slow, or an answer it cannot read). Codex clears its credentials when a
+   * sign-in starts, so Connect never starts one on this alone: only the person's Sign in does (signIn). */
+  unknown?: boolean
 }
 
 export interface VendorDeps {
@@ -34,7 +37,8 @@ export const VENDOR_MESSAGES: Record<Exclude<VendorProblem, 'install_failed' | '
   sign_in_failed: () => "The sign-in didn't finish. Try again.",
   sign_in_timeout: () => "We stopped waiting for the sign-in. Try again when you're ready.",
   port_busy: () => 'Another ChatGPT sign-in is already open. Close it and try again.',
-  free_plan: () => "You're signed in, but your Claude plan doesn't include the Claude Code app. It needs Claude Pro or Max."
+  free_plan: () => "You're signed in, but your Claude plan doesn't include the Claude Code app. It needs Claude Pro or Max.",
+  status_unknown: () => "Couldn't tell whether ChatGPT is signed in."
 }
 
 export const MOVED_NOTE = "ChatGPT now connects through OpenAI's Codex app. Click Connect ChatGPT once."
@@ -43,6 +47,8 @@ interface Run {
   ctrl: AbortController
   login?: AbortController
   restart?: boolean
+  /** the person chose Sign in on an unknown status: sign in even though the app could not tell */
+  signIn?: boolean
   done: Promise<VendorInfo>
 }
 
@@ -57,6 +63,7 @@ export function createVendorConnect(deps: VendorDeps) {
     ...(st.version ? { version: st.version } : {}),
     ...(st.plan ? { plan: st.plan } : {}),
     ...(v === 'chatgpt' && st.chatgptMoved && st.state !== 'ready' && step === 'idle' ? { message: MOVED_NOTE } : {}),
+    ...(st.state === 'signed_out' && st.unknown && step === 'idle' ? { problem: 'status_unknown' as const, message: VENDOR_MESSAGES.status_unknown(v) } : {}),
     ...extra
   })
   const emit = (i: VendorInfo): VendorInfo => {
@@ -82,6 +89,8 @@ export function createVendorConnect(deps: VendorDeps) {
       st = await deps.status(v)
       if (st.state === 'missing' || st.state === 'broken') return fail(v, st, 'not_found_after_install', VENDOR_MESSAGES.not_found_after_install(v))
     }
+    // Unclear whether it is signed in: a sign-in would clear what Codex has, so stop and ask (Check again / Sign in).
+    if (st.state === 'signed_out' && st.unknown && !run.signIn) return fail(v, st, 'status_unknown', VENDOR_MESSAGES.status_unknown(v))
     while (st.state === 'signed_out') {
       if (signal.aborted) return emit(info(v, st, 'idle', { problem: 'cancelled' }))
       if (!st.bin) return fail(v, st, 'not_found_after_install', VENDOR_MESSAGES.not_found_after_install(v))
@@ -115,6 +124,25 @@ export function createVendorConnect(deps: VendorDeps) {
     return emit(info(v, st, 'done'))
   }
 
+  /** Installs if needed, signs in, selects. One at a time per vendor; starting one vendor stops the other. */
+  function connect(v: Vendor, opts: { signIn?: boolean } = {}): Promise<VendorInfo> {
+    const current = runs.get(v)
+    if (current) return current.done
+    const other: Vendor = v === 'claude' ? 'chatgpt' : 'claude'
+    runs.get(other)?.ctrl.abort()
+    const run = { ctrl: new AbortController(), signIn: opts.signIn === true } as Run
+    run.done = flow(v, run)
+      .catch((e) => {
+        deps.log?.(`[vendor] ${v} connect: ${String((e as Error)?.message ?? e)}`)
+        return emit({ vendor: v, state: 'missing', step: 'failed', problem: 'sign_in_failed', message: VENDOR_MESSAGES.sign_in_failed(v) })
+      })
+      .finally(() => {
+        if (runs.get(v) === run) runs.delete(v)
+      })
+    runs.set(v, run)
+    return run.done
+  }
+
   return {
     /** A fresh look, plus the step of a connect in progress. */
     async status(v: Vendor): Promise<VendorInfo> {
@@ -123,24 +151,9 @@ export function createVendorConnect(deps: VendorDeps) {
       const st = await deps.status(v)
       return info(v, st, 'idle')
     },
-    /** Installs if needed, signs in, selects. One at a time per vendor; starting one vendor stops the other. */
-    connect(v: Vendor): Promise<VendorInfo> {
-      const current = runs.get(v)
-      if (current) return current.done
-      const other: Vendor = v === 'claude' ? 'chatgpt' : 'claude'
-      runs.get(other)?.ctrl.abort()
-      const run = { ctrl: new AbortController() } as Run
-      run.done = flow(v, run)
-        .catch((e) => {
-          deps.log?.(`[vendor] ${v} connect: ${String((e as Error)?.message ?? e)}`)
-          return emit({ vendor: v, state: 'missing', step: 'failed', problem: 'sign_in_failed', message: VENDOR_MESSAGES.sign_in_failed(v) })
-        })
-        .finally(() => {
-          if (runs.get(v) === run) runs.delete(v)
-        })
-      runs.set(v, run)
-      return run.done
-    },
+    connect: (v: Vendor): Promise<VendorInfo> => connect(v),
+    /** The person's explicit Sign in on a status the app could not read: connect, starting the sign-in anyway. */
+    signIn: (v: Vendor): Promise<VendorInfo> => connect(v, { signIn: true }),
     /** Stops an install or a waiting sign-in. */
     cancel(v: Vendor): void {
       runs.get(v)?.ctrl.abort()
