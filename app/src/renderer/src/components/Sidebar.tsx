@@ -23,6 +23,7 @@ const NAV: { key: 'home' | 'library' | 'style' | 'insights'; label: string; icon
 export const providerName = (p: ProviderInfo | null): string | null => {
   if (!p || !p.connected || p.id === 'none') return null
   if (p.id === 'claude-cli') return 'Claude'
+  if (p.id === 'codex-cli') return 'ChatGPT'
   return p.label
 }
 
@@ -191,7 +192,7 @@ export function Sidebar({
           className={`acct${inSettings ? ' on' : ''}`}
           aria-current={inSettings ? 'page' : undefined}
           aria-label={`${who}, ${name ? `editor ${name}` : 'no editor'}. Settings`}
-          title={provider?.id === 'claude-cli' && name ? 'Editor: Claude (your Claude Code app). Settings' : 'Settings'}
+          title={!name ? 'Settings' : provider?.id === 'claude-cli' ? 'Editor: Claude (your Claude Code app). Settings' : provider?.id === 'codex-cli' ? 'Editor: ChatGPT (your Codex app). Settings' : 'Settings'}
           onClick={() => go({ name: 'settings' })}
           data-testid="account"
         >

@@ -98,6 +98,9 @@ import { clearEngineCache, engineCacheSize } from './engine-cache'
 import { createPidRegistry } from './orphans'
 import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
+import { createVendorConnect, type CliStatus, type VendorConnect } from './vendor-connect'
+import { runInstall, runLogin, testVendorEnv, testVendorLoginEnv, type Vendor } from './vendor-setup'
+import { withUserPathKept } from './user-path'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
 import type { AppInfo, DropResult, EngineCache, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord, PlatformExportResult, VersionInfo, LearnedRule, MergeRequest, StyleRule } from '../shared/api'
 import { COVER_SUGGESTIONS } from '../shared/cover'
@@ -209,6 +212,14 @@ const host: EngineHost = {
 let ai: AI
 let perms: Permissions
 let aiSource: 'package' | 'mock' = 'mock'
+let vendors: VendorConnect
+
+// The environment the person's own Claude Code / Codex apps get. Normally the app's own; the test switch
+// REELSTUDIO_TEST_VENDOR_HOME swaps in a throwaway home (a fresh machine) so a real install + sign-in can be tried
+// without touching the apps already on this computer (vendor-setup.ts testVendorEnv).
+const TEST_VENDOR_ENV = testVendorEnv(process.env, process.platform)
+const cliBaseEnv = (): NodeJS.ProcessEnv => TEST_VENDOR_ENV ?? process.env
+const TEST_LOGIN_ENV = testVendorLoginEnv(process.env, process.platform)
 let win: BrowserWindow | null = null
 
 function broadcast(channel: string, payload: unknown): void {
@@ -849,10 +860,7 @@ function registerIpc(): void {
       }
     })
   changesAI('ai:setActive', (_e, id, connectionId?: string) => ai.setActive(id, typeof connectionId === 'string' ? connectionId : undefined))
-  changesAI('ai:signInChatGPT', () => ai.signInChatGPT((url) => shell.openExternal(url)))
-  handle('ai:cancelSignIn', () => ai.cancelSignInChatGPT?.())
   handle('ai:cancelCheck', () => ai.cancelCheck?.())
-  changesAI('ai:signOutChatGPT', () => ai.signOutChatGPT())
   changesAI('ai:setClaudeKey', (_e, key: string | null) => ai.setClaudeKey(key))
   // stock photo and footage keys (stock-search): saved by the AI package like the Claude key, never sent back
   handle('ai:stockProviders', () => ai.stockProviders())
@@ -893,6 +901,15 @@ function registerIpc(): void {
     const open = aiSource === 'mock' ? async () => (ai.mockClaudeSignInOpened?.(), '') : (f: string) => shell.openPath(f)
     await openSignInWindow(st.bin, { dir: join(settingsDir(), 'claude-sign-in'), platform: process.platform, open })
   })
+  // "Connect Claude" / "Connect ChatGPT" (vendor-connect.ts): the page gets VendorInfo only.
+  const vendorOf = (v: unknown): Vendor => {
+    if (v !== 'claude' && v !== 'chatgpt') throw { code: 'BAD_INPUT', userMessage: 'Unknown AI.' }
+    return v
+  }
+  handle('ai:vendorStatus', (_e, v) => vendors.status(vendorOf(v)))
+  handle('ai:vendorConnect', (_e, v) => vendors.connect(vendorOf(v)))
+  handle('ai:vendorCancel', (_e, v) => vendors.cancel(vendorOf(v)))
+  handle('ai:vendorSignInAgain', (_e, v) => void vendors.signInAgain(vendorOf(v)))
 
   handle('projects:list', () => listProjects())
   handle('projects:search', (_e, query: string) => searchProjects(query))
@@ -1305,6 +1322,28 @@ function registerIpc(): void {
   })
 }
 
+/** "Connect Claude" / "Connect ChatGPT": real installers and sign-ins, or the mock's (REELSTUDIO_MOCK_CLAUDE / _CODEX). */
+function createVendors(): VendorConnect {
+  const status = async (v: Vendor): Promise<CliStatus> =>
+    (v === 'claude' ? await ai.claudeCodeStatus?.() : await ai.codexStatus?.()) ?? { state: 'missing' }
+  const mock = aiSource === 'mock' ? ai.mockVendor : undefined
+  return createVendorConnect({
+    status,
+    install: (v, signal) => {
+      if (mock) return mock.install(v, signal)
+      const run = (): Promise<void> =>
+        runInstall({ vendor: v, platform: process.platform, dir: join(settingsDir(), 'vendor-setup'), env: cliBaseEnv(), fetch: (u, i) => net.fetch(u, i), signal, systemRoot: process.env.SystemRoot, log })
+      // Test switch only: OpenAI's Windows installer rewrites the user PATH; put it back exactly as it was.
+      return TEST_VENDOR_ENV && process.platform === 'win32' && v === 'chatgpt' ? withUserPathKept(run, log) : run()
+    },
+    login: (v, bin, signal) =>
+      mock ? mock.login(v, signal) : runLogin({ vendor: v, bin, env: TEST_LOGIN_ENV ?? process.env, platform: process.platform, signal, systemRoot: process.env.SystemRoot }),
+    select: (v) => ai.setActive(v === 'claude' ? 'claude-cli' : 'codex-cli'),
+    emit: (i) => broadcast('ai:vendor', i),
+    log
+  })
+}
+
 /** Old local-Claude-Code installs used Claude Code without a saved choice; keep it for them, once (ai-carryover.ts). */
 async function carryOverClaudeCode(settings: { aiAutoPicked: boolean; aiCarriedOver: boolean }): Promise<void> {
   const decision = carryOverDecision({
@@ -1534,12 +1573,19 @@ app.whenReady().then(async () => {
       settingsDir: join(settingsDir(), 'ai'),
       dev: DEV_PROVIDERS,
       secretStore: safeStorage,
-      roleModels: async () => (await loadSettings()).models
+      roleModels: async () => (await loadSettings()).models,
+      cliEnv: cliBaseEnv
     },
     log
   )
   ai = loaded.ai
   aiSource = loaded.source
+  vendors = createVendors()
+  if (TEST_VENDOR_ENV) log(`[ai] test switch: the Claude Code and Codex apps see a throwaway home (REELSTUDIO_TEST_VENDOR_HOME)`)
+  if (!DEV_PROVIDERS) {
+    const retired = await ai.retireSignInWithChatGPT?.().catch((e) => (log(`[ai] retire Sign in with ChatGPT: ${String(e)}`), false))
+    if (retired) log('[ai] signed out the old in-app ChatGPT sign-in; ChatGPT now connects through the Codex app')
+  }
   await carryOverClaudeCode(settings).catch((e) => log(`[ai] carry-over: ${String(e)}`))
   log(`[start] root=${reelStudioRoot()} engine=${engineMode()}:${engineDir()} python=${pythonExe()} ai=${aiSource}`)
   handleMediaProtocol(() => [reelStudioRoot(), projectsDir(), noteStagingRoot(), sfxPackDir(), libraryPreviewDir()])

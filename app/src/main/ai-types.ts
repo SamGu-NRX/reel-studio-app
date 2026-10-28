@@ -113,8 +113,6 @@ export interface AI {
   providers(): Promise<ProviderStatus[]>
   active(): Promise<ProviderStatus>
   setActive(id: ProviderStatus['id'], connectionId?: string): Promise<void>
-  signInChatGPT(openExternal: (url: string) => Promise<void>): Promise<ProviderStatus>
-  signOutChatGPT(): Promise<void>
   stockProviders(): Promise<{ id: 'pexels' | 'pixabay' | 'openverse'; connected: boolean }[]>
   setStockKey(provider: 'pexels' | 'pixabay', key: string | null): Promise<void>
   setClaudeKey(key: string | null): Promise<ProviderStatus>
@@ -158,12 +156,14 @@ export interface AI {
   declineStyleProposal?(p: StyleProposal): Promise<void>
   /** My style: change a rule's words, or pause or resume it. Optional: older packages lack it. */
   updateStyleRule?(id: string, patch: { text?: string; paused?: boolean }): Promise<StyleRule>
-  /** Optional extras from @reelstudio/ai. */
-  cancelSignInChatGPT?(): void | Promise<void>
   /** Stops setActive('claude-cli')'s check call, which then throws code 'cancelled'. Optional: older packages lack it. */
   cancelCheck?(): void
   /** A fresh look at the person's own Claude Code app (`bin` stays in main). Optional: older packages lack it. */
   claudeCodeStatus?(): Promise<ClaudeCodeStatus>
+  /** A fresh look at the person's own Codex app (`bin` stays in main). */
+  codexStatus?(): Promise<ClaudeCodeStatus & { chatgptMoved?: boolean }>
+  /** Once at start-up: signs out a saved "Sign in with ChatGPT" session (retired) and clears it as the choice. */
+  retireSignInWithChatGPT?(): Promise<boolean>
   /** The person's own servers (provider 'custom'). Optional: older packages and the mock lack them. */
   connections?(): Promise<ConnectionInfo[]>
   saveConnection?(input: ConnectionInput): Promise<SaveConnectionResult>
@@ -174,6 +174,14 @@ export interface AI {
   rewordVersion?(text: { title: string; summary: string }, signal?: AbortSignal): Promise<{ title: string; summary: string } | null>
   /** Mock only: the sign-in window "opened" (tests flip the mock's state instead of opening a terminal). */
   mockClaudeSignInOpened?(): void
+  /** Mock only: how REELSTUDIO_MOCK_CLAUDE / REELSTUDIO_MOCK_CODEX play an install and a browser sign-in. */
+  mockVendor?: MockVendor
+}
+
+/** Mock only (ai-mock.ts): plays install and sign-in for the Connect cards without a real CLI. */
+export interface MockVendor {
+  install(v: 'claude' | 'chatgpt', signal: AbortSignal): Promise<void>
+  login(v: 'claude' | 'chatgpt', signal: AbortSignal): Promise<{ code: number | null; portBusy?: boolean; aborted?: boolean }>
 }
 
 export interface ClaudeCodeStatus {
@@ -191,6 +199,8 @@ export interface CreateAIOptions {
   secretStore?: SecretStore
   /** Settings › Editor › Models: a model per role, 'auto' for the editor's own (ai index.ts modelForRole). */
   roleModels?: () => Promise<Partial<Record<'editor' | 'checker' | 'writer', string>>>
+  /** the environment the person's own CLIs get (main's test switch can swap in a throwaway home) */
+  cliEnv?: () => NodeJS.ProcessEnv
 }
 
 export type CreateAI = (opts: CreateAIOptions) => AI

@@ -2,7 +2,7 @@
 // Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
 // The only bridge between the page and the main process. The page never sees Node or ipcRenderer.
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { AppCommand, JobEvent, ModelStatus, PhoneEvent, ProviderInfo, ReelApi } from '../shared/api'
+import type { AppCommand, JobEvent, ModelStatus, PhoneEvent, ProviderInfo, ReelApi, VendorInfo } from '../shared/api'
 import type { UpdateState } from '../shared/update'
 
 async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -77,15 +77,17 @@ const api: ReelApi = {
     providers: () => call('ai:providers'),
     active: () => call('ai:active'),
     setActive: (id, connectionId) => call('ai:setActive', id, connectionId),
-    signInChatGPT: () => call('ai:signInChatGPT'),
-    cancelSignIn: () => call('ai:cancelSignIn'),
     cancelCheck: () => call('ai:cancelCheck'),
-    signOutChatGPT: () => call('ai:signOutChatGPT'),
     stockProviders: () => call('ai:stockProviders'),
     setStockKey: (provider, key) => call('ai:setStockKey', provider, key),
     setClaudeKey: (k) => call('ai:setClaudeKey', k),
     claudeCodeStatus: () => call('ai:claudeCodeStatus'),
     openClaudeSignIn: () => call('ai:openClaudeSignIn'),
+    vendorStatus: (v) => call('ai:vendorStatus', v),
+    vendorConnect: (v) => call('ai:vendorConnect', v),
+    vendorCancel: (v) => call('ai:vendorCancel', v),
+    vendorSignInAgain: (v) => call('ai:vendorSignInAgain', v),
+    onVendor: (cb) => on<VendorInfo>('ai:vendor', cb),
     checkEdits: () => call('ai:checkEdits'),
     setCheckEdits: (on) => call('ai:setCheckEdits', on),
     connections: () => call('ai:connections'),

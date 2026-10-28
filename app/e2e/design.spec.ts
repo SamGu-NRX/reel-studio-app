@@ -36,7 +36,7 @@ async function dropOnWindow(page: Page, paths: string[], release = true): Promis
 /** Pretend an AI editor is signed in, for the screenshots of the connected states (no AI runs). */
 async function stubConnected(app: ElectronApplication): Promise<void> {
   await app.evaluate(({ ipcMain }) => {
-    const p = { id: 'chatgpt', connected: true, label: 'ChatGPT', detail: 'zoe@example.com' }
+    const p = { id: 'codex-cli', connected: true, label: 'ChatGPT (your Codex app)', detail: '0.164.0' }
     ipcMain.removeHandler('ai:active')
     ipcMain.handle('ai:active', async () => ({ ok: true, value: p }))
   })
@@ -165,9 +165,9 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   st.aiEdited = true
   writeFileSync(appJson, JSON.stringify(st, null, 2))
   await openSettings(page)
-  await expect(page.locator('[data-provider="chatgpt"]')).toContainText('Connected')
+  await expect(page.locator('[data-provider="codex-cli"]')).toContainText('Connected')
   await expect(page.getByTestId('ai-connected')).toHaveText('Connected')
-  await expect(page.getByTestId('signin-chatgpt')).toHaveCount(0) // its row says Sign out instead
+  await expect(page.getByTestId('connect-chatgpt')).toHaveCount(0) // its row says Disconnect instead
   await expect(page.getByTestId('root-display')).toContainText('Reel Studio')
   await expect(page.getByTestId('root-display')).not.toContainText('~')
   await shot(page, 'd-10-settings-connected')

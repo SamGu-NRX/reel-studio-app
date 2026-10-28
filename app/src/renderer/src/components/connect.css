@@ -58,3 +58,29 @@ html.kb .disc .chev, html.kb .disc-body, html.kb .pv-status.enter { transition: 
   .disc-body, .pv-status.enter { transition: opacity 180ms ease; }
   @starting-style { .disc-body, .pv-status.enter { transform: none; } }
 }
+
+/* Connect Claude / Connect ChatGPT (vendor-connect.tsx): each row sits in a wrapper that carries its step for the page
+   and tests, so the hairline goes between the picker's direct children. The steps of a connect open under the row. */
+.prov > * + * { box-shadow: inset 0 1px 0 var(--line); }
+.vendor-steps { gap: 10px; transition: opacity 180ms cubic-bezier(.2, .8, .2, 1), transform 180ms cubic-bezier(.2, .8, .2, 1); }
+@starting-style { .vendor-steps { opacity: 0; transform: translateY(-4px); } }
+.vsteps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.vstep { display: flex; align-items: flex-start; gap: 10px; font-size: var(--fs-sm); line-height: var(--lh-sm); }
+.vstep-mark { width: 16px; height: 18px; flex: none; display: grid; place-items: center; color: var(--green-ink); }
+.vstep-mark .spin { width: 11px; height: 11px; border-width: 1.5px; }
+.vstep.done .vstep-mark > svg { transition: opacity 160ms cubic-bezier(.2, .8, .2, 1), transform 160ms cubic-bezier(.2, .8, .2, 1); }
+@starting-style { .vstep.done .vstep-mark > svg { opacity: 0; transform: scale(.9); } }
+.vstep-dot { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink-4); }
+.vstep-what { display: grid; gap: 1px; min-width: 0; }
+.vstep-what > b { font-weight: 560; color: var(--ink); }
+.vstep-what > span { color: var(--ink-3); }
+.vstep.later .vstep-what > b { font-weight: 400; color: var(--ink-3); }
+.vsteps-acts { gap: 12px; align-items: center; }
+.vsteps-hint { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); }
+.vsteps-hint a, .vsteps-hint .link.inline { color: var(--ink-2); }
+
+html.kb .vendor-steps, html.kb .vstep.done .vstep-mark > svg { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .vendor-steps, .vstep.done .vstep-mark > svg { transition: opacity 180ms ease; }
+  @starting-style { .vendor-steps, .vstep.done .vstep-mark > svg { transform: none; } }
+}
