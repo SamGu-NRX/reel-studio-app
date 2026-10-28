@@ -269,9 +269,10 @@ def _save(project_dir: Path, proj: dict, touch: bool = True, file: Optional[Path
 
 
 def edit_signature(proj: dict) -> str:
-    """The parts of a project that change the rendered video (not bookkeeping fields)."""
+    """The parts of a project that change the rendered video (not bookkeeping fields). `series` only groups
+    reels on Home; the app sets it on a reel that already has versions when more reels are made from its video."""
     p = copy.deepcopy(proj)
-    for key in ("updatedAt", "version", "notes", "post", "createdAt"):
+    for key in ("updatedAt", "version", "notes", "post", "createdAt", "series"):
         p.pop(key, None)
     return json.dumps(p, sort_keys=True, ensure_ascii=False)
 

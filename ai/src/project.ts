@@ -295,9 +295,11 @@ export function projectBytes(p: Project): string {
   return JSON.stringify(p, null, 2) + '\n';
 }
 
-/** Same video and same post: everything but the bookkeeping fields (engine project.edit_signature, plus `post`). */
+/** Same video and same post: everything but the bookkeeping fields (engine project.edit_signature, plus `post`).
+ * `series` is bookkeeping too: it groups reels on Home, and making more reels from a video sets it on a reel that
+ * already has versions, which must not read as an edit. */
 export function sameEdit(a: Project, b: Project): boolean {
-  const edit = ({ updatedAt: _u, createdAt: _c, version: _v, notes: _n, ...rest }: Project) => JSON.stringify(rest,
+  const edit = ({ updatedAt: _u, createdAt: _c, version: _v, notes: _n, series: _s, ...rest }: Project) => JSON.stringify(rest,
     (_k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([x], [y]) => (x < y ? -1 : 1))) : v);
   return edit(a) === edit(b);
 }
