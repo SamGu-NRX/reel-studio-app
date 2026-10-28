@@ -17,6 +17,7 @@ import type {
   ProjectSummary,
   ScreenStatus,
   ReelPlan,
+  StoredProposal,
   ScriptResult,
   VersionInfo,
   VersionMade,
@@ -25,6 +26,7 @@ import type {
   QueuedNote
 } from '../shared/api'
 import { mediaUrl } from './media-url'
+import type { ReelSeed } from './propose-reels'
 import { replyChat, styleConsent, type ChatLine } from './style-consent'
 import { keptIds } from '../shared/cut'
 import { readCaptionLines } from '../shared/subtitle-lines'
@@ -57,6 +59,10 @@ export interface AppState {
   posted?: { version: number; platform: 'instagram'; at: string }[]
   /** The plan made before the video: in the planning chat or the plain form (shared/plan.ts checks it). */
   plan?: ReelPlan
+  /** The reels the editor last found in this reel's video (main/propose-reels.ts). */
+  proposal?: StoredProposal
+  /** This reel was made from another reel's proposal: what it is seeded from, kept so a resume can seed it again. */
+  from?: ReelSeed
 }
 
 const EMPTY_STATE: AppState = { chat: [], job: null, status: 'new', lastError: null }
@@ -94,6 +100,9 @@ export function titleFromFile(file: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1)
 }
 
+/** Names Windows keeps for devices, with or without an extension: a folder by one of them can't be made there. */
+const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/
+
 export function slugify(title: string): string {
   const s = title
     .normalize('NFKD')
@@ -103,14 +112,23 @@ export function slugify(title: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 48)
     .replace(/-+$/g, '')
-  return s || 'video'
+  return !s ? 'video' : WINDOWS_DEVICE.test(s) ? `${s}-reel` : s
 }
 
+/** A slug for `title`, and its folder, made here: the folder is created exclusively, so two reels made at the same
+ * moment with the same title never share one. */
 export async function uniqueSlug(title: string): Promise<string> {
   const base = slugify(title)
-  let slug = base
-  for (let i = 2; existsSync(join(projectsDir(), slug)); i++) slug = `${base}-${i}`
-  return slug
+  await fs.mkdir(projectsDir(), { recursive: true })
+  for (let i = 1; ; i++) {
+    const slug = i === 1 ? base : `${base}-${i}`
+    try {
+      await fs.mkdir(join(projectsDir(), slug))
+      return slug
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+    }
+  }
 }
 
 // ---- json helpers -----------------------------------------------------------------------------
@@ -542,7 +560,8 @@ export async function settleInterrupted(slug: string): Promise<'settled' | 'unre
   // a note's private copy and drafts (ai editor.ts applyNote), which it deletes itself unless the app died
   await fs.rm(join(dir, 'work', 'notes'), { recursive: true, force: true })
   await updateAppState(slug, (st) => {
-    if (st.job?.kind === 'script') settleNote(st, st.job.id, 'stopped')
+    // a script or a look for more reels writes no version: one cut short changes nothing to finish
+    if (st.job?.kind === 'script' || st.job?.kind === 'propose') settleNote(st, st.job.id, 'stopped')
     else st.status = st.job?.kind === 'first-edit' || !existsSync(join(dir, 'versions')) ? 'interrupted' : 'ready'
     if (saved) {
       const reply = saved.reply ?? `I made your change. It is Version ${saved.version}.`
@@ -692,7 +711,8 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
   const last = versions[versions.length - 1]
   const src = p.sources?.[0]
   const srcPath = src && (isAbsolute(src.path) ? src.path : join(dir, ...src.path.split('/')))
-  const status: ScreenStatus = st.job
+  // looking for more reels in it leaves a reel where it is on Home: no version is being made
+  const status: ScreenStatus = st.job && st.job.kind !== 'propose'
     ? 'working'
     : versions.length
       ? 'ready'
@@ -833,7 +853,8 @@ export async function detail(slug: string): Promise<ProjectDetail> {
     queueHeld: !!st.queueHeld,
     job: st.job ? { id: st.job.id, kind: st.job.kind, message: 'Working on it', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false, waiting: false, waitingForRender: false } : null,
     aiEdited: !!st.aiEdited,
-    plan: st.plan ?? null
+    plan: st.plan ?? null,
+    proposal: st.proposal ?? null
   }
 }
 

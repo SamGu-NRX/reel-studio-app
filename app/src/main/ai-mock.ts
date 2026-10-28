@@ -90,6 +90,13 @@ type StyleData = { rules: StyleRule[]; damaged?: string; forgotten?: string[]; [
 
 const LOWERCASE_CAPTIONS = 'Use lowercase subtitles.'
 
+/** The practice editor's three reels in one video, in its own voice. */
+const PRACTICE_REELS = [
+  { title: 'The one fold that fixed my crumb', why: 'I cut it to the fix and its reason, which stands on its own.' },
+  { title: 'Why I stopped using a mixer', why: 'I kept the before and after, since the middle repeats the first reel.' },
+  { title: 'Bake it hot in a closed pot', why: 'I kept the bake on its own, because it needs nothing said before it.' }
+]
+
 export const createMockAI: CreateAI = ({ host }) => {
   const styleFile = (): string => join(host.reelStudioRoot(), 'My style.json')
 
@@ -293,15 +300,21 @@ export const createMockAI: CreateAI = ({ host }) => {
       const hold = Number(process.env.REELSTUDIO_MOCK_FIRST_LOOK || 0)
       const status = (message: string, pct: number, phase?: Phase): void => onEvent({ type: 'status', message, pct, ...(phase ? { phase } : {}), ...(hold > 0 ? {} : { noAI: true }) })
       const changed: string[] = []
+      // one of several reels from one video (main/propose-reels.ts): its words are heard and its cut is set already,
+      // as the real package keeps them (ai editor.ts ensureAnalyzed and deterministicEdit)
+      const start = await readProject(projectDir)
+      const proposed = !!start.proposal && (start.cut?.keep?.length ?? 0) > 0
 
-      status('Listening to your video', 1, 'listen')
-      await host.runEngine('transcribe', args, (p) => status(p.message || 'Listening to your video', p.pct, 'listen'), signal)
+      if (!proposed) {
+        status('Listening to your video', 1, 'listen')
+        await host.runEngine('transcribe', args, (p) => status(p.message || 'Listening to your video', p.pct, 'listen'), signal)
 
-      status('Picking your best takes', 41, 'analyze')
-      await host.runEngine('analyze', args, (p) => status('Picking your best takes', span(0, 50, p.pct), 'analyze'), signal)
-      await host.runEngine('autocut', args, (p) => status('Picking your best takes', span(50, 100, p.pct), 'analyze'), signal)
+        status('Picking your best takes', 41, 'analyze')
+        await host.runEngine('analyze', args, (p) => status('Picking your best takes', span(0, 50, p.pct), 'analyze'), signal)
+        await host.runEngine('autocut', args, (p) => status('Picking your best takes', span(50, 100, p.pct), 'analyze'), signal)
+        onEvent({ type: 'tool', name: 'autocut', summary: 'Cut out the pauses and do-overs' })
+      }
       changed.push('cut')
-      onEvent({ type: 'tool', name: 'autocut', summary: 'Cut out the pauses and do-overs' })
 
       // Tests only (REELSTUDIO_MOCK_LIMIT=<ISO>): the editor's plan is at its limit until then, thrown the way the
       // real package throws when the app pauses on it (opts.pauseOn).
@@ -341,11 +354,12 @@ export const createMockAI: CreateAI = ({ host }) => {
       onEvent({ type: 'render', version, draft: false })
       status('Done', 100)
 
+      const did = proposed ? 'the proposed part of the video kept and subtitles added' : 'pauses cut and subtitles added'
       return {
         summary:
           (track
-            ? 'Basic version: pauses cut and subtitles added, with your song underneath. Connect an editor to pick your best takes and add pictures.'
-            : 'Basic version: pauses cut and subtitles added. Add a song for music, and connect an editor to pick your best takes and add pictures.') +
+            ? `Basic version: ${did}, with your song underneath. Connect an editor to pick your best takes and add pictures.`
+            : `Basic version: ${did}. Add a song for music, and connect an editor to pick your best takes and add pictures.`) +
           (lower ? ' Subtitles are lowercase, from My style.' : ''),
         version,
         styleRulesAdded: [],
@@ -435,6 +449,42 @@ export const createMockAI: CreateAI = ({ host }) => {
         case 'caption': return { variable: 'caption', value: `Mix, wait, fold four times, then the fridge.${tags ? `\n\n${tags}` : ''}`, reason: 'I swapped the story for the steps, so the caption pays off the hook.' }
         case 'cover': return { variable: 'cover', value: Math.round(req.duration * 50) / 100, reason: 'I picked the middle, where you look straight at the camera.' }
         case 'brightness': return { variable: 'brightness', value: 0.06, reason: 'I lift it a little so your face reads on a small screen.' }
+      }
+    },
+
+    // The practice editor's reels: the stand-in engine's words split at its pauses, and those runs in up to three even
+    // parts, each a reel with fixed words. One run reads as one piece: no reels. It thinks as long as over a note, and
+    // says the wait halfway, as the real package does after 20 quiet seconds. It reads no TAKEN: it is a stand-in.
+    async proposeReels(req, signal, onEvent) {
+      if (!(noteMs > 0)) throw { code: 'NO_AI', userMessage: 'Connect an editor to find more reels in this video.' }
+      await new Promise<void>((resolve, reject) => {
+        const quiet = setTimeout(() => onEvent?.({ type: 'status', message: 'Waiting for your editor to answer', thinking: true, waiting: true }), noteMs / 2)
+        const t = setTimeout(resolve, noteMs)
+        signal?.addEventListener('abort', () => (clearTimeout(quiet), clearTimeout(t), reject({ code: 'CANCELLED', userMessage: 'Stopped.' })), { once: true })
+      })
+      const words = req.transcript.words
+      const runs: (typeof words)[] = []
+      words.forEach((w, i) => (i === 0 || w.s - words[i - 1].e > 0.6 ? runs.push([w]) : runs[runs.length - 1].push(w)))
+      const parts = runs.length < 2 ? 0 : Math.min(3, runs.length)
+      const reels = Array.from({ length: parts }, (_, k) => runs.slice(Math.floor((k * runs.length) / parts), Math.floor(((k + 1) * runs.length) / parts)))
+      // the engine's rule for a range's length: each word, plus the gap before it up to gapCap
+      const seconds = (ws: typeof words): number =>
+        Math.round(ws.reduce((t, w, i) => t + (w.e - w.s) + (i ? Math.min(Math.max(0, w.s - ws[i - 1].e), req.gapCap) : 0), 0) * 1000) / 1000
+      return {
+        candidates: reels.map((r, k) => {
+          const ws = r.flat()
+          return {
+            id: `r${k + 1}`,
+            title: PRACTICE_REELS[k].title,
+            hook: { from: ws[0].id, to: r[0][r[0].length - 1].id },
+            keep: [{ from: ws[0].id, to: ws[ws.length - 1].id }],
+            why: PRACTICE_REELS[k].why,
+            seconds: seconds(ws),
+            words: ws.length
+          }
+        }),
+        notes: '',
+        attempts: 1
       }
     },
 

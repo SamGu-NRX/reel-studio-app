@@ -27,6 +27,7 @@ import {
   planReel,
   readProject,
   settleInterrupted,
+  summary,
   stamp
 } from '../src/main/store'
 import { classifyByExtension } from '../src/main/library'
@@ -124,12 +125,23 @@ describe('titles and slugs', () => {
     expect(slugify('Café Crème: Take 2!')).toBe('cafe-creme-take-2')
     expect(slugify('文档 视频')).toBe('文档-视频')
     expect(slugify('***')).toBe('video')
+    // fails if a reel titled after a Windows device name gets a folder Windows can't make
+    for (const name of ['CON', 'prn', 'Aux', 'NUL', 'com1', 'LPT9']) expect(slugify(name)).toBe(`${name.toLowerCase()}-reel`)
+    expect(slugify('Con artists')).toBe('con-artists')
+    expect(slugify('COM10')).toBe('com10')
   })
   it('never reuses a slug', async () => {
     setupPaths()
     await ensureRoot()
     fakeProject('my-video')
     expect(await uniqueSlug('My video')).toBe('my-video-2')
+  })
+  // fails if two reels made at the same moment with one title get the same folder
+  it('gives two reels made at once with the same title a folder each', async () => {
+    setupPaths()
+    const slugs = await Promise.all([uniqueSlug('Same title'), uniqueSlug('Same title'), uniqueSlug('Same title')])
+    expect(slugs.sort()).toEqual(['same-title', 'same-title-2', 'same-title-3'])
+    for (const slug of slugs) expect(existsSync(join(projectsDir(), slug))).toBe(true)
   })
 })
 
@@ -547,5 +559,18 @@ describe('a reel planned before it has a video', () => {
     expect(await settleInterrupted(slug)).toBe('settled')
     const st = await readAppState(slug)
     expect([st.status, st.job, st.chat[0].outcome]).toEqual(['planned', null, 'stopped'])
+  })
+
+  // fails if Home lists a reel as being made while the editor only reads it for more reels, or a quit then leaves
+  // "Send your note again" for a note nobody sent
+  it('keeps a reel ready on Home while the editor looks for more reels in it, and settles a look cut short without a line', async () => {
+    setupPaths()
+    await ensureRoot()
+    fakeProject('looked', { versions: [1] })
+    await updateAppState('looked', (s) => void (s.job = { id: 'j7', kind: 'propose', startedAt: '' }))
+    expect((await summary('looked'))?.status).toBe('ready')
+    expect(await settleInterrupted('looked')).toBe('settled')
+    const st = await readAppState('looked')
+    expect([st.job, st.chat]).toEqual([null, []])
   })
 })

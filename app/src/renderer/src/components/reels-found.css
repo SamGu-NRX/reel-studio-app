@@ -1,0 +1,41 @@
+/* "Reels in this video" (ReelsFound.tsx): one surface between the notes and the note box, as the Plan card is one in
+   the log. The column's dense register: 13/18 text, rows split by hairlines, no box inside. It enters the way a
+   result line does. */
+
+.rf {
+  flex: none; display: flex; flex-direction: column; min-height: 0; max-height: min(52vh, 440px); margin: 0 0 10px;
+  padding: 8px 12px 10px; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--e1);
+}
+.rf.enter { transition: opacity 180ms cubic-bezier(.2, .8, .2, 1), transform 180ms cubic-bezier(.2, .8, .2, 1); }
+@starting-style { .rf.enter { opacity: 0; transform: translateY(4px); } }
+
+.rf-head { display: flex; align-items: center; gap: 8px; min-height: 28px; padding-bottom: 6px; box-shadow: inset 0 -1px 0 var(--line); }
+.rf-head h3 { font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 650; }
+.rf-head .lk { margin-left: auto; }
+.rf .lk:disabled { opacity: .5; cursor: default; }
+
+/* the rows scroll on their own when there are more than fit, so Make stays in view */
+.rf-list { list-style: none; margin: 0; padding: 0; min-height: 0; overflow-y: auto; }
+.rf-row { padding: 12px 0; }
+.rf-row + .rf-row { box-shadow: inset 0 1px 0 var(--line); }
+.rf-body { display: grid; gap: 2px; min-width: 0; padding-top: 3px; font-size: var(--fs-base); line-height: var(--lh-base); }
+.rf-title { display: flex; align-items: baseline; gap: 12px; min-width: 0; font-weight: 620; color: var(--ink); }
+.rf-title > label, .rf-title > b { flex: 1 1 auto; min-width: 0; font-weight: inherit; overflow-wrap: anywhere; }
+.rf-title > label { cursor: pointer; }
+.rf-title .lk { margin: -3px 0; }
+.rf-len { flex: none; font-weight: 500; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.rf-hook { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rf-why { color: var(--ink-3); }
+
+.rf-acts { display: flex; align-items: center; gap: 4px; padding-top: 10px; box-shadow: inset 0 1px 0 var(--line); }
+
+/* Not now: one line until Show */
+.rf-folded { flex-direction: row; align-items: center; gap: 6px; padding: 4px 12px; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-2); }
+.rf-folded .sep { color: var(--ink-4); }
+
+/* What the keyboard opens just appears. */
+html.kb .rf.enter { transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .rf.enter { transform: none; transition-property: opacity; }
+  @starting-style { .rf.enter { transform: none; } }
+}

@@ -295,9 +295,11 @@ export function projectBytes(p: Project): string {
   return JSON.stringify(p, null, 2) + '\n';
 }
 
-/** Same video and same post: everything but the bookkeeping fields (engine project.edit_signature, plus `post`). */
+/** Same video and same post: everything but the bookkeeping fields (engine project.edit_signature, plus `post`).
+ * `series` is bookkeeping too: it groups reels on Home, and making more reels from a video sets it on a reel that
+ * already has versions, which must not read as an edit. */
 export function sameEdit(a: Project, b: Project): boolean {
-  const edit = ({ updatedAt: _u, createdAt: _c, version: _v, notes: _n, ...rest }: Project) => JSON.stringify(rest,
+  const edit = ({ updatedAt: _u, createdAt: _c, version: _v, notes: _n, series: _s, ...rest }: Project) => JSON.stringify(rest,
     (_k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([x], [y]) => (x < y ? -1 : 1))) : v);
   return edit(a) === edit(b);
 }
@@ -374,6 +376,29 @@ export function wordIndex(t: Transcript): WordIndex {
     indexCache.set(t, idx);
   }
   return idx;
+}
+
+/** A gap longer than this ends a sentence; formatForPicking breaks its lines at the same gap. */
+const SENTENCE_PAUSE = 0.6;
+
+/**
+ * Which words start and which end a sentence. A word ends one when its text ends in . ? or !, when the next word is
+ * from another source or starts more than 0.6 s after it, or when it is the last word; the word after an end starts
+ * one. `marked` is false when no word ends a sentence by punctuation, a pause or a change of source, the last word
+ * included: then nothing tells sentences apart.
+ */
+export function sentenceEdges(t: Transcript): { starts: Set<string>; ends: Set<string>; marked: boolean } {
+  const starts = new Set<string>();
+  const ends = new Set<string>();
+  let marked = false;
+  t.words.forEach((w, i) => {
+    const next = t.words[i + 1];
+    if (i === 0 || ends.has(t.words[i - 1].id)) starts.add(w.id);
+    const signal = /[.?!]["'”’)\]]*$/.test(String(w.w).trim()) || (!!next && (next.source !== w.source || next.s - w.e > SENTENCE_PAUSE));
+    if (signal) marked = true;
+    if (signal || !next) ends.add(w.id);
+  });
+  return { starts, ends, marked };
 }
 
 export function anchorProblem(idx: WordIndex, a: any): string | null {

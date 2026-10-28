@@ -9,6 +9,23 @@ let id = 0
 const msg = (from: ChatMessage['from'], text: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({ id: `m${++id}`, from, text, at: at(10), ...extra })
 
 describe('notesLog', () => {
+  // fails if what the editor found in the video is hidden because the last note was stopped and has no reply
+  it('shows a line about more reels from the video after a stopped note', () => {
+    const log = notesLog({
+      chat: [
+        msg('editor', 'Your video is ready.', { version: 1 }),
+        msg('you', 'add music', { jobId: 'j1', outcome: 'stopped' }),
+        msg('editor', 'I found 3 more reels in this video.', { jobId: 'j2', reels: true })
+      ],
+      made: [],
+      versions: [v(1)],
+      running: null,
+      source: null,
+      now
+    })
+    expect(log.at(-1)).toMatchObject({ ask: { text: 'add music' }, result: { kind: 'stopped' }, extra: [{ text: 'I found 3 more reels in this video.' }] })
+  })
+
   it('pairs each note with what came of it, in order, with the running one last', () => {
     const chat = [
       { ...msg('editor', 'Your video is ready.', { version: 1 }), at: at(9, 21) },

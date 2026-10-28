@@ -119,6 +119,9 @@ const api: ReelApi = {
     stopCoverCandidates: (slug) => call('projects:stopCoverCandidates', slug),
     exportPlatforms: (slug, n, request) => call('projects:exportPlatforms', slug, n, request),
     proposeTry: (slug, n, ask) => call('projects:proposeTry', slug, n, ask),
+    proposeReels: (slug) => call('projects:proposeReels', slug),
+    makeReels: (slug, ids) => call('projects:makeReels', slug, ids),
+    foldReels: (slug, folded) => call('projects:foldReels', slug, folded),
     remove: (slug) => call('projects:remove', slug)
   },
   notes: {

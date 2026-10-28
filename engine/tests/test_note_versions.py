@@ -53,6 +53,7 @@ def test_the_same_edit_gets_its_saved_version_back_untouched(project):
     before = {f.name: f.read_bytes() for f in v1.iterdir() if f.is_file()}
     p = json.loads((project / "project.json").read_text())
     p["post"]["caption"] = "A new caption changes no picture"
+    p["series"] = "Bread"  # set when more reels are made from this video (app propose-reels.ts)
     (project / "project.json").write_text(json.dumps(p))
 
     again = engine(project, "render")

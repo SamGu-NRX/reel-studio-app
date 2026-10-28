@@ -34,6 +34,7 @@ import { PopMenu } from '../components/PopMenu'
 import { TitleBarSlot } from '../components/titlebar'
 import { ConnectAI, ModelDownload } from '../components/connect'
 import { PlanCard, PlanForm } from '../components/Plan'
+import { ReelsFound } from '../components/ReelsFound'
 import { byKeyboard, reducedMotion } from '../components/motion'
 import '../components/reel.css'
 
@@ -151,6 +152,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const [notifyAsk, setNotifyAsk] = useState(false)
   const noteField = useRef<HTMLTextAreaElement>(null)
   const [answerError, setAnswerError] = useState<{ id: string; text: string } | null>(null)
+  // the look for more reels started on this screen: its card enters when it arrives
+  const [askedReels, setAskedReels] = useState<string | null>(null)
   const att = useNoteAttachments(slug, notify)
   // Files dropped on the note box before the editor check answers: attached once it does, as any drop is.
   const heldDrops = useRef<{ files: File[]; types: string[] }[]>([])
@@ -359,7 +362,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
             made: d.versionsMade,
             versions: d.versions,
             running: d.job
-              ? d.job.kind === 'export'
+              ? d.job.kind === 'export' || d.job.kind === 'propose'
                 ? null
                 : { id: d.job.id, kind: d.job.kind === 'rerender' ? 'hand' : d.job.kind === 'first-edit' ? 'first-edit' : d.job.kind === 'script' ? 'script' : 'note' }
               : null,
@@ -406,7 +409,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const heldWords = d.pausedFor ? pausedWords(d.pausedFor, new Date(), computer) : null
   const heldWhy = heldWords && heldWords[0].toLowerCase() + heldWords.slice(1)
   const connect = () => go({ name: 'connect', back: { name: 'reel', slug } })
-  const making = job && d.job && d.job.kind !== 'export' && d.job.kind !== 'script' ? (latestN ?? 0) + 1 : null
+  const making = job && d.job && d.job.kind !== 'export' && d.job.kind !== 'script' && d.job.kind !== 'propose' ? (latestN ?? 0) + 1 : null
   const first: FirstState | null =
     hasVersions || planned
       ? null
@@ -521,6 +524,29 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       notify(userMessage(e), 'error')
     }
   }
+
+  // More reels from this video: a proposal already found opens again; otherwise the editor looks (a job)
+  const oneVideo = d.project.sources?.length === 1
+  // the card waits while the editor looks again, from the moment it is asked
+  const looking = d.job?.kind === 'propose' || (!!job && job.jobId === askedReels)
+  const findReels = async (again = false) => {
+    try {
+      if (d.proposal && !again) {
+        if (d.proposal.folded) await reel.projects.foldReels(slug, false)
+        await load()
+        requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="reels-found"] :is(input, button):not(:disabled)')?.focus())
+        return
+      }
+      const r = await reel.projects.proposeReels(slug)
+      setAskedReels(r.jobId)
+      setJob({ ...EMPTY_LIVE, jobId: r.jobId, message: 'Finding the reels in your video' })
+      await load()
+    } catch (e) {
+      notify(userMessage(e), 'error')
+    }
+  }
+  const openReel = (child: string) =>
+    void reel.projects.get(child).then(() => go({ name: 'reel', slug: child }), (e) => notify(userMessage(e), 'error'))
 
   const savePost = async (text: string): Promise<boolean> => {
     const caption = text.trim()
@@ -680,7 +706,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
           post={d.project.post}
           disabled={!version || (!!job && !shareWork)}
           quiet={!!compare || !!drawer || aiOff}
-          why={job ? 'Wait for this version to finish.' : undefined}
+          why={job ? (d.job?.kind === 'propose' ? 'Wait for your editor to finish looking.' : 'Wait for this version to finish.') : undefined}
           onSaveCaption={savePost}
         />
       )}
@@ -696,9 +722,19 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
         >
           <Icon name="more" />
         </button>
-        <PopMenu open={more} onClose={() => setMore(false)} anchor={moreBtn} label="More for this reel" style={{ right: 0, top: 'calc(100% + 6px)', width: 200 }} origin="top right">
+        <PopMenu open={more} onClose={() => setMore(false)} anchor={moreBtn} label="More for this reel" style={{ right: 0, top: 'calc(100% + 6px)', width: 244 }} origin="top right">
           <button className="mi" role="menuitem" onClick={() => (setMore(false), setRenaming(d.title))} data-testid="rename">
             <Icon name="pencil" size={16} /> Rename
+          </button>
+          <button
+            className="mi"
+            role="menuitem"
+            disabled={!hasVersions || !oneVideo || !!job}
+            title={!hasVersions ? 'Wait for Version 1.' : !oneVideo ? 'This works on a reel made from one video.' : job ? 'Wait for this to finish.' : undefined}
+            onClick={() => (setMore(false), void findReels())}
+            data-testid="more-reels"
+          >
+            <Icon name="scissors" size={16} /> More reels from this video
           </button>
           <button className="mi danger" role="menuitem" disabled={!!job} onClick={() => (setMore(false), setConfirmDelete(true))} data-testid="delete">
             <Icon name="trash" size={16} /> Delete…
@@ -931,6 +967,19 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   </button>
                 </p>
               )}
+              {d.proposal && !looking && (
+                <ReelsFound
+                  key={d.proposal.jobId}
+                  slug={slug}
+                  proposal={d.proposal}
+                  busy={!!job}
+                  enter={d.proposal.jobId === askedReels}
+                  onLookAgain={() => void findReels(true)}
+                  onChanged={load}
+                  onOpen={openReel}
+                  onError={(m) => notify(m, 'error')}
+                />
+              )}
               {showComposer && (
                 <div
                   className="cwrap"
@@ -979,7 +1028,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     firstSteps={first?.kind === 'making' ? firstSteps : null}
                     steps={steps}
                     stepsOpenFirst={first?.kind === 'making'}
-                    noSteps={d.job?.kind === 'script'}
+                    noSteps={d.job?.kind === 'script' || d.job?.kind === 'propose'}
                     stepNote={job ? d.chat.find((m) => m.from === 'you' && m.jobId === job.jobId) : null}
                     under={
                       first?.kind === 'making' &&

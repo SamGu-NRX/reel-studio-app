@@ -141,6 +141,8 @@ export interface ChatMessage {
   /** An editor message in the planning chat: a question back, or the line it said with the plan it proposed (the
    * plan itself is app.json `plan`). */
   planTurn?: 'question' | 'plan'
+  /** About more reels from this video: what the editor found, or the reels being made. It belongs to no note. */
+  reels?: true
 }
 
 /** done: the note made a new version. failed: an error, or nothing changed. stopped: Stop, or the app quit. */
@@ -267,6 +269,38 @@ export interface ProjectDetail extends ProjectSummary {
   aiEdited: boolean
   /** The plan made before the video (app.json `plan`), or null. */
   plan: ReelPlan | null
+  /** The reels the editor last found in this reel's video (app.json `proposal`), or null. */
+  proposal: StoredProposal | null
+}
+
+/** One reel the editor found in a reel's video (ai propose.ts ReelCandidate), with its opening words as said. */
+export interface ReelCandidateView {
+  /** r1, r2, … in the editor's order, which is its ranking */
+  id: string
+  title: string
+  hook: { from: string; to: string }
+  keep: { from: string; to: string }[]
+  /** one sentence in the editor's voice */
+  why: string
+  /** measured from the words, never the editor's own figure */
+  seconds: number
+  words: number
+  hookText: string
+}
+
+/** More reels from this video: the editor's latest proposal for a reel, kept in its app.json. Never in project.json,
+ * because it is not an edit. */
+export interface StoredProposal {
+  at: string
+  jobId: string
+  /** sha256 of work/transcript.json when proposed: a pick refuses once the words could have been renumbered */
+  transcriptHash: string
+  notes: string
+  candidates: ReelCandidateView[]
+  /** candidate id -> slug of the reel made from it */
+  made: Record<string, string>
+  /** Not now: the card is one line until it is shown again */
+  folded?: boolean
 }
 
 // Loose mirror of project.json (docs/architecture.md section 3). The engine owns validation.
@@ -327,7 +361,8 @@ export interface ProjectJson {
   [k: string]: unknown
 }
 
-export type JobKind = 'first-edit' | 'note' | 'rerender' | 'export' | 'script'
+/** propose: the editor looks for more reels in a reel's video. Like script, it makes no version. */
+export type JobKind = 'first-edit' | 'note' | 'rerender' | 'export' | 'script' | 'propose'
 
 /** The steps of a job, tagged by the ai package on its status events (main/progress.ts times them). */
 export type Phase = 'listen' | 'analyze' | 'firstLook' | 'edit' | 'final'
@@ -815,6 +850,13 @@ export interface ReelApi {
      * cover pick when no editor is connected. `notice`: why the editor's answer isn't used, in the app's words.
      * `variable`: the creator swapped to this one. */
     proposeTry(slug: string, version: number, ask: { caption: string; variable?: TryVariable }): Promise<{ proposal: TryProposal; notice?: string }>
+    /** More reels from this video: the editor reads the reel's whole video for other reels in it. A job: the strip
+     * and Stop, then its line in the log and the card (ProjectDetail.proposal). Refused with no editor connected. */
+    proposeReels(slug: string): Promise<{ jobId: string }>
+    /** Makes a reel from each picked candidate, in the proposal's order. Each new reel starts its own Version 1. */
+    makeReels(slug: string, ids: string[]): Promise<{ made: { id: string; slug: string }[] }>
+    /** Not now (true) folds the card to one line; Show (false) opens it again. */
+    foldReels(slug: string, folded: boolean): Promise<void>
     remove(slug: string): Promise<void>
   }
   /** Pictures, GIFs and short clips on a note (0.1.2). Each call copies the files into the project. */

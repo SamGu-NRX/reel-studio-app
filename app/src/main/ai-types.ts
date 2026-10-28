@@ -1,6 +1,6 @@
 // Mirror of the @reelstudio/ai interface (docs/architecture.md section 8). The real package is loaded at
 // runtime when it exists; until then ai-mock.ts implements the same shape.
-import type { JobUpdate, StyleProposal, StyleRule, MergeRequest, ProjectJson } from '../shared/api'
+import type { JobUpdate, StyleProposal, StyleRule, MergeRequest, ProjectJson, ReelCandidateView, Word } from '../shared/api'
 import type { PlanTurn } from '../shared/plan'
 import type { TryVariable } from '../shared/platforms'
 
@@ -46,6 +46,23 @@ export interface TryRequest {
   coverSeconds: number | null
   /** The creator swapped to this one. */
   variable?: TryVariable
+}
+
+/** What the editor reads to find more reels in one video (ai/src/propose.ts). */
+export interface ProposeReelsRequest {
+  /** work/transcript.json, with the analysis's retake groups */
+  transcript: { words: Word[]; retakes?: unknown }
+  gapCap: number
+  title: string
+  /** words no proposal may use: this reel's cut and the reels already made from it */
+  taken: { from: string; to: string }[]
+  limit?: number
+}
+/** The reels the editor found, best first, each checked against the words (ai/src/propose.ts). */
+export interface ReelProposal {
+  candidates: Omit<ReelCandidateView, 'hookText'>[]
+  notes: string
+  attempts: number
 }
 
 export interface EngineHost {
@@ -140,6 +157,8 @@ export interface AI {
   planTurn(input: PlanTurnInput, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<PlanTurnResult>
   /** Try 2 for a trial post: the one thing the editor changes, and its reason in its own voice. Optional: older packages lack it. */
   proposeTry?(req: TryRequest, signal?: AbortSignal): Promise<{ variable: unknown; value: unknown; reason: unknown }>
+  /** More reels from one video. `onEvent` hears the waits for the editor's answer. Optional: older packages lack it. */
+  proposeReels?(req: ProposeReelsRequest, signal?: AbortSignal, onEvent?: (e: AgentEvent) => void): Promise<ReelProposal>
   styleRules(): Promise<StyleRule[]>
   /** The removed rule and where it was, for Undo; null when it was already gone. */
   /** The removed rule and where it was, for Undo; null when it was already gone. `forget` (default true): learning
