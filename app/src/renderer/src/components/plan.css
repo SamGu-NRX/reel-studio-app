@@ -56,16 +56,14 @@
 
 /* a beat's number (or a shot's empty ring) is its box to tick: green with a check once it's done */
 .pl-tick { position: relative; width: 24px; height: 24px; display: grid; place-items: center; cursor: pointer; }
-.pl-tick input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: inherit; }
+/* the real checkbox covers the 24 px target, unseen; the span under it is drawn as the one checkbox (styles.css) */
+.pl-tick input[type="checkbox"], .pl-tick input[type="checkbox"]:disabled { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
 .pl-tick span {
-  width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px var(--line-strong);
-  color: var(--ink-2); font-size: var(--fs-xs); font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none;
-  transition: background-color 150ms ease, box-shadow 150ms ease;
+  display: grid; place-items: center; color: var(--ink-2); font-size: var(--fs-xs); font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none;
 }
-.pl-tick input:checked + span { background: var(--green); box-shadow: none; color: #fff; }
+.pl-tick input:checked + span { color: #fff; }
 .pl-tick input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
 .pl-tick:has(input:disabled) { cursor: default; }
-@media (hover: hover) and (pointer: fine) { .pl-tick input:not(:checked):not(:disabled):hover + span { box-shadow: inset 0 0 0 1.5px var(--ink-3); } }
 
 /* folded above the video: one line that opens the card */
 .plan.folded { padding: 4px 8px 4px 4px; gap: 0; }
@@ -117,7 +115,7 @@
 .pf-editor .lk { font-size: var(--fs-sm); }
 
 /* What the keyboard opens or ticks just appears. */
-html.kb :is(.plan, .pl-phone, .pl-fold .icon, .pl-tick span, .nt-res.pl-said) { transition: none !important; }
+html.kb :is(.plan, .pl-phone, .pl-fold .icon, .nt-res.pl-said) { transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
   .plan, .pl-phone, .nt-res.pl-said { transform: none; transition-property: opacity; }
   @starting-style { .plan, .pl-phone, .nt-res.pl-said { transform: none; } }

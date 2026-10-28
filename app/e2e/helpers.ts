@@ -1,5 +1,5 @@
 // Shared helpers for the Electron end-to-end tests.
-import { expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { expect, _electron as electron, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -70,6 +70,19 @@ export async function launch(
   if (!realViewport) await page.setViewportSize({ width: 1280, height: 820 })
   await page.waitForLoadState('domcontentloaded')
   return { app, page }
+}
+
+/**
+ * The app's one checkbox (styles.css): a 16 px square with 4 px corners, white when off, green when on. `box` is what
+ * draws it: the checkbox itself, or the span a plan or More reels tick draws it on.
+ */
+export async function expectOneCheckbox(box: Locator, on: boolean): Promise<void> {
+  const look = await box.evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    const cs = getComputedStyle(el)
+    return { width: Math.round(r.width), height: Math.round(r.height), corners: cs.borderTopLeftRadius, fill: cs.backgroundColor }
+  })
+  expect(look).toEqual({ width: 16, height: 16, corners: '4px', fill: on ? 'rgb(30, 94, 75)' : 'rgb(255, 255, 255)' })
 }
 
 export async function shot(page: Page, name: string): Promise<void> {
