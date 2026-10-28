@@ -7,10 +7,17 @@ import { useActiveEditor } from './connect'
 import { SettingRow, Switch, useShown } from './settings-rows'
 import type { SettingId } from './settings-index'
 
-// What each role does in this build (ai editor.ts): the line says only that.
+/**
+ * The checker's job with Settings › Editor › "Double-check each edit" on (ai editor.ts checkAndRepair), worded the same
+ * on that switch and on the checker's model row, so the two don't describe one role two ways (audit-1028 finding 16).
+ */
+export const CHECKS_NOTE = 'Checks each new version against your note'
+
+// What each role does in this build (ai editor.ts): the line says only that. The checker also proofreads Version 1's
+// subtitles on every first edit (editor.ts proofreadCaptions).
 const ROLES: [ModelRole, SettingId, string][] = [
   ['editor', 'model-edits', 'Makes Version 1 and the changes in your notes.'],
-  ['checker', 'model-checks', 'Proofreads Version 1’s subtitles against what you said.'],
+  ['checker', 'model-checks', `${CHECKS_NOTE} when Double-check each edit is on, and Version 1’s subtitles against what you said.`],
   ['writer', 'model-titles', 'Writes scripts and their titles, and a caption the editor left out. A small, fast model is enough.']
 ]
 

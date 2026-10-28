@@ -28,8 +28,8 @@ function valueWords(p: TryProposal): string {
   }
 }
 
-/** The app's own Try 2, with no editor: always another cover. */
-const appPick = (p: TryProposal): string => `Try 2 uses another cover: ${valueWords(p).toLowerCase()}.`
+/** The app's own Try 2: always another cover. When an editor was asked and didn't pick, main's notice says so in this one line instead. */
+const appPick = (p: TryProposal, notice?: string): string => notice ?? (p.variable === 'cover' ? `Try 2: the same reel, with the ${clock(p.value)} frame as its cover.` : valueWords(p))
 
 const isText = (p: TryProposal): p is Extract<TryProposal, { variable: 'hook' | 'caption' }> => p.variable === 'hook' || p.variable === 'caption'
 
@@ -167,8 +167,8 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
   // Built from the editor's answer, not the field, so typing in the field is never read out.
   const said = !current || current.kind === 'asking' ? asking
     : current.kind === 'failed' ? current.message
-    : [current.proposal.reason === null ? appPick(current.proposal) : `Try 2 changes the ${THING[current.proposal.variable].toLowerCase()}: ${valueWords(current.proposal)}. ${current.proposal.reason}`, current.notice]
-      .filter(Boolean).join(' ')
+    : current.proposal.reason === null ? appPick(current.proposal, current.notice)
+    : `Try 2 changes the ${THING[current.proposal.variable].toLowerCase()}: ${valueWords(current.proposal)}. ${current.proposal.reason}`
 
   const save = async () => {
     stopAsked.current = false
@@ -245,7 +245,7 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
             ) : current.kind === 'failed' ? (
               <p className="sp-warn">{current.message}</p>
             ) : current.proposal.reason === null ? (
-              <p className="sp-value">{appPick(current.proposal)}</p>
+              <p className="sp-value">{appPick(current.proposal, current.notice)}</p>
             ) : (
               <>
                 {words === null ? (
@@ -277,7 +277,6 @@ export function SharePlatforms({ slug, version, caption, open, disabled, onWork,
                 <p className="sp-reason" data-testid="try-two-reason">{current.proposal.reason}</p>
               </>
             )}
-            {current?.kind === 'ready' && current.notice && <p className="muted-sm">{current.notice}</p>}
           </div>
           {shown && (confirmed ? (
             <p className="sp-on" data-testid="try-two-on">

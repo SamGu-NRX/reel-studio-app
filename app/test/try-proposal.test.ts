@@ -33,7 +33,7 @@ describe('Try 2 proposal', () => {
   it('falls back to the app\'s cover, and says so, when the editor fails or answers the wrong thing', async () => {
     const log = vi.fn()
     const failed = await proposeTry({ ai: { active: async () => connected, proposeTry: async () => { throw { code: 'cli_limited', userMessage: 'Your plan is at its limit.' } } }, caption, timeline, cover: null, log })
-    expect(failed).toEqual({ proposal: { variable: 'cover', value: 12.1, reason: null }, notice: "The editor didn't choose Try 2 this time, so it uses another cover." })
+    expect(failed).toEqual({ proposal: { variable: 'cover', value: 12.1, reason: null }, notice: 'Your editor didn’t pick a change, so Try 2 changes the cover to the 0:12 frame.' })
     expect(log).toHaveBeenCalledWith(expect.stringContaining('Your plan is at its limit.'))
     const wrong = await proposeTry({ ai: { active: async () => connected, proposeTry: async () => ({ variable: 'hook', value: 'New', reason: 'I lead.' }) }, caption, variable: 'brightness', timeline, cover: null, log })
     expect(wrong.proposal.reason).toBeNull()

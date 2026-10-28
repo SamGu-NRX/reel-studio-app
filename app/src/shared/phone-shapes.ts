@@ -22,7 +22,7 @@ export interface Shape {
   id: ShapeId
   /** What the picker says. */
   label: string
-  /** The screen's proportion in words, as people say it. */
+  /** The screen's proportion, width first (9:16), as the menu shows it. */
   ratio: string
   /** The screen in points. */
   w: number
@@ -57,9 +57,9 @@ const REEL_W = 393
 
 export const SHAPES: readonly Shape[] = [
   { id: 'reel', label: 'Whole reel', ratio: '9:16', w: REEL_W, h: (REEL_W * 16) / 9, radius: 25.5, top: 0, home: 0 },
-  { id: 'iphone-se', label: 'iPhone SE', ratio: '16:9', w: 375, h: 667, radius: 0, top: 20, home: 0 },
-  { id: 'iphone-17', label: 'iPhone 17', ratio: '19.5:9', w: 402, h: 874, radius: 62, top: 62, home: 34 },
-  { id: 'iphone-pro-max', label: 'iPhone 17 Pro Max', ratio: '19.5:9', w: 440, h: 956, radius: 62, top: 62, home: 34 }
+  { id: 'iphone-se', label: 'iPhone SE', ratio: '9:16', w: 375, h: 667, radius: 0, top: 20, home: 0 },
+  { id: 'iphone-17', label: 'iPhone 17', ratio: '9:19.5', w: 402, h: 874, radius: 62, top: 62, home: 34 },
+  { id: 'iphone-pro-max', label: 'iPhone 17 Pro Max', ratio: '9:19.5', w: 440, h: 956, radius: 62, top: 62, home: 34 }
 ]
 
 export const DEFAULT_SHAPE: ShapeId = 'reel'
