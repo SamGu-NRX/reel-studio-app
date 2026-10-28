@@ -825,7 +825,7 @@ export function PhonePlayer({
       </div>
     </div>
   )
-  return <PhoneFill ratio={shape ? shape.w / shape.h : undefined}>{phone}</PhoneFill>
+  return <PhoneFill shape={shape}>{phone}</PhoneFill>
 }
 
 /** Sets the speed and keeps the voice at its own pitch (Chromium's default, set so it never depends on that). */

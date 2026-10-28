@@ -208,7 +208,8 @@ test('the first-run column: where you are and what it shows at the top, the thre
     await page.getByTestId('demo-skip').click()
     await page.getByTestId('demo-next').click()
     await expect(page.getByTestId('first-run-where').locator('[aria-current="step"]')).toHaveText('Your editor')
-    const gap = await page.evaluate(() => document.querySelector('.fr-log-in')!.getBoundingClientRect().top - document.querySelector('.fr-h')!.getBoundingClientRect().bottom)
+    // the editor's picker takes the thread's place under the heading
+    const gap = await page.evaluate(() => document.querySelector('.fr-pick')!.getBoundingClientRect().top - document.querySelector('.fr-h')!.getBoundingClientRect().bottom)
     expect(gap).toBeLessThan(24)
   } finally {
     await app.close()

@@ -1,5 +1,6 @@
 // The Reel screen's phone (components/Phone.tsx): Instagram view by default, Clean on request, the choice kept in
-// the app's settings, the phone at 9:16 filling its column's height at the three window sizes the spec names, and
+// the app's settings, the phone (an iPhone 17 until another shape is picked) filling its column's height at the three
+// window sizes the spec names, and
 // the safe zone only while the subtitles are being set up, and full screen still closing with Instagram's looping
 // audio ticker inside it. The window's own full screen is stubbed: fullscreen.spec covers it.
 //
@@ -13,15 +14,15 @@ const SIZES = [
   { width: 1512, height: 945 }
 ]
 
-/** The phone's screen, its slot, and how far the stage's last row (the transport) reaches. */
+/** The phone, its screen, its slot, and how far the stage's last row (the transport) reaches. */
 const layout = (page: Page) =>
   page.evaluate(() => {
     const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect()
     const stage = document.querySelector('.stage')!
-    return { screen: r('.stage .phone-screen'), slot: r('.stage .phone-fill'), bottom: stage.lastElementChild!.getBoundingClientRect().bottom, view: innerHeight, scrollW: document.documentElement.scrollWidth, w: innerWidth }
+    return { phone: r('.stage .phone'), screen: r('.stage .phone-screen'), slot: r('.stage .phone-fill'), bottom: stage.lastElementChild!.getBoundingClientRect().bottom, view: innerHeight, scrollW: document.documentElement.scrollWidth, w: innerWidth }
   })
 
-test('fails if the phone stops filling its column at 9:16, the view is not Instagram first and remembered, or full screen cannot close', async () => {
+test('fails if the phone stops filling its column as an iPhone 17, the view is not Instagram first and remembered, or full screen cannot close', async () => {
   test.setTimeout(6 * 60_000)
   const media = makeMedia()
   const { app, page } = await launch()
@@ -39,12 +40,12 @@ test('fails if the phone stops filling its column at 9:16, the view is not Insta
         .poll(async () => {
           const l = await layout(page)
           return [
-            Math.abs(l.screen.width / l.screen.height - 9 / 16) < 0.005,
-            Math.abs(l.screen.height - l.slot.height) <= 1,
+            Math.abs(l.screen.width / l.screen.height - 402 / 874) < 0.005,
+            Math.abs(l.phone.height - l.slot.height) <= 1,
             l.bottom <= l.view,
             l.scrollW <= l.w
           ]
-        }, { message: `phone at ${size.width}x${size.height}: 9:16, full slot height, stage inside the window, no sideways scroll` })
+        }, { message: `phone at ${size.width}x${size.height}: an iPhone 17's screen, the whole phone at the slot's height, stage inside the window, no sideways scroll` })
         .toEqual([true, true, true, true])
     }
 

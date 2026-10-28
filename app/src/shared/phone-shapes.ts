@@ -29,7 +29,7 @@ export interface Shape {
   h: number
   /** Display corner radius, in points. */
   radius: number
-  /** Status bar (and Dynamic Island) height: Instagram's header starts under it. Neither is drawn (ux-foundation-b 3.2). */
+  /** Status bar (and Dynamic Island) height: Instagram's header starts under it. Phone.tsx draws both. */
   top: number
   /** The Home indicator's strip under Instagram's tab bar. */
   home: number
@@ -62,7 +62,9 @@ export const SHAPES: readonly Shape[] = [
   { id: 'iphone-pro-max', label: 'iPhone 17 Pro Max', ratio: '9:19.5', w: 440, h: 956, radius: 62, top: 62, home: 34 }
 ]
 
-export const DEFAULT_SHAPE: ShapeId = 'reel'
+// A current iPhone until someone picks another: the preview is a phone people recognise (Sam, 2026-10-28: "It doesn't
+// look like a phone"), and the whole reel is one pick away.
+export const DEFAULT_SHAPE: ShapeId = 'iphone-17'
 
 export function shapeById(id: string | null | undefined): Shape {
   return SHAPES.find((s) => s.id === id) ?? SHAPES[0]
