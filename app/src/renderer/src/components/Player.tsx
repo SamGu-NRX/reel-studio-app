@@ -8,9 +8,11 @@ import { reel } from '../api'
 import { FOLDER_APP } from './ui'
 import { createPlayhead, followVideo, useFollowPlayhead, type Playhead } from './playhead'
 import { NO_LAYERS, layersReducer, type Layer } from './videoLayers'
-import type { Transport } from './transport'
-import { InstagramChrome, PhoneFill, SafeBand } from './Phone'
+import { RATES, rateLabel, savedRate, stepRate, type Transport } from './transport'
+import { InstagramChrome, PhoneFill, SafeBand, shapeVars } from './Phone'
+import { announce } from './announce'
 import type { PhoneView } from '../../../shared/api'
+import { place, type Shape } from '../../../shared/phone-shapes'
 
 /**
  * While our own reel is being dragged out, the window must not treat it as a new video dropped in.
@@ -61,7 +63,8 @@ export function SubtitleSample({ look, text, width, testid }: { look: SubtitleLo
   const k = width / ENGINE_WIDTH
   const fit = fitLook(look, text, measure)
   const style: React.CSSProperties = {
-    top: `${look.position * 100}%`,
+    // on a phone shape the reel's box is not the screen's (Phone.tsx shapeVars): place it in the reel
+    top: `calc(var(--reel-t, 0%) + ${look.position} * var(--reel-h, 100%))`,
     fontSize: (fit.size / SIZE_PER_EM) * k,
     lineHeight: SIZE_PER_EM,
     color: look.color,
@@ -173,7 +176,7 @@ const FADE_MS = 140
  * Follows the playhead by writing to its own input, so playing the video renders nothing. A write restyles,
  * lays out and repaints the bar, so it happens only when the thumb would move at least one device pixel.
  */
-function ScrubRange({ playhead, dur, onSeek }: { playhead: Playhead; dur: number; onSeek: (seconds: number) => void }) {
+export function ScrubRange({ playhead, dur, onSeek }: { playhead: Playhead; dur: number; onSeek: (seconds: number) => void }) {
   const input = useRef<HTMLInputElement>(null)
   const width = useRef(0)
   const lastPx = useRef<number | null>(null)
@@ -216,6 +219,13 @@ function ScrubRange({ playhead, dur, onSeek }: { playhead: Playhead; dur: number
       aria-label="Position in the reel"
       aria-keyshortcuts="ArrowLeft ArrowRight"
       onChange={(e) => onSeek(Number(e.target.value))}
+      // a second a press, as on the player; the range's own step would move 0.01 s
+      onKeyDown={(e) => {
+        if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.metaKey || e.ctrlKey || e.altKey) return
+        e.preventDefault()
+        e.stopPropagation()
+        onSeek(Math.max(0, Math.min(dur || 0, playhead.get() + (e.key === 'ArrowLeft' ? -1 : 1))))
+      }}
     />
   )
 }
@@ -234,7 +244,6 @@ function ScrubTime({ playhead, dur }: { playhead: Playhead; dur: number }) {
   return <span className="scrub-time" ref={span} />
 }
 
-const RATES = [1, 1.5, 2]
 const RATE_KEY = 'rs.speed'
 
 const MARK_STATE: Record<NoteMark['state'], string> = { making: 'Being made', done: 'Done', failed: "Didn't work", stopped: 'Stopped', paused: 'Paused' }
@@ -242,6 +251,11 @@ const MARK_STATE: Record<NoteMark['state'], string> = { making: 'Being made', do
 const typing = (t: EventTarget | null): boolean => {
   const el = t as HTMLElement | null
   return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable || el.tagName === 'BUTTON')
+}
+/** Somewhere text goes: a key there is a character, not a shortcut. A button or the scrub bar is not. */
+export const textField = (t: EventTarget | null): boolean => {
+  const el = t as HTMLElement | null
+  return !!el && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable || (el instanceof HTMLInputElement && el.type !== 'range'))
 }
 
 /**
@@ -280,6 +294,7 @@ export function PhonePlayer({
   className,
   over,
   testid = 'player',
+  shape,
   children
 }: {
   src: string | null
@@ -335,6 +350,8 @@ export function PhonePlayer({
   over?: ReactNode
   /** The video's test id. The Working screen's first look uses its own, so "player" means the Reel screen. */
   testid?: string
+  /** A real phone's screen to show the reel on, as Instagram would place it there. Without it, the reel's own frame. */
+  shape?: Shape
   children?: ReactNode
 }) {
   const screenRef = useRef<HTMLDivElement>(null)
@@ -346,6 +363,8 @@ export function PhonePlayer({
   const [ownPlayhead] = useState(createPlayhead)
   const ph = playhead ?? ownPlayhead
   const width = useWidth(screenRef)
+  // the reel's own width: wider than the screen where a phone shape trims its sides
+  const reelWidth = shape ? (width * place(shape).reel.w) / shape.w : width
   const trackRef = useRef<HTMLSpanElement>(null)
   const trackWidth = useWidth(trackRef)
   const [playing, setPlaying] = useState(false)
@@ -353,10 +372,11 @@ export function PhonePlayer({
   const [dur, setDur] = useState(0)
   const [started, setStarted] = useState(false)
   const dragOrigin = useRef<EventTarget | null>(null)
-  const [rate, setRate] = useState(() => {
-    const r = Number(localStorage.getItem(RATE_KEY))
-    return RATES.includes(r) ? r : 1
-  })
+  const [rate, setRateState] = useState(() => savedRate(localStorage.getItem(RATE_KEY)))
+  const setRate = useCallback((r: number) => {
+    localStorage.setItem(RATE_KEY, String(r))
+    setRateState(r)
+  }, [])
 
   const toggle = useCallback(() => {
     const v = video.current
@@ -375,16 +395,27 @@ export function PhonePlayer({
     [ph]
   )
 
+  // < and > step the speed down and up, as in YouTube; they are Shift with comma and period, so they never
+  // collide with Cmd+, (Settings) or the Reel screen's letter keys.
+  const rateNow = useRef(rate)
+  rateNow.current = rate
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       // defaultPrevented: the player's own keys already took it
-      if (e.code !== 'Space' || e.defaultPrevented || typing(e.target) || document.querySelector('.modal-backdrop')) return
-      e.preventDefault()
-      toggle()
+      if (e.defaultPrevented || document.querySelector('.modal-backdrop')) return
+      if (e.code === 'Space' && !typing(e.target)) {
+        e.preventDefault()
+        toggle()
+      } else if ((e.key === '<' || e.key === '>') && !e.metaKey && !e.ctrlKey && !e.altKey && !textField(e.target)) {
+        e.preventDefault()
+        const next = stepRate(rateNow.current, e.key === '>' ? 1 : -1)
+        setRate(next)
+        announce(`Speed ${rateLabel(next)}`)
+      }
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [toggle])
+  }, [toggle, setRate])
 
   // Keys while the player or one of its controls has focus: Space (buttons keep it for themselves) and the
   // arrows, which on the scrub bar would otherwise move 0.01 s. The version chips sit outside the player.
@@ -415,7 +446,7 @@ export function PhonePlayer({
     const wasPlaying = !!before && !before.paused
     before?.pause()
     if (!v) return
-    v.playbackRate = rate
+    applyRate(v, rate)
     if (keepTime && before) {
       // the old layer kept playing while this one loaded at the moment it started from: catch up to where it is
       if (Math.abs(v.currentTime - before.currentTime) > 0.05) v.currentTime = before.currentTime
@@ -464,16 +495,12 @@ export function PhonePlayer({
   }, [asking])
 
   useEffect(() => {
-    if (video.current) video.current.playbackRate = rate
+    if (video.current) applyRate(video.current, rate)
+    if (raw.current) applyRate(raw.current, rate)
   }, [rate, shownId])
-  const nextRate = () => {
-    const r = RATES[(RATES.indexOf(rate) + 1) % RATES.length]
-    localStorage.setItem(RATE_KEY, String(r))
-    setRate(r)
-  }
-  const nextRateRef = useRef(nextRate)
-  nextRateRef.current = nextRate
-  useEffect(() => transport?.attach({ toggle, seek, nextRate: () => nextRateRef.current() }), [transport, toggle, seek])
+  // the speed button on a player with its own controls goes round the speeds
+  const nextRate = () => setRate(RATES[(RATES.findIndex((r) => r === rate) + 1) % RATES.length])
+  useEffect(() => transport?.attach({ toggle, seek, setRate }), [transport, toggle, seek, setRate])
   useEffect(() => transport?.report({ playing, duration: dur, rate }), [transport, playing, dur, rate])
 
   // Press and hold the picture for the original. 250 ms tells a hold from a click (no measurement behind it:
@@ -569,6 +596,7 @@ export function PhonePlayer({
       return
     }
     r.currentTime = synced ? at.at : 0
+    applyRate(r, rateNow.current)
     void r.play().catch(() => {})
     const show = () => setHold(synced ? 'on' : 'start')
     r.addEventListener('error', fail, { once: true })
@@ -600,6 +628,8 @@ export function PhonePlayer({
   const phone = (
     <div
       className={`phone${className ? ` ${className}` : ''}`}
+      style={shape ? shapeVars(shape) : undefined}
+      data-shape={shape?.id}
       draggable={!!dragFile}
       title={dragFile ? 'Drag the reel out of the window to the desktop or an upload box' : undefined}
       onPointerDown={(e) => {
@@ -716,9 +746,9 @@ export function PhonePlayer({
             <div className={holdTag ? 'phone-tag' : undefined} role="status" data-testid="original-tag">
               {holdTag}
             </div>
-            {subtitle && !holdingOriginal && <SubtitleSample look={subtitle.look} text={subtitle.text} width={width} testid="sub-preview" />}
+            {subtitle && !holdingOriginal && <SubtitleSample look={subtitle.look} text={subtitle.text} width={reelWidth} testid="sub-preview" />}
             <InstagramChrome on={view === 'instagram' && !holdingOriginal} caption={caption} playing={playing} />
-            {subtitle && !holdingOriginal && <SafeBand />}
+            {subtitle && !holdingOriginal && <SafeBand shape={shape} />}
             {over}
             {!bare && !playing && !holdingOriginal && !(still && subtitle) && (
               <button className="big-play" onClick={toggle} aria-label="Play" data-testid="play">
@@ -771,8 +801,8 @@ export function PhonePlayer({
               </span>
               <ScrubTime playhead={ph} dur={dur} />
               {view === 'clean' && (
-                <button className={`scrub-speed${rate !== 1 ? ' on' : ''}`} onClick={nextRate} aria-label={`Playback speed ${rate}×`} title="Playback speed" data-testid="speed">
-                  {rate}×
+                <button className={`scrub-speed${rate !== 1 ? ' on' : ''}`} onClick={nextRate} aria-label={`Playback speed ${rateLabel(rate)}`} title="Playback speed" data-testid="speed">
+                  {rateLabel(rate)}
                 </button>
               )}
               <button
@@ -793,5 +823,11 @@ export function PhonePlayer({
       </div>
     </div>
   )
-  return <PhoneFill>{phone}</PhoneFill>
+  return <PhoneFill ratio={shape ? shape.w / shape.h : undefined}>{phone}</PhoneFill>
+}
+
+/** Sets the speed and keeps the voice at its own pitch (Chromium's default, set so it never depends on that). */
+function applyRate(v: HTMLVideoElement, rate: number): void {
+  v.preservesPitch = true
+  v.playbackRate = rate
 }

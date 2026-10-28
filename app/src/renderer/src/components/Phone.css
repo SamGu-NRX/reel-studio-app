@@ -1,18 +1,24 @@
-/* The phone preview (Phone.tsx, Player.tsx). The screen is the reel's own 9:16 frame. A thin dark edge is the
-   only device: no status bar, camera cut-out or home bar. */
+/* The phone preview (Phone.tsx, Player.tsx). The screen is the reel's own 9:16 frame, or a real phone's screen
+   (phone-shapes.ts, through the variables Phone.tsx shapeVars sets on .phone). A thin dark edge is the only device:
+   no status bar, camera cut-out or home bar. */
 
 .phone-fill { flex: 1 1 0; min-height: 0; align-self: stretch; display: flex; justify-content: center; align-items: flex-start; }
 /* --phone-w comes from the slot's height (PhoneFill). max-width keeps it inside a column narrower than that. */
 .phone-fill > .phone { width: var(--phone-w); max-width: 100%; }
 .phone {
-  position: relative; flex: none; border-radius: 6.5% / 3.66%;
+  position: relative; flex: none; border-radius: var(--radius, 6.5% / 3.66%);
   box-shadow: 0 0 0 3px var(--bezel), 0 30px 44px -30px rgba(10, 20, 15, .5), 0 14px 22px -16px rgba(10, 20, 15, .3);
 }
 .phone-screen {
-  width: 100%; aspect-ratio: 9 / 16; border-radius: inherit; overflow: hidden; background: #000; position: relative;
+  width: 100%; aspect-ratio: var(--ratio, 9 / 16); border-radius: inherit; overflow: hidden; background: #000; position: relative;
   display: grid; place-items: center; container-type: inline-size;
 }
-.phone-screen > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; display: block; cursor: pointer; }
+.phone-screen > video {
+  position: absolute; left: var(--reel-l, 0); top: var(--reel-t, 0); width: var(--reel-w, 100%); height: var(--reel-h, 100%);
+  object-fit: cover; background: #000; display: block; cursor: pointer;
+}
+/* On a phone the reel's box overhangs the screen where Instagram trims it: only the part above the tab bar shows. */
+.phone-screen > video { clip-path: var(--reel-clip, none); }
 .phone-screen > video.raw-video { opacity: 0; pointer-events: none; transition: opacity .12s; }
 .phone-screen > video.raw-video.on { opacity: 1; }
 /* A new video loads invisible over the one on screen, then fades in (Player.tsx FADE_MS). */
@@ -24,14 +30,15 @@
 /* Instagram's screen sits over the reel and its subtitles; the player's own controls sit over Instagram's. While
    they show, the play controls take the tab bar's place, so they never cover the name, caption and audio row. */
 .phone-screen > :is(.big-play, .scrub, .sound-chip, .phone-tag, .abswitch) { z-index: 2; }
-.phone-screen:has(> .igc:not(.off)) > .scrub { height: calc(100cqw * 50 / 393); padding-top: 0; padding-bottom: 0; background: #000; }
+.phone-screen:has(> .igc:not(.off)) > .scrub { height: calc(100cqw * 50 / var(--sw, 393)); padding-top: 0; padding-bottom: 0; background: #000; }
 
-/* ---- Instagram's Reels screen (InstagramChrome), in iOS points: --pt is one point of a 393 pt wide iPhone screen,
-   so every part keeps its proportion to the reel at any size. The point sizes are estimates of the iOS app's:
-   Meta publishes none. The edges they make land within 2.5% of the frame of engine/reelengine/verify.py's (top 7%,
-   bottom 19%, right 13%). ---- */
+/* ---- Instagram's Reels screen (InstagramChrome), in iOS points: --pt is one point of the screen (393 pt wide on
+   the plain frame), so every part keeps its proportion at any size. The point sizes are estimates of the iOS app's:
+   Meta publishes none. On the plain frame the edges they make land within 2.5% of the frame of
+   engine/reelengine/verify.py's (top 7%, bottom 19%, right 13%). On a phone, the header starts under the status bar
+   (--ig-top) and the tab bar sits on the Home indicator's strip (--ig-home); phone-shapes.ts IG holds the same sizes. ---- */
 .igc {
-  --pt: calc(100cqw / 393);
+  --pt: calc(100cqw / var(--sw, 393)); --foot: calc((50 + var(--ig-home, 0)) * var(--pt));
   position: absolute; inset: 0; z-index: 1; pointer-events: none; color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; font-size: calc(14 * var(--pt)); line-height: 1.2;
   text-shadow: 0 0 calc(3 * var(--pt)) rgba(0, 0, 0, .35);
@@ -41,26 +48,26 @@
 @starting-style { .igc:not(.off) { opacity: 0; } }
 /* Instagram darkens the top and bottom of the reel a little so its white text reads on any picture. */
 .igc::before, .igc::after { content: ''; position: absolute; left: 0; right: 0; }
-.igc::before { top: 0; height: calc(110 * var(--pt)); background: linear-gradient(rgba(0, 0, 0, .3), transparent); }
-.igc::after { bottom: calc(50 * var(--pt)); height: calc(260 * var(--pt)); background: linear-gradient(transparent, rgba(0, 0, 0, .42)); }
+.igc::before { top: 0; height: calc((110 + var(--ig-top, 0)) * var(--pt)); background: linear-gradient(rgba(0, 0, 0, .3), transparent); }
+.igc::after { bottom: var(--foot); height: calc(260 * var(--pt)); background: linear-gradient(transparent, rgba(0, 0, 0, .42)); }
 .igc .icon { flex: none; filter: drop-shadow(0 0 calc(2 * var(--pt)) rgba(0, 0, 0, .3)); }
 .igc > * { position: absolute; z-index: 1; }
 
-.igc-top { top: 0; left: 0; right: 0; height: calc(50 * var(--pt)); padding: calc(4 * var(--pt)) calc(14 * var(--pt)) 0 calc(16 * var(--pt)); display: flex; align-items: center; gap: calc(4 * var(--pt)); }
+.igc-top { top: calc(var(--ig-top, 0) * var(--pt)); left: 0; right: 0; height: calc(50 * var(--pt)); padding: calc(4 * var(--pt)) calc(14 * var(--pt)) 0 calc(16 * var(--pt)); display: flex; align-items: center; gap: calc(4 * var(--pt)); }
 .igc-top b { font-size: calc(22 * var(--pt)); font-weight: 700; letter-spacing: -.01em; }
 .igc-top .icon { width: calc(14 * var(--pt)); height: calc(14 * var(--pt)); margin-top: calc(2 * var(--pt)); }
 .igc-cam { margin-left: auto; display: flex; }
 .igc-top .igc-cam .icon { width: calc(27 * var(--pt)); height: calc(27 * var(--pt)); margin: 0; }
 
 /* The rail: like, comment, repost and share with their counts, then more and the audio's square. */
-.igc-rail { right: calc(8 * var(--pt)); bottom: calc(64 * var(--pt)); width: calc(48 * var(--pt)); display: flex; flex-direction: column; align-items: center; gap: calc(16 * var(--pt)); }
+.igc-rail { right: calc(8 * var(--pt)); bottom: calc(var(--foot) + 14 * var(--pt)); width: calc(48 * var(--pt)); display: flex; flex-direction: column; align-items: center; gap: calc(16 * var(--pt)); }
 .igc-rail > span { display: flex; flex-direction: column; align-items: center; gap: calc(3 * var(--pt)); font-size: calc(12.5 * var(--pt)); font-weight: 600; font-variant-numeric: tabular-nums; }
 .igc-rail .icon { width: calc(27 * var(--pt)); height: calc(27 * var(--pt)); }
 .igc-rail > span:last-of-type .icon { width: calc(24 * var(--pt)); height: calc(24 * var(--pt)); }
 .igc-disc { width: calc(28 * var(--pt)); height: calc(28 * var(--pt)); border-radius: calc(7 * var(--pt)); background: #5a615c; box-shadow: 0 0 0 calc(2 * var(--pt)) #fff; }
 
 /* Bottom left: who posted it, one line of the caption, the audio. */
-.igc-meta { left: calc(14 * var(--pt)); right: calc(72 * var(--pt)); bottom: calc(64 * var(--pt)); display: flex; flex-direction: column; gap: calc(10 * var(--pt)); }
+.igc-meta { left: calc(14 * var(--pt)); right: calc(72 * var(--pt)); bottom: calc(var(--foot) + 14 * var(--pt)); display: flex; flex-direction: column; gap: calc(10 * var(--pt)); }
 .igc-who { display: flex; align-items: center; gap: calc(9 * var(--pt)); }
 .igc-avatar { width: calc(32 * var(--pt)); height: calc(32 * var(--pt)); border-radius: 50%; flex: none; background: #cfd8cf; }
 .igc-who b { font-size: calc(14 * var(--pt)); font-weight: 600; }
@@ -77,12 +84,15 @@
 @keyframes igc-tick { to { transform: translateX(-50%); } }
 
 /* The tab bar: Home, Reels (selected), Messages, Search, your profile. */
-.igc-tabs { left: 0; right: 0; bottom: 0; height: calc(50 * var(--pt)); background: #000; display: flex; justify-content: space-around; align-items: center; padding: 0 calc(6 * var(--pt)); }
+.igc-tabs {
+  left: 0; right: 0; bottom: 0; height: var(--foot); background: #000; display: flex; justify-content: space-around; align-items: center;
+  padding: 0 calc(6 * var(--pt)) calc(var(--ig-home, 0) * var(--pt));
+}
 .igc-tabs .icon { width: calc(26 * var(--pt)); height: calc(26 * var(--pt)); filter: none; }
 .igc-tabs .igc-avatar { width: calc(26 * var(--pt)); height: calc(26 * var(--pt)); }
 
 /* ---- Clear of Instagram, while the subtitles are being set up (SafeBand): verify.py's top 7%, bottom 19% and
-   right 13%, and the subtitles' 6.5% left margin ---- */
+   right 13%, and the subtitles' 6.5% left margin. A phone shape sets its own edges inline (phone-shapes.ts clearBand). ---- */
 .safe-band {
   position: absolute; left: 6.5%; right: 13%; top: 7%; bottom: 19%; z-index: 1; pointer-events: none; border-radius: 4px;
   outline: 1.5px dashed rgba(255, 255, 255, .85); outline-offset: -1px; box-shadow: 0 0 0 200cqw rgba(0, 0, 0, .22);

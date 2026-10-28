@@ -175,5 +175,8 @@ html.kb :is(.fr-stage.on .stage, .fr-stage.on .fr-col, .fr-pick, .shell.arriving
 /* ---------- your turn: the app's window arrives around a new reel (App.tsx) ---------- */
 @keyframes fr-side { from { opacity: 0; transform: translateX(-16px); } }
 .shell.arriving > .side { animation: fr-side 220ms cubic-bezier(.2, .8, .2, 1) both; }
-.shell.arriving > .titlebar, .shell.arriving > .main { animation: fr-in 220ms 60ms cubic-bezier(.2, .8, .2, 1) both; }
+/* backwards, not both: fr-in has only a from frame, and a fill that outlives it kept an opacity animation in effect on
+   .main for the rest of the session, which made .main a stacking context and drew the sidebar and title bar over full
+   screen (FullStage.tsx; e2e/preview-modes.spec.ts reads the pixels) */
+.shell.arriving > .titlebar, .shell.arriving > .main { animation: fr-in 220ms 60ms cubic-bezier(.2, .8, .2, 1) backwards; }
 @media (prefers-reduced-motion: reduce) { @keyframes fr-side { from { opacity: 0; } } }
