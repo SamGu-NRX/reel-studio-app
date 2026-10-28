@@ -5,7 +5,7 @@
 import { test, expect } from '@playwright/test'
 import { chmodSync, mkdirSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun, startReel } from './helpers'
+import { BASE, expectOneCheckbox, launch, makeMedia, passFirstRun, startReel } from './helpers'
 
 test('fails if Help improve is asked before a share that worked or a second time, the last destination used is not first, or a platform reads as connected', async () => {
   test.skip(process.platform !== 'darwin', 'Uses a macOS iCloud Drive folder to make a save fail.')
@@ -33,6 +33,20 @@ test('fails if Help improve is asked before a share that worked or a second time
     await expect(pop.getByTestId('share-instagram')).toContainText('Not connected yet. Saves the reel and copies the caption.')
     await pop.getByTestId('share-platforms-toggle').click()
     await expect(pop.getByTestId('share-platforms')).toContainText('None of these are connected yet')
+    // fails if a platform's box is not the app's one checkbox, or the keyboard can't tick it and hear that it is
+    const insta = pop.getByRole('checkbox', { name: 'Instagram Reels' })
+    const tiktok = pop.getByRole('checkbox', { name: 'TikTok' })
+    await expectOneCheckbox(insta, true)
+    await expectOneCheckbox(tiktok, false)
+    await insta.focus()
+    await page.keyboard.press('Tab')
+    await expect(tiktok).toBeFocused()
+    expect(await tiktok.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid')
+    await page.keyboard.press('Space')
+    await expect(pop.getByRole('checkbox', { name: 'TikTok', checked: true })).toHaveCount(1)
+    await expectOneCheckbox(tiktok, true)
+    await page.keyboard.press('Space')
+    await expect(pop.getByRole('checkbox', { name: 'TikTok', checked: false })).toHaveCount(1)
     await pop.getByTestId('share-platforms-toggle').click()
 
     // A save that fails is not a share.

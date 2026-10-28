@@ -45,6 +45,12 @@ export function sourceAt(segments: RenderSegment[], t: number): { source: string
   return seg ? { source: seg.source, at: seg.src_start + (t - seg.out_start) } : null
 }
 
+/** sourceAt backwards: where `at` seconds into take `source` plays in the render, or null when the render cut it. */
+export function outputAt(segments: RenderSegment[], source: string, at: number): number | null {
+  const seg = segments.find((s) => s.source === source && at >= s.src_start && at <= s.src_end)
+  return seg ? seg.out_start + (at - seg.src_start) : null
+}
+
 /** The words that play within `radius` seconds of output time `t`, each named once, where it first plays. */
 export function wordsAt(placed: PlacedWord[], t: number, radius = 1.1): MomentWord[] {
   const out: MomentWord[] = []

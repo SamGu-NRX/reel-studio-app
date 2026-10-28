@@ -4,7 +4,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun } from './helpers'
+import { BASE, expectOneCheckbox, launch, makeMedia, passFirstRun } from './helpers'
 
 function freshProfile(name: string): Record<string, string> {
   const dir = mkdtempSync(join(BASE, `plan-${name}-`))
@@ -76,7 +76,15 @@ test('plan a reel with the editor, edit a beat, then film it', async () => {
   await beat.fill('Mix it by hand, then let it rest an hour.')
   await beat.press('Enter')
   await card.getByTestId('plan-hook-1').check()
-  await card.getByTestId('plan-shots-tick-0').check()
+  // fails if a shot's tick is not the app's one checkbox (it was a circle, which reads as pick-one), or the keyboard
+  // can't tick it and hear that it is
+  const tick = card.getByRole('checkbox', { name: 'Shot 1 done' })
+  const box = card.locator('.pl-tick:has([data-testid=plan-shots-tick-0]) > span')
+  await expectOneCheckbox(box, false)
+  await tick.focus()
+  await page.keyboard.press('Space')
+  await expect(card.getByRole('checkbox', { name: 'Shot 1 done', checked: true })).toHaveCount(1)
+  await expectOneCheckbox(box, true)
   await expect.poll(async () => (await planOf(page, slug))?.beats[1]).toEqual({ text: 'Mix it by hand, then let it rest an hour.' })
   await expect.poll(async () => (await planOf(page, slug))?.hook).toBe(1)
   await expect.poll(async () => (await planOf(page, slug))?.shots[0].done).toBe(true)

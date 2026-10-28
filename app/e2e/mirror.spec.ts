@@ -42,6 +42,7 @@ test('flip a mirrored take from Edit it myself', async () => {
   expect(project().sources[0].mirror).toBeUndefined()
 
   await page.getByTestId('edit-myself').click()
+  await page.getByTestId('tab-cover').click()
   const toggle = page.getByTestId('mirror-on')
   await expect(toggle).toBeVisible()
   await expect(toggle).not.toBeChecked()
@@ -49,6 +50,8 @@ test('flip a mirrored take from Edit it myself', async () => {
   await snap('mirror-01-drawer-off')
   await toggle.check()
   await expect(page.getByTestId('make-version')).toBeEnabled()
+  // fails if the cover on the phone stays as filmed: it was made before the flip, so it is drawn mirrored until then
+  await expect(page.getByTestId('cover-preview').locator('img, video').first()).toHaveCSS('transform', 'matrix(-1, 0, 0, 1, 0, 0)')
   await snap('mirror-02-drawer-on')
   await page.getByTestId('make-version').click()
   await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 })
@@ -64,6 +67,7 @@ test('flip a mirrored take from Edit it myself', async () => {
 
   // and back: the flag is removed, the project is as it was
   await page.getByTestId('edit-myself').click()
+  await page.getByTestId('tab-cover').click()
   await expect(page.getByTestId('mirror-on')).toBeChecked()
   await page.getByTestId('mirror-on').uncheck()
   await page.getByTestId('make-version').click()

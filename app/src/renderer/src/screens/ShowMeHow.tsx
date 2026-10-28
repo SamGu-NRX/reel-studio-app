@@ -359,10 +359,10 @@ export function ShowMeHow({
       </div>
       <div className="edit-b" role="tabpanel" id="edit-panel" aria-labelledby={`tab-${tab}`}>
         {tab === 'cut' && <CutTab {...tabProps} mode={cutMode} onMode={setCutMode} onLine={setLine} />}
-        {tab === 'captions' && <SubtitlesTab {...tabProps} sample={sample.text} />}
+        {tab === 'captions' && <SubtitlesTab {...tabProps} />}
         {tab === 'music' && <SoundTab {...tabProps} vclock={vclock} joins={joins} selected={sound} onSelect={(k) => onSound?.(k)} reveal={reveal} />}
         {tab === 'broll' && <PicturesTab {...tabProps} images={images} reloadImages={reloadImages} selected={picture} reveal={pictureReveal} onSelect={(id) => onPicture?.(id)} />}
-        {tab === 'cover' && <CoverTab {...tabProps} loadPicks={loadPicks} />}
+        {tab === 'cover' && <CoverTab {...tabProps} loadPicks={loadPicks} segments={segments} />}
       </div>
       {(busy || ahead > 0) && (
         <p className="edit-wait" role="status" data-testid="edit-wait">

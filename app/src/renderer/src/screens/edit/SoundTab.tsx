@@ -9,13 +9,16 @@ import {
   gainText,
   JOBS,
   leadIn,
+  levelDb,
+  levelOf,
   momentAt,
   momentKey,
   momentWhy,
   musicFades,
+  noMomentHint,
   secondsText,
-  SFX_GAIN,
   SFX_GAP,
+  SFX_LEVELS,
   sfxName,
   sfxVolume,
   soundRows,
@@ -31,7 +34,7 @@ import { reel, userMessage } from '../../api'
 import { useNotify } from '../../App'
 import { Icon } from '../../components/icons'
 import { byKeyboard, reducedMotion } from '../../components/motion'
-import { arrowPick, IS_MAC, tabStop } from '../../components/ui'
+import { IS_MAC, Segmented } from '../../components/ui'
 import { usePlayhead } from '../../components/playhead'
 import { fileTitle, setP, type TabProps } from './controls'
 import { useAudition } from './preview'
@@ -276,6 +279,7 @@ export function SoundTab({ d, base, now, change, settle, player, vclock, joins, 
               const sound = byId.get(s.sound)
               const playing = hear.playing === r.key
               const g = gainOf(s)
+              const level = levelOf(g)
               return (
                 <li key={r.key} data-key={r.key} className={`edit-row sfx-row${selected === r.key ? ' on' : ''}`} aria-current={selected === r.key || undefined} data-testid="sfx-row">
                   <div className="edit-row-main">
@@ -325,25 +329,26 @@ export function SoundTab({ d, base, now, change, settle, player, vclock, joins, 
                         <Icon name={playing ? 'pause' : 'play'} size={12} stroke={2} /> {playing ? 'Stop' : 'Play'}
                       </button>
                     </div>
-                    <Slider
-                      label="How loud"
-                      aria={`How loud the ${name.kind.toLowerCase()}${r.t === null ? '' : ` at ${clock(r.t)}`} is`}
-                      value={g}
-                      shown={gainText(g)}
-                      spoken={gainText(g).replace('−', 'minus ').replace('+', 'plus ').replace('dB', 'decibels')}
-                      min={SFX_GAIN.min}
-                      max={SFX_GAIN.max}
-                      step={1}
-                      onChange={(v) => {
-                        const { gainDb: _old, ...rest } = s
-                        put(r.key, v ? { ...rest, gainDb: v } : rest, `level:${r.key}`)
-                      }}
-                      onDone={(how) => {
-                        settle()
-                        if (how === 'pointer') preview(s, true)
-                      }}
-                      testid="sfx-level"
-                    />
+                    {/* in words, as the song's level is; the exact level is the chosen word's tooltip */}
+                    <div className="sfx-level">
+                      <span className="edit-slider-label" aria-hidden>
+                        How loud
+                      </span>
+                      <Segmented
+                        label={`How loud the ${name.kind.toLowerCase()}${r.t === null ? '' : ` at ${clock(r.t)}`} is`}
+                        value={level}
+                        options={SFX_LEVELS.map((l) => ({ key: l.key, label: l.label, title: gainText(l.key === level ? g : l.db) }))}
+                        onPick={(k) => {
+                          // the word already shown keeps the level it stands for, even one the editor set between two words
+                          if (k === level) return
+                          const { gainDb: _old, ...rest } = s
+                          const next = k === 'normal' ? rest : { ...rest, gainDb: levelDb(k) }
+                          put(r.key, next)
+                          preview(next, true)
+                        }}
+                        testid="sfx-level"
+                      />
+                    </div>
                   </div>
                 </li>
               )
@@ -363,17 +368,20 @@ export function SoundTab({ d, base, now, change, settle, player, vclock, joins, 
             <Icon name="plus" size={14} /> Add a sound effect at <span className="tnum">{clock(picking?.t ?? here?.t ?? second)}</span>
           </button>
         </div>
-        {!here && pack.length > 0 && vclock.placed.size > 0 && <p className="edit-hint">Every word from here to the end has a sound effect already.</p>}
+        {!here && pack.length > 0 && vclock.placed.size > 0 && <p className="edit-hint">{noMomentHint(player.playhead.get(), vclock, now.kept)}</p>}
         {picking && (
           <SoundPicker
             pack={pack}
             moment={picking}
             why={momentWhy(picking.at, said)}
             near={rows.find((r) => r.t !== null && !r.warn && Math.abs(r.t - picking.t) < SFX_GAP) ?? null}
-            onPreview={(id) => {
+            playing={hear.playing?.startsWith('pick:') ? hear.playing.slice(5) : null}
+            onPlay={(id, how) => {
               const p = byId.get(id)
-              if (p) hear.play(p.url, 0.5, { id: `pick:${id}`, restart: true })
+              // a sound played by pointing at it is quieter than one asked for, and pressing its button again stops it
+              if (p) hear.play(p.url, how === 'hover' ? 0.3 : 0.5, { id: `pick:${id}`, restart: how !== 'button' })
             }}
+            onStop={hear.stop}
             onAdd={add}
             onCancel={closePicker}
           />
@@ -433,13 +441,21 @@ function Slider({
   )
 }
 
-/** The sounds grouped by what they are for. A click plays one and picks it; Add puts it on the moment. */
+/** How long the pointer rests on a sound before it plays: passing over it on the way to Add plays nothing. */
+const HOVER_PLAY_MS = 200
+
+/**
+ * One row per kind of sound, each playing the pack's first sound of that kind; the kind's other sounds open under it
+ * ("Other whooshes"). Picking a kind or a sound plays it; Add puts the picked sound on the moment.
+ */
 function SoundPicker({
   pack,
   moment,
   why,
   near,
-  onPreview,
+  playing,
+  onPlay,
+  onStop,
   onAdd,
   onCancel
 }: {
@@ -447,64 +463,124 @@ function SoundPicker({
   moment: { at: SfxMoment; t: number }
   why: string
   near: SoundRow | null
-  onPreview: (id: string) => void
+  /** the sound the picker is playing, or null */
+  playing: string | null
+  onPlay: (id: string, how: 'pick' | 'button' | 'hover') => void
+  onStop: () => void
   onAdd: (id: string) => void
   onCancel: () => void
 }) {
   const box = useRef<HTMLDivElement>(null)
+  const kinds = JOBS.map((j) => ({ ...j, sounds: pack.filter((p) => p.kind === j.kind) })).filter((k) => k.sounds.length)
+  const kindOf = (id: string) => pack.find((p) => p.id === id)!.kind
   const [pick, setPick] = useState(() => (pack.some((p) => p.id === firstChoice(moment.at)) ? firstChoice(moment.at) : pack[0].id))
-  const ids = JOBS.flatMap((j) => pack.filter((p) => p.kind === j.kind).map((p) => p.id))
-  const choose = (id: string) => {
-    setPick(id)
-    onPreview(id)
+  // the sound each kind's row stands for: its first, or the one last picked from its others
+  const [chosen, setChosen] = useState<Record<string, string>>(() => ({ [kindOf(pick)]: pick }))
+  const [open, setOpen] = useState<string | null>(null)
+  const hover = useRef<{ id: string; timer: number } | null>(null)
+  const hovered = useRef(false)
+  const soundOf = (kind: string) => chosen[kind] ?? kinds.find((k) => k.kind === kind)!.sounds[0].id
+  // picking only picks: the radio's click plays, and an arrow key that moves the pick clicks the radio too
+  const pickKind = (kind: string) => {
+    setPick(soundOf(kind))
+    if (open !== kind) setOpen(null)
   }
+  const pickSound = (id: string) => {
+    setChosen((c) => ({ ...c, [kindOf(id)]: id }))
+    setPick(id)
+  }
+  const rest = () => {
+    if (hover.current) window.clearTimeout(hover.current.timer)
+    hover.current = null
+  }
+  // pointermove, not pointerenter: a list that scrolls under a resting pointer plays nothing
+  const pointAt = (id: string) => {
+    if (hover.current?.id === id || playing === id) return
+    rest()
+    hover.current = {
+      id,
+      timer: window.setTimeout(() => {
+        hovered.current = true
+        onPlay(id, 'hover')
+      }, HOVER_PLAY_MS)
+    }
+  }
+  const leave = () => {
+    rest()
+    if (hovered.current) onStop()
+    hovered.current = false
+  }
+  useEffect(() => rest, [])
   useEffect(() => {
-    box.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus({ preventScroll: true })
+    box.current?.querySelector<HTMLElement>('input[type="radio"]:checked')?.focus({ preventScroll: true })
     box.current?.scrollIntoView({ block: 'nearest', behavior: reducedMotion() || byKeyboard() ? 'auto' : 'smooth' })
   }, [])
+  const pickKey = kindOf(pick)
   const name = sfxName(pick)
+  const first = kinds.find((k) => k.kind === pickKey)?.sounds[0].id === pick
   return (
-    <div
-      ref={box}
-      id="sfx-picker"
-      className="sfx-picker"
-      role="group"
-      aria-label={`Add a sound effect at ${clock(moment.t)}`}
-      data-testid="sfx-picker"
-    >
+    <div ref={box} id="sfx-picker" className="sfx-picker" role="group" aria-label={`Add a sound effect at ${clock(moment.t)}`} data-testid="sfx-picker">
       <p className="sfx-picker-h">
         At <span className="tnum">{clock(moment.t)}</span>, {why}
       </p>
-      <div className="sfx-jobs" role="radiogroup" aria-label="Which sound" onKeyDown={(e) => arrowPick(e, ids, pick, choose)}>
-        {JOBS.map((j) => {
-          const sounds = pack.filter((p) => p.kind === j.kind)
-          if (!sounds.length) return null
+      {/* Native radios, so each group is one Tab stop with the arrow keys inside it, and the disclosure and play
+          buttons beside them stay buttons. Picking by key or click plays the sound; clicking the picked one plays it
+          again. */}
+      <fieldset className="sfx-kinds">
+        <legend className="sr-only">Which sound</legend>
+        {kinds.map((k) => {
+          const on = k.kind === pickKey
+          const id = soundOf(k.kind)
           return (
-            <div key={j.kind} className="sfx-job" role="group" aria-label={`${j.name}, ${j.purpose}`}>
-              <span className="sfx-job-h" aria-hidden>
-                <b>{j.name}</b> {j.purpose}
-              </span>
-              <span className="sfx-chips">
-                {sounds.map((p) => (
-                  <button
-                    key={p.id}
-                    role="radio"
-                    aria-checked={pick === p.id}
-                    aria-label={`${j.name}, ${sfxName(p.id).variant}`}
-                    tabIndex={tabStop(p.id, pick, ids)}
-                    data-key={p.id}
-                    className={`sfx-chip${pick === p.id ? ' on' : ''}`}
-                    onClick={() => choose(p.id)}
-                    data-testid={`sfx-choice-${p.id}`}
-                  >
-                    {sfxName(p.id).variant}
+            <div key={k.kind} className={`sfx-kind${on ? ' on' : ''}`} data-testid="sfx-kind">
+              <div className="sfx-kind-h">
+                <label className="sfx-kind-name">
+                  <input type="radio" name="sfx-kind" value={k.kind} checked={on} onChange={() => pickKind(k.kind)} onClick={() => onPlay(id, 'pick')} data-testid={`sfx-kind-${k.kind}`} />
+                  <b>{k.name}</b> <span>{k.purpose}</span>
+                </label>
+                {on && k.sounds.length > 1 && (
+                  <button className="btn ghost small sfx-others" aria-expanded={open === k.kind} aria-controls={`sfx-others-${k.kind}`} onClick={() => setOpen(open === k.kind ? null : k.kind)} data-testid="sfx-others">
+                    {k.others}
+                    <Icon name="chevron-down" size={12} stroke={2} className={open === k.kind ? 'open' : undefined} />
                   </button>
-                ))}
-              </span>
+                )}
+                {/* the picked kind's button is a Tab stop, so the keyboard can stop what it plays; the others play by picking */}
+                <button
+                  className="icon-btn small"
+                  tabIndex={on ? 0 : -1}
+                  aria-label={`${playing === id ? 'Stop' : 'Play'} ${k.name.toLowerCase()}, ${sfxName(id).variant}`}
+                  onClick={() => onPlay(id, 'button')}
+                >
+                  <Icon name={playing === id ? 'pause' : 'play'} size={12} stroke={2} />
+                </button>
+              </div>
+              {on && open === k.kind && (
+                <fieldset id={`sfx-others-${k.kind}`} className="sfx-variants" onPointerLeave={leave}>
+                  <legend className="sr-only">Which {k.name.toLowerCase()}</legend>
+                  {k.sounds.map((p) => (
+                    <label key={p.id} className={`sfx-variant${pick === p.id ? ' on' : ''}`} onPointerMove={() => pointAt(p.id)} onPointerLeave={rest}>
+                      <input
+                        type="radio"
+                        name={`sfx-${k.kind}`}
+                        value={p.id}
+                        checked={pick === p.id}
+                        onChange={() => pickSound(p.id)}
+                        onClick={() => {
+                          rest()
+                          hovered.current = false
+                          onPlay(p.id, 'pick')
+                        }}
+                        data-testid={`sfx-choice-${p.id}`}
+                      />
+                      {sfxName(p.id).variant}
+                    </label>
+                  ))}
+                </fieldset>
+              )}
             </div>
           )
         })}
-      </div>
+      </fieldset>
       {near && (
         <p className="edit-row-sub warn">
           {near.title} is less than 2 seconds away. Only one sound plays in 2 seconds, so one of them will be left out.
@@ -515,10 +591,10 @@ function SoundPicker({
           Cancel
         </button>
         <button className="btn small" onClick={() => onAdd(pick)} data-testid="sfx-picker-add">
-          Add {name.kind.toLowerCase()}, {name.variant}
+          Add {name.kind.toLowerCase()}
+          {first ? '' : `, ${name.variant}`}
         </button>
       </div>
     </div>
   )
 }
-

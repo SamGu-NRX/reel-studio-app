@@ -1,6 +1,6 @@
-// Edit it myself > Sound, end to end: sounds added at the playhead from the picker, each named for what it is and
-// where it plays, marked on the timeline (a mark picks its row), then a level, a removal, another sound and the
-// music's fade-in, and the new version carries each of them.
+// Edit it myself > Sound, end to end: sounds added at the playhead from the picker (a kind, or one of its others),
+// each named for what it is and where it plays, marked on the timeline (a mark picks its row), then a level in words,
+// a removal, another sound and the music's fade-in, and the new version carries each of them.
 //
 // Run: npx playwright test e2e/edit-sounds.spec.ts after a build. Same env as smoke.spec.ts.
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
@@ -26,13 +26,21 @@ async function playheadTo(page: Page, seconds: number): Promise<void> {
   await expect(timeline).toHaveAttribute('aria-valuenow', String(seconds))
 }
 
-async function addSound(page: Page, choice: string): Promise<void> {
+/** Adds a sound at the playhead: a kind's row plays its usual sound; `other` is one of the kind's others. */
+async function addSound(page: Page, kind: string, other?: string): Promise<void> {
   await page.getByRole('button', { name: /^Add a sound effect at \d:\d\d$/ }).click()
   const picker = page.getByRole('group', { name: /^Add a sound effect at/ })
   await expect(picker).toBeVisible()
-  await picker.getByRole('radio', { name: choice }).click()
-  await expect(picker.getByRole('radio', { name: choice })).toHaveAttribute('aria-checked', 'true')
-  await picker.getByRole('button', { name: `Add ${choice.toLowerCase()}` }).click()
+  const row = picker.getByRole('radio', { name: new RegExp(`^${kind} `) })
+  await row.click()
+  await expect(row).toBeChecked()
+  if (other) {
+    await picker.getByRole('button', { name: new RegExp(`^Other ${kind.toLowerCase()}`) }).click()
+    const sound = picker.getByRole('group', { name: `Which ${kind.toLowerCase()}` }).getByRole('radio', { name: other, exact: true })
+    await sound.click()
+    await expect(sound).toBeChecked()
+  }
+  await picker.getByRole('button', { name: other ? `Add ${kind.toLowerCase()}, ${other}` : `Add ${kind.toLowerCase()}`, exact: true }).click()
   await expect(picker).toHaveCount(0)
 }
 
@@ -49,10 +57,26 @@ test('sounds: add at the playhead, a level, a removal and a fade, carried by the
   await page.getByRole('tab', { name: 'Sound' }).click()
   await page.getByRole('button', { name: /^Add a song from this/ }).click()
   await expect(page.getByRole('slider', { name: 'Music fade-in' })).toBeVisible()
+  // past the last word no sound can be added; fails if the tab says every word ahead already has one
+  await page.getByRole('slider', { name: /^Time in your reel/ }).focus()
+  await page.keyboard.press('End')
+  await expect(page.getByTestId('sfx')).toContainText('Move the playhead to a word to add a sound effect there.')
+  await expect(page.getByTestId('sfx')).not.toContainText('Every word from here to the end has a sound effect already.')
   await playheadTo(page, 2)
-  await addSound(page, 'Whoosh, quick')
+  // fails if the keyboard can't reach the picked kind's play button, so it couldn't stop what it plays
+  await page.getByRole('button', { name: /^Add a sound effect at/ }).click()
+  const picker = page.getByTestId('sfx-picker')
+  await expect(picker.getByRole('radio', { checked: true })).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(picker.getByTestId('sfx-others')).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(picker.locator('.sfx-kind.on .icon-btn')).toBeFocused()
+  await expect(picker.locator('.sfx-kind.on .icon-btn')).toHaveAccessibleName(/^(Play|Stop) [\w-]+, \w/)
+  await page.keyboard.press('Escape')
+  await expect(picker).toHaveCount(0)
+  await addSound(page, 'Whoosh')
   await playheadTo(page, 6)
-  await addSound(page, 'Hit, punch')
+  await addSound(page, 'Hit', 'punch')
 
   const rows = page.getByTestId('sfx-row')
   await expect(rows).toHaveCount(2)
@@ -80,21 +104,22 @@ test('sounds: add at the playhead, a level, a removal and a fade, carried by the
   // ---- a level, a removal, a sound added at the playhead, the music's fade-in ----
   await page.getByRole('button', { name: 'Edit it myself' }).click()
   await page.getByRole('tab', { name: 'Sound' }).click()
-  const level = page.getByRole('slider', { name: /^How loud the whoosh at \d:\d\d is$/ })
-  await level.focus()
-  for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowLeft')
-  await expect(rows.nth(0)).toContainText('−6 dB')
+  // a level in words, as the song's is, with the exact level as the chosen word's tooltip
+  const quiet = page.getByRole('radiogroup', { name: /^How loud the whoosh at \d:\d\d is$/ }).getByRole('radio', { name: 'Quiet' })
+  await quiet.click()
+  await expect(quiet).toHaveAttribute('aria-checked', 'true')
+  await expect(quiet).toHaveAttribute('title', '−9 dB')
   // Escape closes an open picker wherever focus is, and leaves Edit it myself open
   await page.getByRole('button', { name: /^Add a sound effect at/ }).click()
   await expect(page.getByTestId('sfx-picker')).toBeVisible()
-  await level.focus()
+  await quiet.focus()
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('sfx-picker')).toHaveCount(0)
   await expect(page.getByTestId('drawer')).toBeVisible()
   await page.getByRole('button', { name: /^Remove Hit at/ }).click()
   await expect(rows).toHaveCount(1)
   await playheadTo(page, 9)
-  await addSound(page, 'Ding, idea')
+  await addSound(page, 'Ding', 'idea')
   await expect(rows.nth(1).getByRole('button').first()).toHaveText(/^Ding at 0:(09|10) · on “\w+”$/)
   const fadeIn = page.getByRole('slider', { name: 'Music fade-in' })
   await fadeIn.focus()
@@ -109,7 +134,7 @@ test('sounds: add at the playhead, a level, a removal and a fade, carried by the
   const v3 = projectJson()
   expect(v3.music.fadeIn).toBe(1.2)
   expect(v3.sfx).toHaveLength(2)
-  expect(v3.sfx[0]).toEqual({ ...whoosh, gainDb: -6 })
+  expect(v3.sfx[0]).toEqual({ ...whoosh, gainDb: -9 })
   expect(v3.sfx.some((s: any) => JSON.stringify(s.at) === JSON.stringify(hit.at))).toBe(false)
   expect(v3.sfx[1].sound).toBe('ding-idea')
   expect(v3.sfx[1].at.word).toBeTruthy()

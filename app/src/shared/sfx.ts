@@ -19,15 +19,16 @@ export interface SoundEffect {
   url: string
 }
 
-/** Each job in the pack, named for a person, with what it is for. The order is the picker's. */
-export const JOBS: { kind: string; name: string; purpose: string }[] = [
-  { kind: 'whoosh', name: 'Whoosh', purpose: 'for a cut' },
-  { kind: 'impact', name: 'Hit', purpose: 'to land a big moment' },
-  { kind: 'pop', name: 'Pop', purpose: 'when something appears' },
-  { kind: 'riser', name: 'Build-up', purpose: 'rises into a moment' },
-  { kind: 'ding', name: 'Ding', purpose: 'for a good point' },
-  { kind: 'click', name: 'Click', purpose: 'for a tap or a tick' },
-  { kind: 'typing', name: 'Typing', purpose: 'when words appear' }
+/** Each job in the pack, named for a person, with what it is for and what its other sounds are called in the
+ * picker. The order is the picker's. */
+export const JOBS: { kind: string; name: string; purpose: string; others: string }[] = [
+  { kind: 'whoosh', name: 'Whoosh', purpose: 'for a cut', others: 'Other whooshes' },
+  { kind: 'impact', name: 'Hit', purpose: 'to land a big moment', others: 'Other hits' },
+  { kind: 'pop', name: 'Pop', purpose: 'when something appears', others: 'Other pops' },
+  { kind: 'riser', name: 'Build-up', purpose: 'rises into a moment', others: 'Other build-ups' },
+  { kind: 'ding', name: 'Ding', purpose: 'for a good point', others: 'Other dings' },
+  { kind: 'click', name: 'Click', purpose: 'for a tap or a tick', others: 'Other clicks' },
+  { kind: 'typing', name: 'Typing', purpose: 'when words appear', others: 'Other typing sounds' }
 ]
 const VARIANT: Record<string, string> = {
   'impact-subdrop': 'deep drop',
@@ -47,17 +48,36 @@ export function sfxName(id: string): { kind: string; variant: string } {
 }
 
 /**
- * The level slider's range, in dB on top of the engine's own level under the voice. The schema takes -24 to +12,
+ * The levels a sound can have, in dB on top of the engine's own level under the voice. The schema takes -24 to +12,
  * but sfx.py puts an effect 10 dB under the voice (LEVEL_DB) and never above 4 dB under it (CAP_DB): anything over
- * +6 sounds the same as +6, so the slider stops there.
+ * +6 sounds the same as +6.
  */
 export const SFX_GAIN = { min: -24, max: 6 }
 
 /** "−6 dB", "0 dB", "+3 dB": a real minus sign, so the numbers line up. */
 export const gainText = (db: number): string => (db === 0 ? '0 dB' : `${db > 0 ? '+' : '−'}${Math.abs(db)} dB`)
 
-/** The level a sound's slider shows: the engine's gainDb, held to the slider's range. */
+/** A sound's level: the engine's gainDb, held to what the engine can play. */
 export const gainOf = (s: Sfx): number => Math.min(SFX_GAIN.max, Math.max(SFX_GAIN.min, Math.round(Number(s.gainDb ?? 0))))
+
+/**
+ * A placed sound's level in words, as the song's is ("Under my voice"). Loud stays 2 dB under sfx.py's cap, so it is
+ * louder than Normal and never pinned at the cap. No listening test chose −9 and +4; they are a starting point.
+ */
+export const SFX_LEVELS = [
+  { key: 'quiet', label: 'Quiet', db: -9 },
+  { key: 'normal', label: 'Normal', db: 0 },
+  { key: 'loud', label: 'Loud', db: 4 }
+] as const
+export type SfxLevel = (typeof SFX_LEVELS)[number]['key']
+
+/** The gainDb a level word writes. */
+export const levelDb = (k: SfxLevel): number => SFX_LEVELS.find((l) => l.key === k)!.db
+
+/** The word for a level: the nearest of the three, so a −6 dB the editor picked reads Quiet. */
+export function levelOf(db: number): SfxLevel {
+  return SFX_LEVELS.reduce((best, l) => (Math.abs(l.db - db) < Math.abs(best.db - db) ? l : best)).key
+}
 
 /** How loud a preview plays a sound, from its level: half volume at 0 dB, full at the top of the slider. */
 export const sfxVolume = (s: Sfx): number => Math.min(1, 0.5 * 10 ** (gainOf(s) / 20))
@@ -178,6 +198,15 @@ export function momentAt(t: number, c: VersionClock, joins: Join[], taken: Set<s
   if (join) return { at: { cut: join.cut! }, t: join.t }
   const word = [...c.placed.values()].sort((a, b) => a.s - b.s).find((w) => w.e > t && !taken.has(momentKey({ word: w.id })))
   return word ? { at: { word: word.id }, t: word.s } : null
+}
+
+/**
+ * What the Sound tab says under Add when no moment at `t` can take a new sound (momentAt gave null). Only with a kept
+ * word still to come is every word ahead taken by a sound; past the last word, the person has to move back.
+ */
+export function noMomentHint(t: number, c: VersionClock, keptNow: Set<string>): string {
+  const ahead = [...c.placed.values()].some((w) => w.e > t && keptNow.has(w.id))
+  return ahead ? 'Every word from here to the end has a sound effect already.' : 'Move the playhead to a word to add a sound effect there.'
 }
 
 /** Where picking a sound puts the playhead: a second before its moment, so Play runs into it and the playhead

@@ -63,7 +63,7 @@
   line-height: 1.385;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  /* Native checkboxes, radios and sliders in ink, never the OS blue. */
+  /* Native radios and sliders in ink, never the OS blue (the checkbox is drawn: see "The one checkbox"). */
   accent-color: var(--ink);
 }
 
@@ -203,6 +203,12 @@ html.kb .switch { transition: none; }
 .btn.big { height: 44px; padding: 0 22px; font-size: var(--fs-md); gap: 8px; }
 .btn.small { height: 28px; padding: 0 12px; font-size: var(--fs-sm); gap: 5px; }
 .btn.ghost.small { padding: 0 6px; }
+/* A tertiary button that opens a panel (Reel's Edit it myself): while the panel is open it has the soft wash the
+   sidebar's selected row has (shell.css .nav button.on), not an underline, which reads as a link being pointed at.
+   The padding is the same open or shut, so opening never moves the title bar. */
+.btn.ghost[aria-pressed] { padding: 0 12px; }
+.btn.ghost[aria-pressed="true"] { background: rgba(22, 30, 26, .07); color: var(--ink); text-decoration-color: transparent; }
+@media (hover: hover) and (pointer: fine) { .btn.ghost[aria-pressed="true"]:not(:disabled):hover { background: rgba(22, 30, 26, .07); text-decoration-color: transparent; } }
 .btn.danger { color: var(--pencil); }
 .btn.primary.danger { background: var(--pencil); color: #fff; }
 @media (hover: hover) and (pointer: fine) { .btn.primary.danger:not(:disabled):hover { background: #A62E20; } }
@@ -433,36 +439,56 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
 /* a choice row: the radio marks the choice; no box around it */
 .radio { display: flex; gap: 12px; align-items: center; padding: 8px 0; cursor: pointer; min-height: 36px; }
 .radio input, .toggle input { width: 16px; height: 16px; margin: 0; }
+/* The one checkbox, for picking any number of things: a 16 px square with 4 px corners, a hairline when off, green
+   with a white check when on. Circles are only for one choice. A real checkbox draws it, so the keyboard and screen
+   readers get the native control; the plan's and More reels' ticks (plan.css) draw it on a span, with a beat's
+   number inside. No transition: like a native box, it changes the moment it is pressed. */
+input[type="checkbox"], .pl-tick > span {
+  width: 16px; height: 16px; margin: 0; flex: none; border-radius: 4px; background: var(--surface) center / 12px 12px no-repeat;
+  box-shadow: inset 0 0 0 1.5px var(--ink-3);
+}
+input[type="checkbox"] { appearance: none; cursor: pointer; }
+input[type="checkbox"]:checked, .pl-tick > input:checked + span { background-color: var(--green); box-shadow: none; }
+input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+input[type="checkbox"]:disabled { cursor: default; opacity: .45; }
+@media (hover: hover) and (pointer: fine) {
+  input[type="checkbox"]:not(:checked, :disabled):hover, .pl-tick > input:not(:checked, :disabled):hover + span { box-shadow: inset 0 0 0 1.5px var(--ink-2); }
+}
+/* Windows high contrast drops the shadow that draws the box: a real checkbox goes back to the system's own (a tick's
+   span draws its own in plan.css, after the colours it overrides) */
+@media (forced-colors: active) { input[type="checkbox"] { appearance: auto; } }
 .toggle { display: flex; gap: 12px; align-items: center; cursor: pointer; font-weight: 600; min-height: 32px; }
 .slider { width: 100%; max-width: 420px; }
 .cover-img { width: 180px; border-radius: 12px; display: block; background: var(--sunk); aspect-ratio: 9/16; object-fit: cover; }
 /* The current cover sits at the suggestions' size, so the suggestions show without scrolling. */
 .drawer .cover-img { width: 132px; }
-/* Cover suggestions: the same ink ring as the subtitle swatches marks the chosen frame. */
-.cover-picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 12px; max-width: 384px; }
-.cover-pick { border: 0; background: none; padding: 0; font: inherit; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 2px; border-radius: 12px; }
-.cover-pick:focus-visible { outline-offset: 4px; }
-.cover-pick-frame { position: relative; display: block; aspect-ratio: 9/16; margin-bottom: 6px; border-radius: 10px; overflow: hidden; background: var(--sunk); outline: 2px solid transparent; outline-offset: 2px; transition: outline-color .12s, transform .16s var(--ease-out); }
-.cover-pick-frame img { width: 100%; height: 100%; object-fit: cover; display: block; animation: fade .2s ease-out both; }
-@media (hover: hover) and (pointer: fine) { .cover-pick:hover:not(.on) .cover-pick-frame { outline-color: var(--line-strong); } }
-.cover-pick:active .cover-pick-frame { transform: scale(.97); }
-.cover-pick.on .cover-pick-frame { outline-color: var(--ink); }
-.cover-pick-check { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,.85); animation: fade .12s ease-out both; }
-.cover-pick-time { font-size: var(--fs-base); font-weight: 640; color: var(--ink); font-variant-numeric: tabular-nums; }
-.cover-pick-why { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); }
-.cover-pick.on .cover-pick-why { color: var(--ink-2); }
-.cover-pick-wait { margin-bottom: 0; animation: cover-wait 1.4s ease-in-out infinite; }
-.cover-picks-status { grid-column: 1 / -1; }
-@keyframes cover-wait { 50% { opacity: .5; } }
-.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
-.swatch { border: 0; background: none; padding: 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; font: inherit; font-weight: 600; font-size: var(--fs-sm); color: var(--ink-2); border-radius: 12px; }
-.swatch:focus-visible { outline-offset: 3px; }
-.swatch-frame { width: 74px; aspect-ratio: 3/4; border-radius: 12px; background: linear-gradient(170deg, #8a8178, #4a433d 70%); position: relative; overflow: hidden; outline: 2px solid transparent; outline-offset: 2px; transition: outline-color .12s; }
-.swatch:hover .swatch-frame { outline-color: var(--line-strong); }
-.swatch.on .swatch-frame { outline-color: var(--ink); }
-.swatch.on { color: var(--ink); }
+/* Cover suggestions (CoverPicks.tsx): one filmstrip, the frames at one size with a line of paper between them and
+   rounded only at the strip's two ends. The chosen frame gets the ink ring that marks a choice; the line under the
+   strip says when and why. Six columns always: the engine looks at six moments at most, so a frame is never wider
+   because fewer came back. */
+.cover-strip { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 10px) / 6); gap: 2px; }
+.cover-frame { position: relative; display: block; aspect-ratio: 9 / 16; border: 0; padding: 0; margin: 0; background: var(--sunk); cursor: pointer; overflow: hidden; }
+.cover-frame:first-child { border-top-left-radius: var(--r-sm); border-bottom-left-radius: var(--r-sm); }
+.cover-frame:last-child { border-top-right-radius: var(--r-sm); border-bottom-right-radius: var(--r-sm); }
+.cover-frame img { width: 100%; height: 100%; object-fit: cover; display: block; animation: fade .2s ease-out both; }
+.cover-strip.flipped img, .edit-cover > img.mirrored { transform: scaleX(-1); }
+.cover-frame::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+@media (hover: hover) and (pointer: fine) { .cover-frame:not(.on):hover::after { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .7); } }
+.cover-frame.on::after { box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 3.5px rgba(255, 255, 255, .85); }
+.cover-frame:focus-visible { z-index: 1; }
+.cover-frame-wait { cursor: default; }
+/* the frames being looked for pulse; with reduced motion they sit still under the status line */
+@media (prefers-reduced-motion: no-preference) {
+  .cover-frame-wait { animation: cover-wait 1.4s ease-in-out infinite; }
+  @keyframes cover-wait { 50% { opacity: .5; } }
+}
+.cover-status { margin-bottom: 8px; }
+.cover-why { min-height: var(--lh-base); margin-top: 8px; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-2); }
+.cover-why b { color: var(--ink); font-weight: 640; margin-right: 4px; }
 
-/* The engine's subtitle look, drawn over the phone (live preview) and in the swatches. */
+/* The engine's subtitle look, drawn over the phone (live preview) and in Subtitles' look rows. */
 .sub-sample {
   position: absolute; left: 50%; transform: translate(-50%, -50%); width: max-content; text-align: center;
   font-family: 'Reel Subtitles', Montserrat, 'Segoe UI', sans-serif; font-weight: 600; pointer-events: none;
@@ -470,6 +496,9 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
 }
 /* SubtitleSample breaks the lines itself, the engine's way; the browser never wraps or splits a word. */
 .sub-sample > span { display: block; }
+/* Player.tsx marks a look that pops with the class "pop", which is also shell.css's menu: without this, Bold pop's
+   words sat on a white menu card with a shadow, on the phone and in its look row, though the export draws none. */
+.sub-sample.pop { background: none; box-shadow: none; padding: 0; border-radius: 0; z-index: auto; transition: none; }
 /* captions.POP_IN: from 80% to full size in 120 ms, decelerating */
 @media (prefers-reduced-motion: no-preference) {
   .sub-sample.pop { animation: fade .15s ease-out, sub-pop .12s cubic-bezier(.25, .75, .5, 1); }

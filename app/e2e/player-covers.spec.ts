@@ -37,6 +37,7 @@ test('switching back to a version does not decode its cover again', async () => 
   await passFirstRun(page)
   await makeReel(page, media.video)
   await page.getByTestId('edit-myself').click()
+  await page.getByTestId('tab-cover').click()
   await page.getByTestId('mirror-on').check()
   await page.getByTestId('make-version').click()
   await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 5 * 60_000 })

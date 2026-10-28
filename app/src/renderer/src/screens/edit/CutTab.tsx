@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ProjectJson, StyleRule } from '../../../../shared/api'
-import { isMirrored, withMirror } from '../../../../shared/mirror'
 import { previewText, subtitleLines } from '../../../../shared/subtitle-lines'
 import { reel, userMessage } from '../../api'
 import { useNotify } from '../../App'
@@ -137,13 +136,6 @@ export function CutTab({
               {back && `Words you bring back are heard in Version ${next}.`}
             </p>
           )}
-          <div className="edit-rule" />
-          {/* a front-camera take often comes out mirrored: writing behind you reads backwards */}
-          <label className="toggle">
-            <input type="checkbox" checked={isMirrored(now.p)} onChange={(e) => change(setP((p) => ({ sources: withMirror(p.sources, e.target.checked) })))} data-testid="mirror-on" />
-            Flip the picture
-          </label>
-          <p className="edit-hint">For a mirrored video, when writing behind you reads backwards. Subtitles and pictures stay the right way round.</p>
         </>
       ) : (
         <>
