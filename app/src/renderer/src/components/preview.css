@@ -1,0 +1,96 @@
+/* The speed and phone-shape menus (PreviewControls.tsx) and the full-screen stage (FullStage.tsx). */
+
+/* ---- the pills in the transport row ---- */
+.transport { container: transport / inline-size; }
+.tmenu { position: relative; display: inline-flex; flex: none; }
+.tmenu.shape { flex: 0 1 auto; min-width: 32px; }
+.tmenu .mi-sp { width: 16px; flex: none; }
+.tpill {
+  height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px 0 10px; border: 0; border-radius: 999px; background: transparent;
+  max-width: 100%; min-width: 32px; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--ink); font: inherit; font-size: var(--fs-sm); font-weight: 600;
+  white-space: nowrap; cursor: pointer;
+  transition: background-color 120ms ease, transform 120ms var(--ease-out);
+}
+.tpill:active, .transport .speed:active { transform: scale(.97); }
+.transport .speed { transition: transform 120ms var(--ease-out); }
+.tpill .icon { flex: none; color: var(--ink-2); }
+/* a long phone name gives way before the row runs past the stage */
+.shape-pick .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+html.kb :is(.tpill, .transport .speed, .stage-dock .pp, .stage-dock .speed):active { transform: none; }
+@media (hover: hover) and (pointer: fine) { .tpill:hover { background: var(--wash); } }
+/* A narrow stage (the smallest window with the sidebar open) keeps the shape's icon, its name in its label, and the
+   time without the length after it; everything else keeps its size. */
+@container transport (max-width: 500px) {
+  .transport .tc > span { display: none; }
+  .shape-pick { width: 32px; padding: 0; justify-content: center; }
+  .shape-pick .lbl { display: none; }
+}
+
+/* the shape menu: the name and proportion, then what Instagram may trim */
+.shape-mi { min-height: 48px; padding: 7px 10px; align-items: flex-start; }
+.shape-mi > .icon, .shape-mi > .mi-sp { margin-top: 1px; }
+.shape-mi-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.shape-mi-text > span:first-child { display: flex; font-weight: 560; }
+.shape-mi-fit { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); white-space: normal; }
+
+/* ---- the stage: the phone's own slot, lifted over the window (FullStage.tsx). --pw is the phone's width: the
+   window's height less a margin, unless the window is too narrow to leave the dock its room beside it. ---- */
+.stage-v[data-full] {
+  --dock-w: 248px;
+  --pw: min(calc((100vh - 48px) * var(--ratio-n)), calc(100vw - 2 * (var(--dock-w) + 56px)));
+  position: fixed; inset: 0; z-index: 40; -webkit-app-region: no-drag;
+  display: flex; align-items: center; justify-content: center;
+}
+.stage-v[data-full] > .phone-fill { flex: none; align-self: center; }
+.stage-v[data-full] .phone-fill > .phone { width: var(--pw); max-width: none; }
+.stage-v[data-full] .draghandle { display: none; }
+.stage-hold { flex: 1; min-height: 0; }
+
+/* The dark behind the phone fades in and out; on the way out it sits over the page while the phone glides back
+   above it, so nothing on the page shows through the phone's path. */
+.stage-backdrop { position: fixed; inset: 0; z-index: 39; background: var(--bezel); transition: opacity 180ms var(--ease-out); }
+@starting-style { .stage-backdrop { opacity: 0; } }
+.stage-v[data-full] > .stage-backdrop { z-index: -1; }
+.stage-backdrop.leave { opacity: 0; transition-duration: 160ms; pointer-events: none; }
+.stage-v[data-leaving] .phone { z-index: 41; }
+html.kb .stage-backdrop { transition: none; }
+
+.stage-exit { position: absolute; top: 14px; right: 16px; }
+/* Windows and Linux draw their window buttons over the title-bar row's right end */
+.platform-win32 .stage-exit, .platform-linux .stage-exit { top: calc(var(--titlebar) + 8px); }
+
+/* ---- the dock, beside the phone and level with its foot ---- */
+.stage-dock {
+  position: absolute; left: calc(50% + var(--pw) / 2 + 32px); bottom: max(24px, calc((100vh - var(--pw) / var(--ratio-n)) / 2)); width: var(--dock-w);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 12px; color: #fff;
+}
+.stage-row { display: flex; align-items: center; gap: 8px; }
+.stage-dock .pp {
+  width: 32px; height: 32px; border-radius: 50%; border: 0; background: #fff; color: var(--ink); display: grid; place-items: center; flex: none; cursor: pointer;
+  transition: transform 120ms var(--ease-out);
+}
+.stage-dock .pp:active { transform: scale(.94); }
+.stage-dock .tc { font-size: var(--fs-base); font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stage-dock .tc span { color: rgba(255, 255, 255, .6); font-weight: 500; }
+/* 16 px to grab, the bar drawn 4 px tall on its track */
+.stage-scrub { align-self: stretch; display: flex; height: 16px; align-items: center; }
+.stage-scrub input[type=range] { flex: 1; height: 16px; margin: 0; -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+.stage-scrub input[type=range]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 4px; background: linear-gradient(90deg, #fff var(--pct, 0%), rgba(255, 255, 255, .3) var(--pct, 0%));
+}
+.stage-scrub input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; background: #fff; border: 0; }
+.stage-dock .speed {
+  height: 32px; min-width: 44px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .3);
+  color: #fff; font: inherit; font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; transition: transform 120ms var(--ease-out);
+}
+.stage-dock .speed:active { transform: scale(.97); }
+.stage-dock .speed.on { background: #fff; color: var(--ink); box-shadow: none; }
+.stage-dock .tpill { color: #fff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .3); }
+.stage-dock .tpill .icon { color: rgba(255, 255, 255, .75); }
+.stage-dock .segmented { background: rgba(255, 255, 255, .14); }
+.stage-dock .segmented > button[aria-checked="false"] { color: rgba(255, 255, 255, .75); }
+@media (hover: hover) and (pointer: fine) {
+  .stage-dock :is(.speed:not(.on), .tpill):hover { background: rgba(255, 255, 255, .12); }
+  .stage-dock .segmented > button[aria-checked="false"]:hover { color: #fff; }
+}
+.stage-dock :focus-visible, .stage-exit :focus-visible { outline-color: #fff; }

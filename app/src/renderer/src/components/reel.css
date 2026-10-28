@@ -49,14 +49,18 @@
 /* a mirrored take plays flipped before Version 1, as the engine will render it */
 .phone.mirrored-original .phone-screen > video.layer { transform: scaleX(-1); }
 
-/* what sits on the picture: the Original tag, the compare switch, spots, pointing */
-.reel-over { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+/* what sits on the picture: the Original tag, the compare switch, spots, pointing. It covers the reel's own box, so
+   spots and the pointer stay in the reel's coordinates on a phone shape that trims it (Phone.tsx shapeVars); what is
+   placed from its top edge comes down by --reel-dip to stay on the screen. */
+.reel-over {
+  position: absolute; left: var(--reel-l, 0); top: var(--reel-t, 0); width: var(--reel-w, 100%); height: var(--reel-h, 100%); z-index: 3; pointer-events: none;
+}
 .reel-over > :not(.edit-stage) { pointer-events: auto; }
 .reel-tag {
-  position: absolute; top: calc(100cqw * 58 / 393); left: 50%; translate: -50% 0; background: rgba(0, 0, 0, .6); color: #fff; font-size: var(--fs-sm); line-height: var(--lh-sm);
+  position: absolute; top: calc(100cqw * (58 + var(--ig-top, 0)) / var(--sw, 393) + var(--reel-dip, 0px)); left: 50%; translate: -50% 0; background: rgba(0, 0, 0, .6); color: #fff; font-size: var(--fs-sm); line-height: var(--lh-sm);
   font-weight: 600; padding: 4px 10px; border-radius: 999px; pointer-events: none;
 }
-.cmp { position: absolute; top: 14px; left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.cmp { position: absolute; top: calc(14px + var(--reel-dip, 0px)); left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .abswitch { display: flex; padding: 3px; border-radius: 999px; background: rgba(0, 0, 0, .6); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .abswitch button { border: 0; background: transparent; color: #fff; font: inherit; font-size: var(--fs-sm); font-weight: 650; padding: 5px 11px; border-radius: 999px; white-space: nowrap; cursor: pointer; }
 .abswitch button.on { background: #fff; color: var(--ink); }
@@ -80,7 +84,7 @@
 .spot.flip .spot-lab { left: auto; right: 30px; }
 .pointer { position: absolute; inset: 0; cursor: crosshair; outline: none; }
 .pointer-hint {
-  position: absolute; top: 14px; left: 50%; translate: -50% 0; background: var(--ink); color: #fff; font-size: var(--fs-sm); font-weight: 600; padding: 5px 12px;
+  position: absolute; top: calc(14px + var(--reel-dip, 0px)); left: 50%; translate: -50% 0; background: var(--ink); color: #fff; font-size: var(--fs-sm); font-weight: 600; padding: 5px 12px;
   border-radius: 999px; white-space: nowrap; pointer-events: none;
 }
 .ring { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(0, 0, 0, .35); pointer-events: none; }

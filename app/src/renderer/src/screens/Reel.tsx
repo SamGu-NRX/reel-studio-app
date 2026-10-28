@@ -9,11 +9,13 @@ import { pausedSentence, pausedWords } from '../../../shared/pause'
 import type { Step } from '../../../shared/steps'
 import { droppedPaths, reel, userMessage } from '../api'
 import type { Go } from '../nav'
-import { Button, Confirm, IS_MAC, PickFiles, Spinner, useFileDrop } from '../components/ui'
+import { Button, Confirm, IS_MAC, IconButton, PickFiles, Spinner, useFileDrop } from '../components/ui'
 import { Icon } from '../components/icons'
 import { PhonePlayer } from '../components/Player'
 import type { SubtitleLook } from '../../../shared/caption-presets'
-import { PhoneViewSwitch, usePhoneView } from '../components/Phone'
+import { PhoneViewSwitch, usePhoneShape, usePhoneView } from '../components/Phone'
+import { FullStage } from '../components/FullStage'
+import { ShapeMenu, SpeedMenu } from '../components/PreviewControls'
 import { createPlayhead, usePlayhead, type Playhead } from '../components/playhead'
 import { createTransport, useTransport, type Transport } from '../components/transport'
 import { versionOnScreen, versionsShown } from '../components/videoLayers'
@@ -97,6 +99,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const [more, setMore] = useState(false)
   const moreBtn = useRef<HTMLButtonElement>(null)
   const [phoneView, setPhoneView] = usePhoneView()
+  const [shape] = usePhoneShape()
+  const [full, setFull] = useState(false)
   const [holding, setHolding] = useState(false)
   const [warmOriginal, setWarmOriginal] = useState(false)
   const [preview, setPreview] = useState<{ look: SubtitleLook; text: string; at: number } | null>(null)
@@ -309,7 +313,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const older = version && version.n !== latestN ? version : null
 
   const aiOff = providerChecked && (!provider || !provider.connected || provider.id === 'none')
-  const canPoint = !!version && !aiOff && !compare && !drawer
+  const canPoint = !!version && !aiOff && !compare && !drawer && !full
 
   // Hold O for the original; C points at a spot; Esc stops pointing, then comparing.
   useEffect(() => {
@@ -727,6 +731,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     </div>
   )
 
+  const viewSwitch = <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
+
   return (
     <div className="reel-page" data-slug={slug}>
       <TitleBarSlot title={title} actions={actions} />
@@ -736,7 +742,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
             <PlannedStage title={d.title} onFiles={(p) => void addVideo(p)} />
           ) : (
             <>
-              <div className="stage-v">
+              <FullStage open={full} onOpenChange={(o) => (setPointing(false), setFull(o))} enabled={!!src} shape={shape} transport={transport} playhead={playhead} view={viewSwitch}>
                 <PhonePlayer
                   src={src}
                   poster={hasVersions ? version?.cover : null}
@@ -758,6 +764,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   dragFile={version && !version.draft ? version.videoPath : null}
                   playhead={playhead}
                   transport={transport}
+                  shape={shape}
                   bare
                   onShown={(shown) => {
                     setShownSrc(shown)
@@ -775,7 +782,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     <Spinner /> Copying your video
                   </div>
                 </PhonePlayer>
-              </div>
+              </FullStage>
               {src && (
                 <>
                   <Timeline
@@ -799,7 +806,9 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     onPlay={(n) => !drawer && watch(n)}
                   />
                   <TransportRow transport={transport} playhead={playhead}>
-                    <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
+                    <ShapeMenu />
+                    {viewSwitch}
+                    <IconButton icon="fullscreen" label="Full screen" shortcut="F" aria-keyshortcuts="F" onClick={() => setFull(true)} data-testid="full-screen" />
                   </TransportRow>
                 </>
               )}
@@ -1002,9 +1011,9 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   )
 }
 
-/** Play, the time, then whatever sits at the row's end (speed, Instagram or Clean). */
+/** Play, the time, speed, then whatever sits at the row's end (the phone shape, Instagram or Clean, full screen). */
 function TransportRow({ transport, playhead, children }: { transport: Transport; playhead: Playhead; children: React.ReactNode }) {
-  const { playing, duration, rate } = useTransport(transport)
+  const { playing, duration } = useTransport(transport)
   const second = usePlayhead(playhead, Math.floor)
   return (
     <div className="transport">
@@ -1015,9 +1024,7 @@ function TransportRow({ transport, playhead, children }: { transport: Transport;
         {clock(second)} <span>/ {clock(duration)}</span>
       </span>
       <span className="sp" />
-      <button className={`speed${rate !== 1 ? ' on' : ''}`} onClick={() => transport.nextRate()} aria-label={`Playback speed ${rate}×`} title="Playback speed" data-testid="speed">
-        {rate}×
-      </button>
+      <SpeedMenu transport={transport} />
       {children}
     </div>
   )

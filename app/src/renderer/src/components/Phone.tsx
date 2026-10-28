@@ -1,7 +1,9 @@
 // The phone preview, wherever a reel is shown: the reel at 9:16 inside a thin device edge, under Instagram's
 // Reels screen ("Instagram") or alone ("Clean"). The person's choice is an app setting (main/settings.ts).
-import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+// On the Reel screen the frame can also take a real phone's shape (shared/phone-shapes.ts), remembered per person.
+import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import type { PhoneView } from '../../../shared/api'
+import { DEFAULT_SHAPE, clearBand, place, shapeById, type Shape } from '../../../shared/phone-shapes'
 import { reel } from '../api'
 import { Icon } from './icons'
 import { Segmented } from './ui'
@@ -35,18 +37,72 @@ export function usePhoneView(): [PhoneView, (next: PhoneView) => Promise<unknown
   ]
 }
 
+const SHAPE_KEY = 'rs.phone-shape'
+let shape: Shape = shapeById(localStorage.getItem(SHAPE_KEY) ?? DEFAULT_SHAPE)
+const shapeListeners = new Set<() => void>()
+
+/** The phone shape the preview takes, and a setter that remembers it on this computer. */
+export function usePhoneShape(): [Shape, (next: Shape) => void] {
+  const s = useSyncExternalStore(
+    (l) => (shapeListeners.add(l), () => shapeListeners.delete(l)),
+    () => shape
+  )
+  return [
+    s,
+    (next) => {
+      shape = next
+      localStorage.setItem(SHAPE_KEY, next.id)
+      for (const l of shapeListeners) l()
+    }
+  ]
+}
+
+const pct = (n: number): string => `${+(n * 100).toFixed(4)}%`
+
 /**
- * Gives the phone inside it the full height it has, at 9:16. Its column takes its width from the phone, so the
- * width can only come from the height; a ResizeObserver writes it, on resize only, without rendering.
+ * A shape as the CSS variables Phone.css and reel.css read on `.phone` and inherit below it: the screen's
+ * proportion and corners, the reel's box on the screen (it overhangs where Instagram trims it), what of that box
+ * shows, and Instagram's insets in points. The plain frame sets the same values the stylesheet falls back to.
  */
-export function PhoneFill({ children }: { children: ReactNode }) {
+export function shapeVars(s: Shape): CSSProperties {
+  const { viewer, reel } = place(s)
+  const clip = [viewer.y - reel.y, reel.x + reel.w - viewer.x - viewer.w, reel.y + reel.h - viewer.y - viewer.h, viewer.x - reel.x]
+  return {
+    '--ratio': `${s.w} / ${s.h}`,
+    '--ratio-n': s.w / s.h,
+    '--radius': `${pct(s.radius / s.w)} / ${pct(s.radius / s.h)}`,
+    '--sw': s.w,
+    '--ig-top': s.top,
+    '--ig-home': s.home,
+    '--reel-l': pct(reel.x / s.w),
+    '--reel-t': pct(reel.y / s.h),
+    '--reel-w': pct(reel.w / s.w),
+    '--reel-h': pct(reel.h / s.h),
+    '--reel-clip': `inset(${clip.map((c, i) => pct(Math.max(0, c) / (i % 2 ? reel.w : reel.h))).join(' ')})`,
+    // how far the reel's top sits above the screen's (Instagram trims it), for what is drawn from the reel's top edge
+    '--reel-dip': `calc(${+Math.max(0, -reel.y).toFixed(3)} * 100cqw / ${s.w})`
+  } as CSSProperties
+}
+
+/** Sizes the phone in `slot` to the slot's full height at `ratio` (width over height). */
+export function fitPhone(slot: HTMLElement, ratio: number, height = slot.clientHeight): void {
+  slot.style.setProperty('--phone-w', `${height * ratio}px`)
+}
+
+/**
+ * Gives the phone inside it the full height it has, at its shape's proportion (9:16 unless told). Its column takes
+ * its width from the phone, so the width can only come from the height; a ResizeObserver writes it, on resize only,
+ * without rendering.
+ */
+export function PhoneFill({ children, ratio = 9 / 16 }: { children: ReactNode; ratio?: number }) {
   const slot = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const el = slot.current!
-    const ro = new ResizeObserver(([e]) => el.style.setProperty('--phone-w', `${(e.contentRect.height * 9) / 16}px`))
+    fitPhone(el, ratio)
+    const ro = new ResizeObserver(([e]) => fitPhone(el, ratio, e.contentRect.height))
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [ratio])
   return (
     <div className="phone-fill" ref={slot}>
       {children}
@@ -79,13 +135,16 @@ export function PhoneViewSwitch({ value, onChange }: { value: PhoneView; onChang
 }
 
 /**
- * Where subtitles stay clear of Instagram, shown while the person sets them up: the edges the engine's own check
- * uses (engine/reelengine/verify.py IG_TOP_FRAC, IG_BOTTOM_FRAC, IG_RIGHT_FRAC) and the subtitle margin on the left
- * (shared/caption-fit.ts MARGIN_FRAC). Phone.css draws it from those numbers.
+ * Where subtitles stay clear of Instagram, shown while the person sets them up. On the whole reel these are the
+ * edges the engine's own check uses (engine/reelengine/verify.py IG_TOP_FRAC, IG_BOTTOM_FRAC, IG_RIGHT_FRAC) and the
+ * subtitle margin on the left (shared/caption-fit.ts MARGIN_FRAC), which Phone.css also falls back to. On a phone
+ * shape it is what that phone leaves clear (phone-shapes.ts clearBand), which can be smaller.
  */
-export function SafeBand() {
+export function SafeBand({ shape: s }: { shape?: Shape }) {
+  const band = s && clearBand(s)
+  const style = s && band ? { left: pct(band.x / s.w), top: pct(band.y / s.h), width: pct(band.w / s.w), height: pct(band.h / s.h), right: 'auto', bottom: 'auto' } : undefined
   return (
-    <div className="safe-band" data-testid="safe-band" aria-hidden>
+    <div className="safe-band" style={style} data-testid="safe-band" aria-hidden>
       <span>Clear of Instagram</span>
     </div>
   )

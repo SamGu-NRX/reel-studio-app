@@ -13,7 +13,7 @@ export interface TransportState {
 interface Actions {
   toggle(): void
   seek(seconds: number): void
-  nextRate(): void
+  setRate(rate: number): void
 }
 
 export interface Transport extends Actions {
@@ -47,9 +47,30 @@ export function createTransport(): Transport {
     },
     toggle: () => actions?.toggle(),
     seek: (s) => actions?.seek(s),
-    nextRate: () => actions?.nextRate()
+    setRate: (r) => actions?.setRate(r)
   }
 }
+
+/**
+ * The playback speeds (spec section 7). Slower than 1x is for reading the captions and checking a cut; the browser
+ * keeps the voice's pitch at every speed (Player.tsx sets preservesPitch).
+ */
+export const RATES = [0.5, 1, 1.5, 2] as const
+
+/** The next speed up (`dir` 1) or down (-1), stopping at the ends rather than wrapping round. */
+export function stepRate(rate: number, dir: 1 | -1): number {
+  const at = RATES.findIndex((r) => r === rate)
+  const i = at < 0 ? RATES.indexOf(1) : at
+  return RATES[Math.min(RATES.length - 1, Math.max(0, i + dir))]
+}
+
+/** A speed read back from storage, or 1x when it is missing or not one we offer. */
+export function savedRate(stored: string | null): number {
+  const r = Number(stored)
+  return RATES.find((x) => x === r) ?? 1
+}
+
+export const rateLabel = (rate: number): string => `${rate}×`
 
 export function useTransport(t: Transport): TransportState {
   return useSyncExternalStore(t.subscribe, t.get)
