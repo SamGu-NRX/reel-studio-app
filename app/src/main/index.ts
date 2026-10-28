@@ -764,8 +764,18 @@ function registerIpc(): void {
     const file = legalFile(doc)
     if (!TEST) shell.showItemInFolder(file)
   })
+  // The overlay follows two things at once: a modal's scrim (dimmed) and the full-screen stage (white symbols).
+  const titleBar = { dimmed: false, onDark: false }
+  const applyTitleBar = (): void => {
+    if (process.platform !== 'darwin' && win && !win.isDestroyed()) win.setTitleBarOverlay(titleBarOverlay(titleBar.dimmed, titleBar.onDark))
+  }
   handle('app:dimTitleBar', (_e, on: boolean) => {
-    if (process.platform !== 'darwin' && win && !win.isDestroyed()) win.setTitleBarOverlay(titleBarOverlay(on === true))
+    titleBar.dimmed = on === true
+    applyTitleBar()
+  })
+  handle('app:titleBarOnStage', (_e, on: boolean) => {
+    titleBar.onDark = on === true
+    applyTitleBar()
   })
   ipcMain.on('app:startDrag', (e, file: string) => {
     try {

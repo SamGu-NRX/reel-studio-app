@@ -748,6 +748,8 @@ export interface ReelApi {
     copyText(text: string): Promise<void>
     /** A modal opened (true) or the last one closed: the OS-drawn strip behind the window buttons follows the scrim. */
     dimTitleBar(on: boolean): Promise<void>
+    /** The full-screen stage opened (true) or closed: on Windows and Linux the window buttons turn white over its dark. */
+    titleBarOnStage(on: boolean): Promise<void>
     pathForFile(file: File): string
     chooseFolder(): Promise<string | null>
     setRoot(path: string): Promise<AppInfo>

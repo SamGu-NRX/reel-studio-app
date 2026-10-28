@@ -26,12 +26,17 @@ export function blendHex(base: string, top: string, alpha: number): string {
   return '#' + [0, 1, 2].map((i) => Math.round(ch(base, i) * (1 - alpha) + ch(top, i) * alpha).toString(16).padStart(2, '0')).join('')
 }
 
+/** The window buttons' colour on the full-screen stage: white, like the stage's own controls on its dark --bezel. */
+export const ON_DARK_SYMBOL = '#FFFFFF'
+
 /**
  * Windows and Linux: the strip behind the system's window buttons is drawn by the OS in this colour, outside the
- * page, so a modal's scrim cannot cover it. While a modal is open it takes the scrim's colour instead.
+ * page, so a modal's scrim cannot cover it. While a modal is open it takes the scrim's colour instead. The buttons'
+ * symbols are drawn in INK over the page; on the full-screen stage (onDark) the page under them is near-black, where
+ * INK has a contrast of 1.04, so they turn white there.
  */
-export function titleBarOverlay(dimmed: boolean): { color: string; symbolColor: string; height: number } {
-  return { color: dimmed ? blendHex(PAPER, SCRIM, SCRIM_ALPHA) : OVERLAY, symbolColor: INK, height: WIN_TITLEBAR_HEIGHT }
+export function titleBarOverlay(dimmed: boolean, onDark = false): { color: string; symbolColor: string; height: number } {
+  return { color: dimmed ? blendHex(PAPER, SCRIM, SCRIM_ALPHA) : OVERLAY, symbolColor: onDark ? ON_DARK_SYMBOL : INK, height: WIN_TITLEBAR_HEIGHT }
 }
 /**
  * macOS 26 draws each window button in a 14 x 14 frame that its circle fills, and Electron puts the frame's top `y`

@@ -12,6 +12,7 @@ import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode 
 import { clock } from '../../../shared/progress'
 import type { Shape } from '../../../shared/phone-shapes'
 import { EXPORT_EVENT } from '../App'
+import { reel } from '../api'
 import { Icon } from './icons'
 import { IconButton } from './ui'
 import { byKeyboard, reducedMotion, usePresence } from './motion'
@@ -103,6 +104,14 @@ export function FullStage({
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
   }, [open, enabled])
+
+  // Windows and Linux draw the window buttons over the page in one colour, dark by default: white on the stage's dark
+  // while it is open, then dark again (macOS ignores it: its traffic lights have their own colours).
+  useEffect(() => {
+    if (!open) return
+    void reel.app.titleBarOnStage(true).catch(() => undefined)
+    return () => void reel.app.titleBarOnStage(false).catch(() => undefined)
+  }, [open])
 
   // Saving or exporting shows its own sheet on the page: the stage steps aside for it.
   useEffect(() => {
