@@ -18,7 +18,9 @@ export interface StyleConsent {
   undo: string[]
 }
 
-const ECHO = /\s*I also saved (?:this|these) to My style for your future reels:[\s\S]*?You can remove (?:it|them) in Settings\./
+// The AI package's sentence (ai/src/editor.ts withStyleEcho): "pause or forget ... there" now, "remove ... in Settings"
+// from packages before My style had Pause and Forget.
+const ECHO = /\s*I also saved (?:this|these) to My style for your future reels:[\s\S]*?You can (?:remove (?:it|them) in Settings|pause or forget (?:it|them) there)\./
 const REMEMBER = /\s*I(?:'| wi)ll remember (?:that|this) (?:for next time|for your next videos?|next time)\./gi
 
 /** The comparison StyleStore.approve uses (ai/src/style.ts) to tell that two rules say the same thing. */

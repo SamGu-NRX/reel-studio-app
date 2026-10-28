@@ -14,6 +14,14 @@ describe('My style consent (grandma 2: saved without asking)', () => {
     expect(rememberQuestion(c.suggestions[0])).toBe('Remember this for next time? "Keep music quieter under talking."')
   })
 
+  it("fails if the AI package's current saved-rule sentence stays in the reply while the rule is asked about instead", () => {
+    // the sentence ai/src/editor.ts withStyleEcho adds since My style has Pause and Forget
+    const one = 'I lowered the music. I also saved this to My style for your future reels: "Keep music quieter under talking." You can pause or forget it there.'
+    expect(styleConsent(one, ['Keep music quieter under talking.']).summary).toBe('I lowered the music.')
+    const two = 'I lowered the music. I also saved these to My style for your future reels: "A." and "B." You can pause or forget them there.'
+    expect(styleConsent(two, ['A.', 'B.']).summary).toBe('I lowered the music.')
+  })
+
   it('an AI that only proposes (styleSuggestions): nothing to undo', () => {
     const c = styleConsent('I made the captions smaller.', [], ['Smaller captions'])
     expect(c).toEqual({ summary: 'I made the captions smaller.', suggestions: ['Smaller captions'], undo: [] })
