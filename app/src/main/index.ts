@@ -127,7 +127,7 @@ import { createUpdater, menuCheckForUpdates } from './updater'
 import { autoUpdater } from 'electron-updater'
 import { electronUpdaterBackend, macBundleCheck, windowsInstaller } from './updater-electron'
 import { disabledReason, updateMode } from './update-machine'
-import { createJobFeedback, createMainWindow, feedbackLog, installMenu, startDragOut, windowStateFile, type AppCommand, titleBarOverlay } from './window'
+import { createJobFeedback, createMainWindow, feedbackLog, installMenu, showTimelineInMenu, startDragOut, windowStateFile, type AppCommand, titleBarOverlay } from './window'
 import { takeNote } from './note-intake'
 
 const TEST = process.env.REELSTUDIO_TEST === '1'
@@ -486,6 +486,7 @@ async function appInfo(): Promise<AppInfo> {
     models: s.models,
     sharing: s.sharing,
     phoneView: s.phoneView,
+    timeline: s.timeline,
     soundEffects: s.soundEffects
   }
 }
@@ -707,6 +708,11 @@ function registerIpc(): void {
   handle('app:setPhoneView', async (_e, view: unknown) => {
     if (view !== 'instagram' && view !== 'clean') throw { code: 'BAD_INPUT', userMessage: 'Choose Instagram or Clean.' }
     await saveSettings({ phoneView: view })
+    return appInfo()
+  })
+  handle('app:setTimeline', async (_e, shown: unknown) => {
+    if (typeof shown !== 'boolean') throw { code: 'BAD_INPUT', userMessage: 'Choose whether to show the timeline.' }
+    await setTimeline(shown)
     return appInfo()
   })
   handle('app:setSoundEffects', async (_e, on: unknown) => {
@@ -1448,10 +1454,27 @@ function showTestNotification(): Promise<NotifyResult> {
   })
 }
 
+/**
+ * The one way the timeline setting changes, from the Reel screen's button or View › Show Timeline: saved, then the
+ * menu's check and every window follow. Saves run one at a time (settings.ts), so a quick run of changes from both
+ * places ends with all three on the last one.
+ */
+async function setTimeline(shown: boolean): Promise<void> {
+  await saveSettings({ timeline: shown })
+  showTimelineInMenu(shown)
+  sendCommand({ type: 'timeline', shown })
+}
+
 // ---- window -------------------------------------------------------------------------------------
 function createWindow(): void {
   win = createMainWindow({ preload: join(__dirname, '../preload/index.js'), stateFile: windowStateFile(settingsDir()), test: TEST })
-  installMenu(sendCommand, DEV_PROVIDERS || !app.isPackaged, () =>
+  // View › Show Timeline: a check that could not be saved goes back
+  const toggleTimeline = (shown: boolean): void =>
+    void setTimeline(shown).catch((e) => {
+      showTimelineInMenu(!shown)
+      log(`[settings] timeline not saved: ${String(e instanceof Error ? e.message : e).slice(0, 300)}`)
+    })
+  installMenu(sendCommand, DEV_PROVIDERS || !app.isPackaged, toggleTimeline, () =>
     // On Mac the menu outlives a closed window, so the window may be gone when this runs.
     void menuCheckForUpdates(updates, {
       focus: () => {
@@ -1461,6 +1484,7 @@ function createWindow(): void {
       show: (o) => (win && !win.isDestroyed() ? dialog.showMessageBox(win, o) : dialog.showMessageBox(o))
     }).catch((e) => log(`[update] menu check failed: ${String(e instanceof Error ? e.message : e).slice(0, 300)}`))
   )
+  void loadSettings().then((s) => showTimelineInMenu(s.timeline), () => undefined)
   win.once('ready-to-show', () => win?.show())
   // Stop flashing the taskbar once the person is back.
   win.on('focus', () => win?.flashFrame(false))

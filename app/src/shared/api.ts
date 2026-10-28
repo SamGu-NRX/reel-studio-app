@@ -21,7 +21,7 @@ export type { CoverCandidate } from './cover'
 
 export type LegalDoc = 'license' | 'notices'
 
-export type AppCommand = { type: 'new-video' | 'settings' | 'export' | 'library' } | { type: 'open-reel'; slug: string }
+export type AppCommand = { type: 'new-video' | 'settings' | 'export' | 'library' } | { type: 'open-reel'; slug: string } | { type: 'timeline'; shown: boolean }
 
 /** planned: a reel with no video yet (New reel); its notes column is for planning and scripts. */
 export type ScreenStatus = 'planned' | 'new' | 'working' | 'ready' | 'interrupted' | 'failed'
@@ -520,6 +520,8 @@ export interface AppInfo {
   sharing: DataSharing
   /** How the phone preview shows a reel: under Instagram's Reels screen, or the video alone. */
   phoneView: PhoneView
+  /** Whether the Reel screen shows its timeline under the phone. */
+  timeline: boolean
   /** Whether the first run's sample plays its sound effects. */
   soundEffects: boolean
 }
@@ -758,6 +760,8 @@ export interface ReelApi {
     setSharing(sharing: DataSharing): Promise<AppInfo>
     setPhoneView(view: PhoneView): Promise<AppInfo>
     setSoundEffects(on: boolean): Promise<AppInfo>
+    /** Shows or hides the Reel screen's timeline, remembered on this computer; the View menu's check follows. */
+    setTimeline(shown: boolean): Promise<AppInfo>
     engineCache(): Promise<EngineCache>
     /** Refused while a reel is being made: a job can be between a picture search and its download. */
     clearEngineCache(): Promise<EngineCache>

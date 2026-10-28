@@ -7,7 +7,7 @@
 import type { EditFact, PlacedWord, ProjectJson, Word } from './api'
 import type { RenderSegment } from './moments'
 import { clock } from './progress'
-import { joinsOf, musicFades, soundRows, type Join, type SoundEffect, type VersionClock } from './sfx'
+import { joinsOf, musicFades, sfxName, soundRows, type Join, type SoundEffect, type SoundRow, type VersionClock } from './sfx'
 
 export type Broll = NonNullable<ProjectJson['broll']>[number]
 /** A clip played whole from any video (multi-source; ai/src/project.ts ClipItem). */
@@ -47,7 +47,13 @@ export interface PicturePart {
   why: string | null
   /** the render left it out, and why (layers.json `skipped`) */
   skipped: string | null
+  /** what kind of thing it is, for the glyph drawn when there is no thumbnail */
+  kind: PictureKind
+  /** a small picture of it, or null for words, animations and files with no still */
+  thumb: string | null
 }
+
+export type PictureKind = 'picture' | 'clip' | 'words' | 'animation' | 'wall'
 
 /** One sound effect's flag: its moment key, its hit, its name and why it plays there; `off`: it won't play. */
 export interface SoundPart {
@@ -55,6 +61,13 @@ export interface SoundPart {
   at: number
   label: string
   off: boolean
+  /** its kind in one word, written beside its flag when there is room: "Whoosh" */
+  kind: string
+}
+
+/** The Sound tab's rows as flags: the ones with a moment in this version. */
+export function soundParts(rows: SoundRow[]): SoundPart[] {
+  return rows.flatMap((r) => (r.t === null ? [] : [{ key: r.key, at: r.t, label: `${r.title} · ${r.why}`, off: !!r.warn, kind: sfxName(r.s.sound).kind }]))
 }
 
 export interface Lanes {
@@ -126,6 +139,15 @@ export function animationName(asset: string): string | null {
   return m ? `Moving ${m[1].replace(/-/g, ' ')}` : null
 }
 
+/** What kind of thing a b-roll item is. */
+export function pictureKind(b: Broll): PictureKind {
+  const asset = typeof b.asset === 'string' ? b.asset : ''
+  if (b.treatment === 'animation' || animationName(asset)) return 'animation'
+  if (b.treatment === 'text-pop' && !asset) return 'words'
+  if (b.treatment === 'post-wall' || b.treatment === 'icon-wall') return 'wall'
+  return isVideoFile(asset) ? 'clip' : 'picture'
+}
+
 const isVideoFile = (a: string): boolean => /\.(mp4|mov|m4v|webm|mkv)$/i.test(a) && !/^work\/assets\/attach-.*\.gif/i.test(a)
 
 /** What a b-roll item is, as a person would name it, never by its file. */
@@ -167,14 +189,15 @@ export function pictureParts(
   c: { placed: PlacedWord[]; segments: RenderSegment[] },
   layers: Map<string, LayerItem>,
   duration: number,
-  why: (id: string) => string | null = () => null
+  why: (id: string) => string | null = () => null,
+  thumb: (b: Broll) => string | null = () => null
 ): PicturePart[] {
   const first = new Map<string, PlacedWord>()
   for (const w of c.placed) if (!first.has(w.id)) first.set(w.id, w)
   const rows: (PicturePart & { order: number; rendered: boolean })[] = []
   broll.forEach((b, order) => {
     const anchor = b.anchor as Broll['anchor'] | { source: string; s: number; e: number }
-    const base = { id: b.id, what: pictureWhat(b), line: 'source' in anchor ? '' : lineOf(c.placed, anchor.from, anchor.to), why: why(b.id), order }
+    const base = { id: b.id, what: pictureWhat(b), line: 'source' in anchor ? '' : lineOf(c.placed, anchor.from, anchor.to), why: why(b.id), kind: pictureKind(b), thumb: thumb(b), order }
     const layer = layers.get(b.id)
     if (layer && typeof layer.t0 === 'number' && typeof layer.t1 === 'number' && !layer.skipped) {
       rows.push({ ...base, t0: layer.t0, t1: layer.t1, skipped: null, rendered: true })
@@ -234,7 +257,8 @@ export function lanesOf(
   p: Pick<ProjectJson, 'broll' | 'sfx' | 'music' | 'cut' | 'sources'>,
   v: { placed: PlacedWord[]; segments: RenderSegment[]; words: Word[]; kept: Set<string>; duration: number; layers: Map<string, LayerItem> },
   pack: Map<string, Pick<SoundEffect, 'onsetMs' | 'seconds'>>,
-  why: (id: string) => string | null = () => null
+  why: (id: string) => string | null = () => null,
+  thumb: (b: Broll) => string | null = () => null
 ): Lanes {
   const vclock: VersionClock = { placed: new Map(v.placed.map((w) => [w.id, w])), segments: v.segments, words: v.words, kept: v.kept }
   const joins = joinsOf(vclock)
@@ -242,8 +266,8 @@ export function lanesOf(
   const rows = soundRows(p.sfx ?? [], vclock, joins, p.broll, v.kept, said, pack)
   return {
     video: videoParts(v.segments, clipsOf(p.cut?.keep), v.placed, joins.filter((j) => j.cut !== null).map((j) => j.t), p.sources ?? []),
-    pictures: pictureParts(p.broll ?? [], v, v.layers, v.duration, why),
-    sounds: rows.flatMap((r) => (r.t === null ? [] : [{ key: r.key, at: r.t, label: `${r.title} · ${r.why}`, off: !!r.warn }])),
+    pictures: pictureParts(p.broll ?? [], v, v.layers, v.duration, why, thumb),
+    sounds: soundParts(rows),
     music: p.music?.enabled !== false && p.music?.track ? musicFades(p.music) : null,
     joins: joins.map(({ t, bridge }) => ({ t, bridge }))
   }
@@ -275,6 +299,9 @@ const MIN_BAR = 3
 const BAR_GAP = 2
 // Each picture's pointer target is at least this wide where its neighbours leave room (WCAG 2.5.8).
 const TARGET = 24
+// A bar this wide or wider starts with the picture's 16 px thumbnail; the rest of its length, past 4 px of paper,
+// stays a bar. A narrower one is the bar alone.
+export const THUMB_MIN = 20
 
 export interface Bar {
   /** the bar as drawn */
@@ -283,6 +310,8 @@ export interface Bar {
   /** the pointer target: never overlaps a neighbour's */
   hitX: number
   hitW: number
+  /** wide enough to start with its thumbnail */
+  thumb: boolean
 }
 
 /**
@@ -310,6 +339,6 @@ export function laneLayout(parts: { t0: number; t1: number }[], duration: number
     if (next) right = Math.min(right, b.x + b.w <= next.x ? (b.x + b.w + next.x) / 2 : (centre(b) + centre(next)) / 2)
     left = Math.max(0, left)
     right = Math.min(width, right)
-    return { ...b, hitX: left, hitW: Math.max(0, right - left) }
+    return { ...b, hitX: left, hitW: Math.max(0, right - left), thumb: b.w >= THUMB_MIN }
   })
 }

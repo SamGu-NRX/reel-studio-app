@@ -92,30 +92,40 @@
 .ring .rt { position: absolute; left: 48px; top: 10px; background: #fff; color: var(--ink); font-size: var(--fs-sm); font-weight: 650; padding: 3px 7px; border-radius: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* The timeline, as wide as the stage: phrase ticks, version marks (✓), your waiting notes (yellow), a dragged range. */
-/* The timeline (Timeline.tsx), in three lanes told apart by place and shape, not colour: Pictures above the rail as
-   bars, Your video on the rail, Sound under it as flags standing on the song's fades. */
-.tl { position: relative; flex: none; height: 52px; margin-top: 12px; cursor: pointer; touch-action: none; }
+/* The timeline (Timeline.tsx), in three lanes told apart by place, shape and a named icon each, not colour: Pictures
+   above the rail as thumbnails and bars, Your video on the rail, Sound under it as flags with their kind, standing on
+   the song's loudness line. The icons sit in a 16 px gutter to the left of time. */
+.tl { position: relative; flex: none; height: 58px; margin: 12px 0 0 24px; cursor: pointer; touch-action: none; }
+/* shown or hidden at once (timelineShown.ts): the items' own fade-in is for a picture added while it shows */
+html.tl-instant .tl-pic > i, html.tl-instant .tl-thumb { transition: none; }
+.tl-gutter { position: absolute; left: -24px; top: 0; width: 16px; height: 100%; pointer-events: none; }
+.tl-lane-icon { position: absolute; left: 0; width: 16px; height: 16px; color: var(--ink-3); pointer-events: auto; cursor: default; }
+.tl-lane-icon.empty { color: var(--ink-4); }
+.tl-lane-icon.pics { top: 0; }
+.tl-lane-icon.video { top: 22px; }
+.tl-lane-icon.sound { top: 40px; }
+.tl-toggle[aria-pressed='false'] { color: var(--ink-3); }
 .tl-track { position: absolute; inset: 0; outline: none; }
 html.kb .tl-track:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 4px; }
-.tl-ticks { position: absolute; left: 0; top: 14px; width: 100%; height: 6px; overflow: visible; }
+.tl-ticks { position: absolute; left: 0; top: 20px; width: 100%; height: 6px; overflow: visible; }
 .tl-ticks path { stroke: var(--ink-4); stroke-width: 1; vector-effect: non-scaling-stroke; fill: none; }
-.tl-rail, .tl-fill { position: absolute; left: 0; right: 0; top: 22px; height: 4px; border-radius: 4px; pointer-events: none; }
+.tl-rail, .tl-fill { position: absolute; left: 0; right: 0; top: 28px; height: 4px; border-radius: 4px; pointer-events: none; }
 .tl-rail { background: var(--line-strong); }
 .tl-fill { background: var(--ink); transform-origin: left; transform: scaleX(0); }
 /* A clip played whole from another video (multi-source) is the rail drawn twice as thick and a step darker, set apart
    from the speech on either side by a sliver of paper. The played fill runs through its middle, so it stays thick
    once played. */
-.tl-clip { position: absolute; top: 20px; height: 8px; border-radius: 2px; background: var(--ink-4); box-shadow: 0 0 0 1.5px var(--paper); pointer-events: none; }
+.tl-clip { position: absolute; top: 26px; height: 8px; border-radius: 2px; background: var(--ink-4); box-shadow: 0 0 0 1.5px var(--paper); pointer-events: none; }
 /* The head moves by translating a full-width box; clipping it to the track (with room for the dot) keeps the box
    at the end from widening the page, which scrolled the whole Reel screen sideways. */
 .tl-heads { position: absolute; inset: 0; overflow-x: clip; overflow-clip-margin: 8px; pointer-events: none; }
 .tl-head { position: absolute; inset: 0; pointer-events: none; }
-.tl-head i { position: absolute; left: -6px; top: 18px; width: 12px; height: 12px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 3px var(--paper); pointer-events: auto; cursor: grab; }
-.tl-sel { position: absolute; top: 20px; height: 8px; border-radius: 3px; background: var(--marker); pointer-events: none; }
+.tl-head i { position: absolute; left: -6px; top: 24px; width: 12px; height: 12px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 3px var(--paper); pointer-events: auto; cursor: grab; }
+.tl-sel { position: absolute; top: 26px; height: 8px; border-radius: 3px; background: var(--marker); pointer-events: none; }
 /* Beside the slider (Timeline.tsx): each mark is a 24 px target around its 14 px dot. */
 .tl-marks, .tl-lane { position: absolute; inset: 0; pointer-events: none; }
 .tl-mark {
-  position: absolute; top: 12px; width: 24px; height: 24px; margin-left: -12px; padding: 0; border: 0; border-radius: 50%; background: none; display: grid; place-items: center;
+  position: absolute; top: 18px; width: 24px; height: 24px; margin-left: -12px; padding: 0; border: 0; border-radius: 50%; background: none; display: grid; place-items: center;
   cursor: pointer; z-index: 1; pointer-events: auto; color: var(--green-ink);
 }
 .tl-mark::before { content: ''; position: absolute; left: 5px; top: 5px; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 0 2px var(--paper); }
@@ -128,13 +138,25 @@ html.kb .tl-mark:focus-visible { outline: 2px solid var(--ink); outline-offset: 
   .tl-mark:hover::before { transform: scale(1.15); }
 }
 /* Pictures: a bar while each is on screen, ink-3 like every item you can pick (3:1 or more on paper), ink when
-   picked, hollow when the render left it out. Its target is 24 px tall, from the margin above down to the ticks, and
-   at least 24 px wide where its neighbours leave room (shared/lanes.ts laneLayout). */
-.tl-pic { position: absolute; top: -10px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: none; cursor: pointer; z-index: 1; pointer-events: auto; }
-.tl-pic > i { position: absolute; top: 14px; height: 6px; border-radius: 2px; background: var(--ink-3); transform-origin: 50% 100%; transition: opacity 150ms var(--ease-out); }
+   picked, hollow when the render left it out. One wide enough starts with its 16 px thumbnail in a hairline frame (a
+   glyph for words or an animation), so the lane shows what the pictures are. Its target is 24 px tall, from the
+   margin above down to the ticks, and at least 24 px wide where its neighbours leave room (shared/lanes.ts
+   laneLayout). */
+.tl-pic { position: absolute; top: -4px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: none; cursor: pointer; z-index: 1; pointer-events: auto; }
+.tl-pic > i { position: absolute; top: 9px; height: 6px; border-radius: 2px; background: var(--ink-3); transform-origin: 50% 100%; transition: opacity 150ms var(--ease-out); }
 @starting-style { .tl-pic > i { opacity: 0; } }
 .tl-pic.off > i { background: var(--paper); box-shadow: inset 0 0 0 1.25px var(--ink-3); }
 .tl-pic.on > i { background: var(--ink); transform: scaleY(1.34); }
+.tl-thumb {
+  position: absolute; top: 4px; width: 16px; height: 16px; border-radius: 3px; overflow: hidden; display: grid; place-items: center; color: var(--ink-2);
+  transition: opacity 150ms var(--ease-out);
+}
+@starting-style { .tl-thumb { opacity: 0; } }
+.tl-thumb:has(img) { box-shadow: 0 0 0 1px var(--line-strong); }
+.tl-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tl-pic.on .tl-thumb { box-shadow: 0 0 0 2px var(--ink); }
+.tl-pic.off .tl-thumb { opacity: .45; }
+html.kb .tl-thumb { transition: none; }
 @media (hover: hover) and (pointer: fine) {
   .tl-pic:not(.on):not(.off):hover > i { background: var(--ink-2); transform: scaleY(1.34); }
 }
@@ -146,25 +168,34 @@ html.kb .tl-pic:focus-visible { outline: 2px solid var(--ink); outline-offset: 0
 /* Your video, part by part, for the keyboard. The buttons are see-through and let a pointer through to the rail,
    which seeks (hovering the rail names the part under it instead); the focused one is drawn as an outline around its
    part, with its tip. */
-.tl-part { position: absolute; top: 17px; height: 14px; padding: 0; border: 0; background: none; opacity: 0; pointer-events: none; }
-.tl-part-ring { position: absolute; top: 17px; height: 14px; border-radius: 4px; pointer-events: none; }
+.tl-part { position: absolute; top: 23px; height: 14px; padding: 0; border: 0; background: none; opacity: 0; pointer-events: none; }
+.tl-part-ring { position: absolute; top: 23px; height: 14px; border-radius: 4px; pointer-events: none; }
 html.kb .tl-part-ring { outline: 2px solid var(--ink); outline-offset: 1px; }
-/* Sound, under the rail: the song's fade-in and fade-out as ramps joined by a hairline at full level, and a flag for
-   each sound effect standing on it, pointing up at its moment: ink when picked, hollow when it won't play. Across
-   the rail, a tick at each cut, where the voice fades out and in. */
-.tl-music { position: absolute; left: 0; top: 36px; width: 100%; height: 6px; overflow: visible; pointer-events: none; }
-.tl-music .fade { fill: var(--ink-3); }
-.tl-music .level { fill: none; stroke: var(--ink-4); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.tl-join { position: absolute; top: 19px; width: 2px; height: 10px; margin-left: -1px; border-radius: 1px; background: var(--ink-3); box-shadow: 0 0 0 1.5px var(--paper); pointer-events: none; }
+/* Sound, under the rail: the song's loudness as one line, rising over its fade-in, level, falling over its fade-out,
+   and a flag for each sound effect standing above it, pointing up at its moment, with its kind beside it where it
+   fits: ink when picked, hollow when it won't play. Across the rail, a tick at each cut, where the voice fades out
+   and in. */
+.tl-music { position: absolute; left: 0; top: 48px; width: 100%; height: 10px; overflow: visible; pointer-events: none; }
+.tl-music path { fill: none; stroke: var(--ink-3); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.tl-tip.song { bottom: auto; top: calc(100% + 6px); }
+/* the song for the keyboard, as your video's parts are: see-through, its outline drawn around the line */
+.tl-song { position: absolute; left: 0; top: 46px; width: 100%; height: 14px; padding: 0; border: 0; background: none; opacity: 0; pointer-events: none; }
+.tl-song-ring { position: absolute; left: 0; right: 0; top: 46px; height: 14px; border-radius: 4px; pointer-events: none; }
+html.kb .tl-song-ring { outline: 2px solid var(--ink); outline-offset: 1px; }
+.tl-join { position: absolute; top: 25px; width: 2px; height: 10px; margin-left: -1px; border-radius: 1px; background: var(--ink-3); box-shadow: 0 0 0 1.5px var(--paper); pointer-events: none; }
 /* A J or L join: the voice crosses the cut, a bar from the tick over the seconds it crosses, before it (J) or after (L).
    At least 6 px, so a 0.2 s bridge on a long reel still reads as one. */
 .tl-join > i { position: absolute; top: 4px; height: 2px; border-radius: 1px; background: var(--ink-3); box-shadow: 0 0 0 1.5px var(--paper); }
 .tl-join > i.j { right: 1px; }
 .tl-join > i.l { left: 1px; }
 .tl-sound {
-  position: absolute; top: 28px; width: 24px; height: 24px; margin-left: -12px; padding: 0; border: 0; border-radius: 6px; background: none;
-  cursor: pointer; z-index: 1; pointer-events: auto;
+  position: absolute; top: 34px; min-width: 24px; height: 24px; margin-left: -12px; padding: 0; border: 0; border-radius: 6px; background: none;
+  cursor: pointer; z-index: 1; pointer-events: auto; display: flex; align-items: flex-start;
 }
+/* level with the flag's body, clear of the song's line under it */
+.tl-sound-word { padding: 1px 4px 0 21px; font-size: var(--fs-xs); line-height: 12px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.tl-sound.off .tl-sound-word { color: var(--ink-3); }
+.tl-sound.on .tl-sound-word { color: var(--ink); }
 .tl-sound > svg {
   position: absolute; left: 7px; top: 1px; width: 10px; height: 12px; overflow: visible; transform-origin: 50% 0;
   transition: transform 150ms cubic-bezier(.2, .8, .2, 1);

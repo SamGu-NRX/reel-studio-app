@@ -242,6 +242,14 @@ const P: Record<string, ReactNode> = {
       <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
     </>
   ),
+  // the timeline's lanes, staggered as items sit on them (drawn for Reel Studio in Lucide's stroke)
+  timeline: (
+    <>
+      <path d="M4 6h9" />
+      <path d="M8 12h12" />
+      <path d="M4 18h7" />
+    </>
+  ),
   chart: (
     <>
       <path d="M3 3v16a2 2 0 0 0 2 2h16" />

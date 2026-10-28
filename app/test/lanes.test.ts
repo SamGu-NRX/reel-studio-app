@@ -118,6 +118,24 @@ describe('lane layout', () => {
     expect(c.hitW).toBe(24)
   })
 
+  it('fails if a picture too narrow for its thumbnail gets one, or one wide enough goes without', () => {
+    // 19 px, 20 px, and a 2 px picture widened to 3 px
+    const bars = laneLayout(
+      [
+        { t0: 0, t1: 1.9 },
+        { t0: 10, t1: 12 },
+        { t0: 20, t1: 20.2 }
+      ],
+      100,
+      1000
+    )
+    expect(bars.map((b) => [b.w, b.thumb])).toEqual([
+      [19, false],
+      [20, true],
+      [3, false]
+    ])
+  })
+
   it('fails if two pictures on a long reel share a pointer target, or one has none', () => {
     // 40 pictures on a three-minute reel, on the narrowest stage the window allows
     const parts = Array.from({ length: 40 }, (_, i) => ({ t0: i * 4.4, t1: i * 4.4 + (i % 3 === 0 ? 0.3 : 2) }))

@@ -40,6 +40,8 @@ export interface Settings extends InstagramSettings, TikTokSettings {
   models: ModelChoice
   sharing: DataSharing
   phoneView: PhoneView
+  /** the Reel screen shows its timeline under the phone (View › Show Timeline); off gives the phone its height */
+  timeline: boolean
   /** the first run's sample plays its two sounds */
   soundEffects: boolean
 }
@@ -62,6 +64,8 @@ const DEFAULTS: Settings = {
   models: { editor: 'auto', checker: 'auto', writer: 'auto' },
   sharing: { asked: false, on: false, usage: true, quality: true, posts: true },
   phoneView: 'instagram',
+  // Sam asked for the timeline as a toggle that starts on (spec §7)
+  timeline: true,
   soundEffects: true,
   // Connection and publishing stay opt-in until the broker and Meta app have been configured.
   instagramEnabled: false, instagramAppId: null, instagramBrokerUrl: null, instagramUploadOrigins: [],
