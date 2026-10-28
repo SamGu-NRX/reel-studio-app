@@ -270,6 +270,24 @@ describe('the Claude check can be cancelled', () => {
   });
 });
 
+describe('Cancel while Claude is still being looked for', () => {
+  // Connect's Cancel calls cancelCheck (app main/index.ts select). Pressed while setActive is still asking `claude`
+  // whether it is signed in, there was no check to stop yet: the look finished, the check ran, Claude was saved.
+  it('fails if Cancel before the check starts still saves Claude as the editor', async () => {
+    const dir = tmpDir();
+    let answer: () => void = () => undefined;
+    const looking = new Promise<void>((r) => { answer = r; });
+    const slowLook = (async (cmd: string, args: string[]) => { await looking; return signedIn(cmd, args); }) as Runner;
+    const ai = createAI({ host: new FakeHost(tmpDir()), settingsDir: dir, localClaude: { bin: answers(), run: slowLook } });
+    const choosing = ai.setActive('claude-cli');
+    await new Promise((r) => setTimeout(r, 20));
+    ai.cancelCheck();
+    answer();
+    await expect(choosing).rejects.toMatchObject({ code: 'cancelled' });
+    expect((await ai.active()).id).toBe('none');
+  });
+});
+
 describe('a model per role (Settings › Editor › Models)', () => {
   it('asks Claude Code and your own server for the chosen model, leaves ChatGPT and a key to their own, and refuses a name Claude Code cannot run', () => {
     const choices = { editor: 'opus', checker: 'auto', writer: 'claude-haiku-4-5' };

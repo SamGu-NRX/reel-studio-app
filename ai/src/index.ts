@@ -568,20 +568,25 @@ export function createAI(opts: CreateAIOptions) {
         return;
       }
       if (id === 'claude-cli') {
-        const lc = await localClaude(true);
-        if (lc.state !== 'ready') throw new AIError('not_available', lc.reason ?? 'Your Claude Code app is not ready.');
-        // signed in is not the same as able to answer (a plan at its limit, a broken install): one tiny real call,
-        // which cancelCheck stops
-        const s = await settings();
+        // cancelCheck stops all of it: looking for the app, the check call, and the save after them
         checking?.abort();
         const check = (checking = new AbortController());
+        const stopped = (): void => { if (check.signal.aborted) throw new AIError('cancelled', 'Stopped.'); };
         try {
+          const lc = await localClaude(true);
+          stopped();
+          if (lc.state !== 'ready') throw new AIError('not_available', lc.reason ?? 'Your Claude Code app is not ready.');
+          // signed in is not the same as able to answer (a plan at its limit, a broken install): one tiny real call
+          const s = await settings();
           const model = modelForRole('claude-cli', 'editor', await roleChoices()) ?? s.cliModel;
           await new ClaudeCliProvider({ model, timeoutMs: CHECK_TIMEOUT_MS, env: env(), ...(lc.bin ? { bin: lc.bin } : {}) })
             .complete({ system: '', messages: [{ role: 'user', content: [{ type: 'text', text: 'Reply with the word OK.' }] }], tools: [], jsonOnly: true, signal: check.signal });
+          stopped();
+          await saveSettings({ active: id, chatgptMoved: undefined });
         } finally {
           if (checking === check) checking = null;
         }
+        return;
       } else if (id === 'codex-cli') {
         const lc = await localCodex(true);
         if (lc.state !== 'ready') throw new AIError('not_available', lc.reason ?? 'Your Codex app is not ready.');
@@ -590,7 +595,7 @@ export function createAI(opts: CreateAIOptions) {
       } else if (!opts.dev && !PEOPLE_PROVIDERS.includes(id)) {
         throw new AIError('not_available', 'That option is not available.');
       }
-      await saveSettings({ active: id, ...(id === 'claude-cli' ? { chatgptMoved: undefined } : {}) });
+      await saveSettings({ active: id });
     },
     async signInChatGPT(openExternal: (url: string) => Promise<void>): Promise<ProviderStatus> {
       try {
