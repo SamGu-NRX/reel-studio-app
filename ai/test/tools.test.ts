@@ -474,7 +474,7 @@ describe('tool implementations', () => {
     const style = ctx.project!.captions.style;
     expect(style).not.toHaveProperty('preset');
     expect(presetOf(style)).toBe('clean');
-    expect(describeChange(before, { captions: ctx.project!.captions } as any)).toBe('clean subtitles');
+    expect(describeChange(before, { captions: ctx.project!.captions } as any)).toBe('gave the subtitles the Clean look');
   });
 
   it('set_caption_style drops the Size the person picked once a note changes the size', async () => {

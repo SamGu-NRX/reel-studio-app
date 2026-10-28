@@ -72,9 +72,6 @@ export function newToTheEar(before: Sfx[], now: Sfx[]): Sfx[] {
   return now.filter((x) => had.get(momentKey(x.at)) !== x.sound)
 }
 
-/** "a quieter whoosh", "a louder hit": a level change on one sound, in words. */
-export const levelChange = (before: Sfx, after: Sfx): string => `a ${gainOf(after) < gainOf(before) ? 'quieter' : 'louder'} ${sfxName(after.sound).kind.toLowerCase()}`
-
 /** The engine plays one sound at a time, at most one every two seconds (sfx.py MIN_GAP). */
 export const SFX_GAP = 2
 

@@ -152,14 +152,26 @@ describe('version messages', () => {
     // a checked rewording of the summary replaces the app's words, never the chat's
     expect(versionTooltip({ n: 1, facts: size, wording: { title: 'Bigger captions', summary: 'made the subtitles bigger' } }, chat, [])).toBe('Version 1: made the subtitles bigger.')
   })
-  it('describes subtitle changes the way a person would', () => {
+  // An Edit it myself change is said as what the person did: its line in the notes reads "You " + this.
+  it('describes subtitle changes as things the person did', () => {
     const p = base()
     const patch = { captions: { enabled: true, style: { size: 126, position: 0.66, color: '#FFD60A', box: false } } }
-    expect(describeChange(p, patch)).toBe('bigger yellow subtitles, moved up')
-    expect(versionMessage(3, describeChange(p, patch))).toBe('Version 3: bigger yellow subtitles, moved up.')
-    expect(describeChange(p, { captions: { enabled: true, style: { size: 105, position: 0.75, color: '#FFFFFF', box: true } } })).toBe('boxed subtitles')
-    expect(describeChange(p, { captions: { enabled: false } })).toBe('no subtitles')
-    expect(describeChange(p, { captions: { enabled: true, style: { size: 105, position: 0.66 } } })).toBe('subtitles moved up')
+    expect(describeChange(p, patch)).toBe('made the subtitles bigger and yellow, and moved them up')
+    expect(describeChange(p, { captions: { enabled: true, style: { size: 105, position: 0.75, color: '#FFFFFF', box: true } } })).toBe('gave the subtitles the Boxed look')
+    expect(describeChange(p, { captions: { enabled: false } })).toBe('turned the subtitles off')
+    expect(describeChange(p, { captions: { enabled: true, style: { size: 105, position: 0.66 } } })).toBe('moved the subtitles up')
+  })
+
+  // fails if a hand edit's line reads "new song …" after "You", repeats "added" for each thing added, or uses straight quotes
+  it('says one sentence for several things added, with the song in curly quotes', () => {
+    const p = base({ music: { enabled: false, track: null } })
+    const patch: Partial<ProjectJson> = {
+      music: { enabled: true, track: 'Library/Music/warm_acoustic_loop.mp3', level: 'under-voice' },
+      broll: [{ id: 'b', anchor: { from: 'w1', to: 'w2' }, treatment: 'card-above-head', asset: 'x' }],
+      sfx: [{ sound: 'whoosh-soft', at: { word: 'w3' } }]
+    }
+    expect(describeChange(p, patch)).toBe('added the song “warm acoustic loop”, a picture and a sound effect')
+    expect(describeChange(p, { ...patch, captions: { enabled: false } })).toBe('turned the subtitles off, and added the song “warm acoustic loop”, a picture and a sound effect')
   })
 
   it('describes retyping an existing one-place fix', () => {
@@ -175,11 +187,11 @@ describe('version messages', () => {
     const p = base()
     expect(describeChange(p, {}, 2)).toBe('brought back 2 words')
     expect(describeChange(p, {}, -1)).toBe('cut a word')
-    expect(describeChange(p, { music: { enabled: true, track: 'Library/Music/sunny_day.mp3' } })).toBe('new song "sunny day"')
-    expect(describeChange(p, { music: { enabled: false, track: null } })).toBe('no music')
+    expect(describeChange(p, { music: { enabled: true, track: 'Library/Music/sunny_day.mp3' } })).toBe('changed the song to “sunny day”')
+    expect(describeChange(p, { music: { enabled: false, track: null } })).toBe('removed the music')
     expect(describeChange(p, { broll: [{ id: 'b', anchor: { from: 'w1', to: 'w2' }, treatment: 'card-above-head', asset: 'x' }] })).toBe('added a picture')
-    expect(describeChange(p, { cover: { atSourceTime: 2, source: 's1', text: 'Hi' } })).toBe('new words on the cover')
-    expect(describeChange(p, { cover: { atSourceTime: 5, source: 's1', text: null } })).toBe('new cover')
+    expect(describeChange(p, { cover: { atSourceTime: 2, source: 's1', text: 'Hi' } })).toBe('added words to the cover')
+    expect(describeChange(p, { cover: { atSourceTime: 5, source: 's1', text: null } })).toBe('picked a new cover')
     expect(versionMessage(2, '')).toBe('Version 2 is ready.')
   })
 })

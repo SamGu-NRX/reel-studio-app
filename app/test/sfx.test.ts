@@ -176,9 +176,9 @@ describe('a sound and fade edit, counted and described', () => {
     expect(countChanges(diffProject(before, after, k, k), words)).toBe(5)
   })
 
-  it('fails if the version line does not say each change', () => {
+  it('fails if the line for the change does not say each change', () => {
     expect(describeChange(before, { music: after.music, sfx: after.sfx })).toBe(
-      'music fades in over 1.2 s, music fades out over 0.5 s, added a sound effect, removed a sound effect, a quieter whoosh'
+      'faded the music in over 1.2 s, faded the music out over 0.5 s, added a sound effect, removed a sound effect and made the whoosh quieter'
     )
   })
 
