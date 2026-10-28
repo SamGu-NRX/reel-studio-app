@@ -9,8 +9,7 @@
 // Run: npx playwright test e2e/preview-modes.spec.ts (after npm run build).
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { join } from 'node:path'
-import { inflateSync } from 'node:zlib'
-import { BASE, dropFiles, launch, makeMedia, modelReady, passSample, shot } from './helpers'
+import { BASE, dropFiles, launch, makeMedia, modelReady, painted, passSample, shot } from './helpers'
 
 const player = (page: Page) =>
   page.evaluate(() => {
@@ -25,18 +24,6 @@ const rect = (page: Page, sel: string) =>
     return { x: r.x, y: r.y, w: r.width, h: r.height }
   }, sel)
 
-/** The colour painted at one point of the window, read from a 1 px screenshot (an 8-bit RGB or RGBA PNG). */
-async function painted(page: Page, x: number, y: number): Promise<number[]> {
-  const png = await page.screenshot({ clip: { x, y, width: 1, height: 1 } })
-  const idat: Buffer[] = []
-  for (let at = 8; at < png.length; ) {
-    const len = png.readUInt32BE(at)
-    if (png.toString('latin1', at + 4, at + 8) === 'IDAT') idat.push(png.subarray(at + 8, at + 8 + len))
-    at += len + 12
-  }
-  // one row: its filter byte, then the pixel (any filter leaves a lone first pixel as it is)
-  return [...inflateSync(Buffer.concat(idat)).subarray(1, 4)]
-}
 
 const focusedTestId = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.tagName)
 
