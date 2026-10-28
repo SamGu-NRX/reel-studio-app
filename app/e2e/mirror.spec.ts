@@ -7,15 +7,21 @@
 //   REELSTUDIO_ENGINE_DIR  a real engine (the flip is only visible with one); default the stand-in
 //   REELSTUDIO_E2E_SHOTS   where to put the screenshots (default e2e/screenshots, gitignored)
 import { test, expect } from '@playwright/test'
-import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ROOT, SHOTS, launch, makeMedia, makeReel, passFirstRun } from './helpers'
 
 const OUT = process.env.REELSTUDIO_E2E_SHOTS ?? SHOTS
 
+const PROJECTS = join(ROOT, 'Projects')
+const projectDirs = (): string[] => (existsSync(PROJECTS) ? readdirSync(PROJECTS) : [])
+// The one this test makes. Earlier spec files in the same worker share ROOT (home-reopen leaves my-first-take), and
+// readdir order is the file system's: NTFS lists names sorted, so [0] was another test's project on Windows.
+let mine: string | undefined
+
 function project(): any {
-  const dir = join(ROOT, 'Projects')
-  return JSON.parse(readFileSync(join(dir, readdirSync(dir)[0], 'project.json'), 'utf8'))
+  if (!mine) throw new Error('the project this test made is not known yet')
+  return JSON.parse(readFileSync(join(PROJECTS, mine, 'project.json'), 'utf8'))
 }
 
 test('flip a mirrored take from Edit it myself', async () => {
@@ -28,7 +34,11 @@ test('flip a mirrored take from Edit it myself', async () => {
   const media = makeMedia()
   const { app, page } = await launch()
   await passFirstRun(page)
+  const before = projectDirs()
   await makeReel(page, media.video, 15 * 60_000)
+  const made = projectDirs().filter((d) => !before.includes(d))
+  expect(made, 'exactly one new project').toHaveLength(1)
+  mine = made[0]
   expect(project().sources[0].mirror).toBeUndefined()
 
   await page.getByTestId('edit-myself').click()
