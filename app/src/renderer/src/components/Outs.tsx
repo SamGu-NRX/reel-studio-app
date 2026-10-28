@@ -34,7 +34,6 @@ const posted = (post: ProjectJson['post']): string =>
 export function Outs({
   slug,
   version,
-  versions,
   post,
   disabled,
   quiet,
@@ -44,8 +43,6 @@ export function Outs({
   slug: string
   /** The version on screen: the one Share sends. */
   version: VersionInfo | undefined
-  /** Every version, for Try 2. */
-  versions: VersionInfo[]
   post: ProjectJson['post']
   /** A version is being made: nothing new can start. */
   disabled: boolean
@@ -257,7 +254,8 @@ export function Outs({
       id: 'instagram',
       icon: <Icon name="instagram" size={16} />,
       label: 'Save for Instagram',
-      hint: 'Saves the reel and copies the caption',
+      // Posting needs Instagram's sign-in, which isn't built (spec.md section 11), so the row says what it does instead.
+      hint: 'Not connected yet. Saves the reel and copies the caption.',
       testid: 'share-instagram',
       go: () =>
         void run('instagram', async (files) => {
@@ -441,8 +439,8 @@ export function Outs({
                         <SharePlatforms
                           slug={slug}
                           version={version}
-                          versions={versions}
                           caption={caption}
+                          open={open && platformsOpen && !view}
                           disabled={disabled}
                           onWork={(w) => {
                             setPlatformWork(w)

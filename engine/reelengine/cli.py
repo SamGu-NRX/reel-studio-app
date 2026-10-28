@@ -57,13 +57,15 @@ def cmd_export_probe(args):
 def cmd_export_media(args):
     from . import export_media
     if args.bitrate is None:
+        if args.brightness:
+            raise EngineError("BAD_ARGS", "--brightness needs a re-encode", "The export settings are invalid.")
         return export_media.remux(Path(args.file), Path(args.dest))
-    return export_media.encode(Path(args.file), Path(args.dest), args.bitrate)
+    return export_media.encode(Path(args.file), Path(args.dest), args.bitrate, args.brightness)
 
 
 def cmd_export_cover(args):
     from . import export_media
-    return export_media.cover(Path(args.file), Path(args.dest), args.at)
+    return export_media.cover(Path(args.file), Path(args.dest), args.at, args.brightness)
 
 
 def cmd_classify(args):
@@ -428,10 +430,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("file")
     sp.add_argument("--dest", required=True)
     sp.add_argument("--bitrate", type=int, help="video bits per second for a re-encode at the same size; without it, copy the video")
+    sp.add_argument("--brightness", type=float, default=0.0, help="with a re-encode: brighten (+) or darken (-), -0.3 to 0.3")
     sp = add("export-cover", cmd_export_cover, "save a JPEG cover from a video frame or a picture")
     sp.add_argument("file")
     sp.add_argument("--dest", required=True)
     sp.add_argument("--at", type=float, help="seconds into a video (default: the whole picture)")
+    sp.add_argument("--brightness", type=float, default=0.0, help="brighten (+) or darken (-) the cover, -0.3 to 0.3")
     sp = add("classify", cmd_classify, "sort dropped files into the Library")
     sp.add_argument("--root", help="Reel Studio root (default REELENGINE_ROOT or ~/Documents/Reel Studio)")
     sp.add_argument("--move", action="store_true", help="move instead of copy")

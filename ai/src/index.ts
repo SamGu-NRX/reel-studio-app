@@ -24,6 +24,7 @@ import { SessionHarness } from './mcp/session';
 import type { Harness } from './harness';
 import { detectLocalClaude, DetectOptions, LocalClaude } from './providers/localClaude';
 import * as editor from './editor';
+import { proposeTry, type TryProposal, type TryRequest } from './trial';
 import { refuseIfOpen } from './owner';
 
 export * from './types';
@@ -57,6 +58,8 @@ export { detectLocalClaude, findClaude, claudeCandidates, claudeFromLoginShell, 
 export type { LocalClaude, ClaudeCodeState } from './providers/localClaude';
 export { pickTakes, formatForPicking, deterministicEdit } from './editor';
 export type { ApplyNoteOptions } from './editor';
+export { checkTryProposal, TRY_VARIABLES } from './trial';
+export type { TryProposal, TryRequest, TryVariable } from './trial';
 export { ATTACHMENT_REF, MAX_ATTACHMENTS_PER_NOTE, readAttachment, listAttachments, validateAttachments, placedAssets } from './attachments';
 export type { AttachmentInfo } from './attachments';
 
@@ -675,6 +678,10 @@ export function createAI(opts: CreateAIOptions) {
     /** One turn of a planned reel's planning chat: a short question back, or the whole plan (editor.ts planTurn). */
     async planTurn(input: PlanTurnInput, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<PlanTurnResult> {
       return editor.planTurn(deps(opts.host), await modelProvider('writer'), input, onEvent, signal);
+    },
+    /** Try 2 for a trial post: the one thing the editor changes from the reel as it is, and why. */
+    async proposeTry(req: TryRequest, signal?: AbortSignal): Promise<TryProposal> {
+      return proposeTry(prompts, await modelProvider('editor'), req, signal);
     },
     async styleRules() { return style.list(); },
     async removeStyleRule(id: string, options?: { forget?: boolean }) { return style.remove(id, options); },

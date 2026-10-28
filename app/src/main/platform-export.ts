@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { constants, existsSync, promises as fs } from 'node:fs'
 import { basename, join } from 'node:path'
-import { fallbackCoverSeconds, outputGroups, platformRule, secondTryProblem, type FinishedVideo, type Platform, type PlatformTry } from '../shared/platforms'
+import { fallbackCoverSeconds, outputGroups, platformRule, sameVideo, secondTryProblem, type FinishedVideo, type Platform, type PlatformTry } from '../shared/platforms'
 import type { PlatformExportResult } from '../shared/api'
 import type { RunEngine } from './engine'
 
@@ -94,20 +94,22 @@ export async function exportPlatforms({ tries: requested, folder, runEngine, sig
   try {
     const staged: { cover: string; caption: string; outputFor: Map<Platform, string>; sharedVideo: boolean }[] = []
     for (const [t, item] of tries.entries()) {
-      const sharedVideo = t > 0 && item.source === tries[0].source
+      const sharedVideo = t > 0 && item.source === tries[0].source && sameVideo(tries[0], item)
       const cover = join(stage, `cover-${t + 1}.jpg`)
+      const look = item.brightness ? ['--brightness', String(item.brightness)] : []
       // The scrub bar's end is the duration itself; the engine picks the last frame it can decode.
       const coverArgs = item.coverSeconds !== null ? [item.source, '--at', String(Math.min(item.coverSeconds, item.video.duration))]
         : item.chosenCover ? [item.chosenCover]
         : [item.source, '--at', String(fallbackCoverSeconds(item.video.duration))]
-      await runEngine('export-cover', [...coverArgs, '--dest', cover], undefined, signal)
+      await runEngine('export-cover', [...coverArgs, ...look, '--dest', cover], undefined, signal)
 
       const outputFor = new Map<Platform, string>()
-      for (const [index, group] of (sharedVideo ? [] : outputGroups(item.platforms, item.video)).entries()) {
+      for (const [index, group] of (sharedVideo ? [] : outputGroups(item.platforms, item.video, { encode: look.length > 0 })).entries()) {
         const output = join(stage, `video-${t + 1}-${index}.mp4`)
         const message = `Making the ${group.platforms.map((p) => platformRule(p).label).join(' and ')} version${two ? ` for Try ${t + 1}` : ''}`
         onProgress?.(message, 0)
-        await runEngine('export-media', [item.source, '--dest', output, ...(group.bitrate === null ? [] : ['--bitrate', String(group.bitrate)])], (p) => onProgress?.(message, p.pct), signal)
+        const encode = group.bitrate === null ? [] : ['--bitrate', String(group.bitrate), ...look]
+        await runEngine('export-media', [item.source, '--dest', output, ...encode], (p) => onProgress?.(message, p.pct), signal)
         const size = (await fs.stat(output)).size
         for (const platform of group.platforms) {
           const rule = platformRule(platform)

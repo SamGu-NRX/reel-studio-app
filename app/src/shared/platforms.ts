@@ -44,6 +44,97 @@ export interface PlatformTry {
   caption: string
   /** Seconds into the finished video, or null for that version's own cover. */
   coverSeconds: number | null
+  /** Added to the picture's brightness when it is exported (ffmpeg eq, -1 to 1). Absent or 0: as rendered. */
+  brightness?: number
+}
+
+/** The one thing Try 2 changes. The hook line is the caption's first line (ai/prompts/firstEdit.md, "caption"). */
+export type TryVariable = 'hook' | 'cover' | 'caption' | 'brightness'
+export const TRY_VARIABLES: readonly TryVariable[] = ['hook', 'cover', 'caption', 'brightness']
+
+/**
+ * What Try 2 changes and to what: a new hook line, the caption after the hook line, a cover time in seconds, or a
+ * brightness step. `reason` is the editor's one line in its own voice; null when the app chose, with no editor.
+ */
+export type TryProposal =
+  | { variable: 'hook' | 'caption'; value: string; reason: string | null }
+  | { variable: 'cover' | 'brightness'; value: number; reason: string | null }
+
+/** The brightness range the editor may propose (ai/prompts/proposeTry.md). No viewer test backs it: 0.02 is a guess at
+ * the smallest step that shows on a phone, 0.15 at the most before faces wash out. */
+const BRIGHTNESS_STEP = { min: 0.02, max: 0.15 }
+
+const lines = (caption: string): [string, string] => {
+  const i = caption.indexOf('\n')
+  return i < 0 ? [caption, ''] : [caption.slice(0, i), caption.slice(i + 1)]
+}
+/** The caption's first line, which shows before "more". */
+const hookLine = (caption: string): string => lines(caption)[0]
+/** Everything after the hook line. */
+const captionBody = (caption: string): string => lines(caption)[1]
+
+/**
+ * Why `p` can't be Try 2 for a reel of `duration` seconds whose caption is `caption`, or null. Checks the editor's
+ * answer, and the creator's own words once they change it.
+ */
+export function tryProposalProblem(p: TryProposal, caption: string, duration: number): string | null {
+  switch (p.variable) {
+    case 'hook': {
+      const line = p.value.trim()
+      if (!line) return 'Write a hook line for Try 2.'
+      if (line.includes('\n')) return 'The hook line must be one line.'
+      return line === hookLine(caption).trim() ? 'The hook line is the same as Try 1.' : null
+    }
+    case 'caption':
+      if (!p.value.trim()) return 'Write a caption for Try 2.'
+      return p.value.trim() === captionBody(caption).trim() ? 'The caption is the same as Try 1.' : null
+    case 'cover':
+      return Number.isFinite(p.value) && p.value >= 0 && p.value <= duration ? null : 'The cover must be a frame inside the video.'
+    case 'brightness': {
+      const step = Math.abs(p.value)
+      return Number.isFinite(p.value) && step >= BRIGHTNESS_STEP.min && step <= BRIGHTNESS_STEP.max ? null : 'The brightness change is too small or too large.'
+    }
+  }
+}
+
+/** Reads a proposal the editor returned; throws a specific error for anything else. */
+export function parseTryProposal(value: unknown, caption: string, duration: number): TryProposal {
+  const v = (value ?? {}) as Record<string, unknown>
+  const reason = typeof v.reason === 'string' && v.reason.trim() ? v.reason.trim() : null
+  if (!reason) throw new Error('A Try 2 proposal from the editor needs its reason')
+  let p: TryProposal
+  if ((v.variable === 'hook' || v.variable === 'caption') && typeof v.value === 'string') p = { variable: v.variable, value: v.value.trim(), reason }
+  else if ((v.variable === 'cover' || v.variable === 'brightness') && typeof v.value === 'number') p = { variable: v.variable, value: v.value, reason }
+  else throw new Error(`Not a Try 2 proposal: ${JSON.stringify(value)?.slice(0, 200)}`)
+  const problem = tryProposalProblem(p, caption, duration)
+  if (problem) throw new Error(`The editor's Try 2 proposal can't be used: ${problem}`)
+  return p
+}
+
+/** Try 2: Try 1 with the proposal's one change. The caption parts are joined with Try 1's caption as it is now. */
+export function tryFromProposal(first: PlatformTry, p: TryProposal): PlatformTry {
+  const [hook, body] = lines(first.caption)
+  switch (p.variable) {
+    case 'hook': return { ...first, caption: body ? `${p.value}\n${body}` : p.value }
+    case 'caption': return { ...first, caption: `${hook}\n${p.value}` }
+    case 'cover': return { ...first, coverSeconds: p.value }
+    case 'brightness': return { ...first, brightness: p.value }
+  }
+}
+
+/**
+ * The cover the app picks for Try 2 when no editor is connected: the end of the word nearest 60% of the way in (a
+ * word's end, so the mouth is closing), or 35% when that is within a second of the current cover. Both points are
+ * away from the opening frame the render's own fallback cover uses (render.py fallback_cover); no test of viewers
+ * backs these numbers.
+ */
+export function appCoverPick(duration: number, words: { s: number; e: number }[], current: number | null): number {
+  const near = (t: number) => {
+    const w = words.reduce<{ s: number; e: number } | null>((best, x) => (!best || Math.abs(x.e - t) < Math.abs(best.e - t) ? x : best), null)
+    return Math.min(duration, w && Math.abs(w.e - t) < 2 ? w.e : t)
+  }
+  const pick = near(duration * 0.6)
+  return current !== null && Math.abs(pick - current) < 1 ? near(duration * 0.35) : pick
 }
 
 export interface PlatformExportRequest {
@@ -59,6 +150,8 @@ const validCover = (value: unknown): value is number | null =>
   value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0)
 const validCaption = (value: unknown): value is string => typeof value === 'string' && value.length <= 100_000
 const validVersion = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0
+const validBrightness = (value: unknown): value is number | undefined =>
+  value === undefined || (typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= BRIGHTNESS_STEP.max)
 
 const badRequest = () => ({ code: 'BAD_EXPORT', userMessage: 'Choose at least one platform and a valid cover frame, then try again.' })
 
@@ -66,7 +159,9 @@ function parseSecondTry(value: unknown): PlatformTry | null {
   if (value === null) return null
   if (!value || typeof value !== 'object' || !('version' in value) || !validVersion(value.version) ||
       !('caption' in value) || !validCaption(value.caption) || !('coverSeconds' in value) || !validCover(value.coverSeconds)) throw badRequest()
-  return { version: value.version, caption: value.caption, coverSeconds: value.coverSeconds }
+  const brightness = 'brightness' in value ? value.brightness : undefined
+  if (!validBrightness(brightness)) throw badRequest()
+  return { version: value.version, caption: value.caption, coverSeconds: value.coverSeconds, ...(brightness ? { brightness } : {}) }
 }
 
 export function parsePlatformExportRequest(value: unknown): PlatformExportRequest {
@@ -78,7 +173,11 @@ export function parsePlatformExportRequest(value: unknown): PlatformExportReques
   return { platforms: [...new Set(value.platforms)], caption: value.caption, coverSeconds: value.coverSeconds, second: parseSecondTry(value.second) }
 }
 
-export type TryChange = 'video' | 'cover' | 'caption'
+export type TryChange = 'video' | 'brightness' | 'cover' | 'caption'
+
+/** Both tries play the same picture: the same version at the same brightness. */
+export const sameVideo = (first: PlatformTry, second: PlatformTry): boolean =>
+  second.version === first.version && (second.brightness ?? 0) === (first.brightness ?? 0)
 
 /**
  * What decides which frame a cover saves: the render's frame rate, where its picture ends, and the time used for a
@@ -111,27 +210,29 @@ export function tryChanges(first: PlatformTry, second: PlatformTry, clock: Cover
   }
   const changes: TryChange[] = []
   if (second.version !== first.version) changes.push('video')
+  if ((second.brightness ?? 0) !== (first.brightness ?? 0)) changes.push('brightness')
   if (frame(second.coverSeconds) !== frame(first.coverSeconds)) changes.push('cover')
   if (second.caption !== first.caption) changes.push('caption')
   return changes
 }
 
-/** The selected platforms that get Try 2. Every selected platform gets Try 1. */
-export function secondTryPlatforms(platforms: Platform[], sameVideo: boolean): Platform[] {
+/** The selected platforms that get Try 2. Every selected platform gets Try 1. A brightness change is a change to the video. */
+export function secondTryPlatforms(platforms: Platform[], oneVideo: boolean): Platform[] {
   return platforms.filter((p) => {
     const test = platformRule(p).tryTwo
-    return test !== undefined && (test.tests === 'video' || sameVideo)
+    return test !== undefined && (test.tests === 'video' || oneVideo)
   })
 }
 
 /** Why Try 2 cannot be exported, or null. */
 export function secondTryProblem(platforms: Platform[], first: PlatformTry, second: PlatformTry, clock: CoverClock): string | null {
   const changes = tryChanges(first, second, clock)
-  if (!changes.length) return 'Try 2 is the same as Try 1. Pick another version, cover or caption.'
-  if (secondTryPlatforms(platforms, !changes.includes('video')).length) return null
-  return changes.includes('video')
-    ? 'None of these platforms can test a different version. Choose Instagram, or turn off Try two versions.'
-    : 'None of these platforms can test two versions. Choose Instagram or Facebook, or turn off Try two versions.'
+  if (!changes.length) return 'Try 2 is the same as Try 1.'
+  const video = changes.includes('video') || changes.includes('brightness')
+  if (secondTryPlatforms(platforms, !video).length) return null
+  return video
+    ? 'Only Instagram can test a change to the video. Tick Instagram Reels, or undo Try 2.'
+    : 'None of these platforms can test two versions. Tick Instagram Reels or Facebook Reels, or undo Try 2.'
 }
 
 /** A platform limit the export goes over. Never a block: limits change and vary by account, so the creator decides. */
@@ -226,11 +327,14 @@ function exportBitrate(platform: Platform, seconds: number): number {
   return Math.max(128_000, Math.min(8_000_000, budget))
 }
 
-/** Platforms that need their own file, grouped so matching outputs share one. A null bitrate is a remux. */
-export function outputGroups(platforms: Platform[], video: FinishedVideo): { platforms: Platform[]; bitrate: number | null }[] {
+/**
+ * Platforms that need their own file, grouped so matching outputs share one. A null bitrate is a remux. `encode`:
+ * every platform gets a re-encode, as a brightness change needs.
+ */
+export function outputGroups(platforms: Platform[], video: FinishedVideo, { encode = false } = {}): { platforms: Platform[]; bitrate: number | null }[] {
   const groups = new Map<number | null, { platforms: Platform[]; bitrate: number | null }>()
   for (const platform of platforms) {
-    const how = preparation(platform, video)
+    const how = encode ? 'encode' : preparation(platform, video)
     if (how === 'copy') continue
     const bitrate = how === 'encode' ? exportBitrate(platform, video.duration) : null
     const group = groups.get(bitrate)

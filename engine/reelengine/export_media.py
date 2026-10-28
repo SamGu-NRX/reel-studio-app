@@ -63,14 +63,23 @@ def remux(source: Path, dest: Path) -> dict:
     return {"video": str(dest), "sizeBytes": dest.stat().st_size}
 
 
-def encode(source: Path, dest: Path, bitrate: int) -> dict:
-    """The same picture size at a lower bitrate, for a render over a platform's size limit."""
+def _look(brightness: float) -> str:
+    """ffmpeg's eq filter for a Try 2 brightness step, or "" for none. eq takes -1 to 1; the app sends at most 0.15."""
+    if not math.isfinite(brightness) or abs(brightness) > 0.3:
+        raise EngineError("BAD_ARGS", "invalid brightness", "The brightness change is invalid.")
+    return f"eq=brightness={brightness:.3f}" if brightness else ""
+
+
+def encode(source: Path, dest: Path, bitrate: int, brightness: float = 0.0) -> dict:
+    """The same picture size at a lower bitrate, for a render over a platform's size limit, or with Try 2's
+    brightness step."""
     if not 128_000 <= bitrate <= 8_000_000:
         raise EngineError("BAD_ARGS", "invalid export bitrate", "The export settings are invalid.")
+    look = _look(brightness)
     info = probe(source, quick=True)
     dest.parent.mkdir(parents=True, exist_ok=True)
     tools.ffmpeg_progress([tools.ffmpeg(), "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-                           "-i", str(source), "-map", "0:v:0", "-map", "0:a:0?",
+                           "-i", str(source), "-map", "0:v:0", "-map", "0:a:0?", *(["-vf", look] if look else []),
                            "-c:v", "libx264", "-preset", "medium", "-profile:v", "high", "-b:v", str(bitrate),
                            "-maxrate", str(bitrate), "-bufsize", str(bitrate * 2), "-pix_fmt", "yuv420p",
                            "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
@@ -80,8 +89,9 @@ def encode(source: Path, dest: Path, bitrate: int) -> dict:
     return {"video": str(dest), "sizeBytes": dest.stat().st_size}
 
 
-def cover(source: Path, dest: Path, at: Optional[float]) -> dict:
+def cover(source: Path, dest: Path, at: Optional[float], brightness: float = 0.0) -> dict:
     """A JPEG from `source`: the frame at `at` seconds of a video, or the whole picture when `at` is None."""
+    look = _look(brightness)
     seek = []
     if at is not None:
         info = probe(source, quick=True)
@@ -93,6 +103,6 @@ def cover(source: Path, dest: Path, at: Optional[float]) -> dict:
     dest.parent.mkdir(parents=True, exist_ok=True)
     # out_range=full: ffmpeg 9's JPEG encoder refuses limited-range input whose colour matrix is untagged.
     tools.text_run([tools.ffmpeg(), "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-                    *seek, "-i", str(source), "-frames:v", "1", "-vf", "scale=out_range=full", "-q:v", "2", str(dest)],
+                    *seek, "-i", str(source), "-frames:v", "1", "-vf", f"scale=out_range=full{',' + look if look else ''}", "-q:v", "2", str(dest)],
                    120, "export cover", user_message="I could not make the cover. Pick another frame and try again.")
     return {"cover": str(dest)}

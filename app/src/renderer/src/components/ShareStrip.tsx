@@ -1,7 +1,7 @@
 /** What a Share destination is doing: working (with a percentage once there is one) or failed, with the cause. */
 export type Work = { kind: 'working'; label: string; pct: number | null } | { kind: 'failed'; message: string }
 
-/** A destination's progress strip (ux-foundation-b section 3.2): a bar, what it is doing, Cancel; or the failure in words. */
+/** A destination's progress strip (ux-foundation-b section 3.2): a bar, what it is doing, Stop; or the failure in words. */
 export function Strip({ work, onCancel, onRetry }: { work: Work; onCancel?: () => void; onRetry?: () => void }) {
   if (work.kind === 'failed')
     return (
@@ -22,7 +22,7 @@ export function Strip({ work, onCancel, onRetry }: { work: Work; onCancel?: () =
       </div>
       <div className="sp-strip-row">
         <span className="tnum">{work.label}</span>
-        {onCancel && <button type="button" className="link inline" onClick={onCancel}>Cancel</button>}
+        {onCancel && <button type="button" className="link sp-act" onClick={onCancel}>Stop</button>}
       </div>
     </div>
   )

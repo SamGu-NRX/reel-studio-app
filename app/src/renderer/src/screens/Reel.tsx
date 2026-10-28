@@ -652,7 +652,6 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
         <Outs
           slug={slug}
           version={version}
-          versions={d.versions}
           post={d.project.post}
           disabled={!version || (!!job && !shareWork)}
           quiet={!!compare || !!drawer || aiOff}

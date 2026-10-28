@@ -116,6 +116,7 @@ const api: ReelApi = {
     coverCandidates: (slug, moments, source) => call('projects:coverCandidates', slug, moments, source),
     stopCoverCandidates: (slug) => call('projects:stopCoverCandidates', slug),
     exportPlatforms: (slug, n, request) => call('projects:exportPlatforms', slug, n, request),
+    proposeTry: (slug, n, ask) => call('projects:proposeTry', slug, n, ask),
     remove: (slug) => call('projects:remove', slug)
   },
   notes: {

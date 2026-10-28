@@ -2,6 +2,7 @@
 // runtime when it exists; until then ai-mock.ts implements the same shape.
 import type { JobUpdate, StyleProposal, StyleRule, MergeRequest, ProjectJson } from '../shared/api'
 import type { PlanTurn } from '../shared/plan'
+import type { TryVariable } from '../shared/platforms'
 
 /** What @reelstudio/ai emits: the job contract minus `heard` (main adds that one itself). */
 export type AgentEvent = Exclude<JobUpdate, { type: 'heard' }>
@@ -34,6 +35,18 @@ export interface PlanTurnInput {
 }
 /** A short question back, or the whole plan: 2-3 hooks, 3-6 beats, 1-6 shots, one line each. */
 export type PlanTurnResult = { kind: 'question'; text: string } | { kind: 'plan'; say: string; title?: string; hooks: string[]; beats: string[]; shots: string[] }
+
+/** What the editor reads to choose Try 2 (ai/src/trial.ts). */
+export interface TryRequest {
+  /** Try 1's caption as posted; its first line is the hook line. */
+  caption: string
+  duration: number
+  /** What is said, on the finished reel's clock, with each word's start and end. */
+  words: { w: string; s: number; e: number }[]
+  coverSeconds: number | null
+  /** The creator swapped to this one. */
+  variable?: TryVariable
+}
 
 export interface EngineHost {
   runEngine(
@@ -127,6 +140,8 @@ export interface AI {
   /** The words are a whole-reel setting applyNote does without the model ("smaller captions"). */
   wholeReelSetting(projectDir: string, note: string): Promise<boolean>
   planTurn(input: PlanTurnInput, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<PlanTurnResult>
+  /** Try 2 for a trial post: the one thing the editor changes, and its reason in its own voice. Optional: older packages lack it. */
+  proposeTry?(req: TryRequest, signal?: AbortSignal): Promise<{ variable: unknown; value: unknown; reason: unknown }>
   styleRules(): Promise<StyleRule[]>
   /** The removed rule and where it was, for Undo; null when it was already gone. */
   /** The removed rule and where it was, for Undo; null when it was already gone. `forget` (default true): learning

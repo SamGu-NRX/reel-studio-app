@@ -1,6 +1,7 @@
 import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron'
 import { isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { TRY_VARIABLES } from '../shared/platforms'
 
 function sameRendererPath(actual: string, expected: string): boolean {
   try {
@@ -84,6 +85,8 @@ export function validateIpcArgs(channel: string, args: unknown[]): void {
     case 'style:update': ok = text(first) && first.length > 0 && object(second) && (second.text === undefined || text(second.text)) && (second.paused === undefined || typeof second.paused === 'boolean'); break
     case 'app:setPhoneView': ok = first === 'instagram' || first === 'clean'; break
     case 'projects:exportPlatforms': ok = finite(second) && Number.isInteger(second) && second >= 0 && object(third); break
+    case 'projects:proposeTry': ok = finite(second) && Number.isInteger(second) && second >= 0 && object(third) && text(third.caption) &&
+      third.caption.length <= 100_000 && (third.variable === undefined || (TRY_VARIABLES as readonly unknown[]).includes(third.variable)); break
     case 'style:keepLearned': ok = Array.isArray(first) && first.every((r) => object(r) && text(r.text) && text(r.evidence)) && text(second); break
     case 'library:preview': ok = path(first); break
     case 'cloud:save': ok = path(first) && path(second) && text(third) && third.length > 0; break
