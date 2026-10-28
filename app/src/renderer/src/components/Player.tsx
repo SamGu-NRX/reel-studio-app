@@ -78,7 +78,7 @@ export function SubtitleSample({ look, text, width, testid }: { look: SubtitleLo
     Object.assign(style, { WebkitTextStroke: `${Math.max(0.6, look.outline * k) * 2}px ${look.outlineColor}`, paintOrder: 'stroke fill' })
   }
   return (
-    <div className={`sub-sample${look.pop ? ' pop' : ''}`} style={style} data-testid={testid} data-lines={fit.lines.length} aria-hidden>
+    <div className={`sub-sample${look.pop ? ' pops-in' : ''}`} style={style} data-testid={testid} data-lines={fit.lines.length} aria-hidden>
       {fit.lines.map((line, i) => {
         if (!look.highlight || i > 0) return <span key={i}>{line}</span>
         const [first, ...rest] = line.split(' ')

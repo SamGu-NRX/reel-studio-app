@@ -496,12 +496,9 @@ input[type="checkbox"]:disabled { cursor: default; opacity: .45; }
 }
 /* SubtitleSample breaks the lines itself, the engine's way; the browser never wraps or splits a word. */
 .sub-sample > span { display: block; }
-/* Player.tsx marks a look that pops with the class "pop", which is also shell.css's menu: without this, Bold pop's
-   words sat on a white menu card with a shadow, on the phone and in its look row, though the export draws none. */
-.sub-sample.pop { background: none; box-shadow: none; padding: 0; border-radius: 0; z-index: auto; transition: none; }
 /* captions.POP_IN: from 80% to full size in 120 ms, decelerating */
 @media (prefers-reduced-motion: no-preference) {
-  .sub-sample.pop { animation: fade .15s ease-out, sub-pop .12s cubic-bezier(.25, .75, .5, 1); }
+  .sub-sample.pops-in { animation: fade .15s ease-out, sub-pop .12s cubic-bezier(.25, .75, .5, 1); }
   @keyframes sub-pop { from { scale: .8; } }
 }
 
