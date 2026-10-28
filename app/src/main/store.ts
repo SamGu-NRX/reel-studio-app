@@ -43,6 +43,10 @@ export interface AppState {
   lastError: { code: string; userMessage: string } | null
   /** Title chosen at creation, shown until project.json exists. */
   title?: string
+  /** The title made from the video file's name, while the reel may still go by it: another video after a failed
+   * Version 1 gives the reel its own file's title only if the reel still has this one (main/first-video.ts). Absent on
+   * a reel named some other way, and on reels made before it was kept. */
+  fileTitle?: string
   /** When a reel planned before it had a video was made (a reel with a video has project.json's). */
   createdAt?: string
   /** An AI editor made the first edit (false/absent = the simple no-AI edit). */

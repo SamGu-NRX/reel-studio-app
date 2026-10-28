@@ -28,3 +28,10 @@ export async function clearFailedCopy(dir: string): Promise<void> {
   }
   for (const name of ['project.json', 'media', 'work', 'versions', POSTER]) await fs.rm(join(dir, name), { recursive: true, force: true })
 }
+
+/**
+ * The title a reel takes with another video after Version 1 failed: the new file's while it still goes by the old
+ * file's title, so a name the person or a plan gave it stays. Without a record of the old file's title, it stays too.
+ */
+export const titleWithAnotherVideo = (current: string, fileTitle: string | undefined, newFileTitle: string): string =>
+  fileTitle !== undefined && current === fileTitle ? newFileTitle : current

@@ -65,7 +65,7 @@ import {
   writeProject,
   type AppState
 } from './store'
-import { clearFailedCopy, posterFrame } from './first-video'
+import { clearFailedCopy, posterFrame, titleWithAnotherVideo } from './first-video'
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { libraryPreview } from './library-preview'
 import { readLesson } from './style-learn'
@@ -987,6 +987,7 @@ function registerIpc(): void {
     await updateAppState(slug, (s) => {
       s.status = 'working'
       s.title = title
+      s.fileTitle = title
     })
     const jobId = startFirstEdit(slug, { title, files: videos })
     return { slug, jobId, skipped }
@@ -1002,9 +1003,18 @@ function registerIpc(): void {
     const again = !st.from && !jobs.forSlug(slug) && (await reelSummary(slug))?.status === 'failed' && !(await listVersions(projectDir(slug))).length
     if (st.status !== 'planned' && !again) throw { code: 'HAS_VIDEO', userMessage: 'This reel already has its video. Drop it on Reels to make a new reel.' }
     const { videos, skipped } = await takeVideos(files)
-    if (again) await clearFailedCopy(projectDir(slug))
-    const title = st.title && st.title !== PLANNED_TITLE ? st.title : titleFromFile(videos[0])
-    await updateAppState(slug, (s) => void (s.title = title))
+    const fromFile = titleFromFile(videos[0])
+    let title: string
+    if (again) {
+      // read before the copy goes: a rename made once project.json existed is written there, not in app.json
+      const current = (await reelSummary(slug))?.title ?? st.title ?? fromFile
+      title = titleWithAnotherVideo(current, st.fileTitle, fromFile)
+      await clearFailedCopy(projectDir(slug))
+    } else title = st.title && st.title !== PLANNED_TITLE ? st.title : fromFile
+    await updateAppState(slug, (s) => {
+      s.title = title
+      if (title === fromFile) s.fileTitle = title
+    })
     // refused while a script is still being written; the reel stays planned until its first edit starts
     return { jobId: startFirstEdit(slug, { title, files: videos }), skipped }
   })
