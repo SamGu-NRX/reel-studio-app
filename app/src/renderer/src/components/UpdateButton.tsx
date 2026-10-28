@@ -214,7 +214,7 @@ export function UpdateButton() {
       >
         <div className="update-pop-head">
           <div className="update-pop-title">{updateHeadline(s)}</div>
-          <div className="update-pop-sub selectable">{s.status === 'error' ? updateSummary(s) : `Reel Studio ${version}`}</div>
+          <div className="update-pop-sub selectable">{s.status === 'error' ? updateSummary(s) : <>Reel Studio <span className="nowrap">{version}</span></>}</div>
         </div>
         {/* every release newer than this copy, newest first (main/update-machine.ts) */}
         {notes.map((n) => (
