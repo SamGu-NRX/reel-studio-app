@@ -101,7 +101,9 @@ test('Library, My style and Insights', async () => {
   await app.evaluate(({ dialog }, f) => {
     ;(dialog as any).showOpenDialog = async () => ({ canceled: false, filePaths: [f] })
   }, FIXTURE)
+  // nothing found in the test's empty home folder: Choose files… is the way in, and only it opens the dialog
   await page.getByTestId('style-learn').click()
+  await page.getByTestId('learn-choose').click()
   const lesson = page.getByTestId('style-lesson')
   await expect(lesson).toContainText('talking-head.xml (Premiere Pro)')
   await expect(page.getByTestId('style-lesson-rule')).toHaveText([

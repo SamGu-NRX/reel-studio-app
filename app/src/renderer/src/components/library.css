@@ -68,16 +68,35 @@
 /* ---- My style (MyStyle.tsx) ----
    One rule per row, read like a whiteboard: the kind's icon, the short line, Paused if it is, then where it came
    from. The line opens the full sentence, the note it came from and when. */
-.page.style-page { max-width: 760px; margin: 0; padding-top: 4px; }
+.page.style-page {
+  /* one reading column centred in the space beside the sidebar, at least as tall as it, so an empty page centres too */
+  max-width: 760px; margin: 0 auto; padding-top: 4px; min-height: 100%; display: flex; flex-direction: column;
+}
 .style-intro { margin: 12px 0 16px; color: var(--ink-2); }
 .style-t { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .style-t > b { font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 560; overflow-wrap: anywhere; }
 .style-t > span { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); overflow-wrap: anywhere; }
 .style-form { display: flex; align-items: center; gap: 8px; padding: 10px 0; box-shadow: inset 0 1px 0 var(--line); }
 .style-form .input { flex: 1; min-width: 0; }
-.style-empty, .insights-empty { display: grid; justify-items: center; align-content: center; gap: 6px; min-height: 320px; text-align: center; }
-:is(.style-empty, .insights-empty) h2 { font-size: var(--fs-subhead); line-height: var(--lh-subhead); font-weight: 620; }
-:is(.style-empty, .insights-empty) p { max-width: 44ch; color: var(--ink-2); }
+.insights-empty { display: grid; justify-items: center; align-content: center; gap: 6px; min-height: 320px; text-align: center; }
+.insights-empty h2 { font-size: var(--fs-subhead); line-height: var(--lh-subhead); font-weight: 620; }
+.insights-empty p { max-width: 44ch; color: var(--ink-2); }
+/* Empty My style fills the column's height and sits a little above its middle, where the eye expects a centre */
+.style-empty {
+  flex: 1; display: grid; justify-items: center; align-content: center; gap: 8px; min-height: 0;
+  padding: var(--space-m) 0 calc(var(--space-l) + var(--space-s)); text-align: center;
+}
+.style-empty h2 { font-size: var(--fs-title); line-height: var(--lh-title); font-weight: 620; }
+.style-empty > p { max-width: 46ch; color: var(--ink-2); }
+.style-example { width: min(400px, 100%); margin: var(--space-m) 0 0; text-align: left; }
+.style-example figcaption { margin-bottom: 6px; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); }
+.style-example ul { list-style: none; margin: 0; padding: 0; }
+.style-example li { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; box-shadow: inset 0 1px 0 var(--line); color: var(--ink-3); }
+.style-example li:last-child { box-shadow: inset 0 1px 0 var(--line), inset 0 -1px 0 var(--line); }
+.style-example li > svg { flex: none; margin-top: 2px; color: var(--ink-4); }
+.style-example li > span { min-width: 0; display: grid; gap: 1px; }
+.style-example b { font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 560; color: var(--ink-3); overflow-wrap: anywhere; }
+.style-example span > span { font-size: var(--fs-sm); line-height: var(--lh-sm); }
 .insights-empty p + p { margin-top: 4px; }
 .style-note { margin: 0 0 12px; font-size: var(--fs-base); color: var(--pencil); }
 .style-status > .banner { margin: 0 0 12px; }

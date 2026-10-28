@@ -544,6 +544,24 @@ def cmd_import_reference(args: list[str]) -> dict:
     return {"source": {"path": str(path), "adapter": adapter}, "mediaRefs": [], "timelines": timelines, "losses": [], "rawMetadata": []}
 
 
+def cmd_reference_scan(args: list[str]) -> dict:
+    """The real command's shape (reference_import.scan): each export's timeline count, or why it can't be read."""
+    import xml.etree.ElementTree as ET
+    files = []
+    for arg in args:
+        path = Path(arg)
+        try:
+            root = ET.parse(path / "Info.fcpxml" if path.is_dir() else path).getroot()
+        except (OSError, ET.ParseError):
+            files.append({"path": arg, "error": {"code": "BAD_XML", "message": "This file isn't a readable edit export. "
+                                                 "Export it again from your editor and try once more."}})
+            continue
+        n = len(list(root.iter("project"))) if root.tag == "fcpxml" else len(root.findall("sequence") + root.findall(".//children/sequence"))
+        files.append({"path": arg, "timelines": n} if n else {"path": arg, "error": {"code": "NO_TIMELINE", "message":
+                      "This export has no timeline in it. In your editor, export the project or sequence itself, not just its clips, and try again."}})
+    return {"files": files}
+
+
 def cmd_doctor(_args: list[str]) -> dict:
     return {"engine": "fake", "ffmpeg": shutil.which(FFMPEG) or FFMPEG, "ok": True}
 
@@ -554,6 +572,7 @@ COMMANDS = {
     "download-model": cmd_download_model, "speech-check": cmd_speech_check, "attach": cmd_attach,
     "cover-candidates": cmd_cover_candidates, "export-cover": cmd_export_cover, "export-probe": cmd_export_probe,
     "export-media": cmd_export_media, "import-reference": cmd_import_reference,
+    "reference-scan": cmd_reference_scan,
 }
 
 

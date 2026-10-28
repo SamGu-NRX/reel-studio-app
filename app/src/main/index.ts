@@ -72,6 +72,7 @@ import { clearFailedCopy, posterFrame, titleWithAnotherVideo } from './first-vid
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { libraryPreview } from './library-preview'
 import { readLesson } from './style-learn'
+import { countsOf, findPastEdits, mdfind, type FindDeps, type Found } from './past-edits'
 import { createJobManager } from './jobs'
 import { createPauser, pauseFor, quitQuestion } from './pause'
 import { createNoteQueue, noteOutcome, type NoteToRun, type StartHand } from './note-queue'
@@ -1307,17 +1308,50 @@ function registerIpc(): void {
     await ai.restoreStyleRule(gone.rule, gone.index)
     removedRules.delete(id)
   })
-  handle('style:learn', async () => {
-    const mac = process.platform === 'darwin'
-    const picker = learnPicker(mac)
-    const r = await showOpenDialog({
-      title: picker.title,
-      // a .fcpxmld is a folder unless Final Cut Pro is installed to make it a package
-      properties: mac ? ['openFile', 'openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'],
-      filters: [{ name: picker.filter, extensions: ['fcpxml', 'fcpxmld', 'xml'] }]
-    })
-    if (r.canceled || !r.filePaths.length) return null
-    return readLesson(r.filePaths, (file) => runEngine('import-reference', [file]))
+  // What style:find last found, with the paths the page never sees
+  let pastEdits: Found[] = []
+  const findDeps = (): FindDeps =>
+    TEST
+      ? // tests never look at the machine's own files: a folder of fixtures stands in for the home folder
+        { platform: process.platform, home: process.env.REELSTUDIO_TEST_PAST_EDITS_HOME ?? join(app.getPath('userData'), 'no-home'), spotlight: null }
+      : { platform: process.platform, home: app.getPath('home'), spotlight: process.platform === 'darwin' ? mdfind : null }
+  const foundEdit = (id: string): Found => {
+    const f = pastEdits.find((x) => x.id === id)
+    if (!f) throw { code: 'NOT_FOUND', userMessage: 'That edit is no longer where it was found. Close this and look again.' }
+    return f
+  }
+  handle('style:find', async () => {
+    pastEdits = await findPastEdits(findDeps())
+    return pastEdits.map(({ path: _path, ...edit }) => edit)
+  })
+  handle('style:count', async () => {
+    const readable = pastEdits.filter((f) => f.readable)
+    if (!readable.length) return {}
+    return countsOf(readable, await runEngine('reference-scan', readable.map((f) => f.path)))
+  })
+  handle('style:reveal', (_e, id: string) => {
+    const f = foundEdit(id)
+    if (TEST) log(`[style] reveal ${f.file}`)
+    else shell.showItemInFolder(f.path)
+  })
+  handle('style:learn', async (e, ids?: string[]) => {
+    let files: string[]
+    if (ids) {
+      files = ids.map((id) => foundEdit(id)).filter((f) => f.readable).map((f) => f.path)
+      if (!files.length) throw { code: 'NOT_READABLE', userMessage: 'Choose an XML export to learn from.' }
+    } else {
+      const mac = process.platform === 'darwin'
+      const picker = learnPicker(mac)
+      const r = await showOpenDialog({
+        title: picker.title,
+        // a .fcpxmld is a folder unless Final Cut Pro is installed to make it a package
+        properties: mac ? ['openFile', 'openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'],
+        filters: [{ name: picker.filter, extensions: ['fcpxml', 'fcpxmld', 'xml'] }]
+      })
+      if (r.canceled || !r.filePaths.length) return null
+      files = r.filePaths
+    }
+    return readLesson(files, (file) => runEngine('import-reference', [file]), (p) => e.sender.send('style:learnProgress', p))
   })
   handle('style:keepLearned', async (_e, rules: LearnedRule[], from: string) => {
     if (!ai.addStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be saved to My style. Try again later.' }
