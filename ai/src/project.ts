@@ -382,9 +382,10 @@ export function wordIndex(t: Transcript): WordIndex {
 const SENTENCE_PAUSE = 0.6;
 
 /**
- * Which words start and which end a sentence. A word ends one when its text ends in . ? or !, when the next word of
- * the same source starts more than 0.6 s after it, or when it is the last word; the word after an end starts one.
- * `marked` is false when no word ends a sentence by punctuation or a pause: then nothing tells sentences apart.
+ * Which words start and which end a sentence. A word ends one when its text ends in . ? or !, when the next word is
+ * from another source or starts more than 0.6 s after it, or when it is the last word; the word after an end starts
+ * one. `marked` is false when no word ends a sentence by punctuation, a pause or a change of source, the last word
+ * included: then nothing tells sentences apart.
  */
 export function sentenceEdges(t: Transcript): { starts: Set<string>; ends: Set<string>; marked: boolean } {
   const starts = new Set<string>();
@@ -393,10 +394,9 @@ export function sentenceEdges(t: Transcript): { starts: Set<string>; ends: Set<s
   t.words.forEach((w, i) => {
     const next = t.words[i + 1];
     if (i === 0 || ends.has(t.words[i - 1].id)) starts.add(w.id);
-    const end = !next || next.source !== w.source || /[.?!]["'”’)\]]*$/.test(String(w.w).trim()) || next.s - w.e > SENTENCE_PAUSE;
-    if (!end) return;
-    ends.add(w.id);
-    if (next) marked = true;
+    const signal = /[.?!]["'”’)\]]*$/.test(String(w.w).trim()) || (!!next && (next.source !== w.source || next.s - w.e > SENTENCE_PAUSE));
+    if (signal) marked = true;
+    if (signal || !next) ends.add(w.id);
   });
   return { starts, ends, marked };
 }

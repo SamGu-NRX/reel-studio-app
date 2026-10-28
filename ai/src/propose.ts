@@ -65,6 +65,8 @@ export function checkReelProposal(j: unknown, req: ProposeReelsRequest): { propo
   const idx = wordIndex(t);
   const edges = sentenceEdges(t);
   const problems: string[] = [];
+  // word ids run on across sources, so an ordered range can still start in one video and end in the next
+  const crossesSources = (a: WordAnchor) => new Set(anchorWords(t, a).map((w) => w.source)).size > 1;
   const say = (word: string) => `${word} (${quoted(String(t.words[idx.byId.get(word)!]?.w ?? '').trim(), 30)})`;
 
   // every word already spoken for: by TAKEN, then by each reel as it is checked
@@ -104,6 +106,7 @@ export function checkReelProposal(j: unknown, req: ProposeReelsRequest): { propo
           const o = owner.get(clash.id)!;
           problems.push(`${id}: keep[${k}] (${range}) uses ${clash.id}, which ${o.by === 'TAKEN' ? 'TAKEN already has' : `${o.by} uses`} (${o.range})`);
         }
+        if (crossesSources(a)) problems.push(`${id}: keep[${k}] (${range}) runs from one video into another; keep each range inside one video`);
         if (edges.marked && !edges.starts.has(a.from)) problems.push(`${id}: keep[${k}] starts at ${say(a.from)}, in the middle of a sentence; start on a sentence's first word`);
         if (edges.marked && !edges.ends.has(a.to)) problems.push(`${id}: keep[${k}] ends at ${say(a.to)}, in the middle of a sentence; end on a sentence's last word`);
       });
@@ -120,6 +123,7 @@ export function checkReelProposal(j: unknown, req: ProposeReelsRequest): { propo
         problems.push(`${id}: hook must start on keep[0]'s first word (${first.from}) and end inside keep[0] (${first.from}..${first.to})`);
       } else if (anchorWords(t, hook).length > HOOK_WORDS) problems.push(`${id}: hook is longer than ${HOOK_WORDS} words`);
     }
+    if (!anchorProblem(idx, hook) && crossesSources(hook)) problems.push(`${id}: hook runs from one video into another`);
 
     const seconds = keepOk ? approxDuration(t, keep, req.gapCap) : 0;
     if (keepOk && (seconds < REEL_SECONDS.min || seconds > REEL_SECONDS.max)) {

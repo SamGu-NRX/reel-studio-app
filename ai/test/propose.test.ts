@@ -30,6 +30,12 @@ function fixture(long = 0.4, text = SENTENCES): Transcript {
   return { words };
 }
 
+/** The same words with 0.3 s before each: no pause anywhere. */
+function evenly(t: Transcript): Transcript {
+  t.words.forEach((w, i) => { if (i) { w.s = t.words[i - 1].e + 0.3; w.e = w.s + 0.4; } });
+  return t;
+}
+
 const req = (over: Partial<ProposeReelsRequest> = {}): ProposeReelsRequest =>
   ({ transcript: fixture(), gapCap: 0.25, title: 'Sourdough notes', taken: [], ...over });
 const reel = (title: string, keep: [string, string][], hook: [string, string] = [keep[0][0], keep[0][0]], extra: Record<string, unknown> = {}) =>
@@ -64,8 +70,7 @@ describe('proposeReels', () => {
   it('refuses a range that starts mid-sentence, naming the word, unless nothing marks sentences', () => {
     const late = { candidates: [reel('The one fold that fixed my crumb', [['w1', 'w35']], ['w1', 'w6'])] };
     expect(problems(late)).toMatch(/r1: keep\[0\] starts at w1 \("people"\), in the middle of a sentence/);
-    const unmarked = fixture(0.4, SENTENCES.map((s) => s.replace(/[.,]/g, '')));
-    unmarked.words.forEach((w, i) => { if (i) { w.s = unmarked.words[i - 1].e + 0.3; w.e = w.s + 0.4; } });
+    const unmarked = evenly(fixture(0.4, SENTENCES.map((s) => s.replace(/[.,]/g, ''))));
     expect(problems(late, req({ transcript: unmarked }))).toBe('');
   });
 
@@ -87,6 +92,22 @@ describe('proposeReels', () => {
   it('refuses a reel inside TAKEN', () => {
     const taken = req({ taken: [{ from: 'w36', to: 'w62' }] });
     expect(problems({ candidates: [reel('Why I stopped using a mixer', [MIXER])] }, taken)).toMatch(/r1: keep\[0\] \(w36\.\.w62\) uses w36, which TAKEN already has \(w36\.\.w62\)/);
+  });
+
+  // fails if a reel may run from one video into the next, whose word ids simply continue
+  it('refuses a range or hook that crosses from one source into another', () => {
+    const two = fixture();
+    two.words.forEach((w, i) => { if (i >= 36) w.source = 's2'; });
+    const crossing = { candidates: [reel('Fold it, then sell the mixer', [['w20', 'w56']], ['w20', 'w38'])] };
+    const said = problems(crossing, req({ transcript: two }));
+    expect(said).toMatch(/r1: keep\[0\] \(w20\.\.w56\) runs from one video into another/);
+    expect(said).toMatch(/r1: hook runs from one video into another/);
+  });
+
+  // fails if a transcript whose only mark is the full stop at its end counts as unmarked, so any word may start a reel
+  it('counts a full stop on the last word as marking sentences', () => {
+    const one = evenly(fixture(0.4, ['Most people fold the dough too early and that is the whole problem so wait until it jiggles before the first fold then fold it four times an hour apart and the crumb opens because the gluten had time to build.']));
+    expect(problems({ candidates: [reel('The fold', [['w1', `w${one.words.length - 1}`]], ['w1', 'w6'])] }, req({ transcript: one }))).toMatch(/r1: keep\[0\] starts at w1 \("people"\), in the middle of a sentence/);
   });
 
   // fails if a reel's hook may be words it never opens on
