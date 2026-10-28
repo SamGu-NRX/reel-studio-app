@@ -49,6 +49,7 @@ const api: ReelApi = {
     openFolder: (p) => call('app:openFolder', p),
     copyText: (t) => call('app:copyText', t),
     dimTitleBar: (on) => call('app:dimTitleBar', on),
+    titleBarOnStage: (on) => call('app:titleBarOnStage', on),
     pathForFile: (f) => webUtils.getPathForFile(f),
     chooseFolder: () => call('app:chooseFolder'),
     setRoot: (p) => call('app:setRoot', p),
