@@ -39,7 +39,7 @@ test('fix a word and break a line in the Subtitles list', async () => {
   const cap = projectJson().captions
   expect(cap.split).toEqual(['w1'])
   expect(cap.corrections).toEqual([{ from: 'placeholder', to: 'Placeholders', at: 'w2' }])
-  await expect(page.getByTestId('chat')).toContainText('fixed a word, new subtitle lines')
+  await expect(page.getByTestId('chat')).toContainText('fixed a word and changed the subtitle lines')
 
   await page.getByTestId('edit-myself').click()
   await page.getByTestId('cut-mode-fix').click()

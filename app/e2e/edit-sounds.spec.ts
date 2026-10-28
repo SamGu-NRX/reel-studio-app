@@ -138,8 +138,9 @@ test('sounds: add at the playhead, a level, a removal and a fade, carried by the
   expect(v3.sfx.some((s: any) => JSON.stringify(s.at) === JSON.stringify(hit.at))).toBe(false)
   expect(v3.sfx[1].sound).toBe('ding-idea')
   expect(v3.sfx[1].at.word).toBeTruthy()
-  // the version's line says what changed
-  await expect(page.locator('.nt-res[data-v="3"]')).toContainText('music fades in over 1.2 s')
+  // what you did, then the version's line in the few words its rows changed (c2d51f7b)
+  await expect(page.getByTestId('chat')).toContainText('faded the music in over 1.2 s')
+  await expect(page.locator('.nt-res[data-v="3"]')).toContainText('Song fades')
   await expect(page.locator('.nt-res[data-v="3"] + .acc')).toContainText('Whoosh volume')
 
   await app.close()
