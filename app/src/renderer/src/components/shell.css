@@ -42,8 +42,9 @@
 .side-resize { position: absolute; top: 0; bottom: 0; right: -12px; width: 24px; cursor: col-resize; z-index: 2; touch-action: none; }
 .side-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 11px; width: 2px; background: var(--line-strong); opacity: 0; transition: opacity 120ms ease; }
 @media (hover: hover) and (pointer: fine) { .side-resize:hover::after { opacity: 1; transition-delay: 150ms; } }
-.side-resize:focus-visible::after, html.side-resizing .side-resize::after { opacity: 1; }
-.side-resize:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+/* Cmd/Ctrl+Shift+\ focuses it (Sidebar.tsx); Chromium may not count that chord for :focus-visible, so keyboard mode shows it too */
+.side-resize:focus-visible::after, html.kb .side-resize:focus::after, html.side-resizing .side-resize::after { opacity: 1; }
+.side-resize:focus-visible, html.kb .side-resize:focus { outline: 2px solid var(--ink); outline-offset: -2px; }
 .rail .side-resize { display: none; }
 html.side-resizing, html.side-resizing * { cursor: col-resize !important; user-select: none; }
 

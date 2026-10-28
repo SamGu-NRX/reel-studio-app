@@ -14,6 +14,11 @@ const RAIL_W = 64
 const RESIZE_KEYS = IS_MAC ? 'Meta+Shift+\\' : 'Control+Shift+\\'
 /** The page's and the title row's slide when the sidebar folds, so a second fold can stop it before measuring. */
 const slides = new WeakMap<HTMLElement, Animation>()
+/** The sidebar toggle in the title row: where focus goes when the resize edge it was on is hidden or has nowhere to return. */
+const sidebarToggle = (): HTMLElement | null => document.querySelector<HTMLElement>('.titlebar .sbt')
+/** Shift+\: matched by the character it types, or by the key's place when a layout types something else there. */
+const isResizeChord = (e: KeyboardEvent): boolean =>
+  (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === '\\' || e.key === '|' || e.code === 'Backslash')
 
 // Insights is always here, so analytics have one place to live before any reel is posted (spec.md section 9).
 const NAV: { key: 'home' | 'library' | 'style' | 'insights'; label: string; icon: IconName }[] = [
@@ -38,6 +43,8 @@ export function useRail(): [boolean, (byShortcut?: boolean) => void] {
   const [rail, setRail] = useState(() => localStorage.getItem(RAIL_KEY) === '1')
   // byKeyboard() does not count Cmd/Ctrl shortcuts (motion.ts), so the shortcut says so itself
   const toggle = useCallback((byShortcut = false) => {
+    // folding hides the resize edge: focus on it moves to the toggle first, so it isn't left on nothing
+    if (document.activeElement?.classList.contains('side-resize')) sidebarToggle()?.focus()
     const moving = Array.from(document.querySelectorAll<HTMLElement>('.main, .tb-main'))
     // where each is on screen now, partway through a slide included
     const before = moving.map((el) => el.getBoundingClientRect().left)
@@ -92,13 +99,15 @@ function SideResizer() {
   const back = useRef<HTMLElement | null>(null)
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.code !== 'Backslash') return
+      if (!isResizeChord(e)) return
       const el = edge.current
       // folded to the rail, the edge is hidden: there is no width to set
       if (!el || el.offsetParent === null) return
       e.preventDefault()
-      back.current = document.activeElement instanceof HTMLElement && document.activeElement !== el ? document.activeElement : null
-      // motion.ts leaves a Cmd/Ctrl chord out of keyboard mode; this one is keyboard use, so the edge shows its focus
+      // pressed again on the edge, Esc still goes back to where the first press came from
+      if (document.activeElement !== el) back.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      // Chromium doesn't count a Cmd/Ctrl chord as keyboard use, so :focus-visible may not match; shell.css shows the
+      // edge's focus under html.kb, which motion.ts clears on the next pointer press
       document.documentElement.classList.add('kb')
       el.focus()
     }
@@ -135,8 +144,11 @@ function SideResizer() {
   }
   const key = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     const step = e.key === 'ArrowLeft' ? -8 : e.key === 'ArrowRight' ? 8 : 0
-    if (e.key === 'Escape' && back.current?.isConnected) back.current.focus()
-    else if (e.key === 'Home') commit(SIDE.min)
+    if (e.key === 'Escape') {
+      back.current?.focus()
+      // gone, hidden or not focusable: the toggle, so focus never stays on the edge
+      if (document.activeElement === e.currentTarget) sidebarToggle()?.focus()
+    } else if (e.key === 'Home') commit(SIDE.min)
     else if (e.key === 'End') commit(SIDE.max)
     else if (step) commit(sideWidth(width + step))
     else return
@@ -148,6 +160,7 @@ function SideResizer() {
       role="separator"
       aria-orientation="vertical"
       aria-label="Sidebar width"
+      aria-controls="sidebar"
       aria-valuenow={width}
       aria-valuemin={SIDE.min}
       aria-valuemax={SIDE.max}

@@ -141,7 +141,8 @@ test('the first run has no target under 24 px', async () => {
 })
 
 // fails if Tab reaches the screen's title row before the sidebar, stops on the sidebar's resize edge between the
-// account row and the screen (audit-1028 finding 24), or the edge can no longer be reached and moved from the keyboard
+// account row and the screen (audit-1028 finding 24), or the edge can no longer be reached and moved from the
+// keyboard, or leaves focus nowhere on Esc or when the sidebar folds
 test('Tab goes from the sidebar toggle down the sidebar, then to the title row; the resize edge has its own shortcut', async () => {
   const { app, page } = await launch({ REELSTUDIO_USER_DATA: join(MINE, 'order-data'), REELSTUDIO_ROOT: join(MINE, 'order-root') })
   try {
@@ -164,15 +165,35 @@ test('Tab goes from the sidebar toggle down the sidebar, then to the title row; 
     // the account row is the sidebar's last stop; Add files, the title row's first control, comes next
     expect(order.slice(-2)).toEqual(['account', 'Add files'])
 
-    // Cmd/Ctrl+Shift+\ focuses the edge, the arrow keys size the sidebar, Esc goes back to Add files
+    // Cmd/Ctrl+Shift+\ focuses the edge, the arrow keys size the sidebar, Esc goes back to Add files, even after a
+    // second press on the edge
+    const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
     const edge = page.getByTestId('sidebar-resize')
+    const toggle = page.getByTestId('sidebar-toggle')
     const width = Number(await edge.getAttribute('aria-valuenow'))
-    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+Backslash' : 'Control+Shift+Backslash')
+    await page.keyboard.press(`${mod}+Shift+Backslash`)
     await expect(edge).toBeFocused()
+    await page.keyboard.press(`${mod}+Shift+Backslash`)
     await page.keyboard.press('ArrowRight')
     await expect(edge).toHaveAttribute('aria-valuenow', String(width + 8))
     await page.keyboard.press('Escape')
     await expect(addFiles).toBeFocused()
+
+    // with nothing focusable to go back to (a click left focus on the page), Esc lands on the sidebar toggle
+    await page.getByTestId('library-empty').click()
+    await page.keyboard.press(`${mod}+Shift+Backslash`)
+    await expect(edge).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(toggle).toBeFocused()
+
+    // folding the sidebar while the edge has focus hands focus to the toggle instead of hiding it
+    await page.keyboard.press(`${mod}+Shift+Backslash`)
+    await expect(edge).toBeFocused()
+    await page.keyboard.press(`${mod}+Backslash`)
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(toggle).toBeFocused()
+    await page.keyboard.press(`${mod}+Backslash`)
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
   } finally {
     await app.close()
   }
