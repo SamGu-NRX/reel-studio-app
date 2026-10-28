@@ -1,6 +1,7 @@
-// A reel's one state on Reels, and Activity's groups (ux-foundation-b.md section 3.4). Keep free of DOM imports:
+// A reel's one state on Reels, Activity's groups (ux-foundation-b.md section 3.4) and the step a Making line names. Keep free of DOM imports:
 // test/home-state.test.ts runs it in Node.
 import type { ProjectSummary } from '../../../shared/api'
+import { STEP_LABEL, type Step } from '../../../shared/steps'
 
 export type CardState = 'novideo' | 'making' | 'paused' | 'failed' | 'ready'
 
@@ -38,4 +39,17 @@ export function activity(list: ProjectSummary[], now: Date): { needs: ProjectSum
       .map((x) => x.p)
   const recent = list.filter((p) => stateOf(p) === 'ready' && now.getTime() - new Date(p.versionAt ?? p.updatedAt).getTime() < RECENT_DAYS * 86_400_000)
   return { needs: ranked(needsRank), making: ranked(makingRank), recent }
+}
+
+/**
+ * The step a Making line names, from a job's status event, in the words the Reel screen's progress strip uses
+ * (Composer.tsx): Version 1's current step, unless the editor itself is being waited on; then, and for a note, what
+ * the job says it is doing. null: nothing to name yet.
+ */
+export function stepWords(e: { message: string; waiting: boolean; steps?: Step[] }): string | null {
+  if (e.steps && !e.waiting) {
+    const now = e.steps.find((s) => s.state === 'now')
+    return now ? STEP_LABEL[now.id] : null
+  }
+  return e.message.trim() || null
 }

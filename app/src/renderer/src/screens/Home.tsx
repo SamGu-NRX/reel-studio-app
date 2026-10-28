@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { ProjectSummary } from '../../../shared/api'
-import { STILL_WORKING } from '../../../shared/live'
+import { timeLeftWords } from '../../../shared/live'
 import { dayLabel } from '../../../shared/notes-log'
 import { pauseLine } from '../../../shared/pause'
 import { reel, userMessage } from '../api'
@@ -14,7 +14,7 @@ import { SampleReel } from '../components/SampleReel'
 import { Button, IS_MAC, PickFiles, Segmented } from '../components/ui'
 import { useModelStatus } from '../components/connect'
 import { createFromFiles, newReel } from './create'
-import { activity, stateOf } from './home-state'
+import { activity, stateOf, stepWords, type CardState } from './home-state'
 import '../components/home.css'
 
 type View = 'activity' | 'all'
@@ -25,20 +25,15 @@ const VIEWS = [
 const VIEW_KEY = 'rs.home-view'
 /** Series chips only help once there are this many reels (spec.md section 4). */
 const SERIES_FROM = 12
-const CARD_MIN = 140
+/** Recent and All reels add a column only once every card can be this wide, so cards grow with the window instead of
+ * staying 140 px wide in a third of it (audit-1028 finding 19, the 1600 px shot). */
+const CARD_MIN = 168
 const GAP = 18
 
-/** A version being made, from the job's own events. */
-type Live = { overall: number; secondsLeft: number | null; overdue: boolean }
+/** A version being made, from the job's own events: how far it is, the time left and the step it is on. */
+type Live = { overall: number; secondsLeft: number | null; overdue: boolean; step: string | null }
 
-function leftWords(l: Live): string | null {
-  if (l.overdue) return STILL_WORKING
-  if (l.secondsLeft === null || l.secondsLeft < 0) return null
-  if (l.secondsLeft < 20) return 'Almost done'
-  return `About ${Math.max(1, Math.round(l.secondsLeft / 60))} min left`
-}
-
-/** How many card columns fit: every grid on the page shares them, so Activity's groups line up. */
+/** How many card columns fit; Recent and All reels share them. */
 function useColumns(ref: React.RefObject<HTMLElement | null>): number {
   const [cols, setCols] = useState(4)
   useLayoutEffect(() => {
@@ -81,7 +76,7 @@ export function Home({ go }: { go: Go }) {
     const off = reel.jobs.onEvent((e) => {
       if (e.type !== 'status' || !e.slug) return void load()
       const slug = e.slug
-      setLive((m) => ({ ...m, [slug]: { overall: e.overall, secondsLeft: e.secondsLeft, overdue: e.overdue } }))
+      setLive((m) => ({ ...m, [slug]: { overall: e.overall, secondsLeft: e.secondsLeft, overdue: e.overdue, step: stepWords(e) } }))
       // a reel started somewhere else (a drop, a paste, a file opened with Reel Studio), or a Resume or Try again whose
       // list was read before its job was recorded: the card would keep its stopped state until the job ended
       const was = known.current.get(slug)
@@ -146,26 +141,28 @@ export function Home({ go }: { go: Go }) {
   if (projects && list.length === 0) body = <Empty go={go} />
   else if (view === 'activity') {
     const { needs, making, recent } = activity(list, now)
-    // Needs you and Making are usually one to three cards each: they share a row rather than leave two mostly empty.
-    const shared = needs.length > 0 && making.length > 0 && needs.length + making.length <= cols
+    // Needs you and Making are short rows, side by side when both have reels, so what is stuck takes a few lines and
+    // Recent starts above the fold.
+    const rows = (title: string, items: ProjectSummary[]) =>
+      items.length > 0 && (
+        <section key={title} aria-label={title}>
+          <h2 className="sec-h">{title}</h2>
+          <ul className="rrows">
+            {items.map((p) => (
+              <li key={p.slug}>
+                <Row p={p} live={live[p.slug]} now={now} onOpen={() => open(p)} onAct={() => resume(p)} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
     body = (
       <>
-        {shared ? (
-          <div className="grid top">
-            <h2 className="sec-h" style={{ gridColumn: `1 / span ${needs.length}` }}>
-              Needs you
-            </h2>
-            <h2 className="sec-h" style={{ gridColumn: `${needs.length + 1} / span ${making.length}` }}>
-              Making
-            </h2>
-            {needs.map(card)}
-            {making.map(card)}
+        {(needs.length > 0 || making.length > 0) && (
+          <div className="now">
+            {rows('Needs you', needs)}
+            {rows('Making', making)}
           </div>
-        ) : (
-          <>
-            {section('Needs you', needs)}
-            {section('Making', making)}
-          </>
         )}
         {section('Recent', recent)}
         {!needs.length && !making.length && !recent.length && (
@@ -288,15 +285,12 @@ function stopped(p: ProjectSummary, now: Date): { why: string; next: string; act
   return { ...line, act }
 }
 
-/**
- * A reel: its picture, a title on up to two lines, and one line saying where it is (ux-foundation-b.md section 3.4).
- * Only a state that isn't Ready changes the picture. A reel that stopped says why and what happens next, and its one
- * action is a pill under that line; the rest of the card opens the reel.
- */
-function Card({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live; now: Date; onOpen: () => void; onAct: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false)
+/** What a reel says wherever it is listed: its state, why it stopped, its one line, and the name a screen reader hears. */
+function lineOf(p: ProjectSummary, live: Live | undefined, now: Date) {
   const state = stateOf(p)
-  const left = state === 'making' && live ? leftWords(live) : null
+  const making = state === 'making'
+  const left = making && live ? timeLeftWords(live) : null
+  const step = making ? (live?.step ?? null) : null
   const fresh = state === 'ready' && isNew(p.slug, p.versionAt)
   const stop = stopped(p, now)
   let meta: ReactNode
@@ -311,9 +305,9 @@ function Card({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live;
   } else if (state === 'novideo') {
     meta = 'Waiting for your video'
     label += ', waiting for your video'
-  } else if (state === 'making') {
+  } else if (making) {
     meta = `Making Version ${p.version + 1}`
-    label += `, making Version ${p.version + 1}${left ? `, ${left.toLowerCase()}` : ''}`
+    label += `, making Version ${p.version + 1}${[left, step].map((w) => (w ? `, ${w.toLowerCase()}` : '')).join('')}`
   } else {
     meta = fresh ? (
       <>
@@ -325,39 +319,93 @@ function Card({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live;
     )
     if (fresh) label += `, Version ${p.version} is new`
   }
-  const act = () => {
+  // the tooltip carries a stopped reel's whole line: a long reason is cut at two lines
+  const tip = stop ? `${p.title}\n${stop.why} · ${stop.next}` : p.title
+  return { state, left, step, stop, meta, label, tip }
+}
+
+/** The picture: the cover, else the take's first second; a reel with no video yet is paper. */
+function Picture({ p, state, title }: { p: ProjectSummary; state: CardState; title: boolean }) {
+  if (state === 'novideo') return title ? <span className="paper-t">{p.title}</span> : null
+  if (p.thumbnail) return <img src={p.thumbnail} alt="" loading="lazy" decoding="async" />
+  return p.take ? <video src={`${p.take}#t=1`} muted playsInline preload="metadata" /> : null
+}
+
+/** The one pill a stopped reel offers (Resume, Try again), above the hit area that opens the reel. */
+function ActPill({ p, act, onAct }: { p: ProjectSummary; act: { label: string; testid: string }; onAct: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false)
+  const go = () => {
     setBusy(true)
     void onAct().finally(() => setBusy(false))
   }
   return (
-    <div className={`rcard st-${state}`} data-slug={p.slug}>
-      {/* the tooltip carries a stopped reel's whole line: a long reason is cut at two lines */}
-      <button className="hit" onClick={onOpen} title={stop ? `${p.title}\n${stop.why} · ${stop.next}` : p.title} aria-label={label} data-testid="project-card" data-state={state} />
+    <Button size="small" className="card-act" onClick={go} disabled={busy} aria-label={`${act.label}: ${p.title}`} data-testid={act.testid}>
+      {act.label}
+    </Button>
+  )
+}
+
+/** The bar a Making reel's picture carries, moved by the job's own events. */
+const Progress = ({ live }: { live?: Live }) => (
+  <span className="pb">
+    <i style={{ transform: `scaleX(${Math.max(0.03, (live?.overall ?? 0) / 100)})` }} />
+  </span>
+)
+
+/**
+ * A reel: its picture, a title on up to two lines, and one line saying where it is (ux-foundation-b.md section 3.4).
+ * Only a state that isn't Ready changes the picture. A reel that stopped says why and what happens next, and its one
+ * action is a pill under that line; the rest of the card opens the reel.
+ */
+function Card({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live; now: Date; onOpen: () => void; onAct: () => Promise<void> }) {
+  const l = lineOf(p, live, now)
+  return (
+    <div className={`rcard st-${l.state}`} data-slug={p.slug}>
+      <button className="hit" onClick={onOpen} title={l.tip} aria-label={l.label} data-testid="project-card" data-state={l.state} />
       <div className="im" aria-hidden>
-        {state === 'novideo' ? (
-          <span className="paper-t">{p.title}</span>
-        ) : p.thumbnail ? (
-          <img src={p.thumbnail} alt="" loading="lazy" decoding="async" />
-        ) : (
-          p.take && <video src={`${p.take}#t=1`} muted playsInline preload="metadata" />
-        )}
-        {state === 'paused' && <Icon name="pause" size={30} stroke={0} className="pause-glyph" />}
-        {left && <span className="left">{left}</span>}
-        {state === 'making' && (
-          <span className="pb">
-            <i style={{ transform: `scaleX(${Math.max(0.03, (live?.overall ?? 0) / 100)})` }} />
+        <Picture p={p} state={l.state} title />
+        {l.state === 'paused' && <Icon name="pause" size={30} stroke={0} className="pause-glyph" />}
+        {/* the step and the time left sit on the picture, over the bar (spec.md section 4): the line below has no room */}
+        {(l.step || l.left) && (
+          <span className="left">
+            {l.step && <span>{l.step}</span>}
+            {l.left && <span>{l.left}</span>}
           </span>
         )}
+        {l.state === 'making' && <Progress live={live} />}
       </div>
       <div className="ttl">{p.title}</div>
-      <div className={`cm${stop ? ' why' : ''}`} data-testid="card-status">
-        {meta}
+      <div className={`cm${l.stop ? ' why' : ''}`} data-testid="card-status">
+        {l.meta}
       </div>
-      {stop?.act && (
-        <Button size="small" className="card-act" onClick={act} disabled={busy} aria-label={`${stop.act.label}: ${p.title}`} data-testid={stop.act.testid}>
-          {stop.act.label}
-        </Button>
-      )}
+      {l.stop?.act && <ActPill p={p} act={l.stop.act} onAct={onAct} />}
+    </div>
+  )
+}
+
+/**
+ * A reel in Needs you or Making: a 40 px picture, the title, one status line and its one pill, about a fifth of a
+ * card's height, so a few stuck reels don't push Recent below the fold (audit-1028 finding 19). Making names the
+ * time left and the step, in the progress strip's words and order (Composer.tsx).
+ */
+function Row({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live; now: Date; onOpen: () => void; onAct: () => Promise<void> }) {
+  const l = lineOf(p, live, now)
+  return (
+    <div className={`rrow st-${l.state}`} data-slug={p.slug}>
+      <button className="hit" onClick={onOpen} title={l.tip} aria-label={l.label} data-testid="project-card" data-state={l.state} />
+      <div className="rthumb" aria-hidden>
+        <Picture p={p} state={l.state} title={false} />
+        {l.state === 'paused' && <Icon name="pause" size={14} stroke={0} className="pause-glyph" />}
+        {l.state === 'making' && <Progress live={live} />}
+      </div>
+      <div className="rtext">
+        <div className="ttl">{p.title}</div>
+        <div className={`cm${l.stop || l.state === 'making' ? ' why' : ''}`} data-testid="card-status">
+          {l.meta}
+          {[l.left, l.step].map((w) => (w ? ` · ${w}` : '')).join('')}
+        </div>
+      </div>
+      {l.stop?.act && <ActPill p={p} act={l.stop.act} onAct={onAct} />}
     </div>
   )
 }
