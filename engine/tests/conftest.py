@@ -57,3 +57,35 @@ def _engine_test_cache(tmp_path_factory):
         _os.environ.pop("REELENGINE_CACHE_DIR", None)
     else:
         _os.environ["REELENGINE_CACHE_DIR"] = old
+
+
+# --- tests that burn captions need FFmpeg's `subtitles` filter (libass) --------------------
+# The app's own FFmpeg has it, and CI checks for it. A local FFmpeg built without libass would fail these tests
+# with "No such filter: 'subtitles'"; marked `needs_libass`, they skip with the reason instead.
+import re as _re
+import subprocess as _subprocess
+from functools import lru_cache as _lru_cache
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "needs_libass: burns captions with FFmpeg's subtitles filter (libass)")
+
+
+@_lru_cache(maxsize=None)
+def _ffmpeg_without_subtitles():
+    """The FFmpeg the engine uses, if `ffmpeg -filters` runs and lists no subtitles filter; else None (asked once)."""
+    from reelengine import tools
+    try:
+        ff = tools.ffmpeg()
+        out = _subprocess.run([ff, "-hide_banner", "-filters"], capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=30).stdout
+    except Exception:
+        return None  # no FFmpeg, or it didn't answer: the test runs and fails with the real error
+    return None if _re.search(r"^\s*\S+\s+subtitles\s", out, _re.M) else ff
+
+
+def pytest_runtest_setup(item):
+    if item.get_closest_marker("needs_libass"):
+        ff = _ffmpeg_without_subtitles()
+        if ff:
+            _pytest.skip(f"needs FFmpeg's subtitles filter (libass), which {ff} does not have")

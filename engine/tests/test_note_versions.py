@@ -61,6 +61,7 @@ def test_the_same_edit_gets_its_saved_version_back_untouched(project):
     assert {f.name: f.read_bytes() for f in v1.iterdir() if f.is_file()} == before
 
 
+@pytest.mark.needs_libass
 def test_changed_words_make_a_new_version_with_their_subtitles(project):
     p = json.loads((project / "project.json").read_text())
     p["captions"]["enabled"] = True

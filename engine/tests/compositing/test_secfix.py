@@ -399,6 +399,7 @@ def test_f20_remote_file_names_cannot_escape(models, monkeypatch, bad):
 
 # --- 16: read-modify-write of project.json -----------------------------------------------------
 
+@pytest.mark.needs_libass
 def test_f16_render_keeps_an_edit_saved_while_it_ran(tmp_path, media, monkeypatch):
     pdir = _proj(tmp_path, media, keep=((1.0, 4.0),))
     real_cover = render.render_cover
@@ -438,6 +439,7 @@ def test_f16_transcribe_keeps_an_edit_saved_while_it_ran(tmp_path, media, monkey
 
 # --- 17, 39: honest render results -------------------------------------------------------------
 
+@pytest.mark.needs_libass
 def test_f17_unknown_anchor_is_reported_and_f39_no_dev_text(tmp_path, media, monkeypatch):
     pdir = _proj(tmp_path, media, keep=((1.0, 4.0),),
                  broll=[{"id": "b7", "anchor": {"from": "w9998", "to": "w9999"}, "treatment": "text-pop",
@@ -538,6 +540,7 @@ def test_f38b_verify_decode_failure_is_not_pass(tmp_path, media, monkeypatch):
 
 # --- 40: an export is never replaced by a different video under the same version ---------------
 
+@pytest.mark.needs_libass
 def test_f40_replaced_asset_makes_a_new_version(tmp_path, media):
     pdir = _proj(tmp_path, media, keep=((1.0, 4.0),))
     (pdir / "work" / "assets").mkdir(parents=True, exist_ok=True)
@@ -568,6 +571,7 @@ def test_f41_write_json_fsyncs_before_replace(tmp_path, monkeypatch):
 
 # --- 42: nothing ever opens media/* for writing ------------------------------------------------
 
+@pytest.mark.needs_libass
 def test_f42_media_is_never_opened_for_writing(tmp_path, media, monkeypatch):
     pdir = tmp_path / "proj"
     initmod.run(pdir, "T", [media["video"]])
