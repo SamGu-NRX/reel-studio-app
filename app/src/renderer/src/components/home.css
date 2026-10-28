@@ -135,7 +135,7 @@ html.kb .rrow .hit:focus-visible { outline: 2px solid var(--ink); outline-offset
 
 /* From the keyboard, and with reduced motion, a picture doesn't move or change size; the hover wash stays. */
 html.kb .rcard .im, html.kb .rrow .rthumb { transition: none; }
-html.kb :is(.rcard .hit:active ~ .im, .rrow .hit:active ~ .rthumb) { transform: none; }
+html.kb :is(.rcard:hover .im, .rcard .hit:active ~ .im, .rrow .hit:active ~ .rthumb) { transform: none; }
 @media (prefers-reduced-motion: reduce) {
   .rcard .im, .rrow .rthumb { transition: none; }
   .rcard .pb i, .rrow .pb i { transition: none; }
@@ -175,4 +175,8 @@ html.kb .sample-card .im:focus-visible { outline: 2px solid var(--ink); outline-
 .sample-card figcaption b { font-weight: 620; }
 .sample-card figcaption span { color: var(--ink-3); font-variant-numeric: tabular-nums; }
 html.kb .sample-card .im { transition: none; }
-@media (prefers-reduced-motion: reduce) { .sample-card .im { transition: none; } }
+html.kb .sample-card .im:active { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .sample-card .im { transition: none; }
+  .sample-card .im:active { transform: none; }
+}
