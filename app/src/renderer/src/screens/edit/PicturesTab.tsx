@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { LibraryFile, ProjectJson } from '../../../../shared/api'
 import { clock } from '../../../../shared/progress'
 import { reel, userMessage } from '../../api'
 import { useNotify } from '../../App'
 import { Icon } from '../../components/icons'
+import { byKeyboard, reducedMotion } from '../../components/motion'
 import { Button, IS_MAC } from '../../components/ui'
+import { animationName } from '../../../../shared/lanes'
 import { fileTitle, pressKeys, setP, wordKeys, type TabProps } from './controls'
 
 type Broll = NonNullable<ProjectJson['broll']>[number]
@@ -20,12 +22,6 @@ const TREATMENTS: Record<string, string> = {
   'split-top': 'Top half'
 }
 
-/** "anim-big-quote-2.mov" (or "n1a2b3c4d-anim-..." from a note) -> "Moving big quote"; never a file name. */
-function animationName(asset: string): string | null {
-  const m = /(?:^|[/])(?:n[0-9a-f]{8}-)?anim-([a-z0-9-]+?)(?:-\d+)?\.(?:mov|webm|mp4)$/i.exec(asset)
-  return m ? `Moving ${m[1].replace(/-/g, ' ')}` : null
-}
-
 function kindOf(b: Broll): string {
   const asset = typeof b.asset === 'string' ? b.asset : ''
   const kind = animationName(asset) ?? TREATMENTS[b.treatment] ?? 'Picture'
@@ -38,8 +34,33 @@ export function pictureUrl(b: Broll, thumbs: Record<string, string>, images: Lib
   return thumbs[b.id] ?? images.find((f) => b.asset === `Library/Images/${f.name}`)?.url ?? null
 }
 
-export function PicturesTab({ d, base, now, change, player, placed, images, reloadImages }: TabProps & { images: LibraryFile[]; reloadImages: () => Promise<void> }) {
+export function PicturesTab({
+  d,
+  base,
+  now,
+  change,
+  player,
+  placed,
+  images,
+  reloadImages,
+  selected = null,
+  reveal = 0,
+  onSelect
+}: TabProps & {
+  images: LibraryFile[]
+  reloadImages: () => Promise<void>
+  /** the picture picked here or on the timeline (its b-roll id) */
+  selected?: string | null
+  /** counts picks on the timeline, so picking the picked picture again still brings its row into view */
+  reveal?: number
+  onSelect?: (id: string | null) => void
+}) {
   const notify = useNotify()
+  const list = useRef<HTMLUListElement>(null)
+  useEffect(() => {
+    if (!selected) return
+    list.current?.querySelector(`[data-key="${CSS.escape(selected)}"]`)?.scrollIntoView({ block: 'nearest', behavior: reducedMotion() || byKeyboard() ? 'auto' : 'smooth' })
+  }, [selected, reveal])
   // adding: which picture, then the word where it pops up
   const [picking, setPicking] = useState<string | null>(null)
   const [pickFocus, setPickFocus] = useState<string | null>(null)
@@ -105,14 +126,19 @@ export function PicturesTab({ d, base, now, change, player, placed, images, relo
       {broll.length === 0 ? (
         <p className="edit-hint">No pictures in this reel yet.</p>
       ) : (
-        <ul className="edit-list">
+        <ul className="edit-list" ref={list}>
           {broll.map((b) => {
             const url = pictureUrl(b, d.brollThumbs, images)
             const at = placed.get(b.anchor.from)
             const credit = d.brollCredits[b.id] ?? (b.asset?.startsWith('Library/') ? 'Yours, from your Library' : null)
             return (
-              <li key={b.id} className="edit-row picture-row" data-testid="picture-row">
-                <button className="picture-thumb" onClick={() => at && player.seek(Math.max(0, at.s - 0.5), true)} disabled={!at} aria-label={at ? `Play from ${clock(at.s)}` : 'Not in this version'}>
+              <li key={b.id} data-key={b.id} className={`edit-row picture-row${selected === b.id ? ' on' : ''}`} aria-current={selected === b.id || undefined} data-testid="picture-row">
+                <button
+                  className="picture-thumb"
+                  onClick={() => {
+                    onSelect?.(b.id)
+                    if (at) player.seek(Math.max(0, at.s - 0.5), true)
+                  }} disabled={!at} aria-label={at ? `Play from ${clock(at.s)}` : 'Not in this version'}>
                   {url ? <img src={url} alt="" data-testid="broll-thumb" /> : <Icon name={b.asset ? 'film' : 'type'} size={16} />}
                 </button>
                 <div className="edit-row-main">
@@ -127,7 +153,15 @@ export function PicturesTab({ d, base, now, change, player, placed, images, relo
                     </span>
                   )}
                 </div>
-                <Button size="small" kind="tertiary" danger onClick={() => change(setP((p) => ({ broll: (p.broll ?? []).filter((x) => x.id !== b.id) })))}>
+                <Button
+                  size="small"
+                  kind="tertiary"
+                  danger
+                  onClick={() => {
+                    if (selected === b.id) onSelect?.(null)
+                    change(setP((p) => ({ broll: (p.broll ?? []).filter((x) => x.id !== b.id) })))
+                  }}
+                >
                   Remove
                 </Button>
               </li>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CoverCandidate, LibraryFile, PlacedWord, ProjectDetail, ProjectJson, QueuedNote, VersionInfo } from '../../../shared/api'
+import type { CoverCandidate, LibraryFile, PlacedWord, ProjectDetail, ProjectJson, QueuedNote, VersionInfo, VersionTimeline } from '../../../shared/api'
 import { lookFromStyle, sampleLine, sampleLook, type SubtitleLook } from '../../../shared/caption-presets'
 import { coverMoments } from '../../../shared/cover'
 import { describeChange } from '../../../shared/describe'
@@ -18,7 +18,7 @@ import { soundPack, SoundTab } from './edit/SoundTab'
 import { SubtitlesTab } from './edit/SubtitlesTab'
 import type { RenderSegment } from '../../../shared/moments'
 import { joinsOf, musicFades, newToTheEar, sfxVolume, soundRows, soundTime, type SoundEffect, type VersionClock } from '../../../shared/sfx'
-import type { TimelineAudio } from '../components/Timeline'
+import { clipsOf, pictureParts, pictureWhy, videoParts, type Lanes } from '../../../shared/lanes'
 import './edit/edit.css'
 
 export type { PlayerHandle } from './edit/preview'
@@ -52,7 +52,10 @@ export function ShowMeHow({
   sound = null,
   reveal = 0,
   onSound,
-  onAudio
+  picture = null,
+  pictureReveal = 0,
+  onPicture,
+  onLanes
 }: {
   d: ProjectDetail
   /** The version the player shows: the newest. */
@@ -70,8 +73,12 @@ export function ShowMeHow({
   /** Counts picks on the timeline (Reel.tsx). */
   reveal?: number
   onSound?: (key: string | null) => void
-  /** What the timeline draws while this is open: the sounds, the music's fades and the joins. */
-  onAudio?: (a: TimelineAudio | null) => void
+  /** The picture picked here or on the timeline (its b-roll id), and how many times the timeline picked one. */
+  picture?: string | null
+  pictureReveal?: number
+  onPicture?: (id: string | null) => void
+  /** What the timeline draws while this is open: the version's video, and the pictures and sounds as changed here. */
+  onLanes?: (l: Lanes | null) => void
 }) {
   const notify = useNotify()
   const s = useEditSession(d, queued)
@@ -83,6 +90,7 @@ export function ShowMeHow({
   const [making, setMaking] = useState(false)
   const [placed, setPlaced] = useState(() => new Map<string, PlacedWord>())
   const [segments, setSegments] = useState<RenderSegment[]>([])
+  const [shown, setShown] = useState<VersionTimeline | null>(null)
   const [images, setImages] = useState<LibraryFile[]>([])
   const [pack, setPack] = useState<SoundEffect[]>([])
   const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({})
@@ -92,6 +100,7 @@ export function ShowMeHow({
     onTab?.(t)
     // leaving Sound drops the pick, so picking the same sound on the timeline again comes back to it
     if (t !== 'music' && sound) onSound?.(null)
+    if (t !== 'broll' && picture) onPicture?.(null)
   }
   const leaveTimer = useRef<number | undefined>(undefined)
   useEffect(() => () => window.clearTimeout(leaveTimer.current), [])
@@ -112,6 +121,7 @@ export function ShowMeHow({
         if (!live) return
         setPlaced(new Map((t?.words ?? []).map((w) => [w.id, w])))
         setSegments(t?.segments ?? [])
+        setShown(t)
       })
       .catch((e) => notify(userMessage(e), 'error'))
     return () => {
@@ -203,22 +213,6 @@ export function ShowMeHow({
     })
   }, [base.p.sfx, now.p.sfx, now.p.broll, pack, vclock, joins])
 
-  // The timeline under the phone shows what the Sound tab changes: each sound at its moment, the music's fades, the cuts.
-  const said = useCallback((id: string) => d.words.find((w) => w.id === id)?.w, [d.words])
-  const music = now.p.music
-  const audio = useMemo((): TimelineAudio => {
-    const rows = soundRows(now.p.sfx ?? [], vclock, joins, now.p.broll, now.kept, said, new Map(pack.map((p) => [p.id, p])))
-    return {
-      sounds: rows.flatMap((r) => (r.t === null ? [] : [{ key: r.key, at: r.t, label: `${r.title} · ${r.why}`, off: !!r.warn }])),
-      music: music?.enabled !== false && music?.track ? musicFades(music) : null,
-      joins: joins.map(({ t, bridge }) => ({ t, bridge }))
-    }
-  }, [now.p.sfx, now.p.broll, now.kept, music, vclock, joins, said, pack])
-  // a level or a fade being dragged changes the project, not always what the timeline draws: Reel re-renders only
-  // when it does
-  const audioKey = JSON.stringify(audio)
-  useEffect(() => onAudio?.(audio), [audioKey, onAudio]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => () => onAudio?.(null), [onAudio])
   // a sound picked on the timeline opens this tab on it
   useEffect(() => {
     if (sound && tab !== 'music') setTab('music')
@@ -260,6 +254,44 @@ export function ShowMeHow({
   const mine = queued ? waiting.findIndex((q) => q.id === queued.id) : -1
   const ahead = mine >= 0 ? mine : waiting.length
   const next = latest + (busy ? 1 : 0) + ahead + 1
+
+  // The timeline under the phone shows what this changes: each picture while it shows, each sound at its moment, the
+  // music's fades and the cuts, on the clock of the version on screen. The render's own picture times hold for the
+  // pictures unchanged since it; the rest are placed by its rules.
+  const said = useCallback((id: string) => d.words.find((w) => w.id === id)?.w, [d.words])
+  const music = now.p.music
+  // each lane from what it depends on, so dragging a fade or a level works out only the sounds again
+  const sounds = useMemo(
+    () => soundRows(now.p.sfx ?? [], vclock, joins, now.p.broll, now.kept, said, new Map(pack.map((p) => [p.id, p]))).flatMap((r) => (r.t === null ? [] : [{ key: r.key, at: r.t, label: `${r.title} · ${r.why}`, off: !!r.warn }])),
+    [now.p.sfx, now.p.broll, now.kept, vclock, joins, said, pack]
+  )
+  const fades = useMemo(() => (music?.enabled !== false && music?.track ? musicFades(music) : null), [music])
+  const videoLane = useMemo(
+    () => videoParts(segments, clipsOf(shown?.project.cut?.keep), shown?.words ?? [], joins.filter((j) => j.cut !== null).map((j) => j.t), shown?.project.sources ?? []),
+    [segments, shown, joins]
+  )
+  const pictures = useMemo(() => {
+    const before = new Map((shown?.project.broll ?? []).map((b) => [b.id, JSON.stringify(b)]))
+    const unchanged = new Set((now.p.broll ?? []).filter((b) => before.get(b.id) === JSON.stringify(b)).map((b) => b.id))
+    const layers = new Map((shown?.layers ?? []).flatMap((l) => (l.id && unchanged.has(l.id) ? [[l.id, l] as const] : [])))
+    const had = new Set((base.p.broll ?? []).map((b) => b.id))
+    const why = (id: string) => (had.has(id) ? pictureWhy(id, d.versions, d.project.notes ?? [], version?.n ?? 0) : `New: in Version ${next} once you make it`)
+    return pictureParts(now.p.broll ?? [], { placed: shown?.words ?? [], segments }, layers, shown?.duration ?? 0, why)
+  }, [now.p.broll, shown, segments, base.p.broll, d.versions, d.project.notes, version?.n, next])
+  const lanes = useMemo(
+    (): Lanes => ({ video: videoLane, pictures, sounds, music: fades, joins: joins.map(({ t, bridge }) => ({ t, bridge })) }),
+    [videoLane, pictures, sounds, fades, joins]
+  )
+  // a level or a fade being dragged changes the project, not always what the timeline draws: Reel re-renders only
+  // when it does
+  const lanesKey = JSON.stringify(lanes)
+  useEffect(() => onLanes?.(lanes), [lanesKey, onLanes]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onLanes?.(null), [onLanes])
+  // a picture picked on the timeline opens its tab on it
+  useEffect(() => {
+    if (picture && tab !== 'broll') setTab('broll')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picture, pictureReveal])
 
   const make = async () => {
     const patch: Partial<ProjectJson> = {}
@@ -328,7 +360,7 @@ export function ShowMeHow({
         {tab === 'cut' && <CutTab {...tabProps} mode={cutMode} onMode={setCutMode} onLine={setLine} />}
         {tab === 'captions' && <SubtitlesTab {...tabProps} sample={sample.text} />}
         {tab === 'music' && <SoundTab {...tabProps} vclock={vclock} joins={joins} selected={sound} onSelect={(k) => onSound?.(k)} reveal={reveal} />}
-        {tab === 'broll' && <PicturesTab {...tabProps} images={images} reloadImages={reloadImages} />}
+        {tab === 'broll' && <PicturesTab {...tabProps} images={images} reloadImages={reloadImages} selected={picture} reveal={pictureReveal} onSelect={(id) => onPicture?.(id)} />}
         {tab === 'cover' && <CoverTab {...tabProps} loadPicks={loadPicks} />}
       </div>
       {(busy || ahead > 0) && (

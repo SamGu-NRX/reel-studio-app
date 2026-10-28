@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatAction, NoteMoment, PlacedWord, ProjectDetail, ProviderInfo, VersionInfo } from '../../../shared/api'
+import type { ChatAction, NoteMoment, PlacedWord, ProjectDetail, ProviderInfo, VersionInfo, VersionTimeline } from '../../../shared/api'
 import { versionTitle } from '../../../shared/describe'
 import { clock } from '../../../shared/progress'
 import { EMPTY_LIVE, liveFromDetail, reduceLive, type LiveState } from '../../../shared/live'
@@ -22,7 +22,11 @@ import { ShowMeHow, type Tab } from './ShowMeHow'
 import { useNoteAttachments } from '../components/NoteAttachments'
 import { NotesLog, useVersionRows, type FirstState } from '../components/NotesLog'
 import { Composer, region, type Chip } from '../components/Composer'
-import { Timeline, type TimelineAudio, type TimelineMark } from '../components/Timeline'
+import { Timeline, type TimelineMark } from '../components/Timeline'
+import { lanesOf, pictureWhy, type Lanes } from '../../../shared/lanes'
+import { keptIds } from '../../../shared/cut'
+import type { SoundEffect } from '../../../shared/sfx'
+import { soundPack } from './edit/SoundTab'
 import { Outs } from '../components/Outs'
 import { PopMenu } from '../components/PopMenu'
 import { TitleBarSlot } from '../components/titlebar'
@@ -83,10 +87,18 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   // what a note's job has said it was doing, in order, for Steps
   const [steps, setSteps] = useState<string[]>([])
   const [drawer, setDrawer] = useState<Tab | null>(null)
-  // while Edit it myself is open: what the timeline draws for its Sound tab, and the sound picked there or on it
-  const [audio, setAudio] = useState<TimelineAudio | null>(null)
+  // while Edit it myself is open: the lanes as its changes make them, and the sound or picture picked there or on
+  // the timeline
+  const [editLanes, setEditLanes] = useState<Lanes | null>(null)
   const [sound, setSound] = useState<string | null>(null)
   const [reveal, setReveal] = useState(0)
+  const [picture, setPicture] = useState<string | null>(null)
+  const [pictureReveal, setPictureReveal] = useState(0)
+  // each sound's onset and length, so the timeline hollows the flags that won't play as the Sound tab does
+  const [pack, setPack] = useState<Map<string, SoundEffect>>(() => new Map())
+  useEffect(() => {
+    soundPack().then((p) => setPack(new Map(p.map((x) => [x.id, x]))), () => undefined)
+  }, [])
   // the waiting hand edit Edit it myself is changing (its Edit in the log), or null for a new one
   const [handId, setHandId] = useState<string | null>(null)
   const [stage, setStage] = useState<HTMLElement | null>(null)
@@ -284,7 +296,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
 
   const version = d ? (d.versions.find((v) => v.n === selected) ?? d.versions[d.versions.length - 1]) : undefined
   const changePreview = job?.preview && d?.versions.length ? job.preview.video : null
-  const [timeline, setTimeline] = useState<{ video: string; words: PlacedWord[]; segments: RenderSegment[] | null } | null>(null)
+  const [timeline, setTimeline] = useState<{ video: string; words: PlacedWord[]; segments: RenderSegment[] | null; version: VersionTimeline | null } | null>(null)
   const onScreen = d ? versionOnScreen(d.versions, shownSrc) : null
   const shownN = onScreen?.n
   const shownVideo = onScreen?.video
@@ -294,10 +306,10 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     reel.projects
       .timeline(slug, shownN)
       .then((t) => {
-        if (live) setTimeline({ video: shownVideo, words: t?.words ?? [], segments: t?.segments ?? null })
+        if (live) setTimeline({ video: shownVideo, words: t?.words ?? [], segments: t?.segments ?? null, version: t })
       })
       .catch((e) => {
-        if (live) setTimeline({ video: shownVideo, words: [], segments: null })
+        if (live) setTimeline({ video: shownVideo, words: [], segments: null, version: null })
         notify(userMessage(e), 'error')
       })
     return () => {
@@ -365,6 +377,15 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     for (const q of d.queue) if (!q.attempt && q.moment && q.moment.version === shownN) out.push({ id: q.id, at: q.moment.at, text: q.text })
     return out
   }, [d, timeline, shownVideo, shownN, entries, job?.jobId])
+
+  // The lanes of the version on screen, from its own project and render: worked out again only when either changes.
+  const shownLanes = useMemo((): Lanes | null => {
+    const v = timeline?.version
+    if (!d || !v || timeline.video !== shownVideo || shownN === undefined) return null
+    const why = (id: string) => pictureWhy(id, d.versions, d.project.notes ?? [], shownN)
+    const kept = new Set(keptIds(d.words, v.project.cut?.keep))
+    return lanesOf(v.project, { placed: v.words, segments: v.segments, words: d.words, kept, duration: v.duration, layers: new Map(v.layers.map((l) => [l.id!, l])) }, pack, why)
+  }, [timeline, shownVideo, shownN, d?.versions, d?.project.notes, d?.words, pack]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!d)
     return (
@@ -644,7 +665,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const actions = (
     <>
       {hasVersions && (
-        <Button kind="tertiary" className={drawer ? 'on' : undefined} aria-pressed={!!drawer} onClick={() => (drawer ? (setDrawer(null), setHandId(null), setPreview(null), setSound(null)) : openDrawer('cut'))} data-testid="edit-myself">
+        <Button kind="tertiary" className={drawer ? 'on' : undefined} aria-pressed={!!drawer} onClick={() => (drawer ? (setDrawer(null), setHandId(null), setPreview(null), setSound(null), setPicture(null)) : openDrawer('cut'))} data-testid="edit-myself">
           <Icon name="sliders" size={16} /> Edit it myself
         </Button>
       )}
@@ -783,11 +804,18 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     duration={duration}
                     words={timeline && timeline.video === shownVideo ? timeline.words : []}
                     marks={drawer ? [] : marks}
-                    audio={drawer ? audio : null}
+                    lanes={drawer ? editLanes : shownLanes}
                     selectedSound={sound}
                     onSound={(k) => {
                       setSound(k)
                       setReveal((n) => n + 1)
+                      if (!drawer) openDrawer('music')
+                    }}
+                    selectedPicture={picture}
+                    onPicture={(id) => {
+                      setPicture(id)
+                      setPictureReveal((n) => n + 1)
+                      if (!drawer) openDrawer('broll')
                     }}
                     onRange={(r) => {
                       if (!hasVersions || aiOff) return
@@ -820,13 +848,17 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                 setHandId(null)
                 setPreview(null)
                 setSound(null)
+                setPicture(null)
               }}
               onPreview={setPreview}
               onTab={(t) => setDrawer(t)}
               sound={sound}
               reveal={reveal}
               onSound={setSound}
-              onAudio={setAudio}
+              picture={picture}
+              pictureReveal={pictureReveal}
+              onPicture={setPicture}
+              onLanes={setEditLanes}
             />
           ) : (
             <>

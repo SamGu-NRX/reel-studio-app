@@ -14,6 +14,7 @@ import type { VersionRow } from './version-diff'
 import type { Step } from './steps'
 import type { HandEdit } from './hand-edit'
 import type { SoundEffect } from './sfx'
+import type { LayerItem } from './lanes'
 export type { VersionRow } from './version-diff'
 export type { ChatAction } from './notes'
 export type { CoverCandidate } from './cover'
@@ -175,6 +176,17 @@ export interface MomentWord {
   w: string
 }
 
+/** What version `n` plays (projects.timeline), on its own output clock. `project`: the parts of that version's own
+ * project.json the timeline draws, so an older version shows its own pictures and sounds. `layers`: where its render
+ * put each picture (render.json `layerItems`), empty for renders made before the engine recorded them. */
+export interface VersionTimeline {
+  duration: number
+  words: PlacedWord[]
+  segments: RenderSegment[]
+  project: Pick<ProjectJson, 'broll' | 'sfx' | 'music' | 'cut' | 'sources'>
+  layers: LayerItem[]
+}
+
 /** A word where a render plays it: `s`/`e` in seconds on that render's output clock (projects.timeline). */
 export interface PlacedWord extends MomentWord {
   s: number
@@ -295,6 +307,8 @@ export interface ProjectJson {
   broll?: {
     id: string
     anchor: { from: string; to: string }
+    /** seconds it comes in before its first word (absent: the engine's 0.13 s) */
+    leadIn?: number
     treatment: string
     /** Library path, project path or animation id; null for text-only treatments. */
     asset: string | null
@@ -782,7 +796,7 @@ export interface ReelApi {
     /** Every word version `n` (0 = the Preview) plays, on its own output clock, and its length. Read
      * fresh from that render's manifest each call, with the segments it was cut from. null when the render
      * left no timeline to read. */
-    timeline(slug: string, n: number): Promise<{ duration: number; words: PlacedWord[]; segments: RenderSegment[] } | null>
+    timeline(slug: string, n: number): Promise<VersionTimeline | null>
     /** What version `n` changed, as before → after rows. null when its saved copy is gone. */
     versionRows(slug: string, n: number): Promise<VersionRow[] | null>
     update(slug: string, patch: Partial<ProjectJson>): Promise<ProjectDetail>
