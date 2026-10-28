@@ -203,6 +203,12 @@ html.kb .switch { transition: none; }
 .btn.big { height: 44px; padding: 0 22px; font-size: var(--fs-md); gap: 8px; }
 .btn.small { height: 28px; padding: 0 12px; font-size: var(--fs-sm); gap: 5px; }
 .btn.ghost.small { padding: 0 6px; }
+/* A tertiary button that opens a panel (Reel's Edit it myself): while the panel is open it has the soft wash the
+   sidebar's selected row has (shell.css .nav button.on), not an underline, which reads as a link being pointed at.
+   The padding is the same open or shut, so opening never moves the title bar. */
+.btn.ghost[aria-pressed] { padding: 0 12px; }
+.btn.ghost[aria-pressed="true"] { background: rgba(22, 30, 26, .07); color: var(--ink); text-decoration-color: transparent; }
+@media (hover: hover) and (pointer: fine) { .btn.ghost[aria-pressed="true"]:not(:disabled):hover { background: rgba(22, 30, 26, .07); text-decoration-color: transparent; } }
 .btn.danger { color: var(--pencil); }
 .btn.primary.danger { background: var(--pencil); color: #fff; }
 @media (hover: hover) and (pointer: fine) { .btn.primary.danger:not(:disabled):hover { background: #A62E20; } }
