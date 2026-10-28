@@ -1,6 +1,5 @@
 """Join regressions measured at the project, PCM and caption boundaries."""
 import copy
-import hashlib
 import json
 import wave
 from pathlib import Path
@@ -212,12 +211,27 @@ def test_smash_renders_hit_and_short_music_dip_without_mutating_project(tmp_path
 def test_legacy_and_explicit_hard_pcm_match_pre_join_engine(tmp_path):
     """Fails if adding join support changes an existing project's decoded voice samples."""
     _, _, tl, ctx = fixture_project(tmp_path)
-    paths, _ = tones(tmp_path)
+    paths, signals = tones(tmp_path)
     pcm = read_pcm(render.render_voice(ctx, tl.segments, paths, tmp_path / "legacy.wav", render.probe_source_audio(ctx, tl.segments, paths)))
-    # Measured from this fixture on multi-source eccb384, which has no join support, not the implementation under
-    # test. (4fe77be's digest, 89de48d4..., predates multi-source's sample-exact, source-clocked voice graph.)
-    digest = hashlib.sha256((pcm * 32768).astype("<i2").tobytes()).hexdigest()
-    assert digest == "0bbccbec01c308995e9ed6ab7453602e4daf4a3d899edda09fe9382b6a1e1188"
+    # What multi-source eccb384, which has no join support, played for this fixture: s1's samples 43200-99199, then
+    # s2's 40000-111999, each with a 6 ms (288-sample) linear fade in and out. Outside the fades that is the source
+    # exactly. Inside them FFmpeg rounds each faded sample to 16 bits, and builds round differently (the exact digest
+    # this replaced, 0bbccbec..., held only where FFmpeg rounds down; 4fe77be's, 89de48d4..., where it truncates), so
+    # there each sample must be within 1 LSB of the ramp.
+    fade = 288
+    expected, in_fade = [], []
+    for sid, start, n in (("s1", 43200, 56000), ("s2", 40000, 72000)):
+        i = np.arange(n)
+        gain = np.ones(n)
+        gain[:fade] = np.arange(fade) / fade
+        gain[n - fade:] = 1 - np.arange(fade) / fade
+        expected.append(signals[sid][start:start + n] * gain)
+        in_fade.append((i < fade) | (i >= n - fade))
+    expected, in_fade = np.concatenate(expected), np.concatenate(in_fade)
+    assert pcm.shape == (len(expected), 2)
+    for ch in (0, 1):
+        np.testing.assert_array_equal(pcm[~in_fade, ch], expected[~in_fade])
+        assert np.max(np.abs(pcm[in_fade, ch] - expected[in_fade])) * 32768 <= 1
     assert tl.duration == 2.666667
     _, _, hard, hard_ctx = fixture_project(tmp_path, "hard", frames=12)
     explicit = render.render_voice(hard_ctx, hard.segments, paths, tmp_path / "hard.wav", render.probe_source_audio(hard_ctx, hard.segments, paths))
