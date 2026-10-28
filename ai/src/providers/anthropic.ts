@@ -32,13 +32,15 @@ function supportsAdaptiveThinking(model: string): boolean {
   return version >= (family === 'haiku' ? 5.5 : 4.6);
 }
 
+const THINKING_BETA = 'thinking-binding-controls-2026-08-01';
+
 /** pruneImages edits older tool results every step, and an edit before a thinking block invalidates
  * it: live, the default "error" answered 400 ("Invalid `signature` in `thinking` block"), while
  * "drop_block" answered 200 and dropped only the affected blocks. */
 function thinkingParams(model: string) {
   if (!supportsAdaptiveThinking(model)) return {};
   return {
-    betas: ['thinking-binding-controls-2026-08-01'],
+    betas: [THINKING_BETA],
     thinking: { type: 'adaptive' as const, block_binding: { prefix_mismatch_behavior: 'drop_block' as const } },
   };
 }
@@ -148,6 +150,9 @@ export function mapAnthropicError(err: any): AIError {
 }
 
 const SENT_HEADERS = ['accept', 'content-type', 'anthropic-version'];
+/** The beta flags this adapter asks for (thinkingParams). Only these pass in anthropic-beta, so a flag from the
+ * environment's custom headers never rides along. */
+const SENT_BETAS = new Set([THINKING_BETA]);
 
 const STREAM_ERROR_STATUS: Record<string, number> = {
   invalid_request_error: 400, authentication_error: 401, permission_error: 403, not_found_error: 404,
@@ -192,6 +197,8 @@ export class AnthropicProvider implements ModelProvider {
         const v = built.get(h);
         if (v) headers.set(h, v);
       }
+      const betas = (built.get('anthropic-beta') ?? '').split(',').map((b) => b.trim()).filter((b) => SENT_BETAS.has(b));
+      if (betas.length) headers.set('anthropic-beta', betas.join(','));
       return base(input, { ...init, headers });
     }) as typeof fetch;
     this.client = new Anthropic({
