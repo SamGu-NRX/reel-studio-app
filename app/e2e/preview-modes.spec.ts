@@ -24,7 +24,6 @@ const rect = (page: Page, sel: string) =>
     return { x: r.x, y: r.y, w: r.width, h: r.height }
   }, sel)
 
-
 const focusedTestId = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.tagName)
 
 async function pick(page: Page, scope: Page | Locator, menu: 'speed' | 'shape', item: string): Promise<void> {
