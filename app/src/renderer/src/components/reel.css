@@ -236,6 +236,12 @@ html.kb .tl-sound:focus-visible { outline: 2px solid var(--ink); outline-offset:
 .tl-tip.dark { background: var(--ink); color: #fff; font-weight: 650; font-variant-numeric: tabular-nums; bottom: calc(100% - 2px); }
 
 .transport { flex: none; height: 40px; margin-top: 4px; }
+/* The timeline and the transport row take the phone's width (Reel.tsx usePhoneWidth), centred on it: play and the time
+   under its left edge, the view switch and full screen under its right. Never narrower than the row needs (440 px holds
+   it at full size, preview.css tightens below 500), never wider than the stage. */
+.stage { --under-phone: min(100%, max(var(--phone-px, 100%), 440px)); }
+.stage > .transport { align-self: center; width: var(--under-phone); }
+.stage > .tl { align-self: center; width: calc(var(--under-phone) - 24px); }
 /* the row is inside the container (preview.css), so a narrow stage can tighten its gap */
 .tr-row { display: flex; align-items: center; gap: 10px; height: 100%; }
 .transport .pp {

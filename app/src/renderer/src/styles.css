@@ -464,7 +464,8 @@ input[type="checkbox"]:disabled { cursor: default; opacity: .45; }
    span draws its own in plan.css, after the colours it overrides) */
 @media (forced-colors: active) { input[type="checkbox"] { appearance: auto; } }
 .toggle { display: flex; gap: 12px; align-items: center; cursor: pointer; font-weight: 600; min-height: 32px; }
-.slider { width: 100%; max-width: 420px; }
+/* 24 px tall: a native range is 16 px, under the house minimum for a target, and the extra height is all hit area */
+.slider { width: 100%; max-width: 420px; height: 24px; margin: 0; }
 .cover-img { width: 180px; border-radius: 12px; display: block; background: var(--sunk); aspect-ratio: 9/16; object-fit: cover; }
 /* The current cover sits at the suggestions' size, so the suggestions show without scrolling. */
 .drawer .cover-img { width: 132px; }

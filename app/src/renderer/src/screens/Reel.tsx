@@ -111,6 +111,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   // the waiting hand edit Edit it myself is changing (its Edit in the log), or null for a new one
   const [handId, setHandId] = useState<string | null>(null)
   const [stage, setStage] = useState<HTMLElement | null>(null)
+  const [stageBox, setStageBox] = useState<HTMLElement | null>(null)
+  usePhoneWidth(stageBox)
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
   const [providerChecked, setProviderChecked] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -866,7 +868,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     <div className="reel-page" data-slug={slug}>
       <TitleBarSlot title={title} actions={actions} />
       <div className="reel-b">
-        <section className="stage" aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
+        <section ref={setStageBox} className="stage" aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
           {planned ? (
             <PlannedStage title={d.title} onFiles={(p) => void addVideo(p)} />
           ) : (
@@ -1182,6 +1184,38 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
 }
 
 /** Play, the time, speed, then whatever sits at the row's end (the phone shape, Instagram or Clean, full screen). */
+/**
+ * The phone's width on the stage, as --phone-px on it: reel.css gives the timeline and the transport row that width,
+ * centred on the phone, so the controls sit under what they control instead of in the stage's corners. The phone sizes
+ * itself from its slot's height (Phone.tsx), which its siblings can't read in CSS.
+ */
+function usePhoneWidth(stage: HTMLElement | null): void {
+  useEffect(() => {
+    if (!stage) return
+    let phone: Element | null = null
+    const measure = (): void => {
+      const p = stage.querySelector('.stage-v .phone')
+      if (p !== phone) {
+        if (phone) sizes.unobserve(phone)
+        phone = p
+        if (p) sizes.observe(p)
+      }
+      const w = p?.getBoundingClientRect().width
+      if (w) stage.style.setProperty('--phone-px', `${Math.round(w)}px`)
+      else stage.style.removeProperty('--phone-px')
+    }
+    const sizes = new ResizeObserver(measure)
+    // the phone arrives with the video, after the stage
+    const children = new MutationObserver(measure)
+    sizes.observe(stage)
+    children.observe(stage, { childList: true, subtree: true })
+    return () => {
+      sizes.disconnect()
+      children.disconnect()
+    }
+  }, [stage])
+}
+
 function TransportRow({ transport, playhead, children }: { transport: Transport; playhead: Playhead; children: React.ReactNode }) {
   const { playing, duration } = useTransport(transport)
   const second = usePlayhead(playhead, Math.floor)

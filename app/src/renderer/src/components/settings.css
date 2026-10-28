@@ -64,7 +64,8 @@ html.kb .ssearch input:focus-visible { outline: 0; }
 .smatch { margin-left: 8px; font-size: var(--fs-sm); font-weight: 500; color: var(--ink-3); }
 @media (forced-colors: active) { .ssec mark { background: Mark; color: MarkText; } }
 .ext-link {
-  display: inline-flex; align-items: center; gap: 4px; justify-self: start; font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 560; color: var(--ink-2);
+  /* min-height: a link is a target, and its 16 px line was under the 24 px house minimum */
+  display: inline-flex; align-items: center; gap: 4px; justify-self: start; min-height: 24px; font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 560; color: var(--ink-2);
   text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; white-space: nowrap;
 }
 @media (hover: hover) and (pointer: fine) { .ext-link:hover { color: var(--ink); text-decoration-color: currentColor; } }
