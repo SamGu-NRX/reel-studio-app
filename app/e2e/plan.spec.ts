@@ -1,10 +1,10 @@
 // A reel with no video is planned in its notes column: a chat with the editor (the practice editor here,
-// REELSTUDIO_MOCK_NOTE) that asks two questions and proposes a Plan card, or a plain form with no editor. The plan
-// goes to the first edit when the video arrives.
+// REELSTUDIO_MOCK_NOTE) that asks two questions and proposes the plan, which stands on the stage beside the drop zone.
+// With no editor the column asks to connect one first. The plan goes to the first edit when the video arrives.
 import { test, expect, type Page } from '@playwright/test'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, expectOneCheckbox, launch, makeMedia, passFirstRun } from './helpers'
+import { BASE, chooseClaudeCode, expectOneCheckbox, launch, makeMedia, passFirstRun } from './helpers'
 
 function freshProfile(name: string): Record<string, string> {
   const dir = mkdtempSync(join(BASE, `plan-${name}-`))
@@ -26,6 +26,7 @@ test('plan a reel with the editor, edit a beat, then film it', async () => {
   await page.getByTestId('new-reel').click()
   await expect(page.getByRole('heading', { name: 'Plan with your editor' })).toBeVisible()
   await expect(page.getByTestId('plan-empty')).toBeVisible()
+  await expect(page.getByTestId('plan-who')).toHaveAttribute('title', 'Practice editor (test)')
   const slug = await slugOf(page)
 
   // the call can be stopped; its words wait to be sent again and are not read as said
@@ -56,16 +57,20 @@ test('plan a reel with the editor, edit a beat, then film it', async () => {
   await page.getByTestId('note-input').fill('')
   await say(page, 'You do not need fancy gear')
 
-  // two questions, then the plan: hooks to pick from, 3-6 beats, the shots
+  // two questions, then the plan: hooks to pick from, 3-6 beats, the shots, on the stage beside the drop zone; the
+  // chat says how big it is and brings focus to it
   const card = page.getByTestId('plan-card')
-  await expect(card).toBeVisible()
+  await expect(page.getByTestId('planned-stage').getByTestId('plan-card')).toBeVisible()
+  await expect(page.getByTestId('plan-chip')).toHaveAccessibleName('Show the plan 5 beats, 3 shots')
+  await page.getByTestId('plan-chip').click()
+  await expect(card.locator('[data-plan-head]')).toBeFocused()
   await expect(page.getByTestId('plan-said')).toHaveCount(1)
   await expect(card.getByRole('radio')).toHaveCount(3)
   await expect(card.getByLabel(/^Beat \d$/)).toHaveCount(5)
   await expect(card.getByLabel(/^Shot \d$/)).toHaveCount(3)
   await expect(page.getByTestId('title')).toHaveText('Sourdough without a mixer')
 
-  // asking for a change in the chat gives the plan again: still one card, under the newest answer
+  // asking for a change in the chat gives the plan again: still one card
   await say(page, 'Make the hook punchier')
   await expect(page.getByTestId('plan-said')).toHaveCount(2)
   await expect(page.getByTestId('plan-said').last()).toHaveText('I made that change.')
@@ -130,53 +135,30 @@ test('plan a reel with the editor, edit a beat, then film it', async () => {
   await app.close()
 })
 
-test('with no editor, a plain form makes the same Plan card', async () => {
-  const { app, page } = await launch(freshProfile('form'))
+// fails if the plan panel offers a form or a chat no one would answer, if Connect your editor loses this New reel (an
+// untouched one is removed when its screen closes, and Choose your editor closed it), or if coming back connected
+// needs another click before typing
+test('with no editor, planning asks to connect it first; connected, the chat on the same reel is ready to type in', async () => {
+  const { app, page } = await launch({ ...freshProfile('connect'), REELSTUDIO_MOCK_CLAUDE: 'ready' })
   await passFirstRun(page)
   await page.getByTestId('new-reel').click()
-  await expect(page.getByRole('heading', { name: 'Plan this reel' })).toBeVisible()
-  // nobody says "I", and nothing offers a chat no one would answer
-  await expect(page.getByTestId('note-input')).toHaveCount(0)
-  await expect(page.getByTestId('plan-form')).not.toContainText(/\bI\b/)
-  // Save says what is missing and goes to it
-  const save = page.getByTestId('plan-save')
-  await save.click()
-  await expect(page.getByRole('alert')).toHaveText("Say what it's about first.")
-  await expect(page.getByLabel("What it's about")).toBeFocused()
-  await expect(page.getByLabel("What it's about")).toHaveAttribute('aria-invalid', 'true')
-
-  await page.getByLabel("What it's about").fill('How I make sourdough without a mixer')
-  await save.click()
-  await expect(page.getByRole('alert')).toHaveText('Add the hook: the first thing you say.')
-  await page.getByLabel('Hook').fill('You do not need a mixer to make good bread.')
-  await expect(page.getByRole('alert')).toHaveCount(0)
-  await page.getByLabel('Beat 1').fill('Flour, water, salt.')
-  // Enter moves on, and past the last beat adds one
-  await page.getByLabel('Beat 1').press('Enter')
-  await expect(page.getByLabel('Beat 2')).toBeFocused()
-  await page.keyboard.type('Mix it by hand.')
-  await page.getByLabel('Beat 3').fill('Fold it, then the fridge.')
-  await page.getByLabel('Beat 3').press('Enter')
-  await expect(page.getByLabel('Beat 4')).toBeFocused()
-  await save.click()
-
-  const card = page.getByTestId('plan-card')
-  await expect(card).toBeVisible()
-  await expect(page.getByTestId('plan-form')).toHaveCount(0)
-  await expect(card.getByRole('radio')).toHaveCount(0)
-  await expect(card.getByLabel(/^Beat \d$/)).toHaveCount(3)
-  await expect(page.getByTestId('title')).toHaveText('How I make sourdough without a mixer')
+  await expect(page.getByRole('heading', { name: 'Plan with your editor' })).toBeVisible()
   const slug = await slugOf(page)
-  await card.getByLabel('Hook 1').fill('No mixer. No problem.')
-  await card.getByLabel('Hook 1').press('Enter')
-  await expect.poll(async () => (await planOf(page, slug))?.hooks).toEqual(['No mixer. No problem.'])
-  await card.getByTestId('plan-copy').click()
-  expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe(
-    'How I make sourdough without a mixer\n\nHook: No mixer. No problem.\n\nBeats\n1. Flour, water, salt.\n2. Mix it by hand.\n3. Fold it, then the fridge.'
-  )
+  const step = page.getByTestId('plan-connect-step')
+  await expect(step).toContainText('Your editor plans it with you')
+  await expect(step.getByRole('button')).toHaveText(['Connect your editor'])
+  await expect(page.getByTestId('note-input')).toHaveCount(0)
+  await expect(page.getByTestId('plan-who')).toHaveCount(0)
 
-  // a planned reel is kept when you leave it
-  await page.getByTestId('nav-home').click()
-  await expect(page.getByTestId('project-card')).toHaveCount(1)
+  await step.getByRole('button', { name: 'Connect your editor' }).click()
+  await expect(page.getByTestId('connect-screen')).toBeVisible()
+  expect(await chooseClaudeCode(page)).toBe(true)
+
+  await expect(page.locator('.reel-page')).toHaveAttribute('data-slug', slug)
+  await expect(page.getByTestId('note-input')).toBeFocused()
+  await expect(page.getByTestId('note-input')).toHaveAttribute('placeholder', "What's this reel about?")
+  await expect(page.getByTestId('plan-empty')).toContainText('Tell me what this reel is about')
+  await expect(page.getByTestId('plan-who')).toHaveAttribute('title', 'Claude (your Claude Code app), the model it picks')
+  await expect(page.getByTestId('plan-connect-step')).toHaveCount(0)
   await app.close()
 })

@@ -10,7 +10,7 @@ import { pausedSentence, pausedWords } from '../../../shared/pause'
 import type { Step } from '../../../shared/steps'
 import { droppedPaths, reel, userMessage } from '../api'
 import type { Go } from '../nav'
-import { Button, Confirm, IS_MAC, IconButton, PickFiles, Spinner, useFileDrop } from '../components/ui'
+import { Button, Confirm, IS_MAC, IconButton, PickFiles, Spinner } from '../components/ui'
 import { Icon } from '../components/icons'
 import { PhonePlayer } from '../components/Player'
 import type { SubtitleLook } from '../../../shared/caption-presets'
@@ -35,7 +35,7 @@ import { Outs } from '../components/Outs'
 import { PopMenu } from '../components/PopMenu'
 import { TitleBarSlot } from '../components/titlebar'
 import { ConnectAI, ModelDownload } from '../components/connect'
-import { PlanCard, PlanForm } from '../components/Plan'
+import { PlanCard, PlanChip, PlanConnect, PlanHello, PlannedStage, PlanWho, columnVideoDrop, markPlanConnect, usePlanAfterConnect } from '../components/Plan'
 import { ReelsFound } from '../components/ReelsFound'
 import { byKeyboard, reducedMotion } from '../components/motion'
 import '../components/reel.css'
@@ -262,8 +262,10 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     [load, play]
   )
 
-  // a New reel left untouched goes (main/store.ts isUntouchedPlanned)
-  useEffect(() => () => void reel.projects.leave(slug).catch(() => {}), [slug])
+  // a New reel left untouched goes (main/store.ts isUntouchedPlanned), but not while Choose your editor is open on top
+  // of it: that screen comes back here
+  const toConnect = useRef(false)
+  useEffect(() => () => void (toConnect.current || reel.projects.leave(slug).catch(() => {})), [slug])
 
   useEffect(() => {
     void load(true)
@@ -430,6 +432,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     return lanesOf(v.project, { placed: v.words, segments: v.segments, words: d.words, kept, duration: v.duration, layers: new Map(v.layers.map((l) => [l.id!, l])) }, pack, why, thumb)
   }, [timeline, shownVideo, shownN, d?.versions, d?.project.notes, d?.words, d?.brollThumbs, pack]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  usePlanAfterConnect(slug, providerChecked && !!d, d?.status === 'planned' && !aiOff, noteField)
+
   // a planning turn holds the send button; whatever the box said while it ran is stale once the editor answers
   const planAnswering = d?.status === 'planned' && !!job
   const wasAnswering = useRef(false)
@@ -452,7 +456,10 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const pausedWhy = d.pausedFor ? pausedSentence(d.pausedFor, new Date(), computer) : null
   const heldWords = d.pausedFor ? pausedWords(d.pausedFor, new Date(), computer) : null
   const heldWhy = heldWords && heldWords[0].toLowerCase() + heldWords.slice(1)
-  const connect = () => go({ name: 'connect', back: { name: 'reel', slug } })
+  const connect = () => {
+    toConnect.current = true
+    go({ name: 'connect', back: { name: 'reel', slug } })
+  }
   const making = job && d.job && d.job.kind !== 'export' && d.job.kind !== 'script' && d.job.kind !== 'propose' ? (latestN ?? 0) + 1 : null
   const first: FirstState | null =
     hasVersions || planned
@@ -868,7 +875,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       <div className="reel-b">
         <section className="stage" aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
           {planned ? (
-            <PlannedStage title={d.title} onFiles={(p) => void addVideo(p)} />
+            <PlannedStage plan={planCard} onFiles={(p) => void addVideo(p)} />
           ) : (
             <>
               <FullStage open={full} onOpenChange={(o) => (setPointing(false), setFull(o))} enabled={!!src} shape={shape} transport={transport} playhead={playhead} view={viewSwitch}>
@@ -965,7 +972,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
           )}
         </section>
 
-        <div className="ncol">
+        <div className={`ncol${planned && !drawer ? ' planning' : ''}`} {...(planned && !drawer && columnVideoDrop((p) => void addVideo(p)))}>
           {drawer ? (
             <ShowMeHow
               key={handId ?? 'new'}
@@ -994,18 +1001,15 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
           ) : (
             <>
               <div className="notes-h">
-                <h2>{!planned ? 'Notes for your editor' : aiOff ? 'Plan this reel' : 'Plan with your editor'}</h2>
+                <h2>{planned ? 'Plan with your editor' : 'Notes for your editor'}</h2>
+                {planned && !aiOff && <PlanWho provider={provider} />}
               </div>
-              {planned && aiOff && !d.plan ? (
-                <PlanForm
-                  onConnect={connect}
-                  onSave={async (p) => {
-                    try {
-                      await reel.projects.setPlan(slug, p)
-                      await load()
-                    } catch (e) {
-                      notify(userMessage(e), 'error')
-                    }
+              {planned && !providerChecked ? null : planned && aiOff ? (
+                <PlanConnect
+                  hasPlan={!!d.plan}
+                  onConnect={() => {
+                    markPlanConnect(slug)
+                    connect()
                   }}
                 />
               ) : (
@@ -1023,14 +1027,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   basic={!d.aiEdited}
                   landed={landed}
                   unwatched={unwatched}
-                  empty={
-                    planned && (
-                      <p className="log-empty" data-testid="plan-empty">
-                        Haven't filmed it yet? Say what it's about. Your editor asks a question or two, then suggests a hook, the beats and the shots.
-                      </p>
-                    )
-                  }
-                  plan={planCard}
+                  empty={planned && <PlanHello />}
+                  plan={planned ? d.plan && <PlanChip plan={d.plan} /> : planCard}
                   versionRows={versionRows}
                   onPlay={watch}
                   onCompare={startCompare}
@@ -1045,14 +1043,6 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   answerError={answerError}
                   pausedWhy={pausedWhy}
                 />
-              )}
-              {planned && aiOff && d.plan && (
-                <p className="pf-editor muted-sm" data-testid="plan-connect-line">
-                  An editor can change the plan with you.{' '}
-                  <button className="lk" onClick={connect} data-testid="plan-connect">
-                    Connect an editor
-                  </button>
-                </p>
               )}
               {d.proposal && !looking && (
                 <ReelsFound
@@ -1274,26 +1264,6 @@ function FailedStage({ why, onFiles }: { why: string; onFiles: (paths: string[])
     <div className="phone-failed" data-testid="stage-failed">
       <p>{reason}</p>
       <PickFiles kind="primary" label="Choose another video" accept="video/*,.mov,.mp4,.m4v" onFiles={onFiles} testid="stage-another-video" />
-    </div>
-  )
-}
-
-/** A reel with no video yet: its title set large where the video will be, and the one way to add it. */
-function PlannedStage({ title, onFiles }: { title: string; onFiles: (paths: string[]) => void }) {
-  const drop = useFileDrop((paths) => {
-    window.dispatchEvent(new Event(NOTE_DROP_DONE))
-    onFiles(paths)
-  })
-  return (
-    <div className={`planned${drop.over ? ' over' : ''}`} {...drop.props} data-video-drop data-testid="planned-stage">
-      <div className="planned-frame">
-        <p className="planned-title">{title}</p>
-        <div className="planned-ask">
-          <h2>Drop the video you filmed</h2>
-          <p>A few takes are fine. Retakes and pauses come out.</p>
-          <PickFiles kind="primary" label="Choose video" accept="video/*,.mov,.mp4,.m4v" onFiles={onFiles} />
-        </div>
-      </div>
     </div>
   )
 }
