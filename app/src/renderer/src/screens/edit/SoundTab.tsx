@@ -368,11 +368,7 @@ export function SoundTab({ d, base, now, change, settle, player, vclock, joins, 
             <Icon name="plus" size={14} /> Add a sound effect at <span className="tnum">{clock(picking?.t ?? here?.t ?? second)}</span>
           </button>
         </div>
-        {!here && pack.length > 0 && vclock.placed.size > 0 && (
-          <p className="edit-hint" data-testid="sfx-no-moment">
-            {noMomentHint(player.playhead.get(), vclock, now.kept)}
-          </p>
-        )}
+        {!here && pack.length > 0 && vclock.placed.size > 0 && <p className="edit-hint">{noMomentHint(player.playhead.get(), vclock, now.kept)}</p>}
         {picking && (
           <SoundPicker
             pack={pack}

@@ -60,7 +60,8 @@ test('sounds: add at the playhead, a level, a removal and a fade, carried by the
   // past the last word no sound can be added; fails if the tab says every word ahead already has one
   await page.getByRole('slider', { name: /^Time in your reel/ }).focus()
   await page.keyboard.press('End')
-  await expect(page.getByTestId('sfx-no-moment')).toHaveText('Move the playhead to a word to add a sound effect there.')
+  await expect(page.getByTestId('sfx')).toContainText('Move the playhead to a word to add a sound effect there.')
+  await expect(page.getByTestId('sfx')).not.toContainText('Every word from here to the end has a sound effect already.')
   await playheadTo(page, 2)
   // fails if the keyboard can't reach the picked kind's play button, so it couldn't stop what it plays
   await page.getByRole('button', { name: /^Add a sound effect at/ }).click()
