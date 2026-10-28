@@ -4,12 +4,12 @@ import * as path from 'node:path';
 import { AIError, ChatMessage } from '../types';
 import { Harness, HarnessRun } from '../harness';
 import { DEFAULT_TOKEN_BUDGET, RunAgentResult, effectiveTokens, preloadText } from '../agent';
-import { childEnv } from '../safety';
+import { cliEnv } from '../safety';
 import { endTree } from '../engineHost';
 import { ClaudeCodeOptions, RELAY_SCRIPT, TOOL_TIMEOUT_MS } from './claudeCode';
 import { McpRun } from './run';
 
-export type CodexOptions = Pick<ClaudeCodeOptions, 'bin' | 'binArgs' | 'model' | 'extraArgs' | 'relay' | 'timeoutMs'>;
+export type CodexOptions = Pick<ClaudeCodeOptions, 'bin' | 'binArgs' | 'model' | 'extraArgs' | 'relay' | 'timeoutMs' | 'env'>;
 type Outcome = { stoppedBy: RunAgentResult['stoppedBy'] } | { error: unknown };
 
 /** codex exec owns its native loop; only the note's MCP tools can write the edit. Keep this dev
@@ -67,7 +67,7 @@ export class CodexHarness implements Harness {
   private async drive(o: HarnessRun, run: McpRun, args: string[], cwd: string, pre: string, outcome: Promise<Outcome>, decide: (result: Outcome) => void): Promise<RunAgentResult> {
     const child = spawn(this.o.bin ?? 'codex', args, {
       cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32',
-      env: childEnv(process.env, { ELECTRON_RUN_AS_NODE: '1', REELSTUDIO_SOCKET: run.socket, REELSTUDIO_RUN: run.id, REELSTUDIO_RUN_TOKEN: run.token }),
+      env: cliEnv(this.o.env, { ELECTRON_RUN_AS_NODE: '1', REELSTUDIO_SOCKET: run.socket, REELSTUDIO_RUN: run.id, REELSTUDIO_RUN_TOKEN: run.token }),
     });
     const exited = new Promise<void>((resolve) => child.once('close', () => resolve()));
     const messages: ChatMessage[] = [{ role: 'user', content: [{ type: 'text', text: o.task + pre }] }];

@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { AIError, ChatMessage, ImagePart, ToolCall } from '../types';
 import { DEFAULT_TOKEN_BUDGET, KEEP_GOING, MAX_CONSECUTIVE_MISSES, RunAgentResult, effectiveTokens, preloadText, thinkingMessage } from '../agent';
 import { Harness, HarnessRun } from '../harness';
-import { childEnv } from '../safety';
+import { cliEnv } from '../safety';
 import { endTree } from '../engineHost';
 import { userLine } from '../providers/cli';
 import { McpRun } from './run';
@@ -40,6 +40,8 @@ export interface ClaudeCodeOptions {
   relay?: { command: string; args: string[] };
   /** whole-run limit (default 30 minutes) */
   timeoutMs?: number;
+  /** base environment for the CLI (cliEnv removes ANTHROPIC_* and OPENAI_*); default process.env */
+  env?: NodeJS.ProcessEnv;
 }
 
 const PREFIX = 'mcp__reelstudio__';
@@ -106,7 +108,7 @@ export class ClaudeCodeHarness implements Harness {
       cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
       // its own process group, so Stop ends claude and whatever it started (killTree)
       detached: process.platform !== 'win32',
-      env: childEnv(process.env, { MCP_TOOL_TIMEOUT: String(TOOL_TIMEOUT_MS) }),
+      env: cliEnv(this.o.env, { MCP_TOOL_TIMEOUT: String(TOOL_TIMEOUT_MS) }),
     });
     const exited = new Promise<void>((resolve) => child.once('close', () => resolve()));
     let tokens = 0;

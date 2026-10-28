@@ -524,14 +524,16 @@ export function createAI(opts: CreateAIOptions) {
     const s = await settings();
     const id = (await active()).id;
     if (!((s.harness === 'claude-code' && id === 'claude-cli') || (s.harness === 'codex' && id === 'codex-cli'))) return undefined;
-    const bin = s.harness === 'claude-code' ? (await localClaude()).bin : undefined;
+    // one way to find each CLI: localClaude.ts and localCodex.ts, as the editor itself uses
+    const bin = s.harness === 'claude-code' ? (await localClaude()).bin : (await localCodex()).bin;
     const key = JSON.stringify([s.harness, bin, s.cliModel]);
     let harness = sessionHarnesses.get(key);
     if (!harness) {
-      const native = s.harness === 'codex' ? new CodexHarness({ model: s.cliModel }) : new ClaudeCodeHarness({ model: s.cliModel, ...(bin ? { bin } : {}) });
+      const o = { model: s.cliModel, env: env(), ...(bin ? { bin } : {}) };
+      const native = s.harness === 'codex' ? new CodexHarness(o) : new ClaudeCodeHarness(o);
       harness = new SessionHarness(native, () => s.harness === 'codex'
-        ? new CodexCliProvider({ model: s.cliModel })
-        : new ClaudeCliProvider({ model: s.cliModel, session: true, ...(bin ? { bin } : {}) }));
+        ? new CodexCliProvider(o)
+        : new ClaudeCliProvider({ ...o, session: true }));
       sessionHarnesses.set(key, harness);
     }
     return harness;
@@ -540,10 +542,13 @@ export function createAI(opts: CreateAIOptions) {
   async function checkerHarness(editorHarness: Harness | undefined): Promise<Harness | undefined> {
     if (opts.checkerHarnessOverride) return opts.checkerHarnessOverride;
     if (!opts.dev) return undefined;
-    if (editorHarness?.id === 'claude-code') return new CodexHarness();
+    if (editorHarness?.id === 'claude-code') {
+      const bin = (await localCodex()).bin;
+      return new CodexHarness({ env: env(), ...(bin ? { bin } : {}) });
+    }
     if (editorHarness?.id === 'codex') {
       const bin = (await localClaude()).bin;
-      return new ClaudeCodeHarness({ ...(bin ? { bin } : {}) });
+      return new ClaudeCodeHarness({ env: env(), ...(bin ? { bin } : {}) });
     }
     return undefined;
   }
