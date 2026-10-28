@@ -55,18 +55,20 @@ test('caption looks: size through look switches, Karaoke rows, colours that matc
     await expect(page.getByTestId('cap-highlight-yellow')).toHaveAttribute('aria-checked', 'true')
     await shot(page, 'looks-karaoke-rows')
 
-    // fails if a look's word is cut off by its strip at the smallest window (Bold pop's ran off its tile at 1100)
+    // fails if a look's word is cut off by its strip at the smallest window (Bold pop's ran off its tile at 1100), or
+    // drawn on a card the export doesn't have (Bold pop's sat on the menu's white card, 12 px taller than its line)
     await page.setViewportSize({ width: 1100, height: 720 })
     const strips = page.locator('.look-strip')
     await expect(strips).toHaveCount(5)
-    for (const strip of await strips.all()) {
-      const inside = await strip.evaluate((el) => {
+    const spill = await strips.evaluateAll((els) =>
+      els.flatMap((el) => {
         const s = el.getBoundingClientRect()
         const w = el.querySelector('.sub-sample')!.getBoundingClientRect()
-        return w.left >= s.left && w.right <= s.right && w.top >= s.top && w.bottom <= s.bottom
+        const out = Math.max(s.left - w.left, w.right - s.right, s.top - w.top, w.bottom - s.bottom)
+        return out > 0 ? [`${el.closest('[data-key]')?.getAttribute('data-key')}: ${out.toFixed(1)} px out`] : []
       })
-      expect(inside).toBe(true)
-    }
+    )
+    expect(spill).toEqual([])
   } finally {
     await app.close()
   }
