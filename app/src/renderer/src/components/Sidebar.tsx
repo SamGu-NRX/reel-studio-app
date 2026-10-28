@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { ProviderInfo } from '../../../shared/api'
 import type { Go } from '../nav'
 import { Icon, type IconName } from './icons'
@@ -11,6 +11,9 @@ import './shell.css'
 const RAIL_KEY = 'rs.sidebar-rail'
 const WIDTH_KEY = 'rs.sidebar-width'
 const RAIL_W = 64
+const RESIZE_KEYS = IS_MAC ? 'Meta+Shift+\\' : 'Control+Shift+\\'
+/** The page's and the title row's slide when the sidebar folds, so a second fold can stop it before measuring. */
+const slides = new WeakMap<HTMLElement, Animation>()
 
 // Insights is always here, so analytics have one place to live before any reel is posted (spec.md section 9).
 const NAV: { key: 'home' | 'library' | 'style' | 'insights'; label: string; icon: IconName }[] = [
@@ -36,6 +39,7 @@ export function useRail(): [boolean, (byShortcut?: boolean) => void] {
   // byKeyboard() does not count Cmd/Ctrl shortcuts (motion.ts), so the shortcut says so itself
   const toggle = useCallback((byShortcut = false) => {
     const moving = Array.from(document.querySelectorAll<HTMLElement>('.main, .tb-main'))
+    // where each is on screen now, partway through a slide included
     const before = moving.map((el) => el.getBoundingClientRect().left)
     const instant = byShortcut || byKeyboard() || reducedMotion()
     document.documentElement.classList.toggle('rail-instant', instant)
@@ -44,19 +48,22 @@ export function useRail(): [boolean, (byShortcut?: boolean) => void] {
       return !r
     })
     if (instant) {
+      moving.forEach((el) => slides.get(el)?.cancel())
       requestAnimationFrame(() => document.documentElement.classList.remove('rail-instant'))
       return
     }
     requestAnimationFrame(() =>
       moving.forEach((el, i) => {
+        // a slide still running would be measured as part of the new place: stop it, then slide from where it was
+        slides.get(el)?.cancel()
         const dx = before[i] - el.getBoundingClientRect().left
-        el.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 200, easing: 'cubic-bezier(.23, 1, .32, 1)' })
+        slides.set(el, el.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 200, easing: 'cubic-bezier(.23, 1, .32, 1)' }))
       })
     )
   }, [])
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === '\\') {
         e.preventDefault()
         toggle(true)
       }
@@ -76,11 +83,28 @@ function applyWidth(w: number): void {
 
 /**
  * Drag the sidebar's edge between 232 and 360 px; a double-click goes back to 248. It is out of the Tab order, so Tab
- * goes from the account row to the screen (audit-1028 finding 24); once a click has focused it, the arrow keys, Home
- * and End still move it. From the keyboard, Cmd/Ctrl+\ folds the sidebar to the rail and back.
+ * goes from the account row to the screen (audit-1028 finding 24). Cmd/Ctrl+Shift+\ focuses it from anywhere; then
+ * the arrow keys, Home and End size the sidebar and Esc goes back to where you were.
  */
 function SideResizer() {
   const [width, setWidth] = useState(() => sideWidth(localStorage.getItem(WIDTH_KEY)))
+  const edge = useRef<HTMLDivElement>(null)
+  const back = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.code !== 'Backslash') return
+      const el = edge.current
+      // folded to the rail, the edge is hidden: there is no width to set
+      if (!el || el.offsetParent === null) return
+      e.preventDefault()
+      back.current = document.activeElement instanceof HTMLElement && document.activeElement !== el ? document.activeElement : null
+      // motion.ts leaves a Cmd/Ctrl chord out of keyboard mode; this one is keyboard use, so the edge shows its focus
+      document.documentElement.classList.add('kb')
+      el.focus()
+    }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [])
   useEffect(() => applyWidth(width), [width])
   const commit = (w: number) => {
     setWidth(w)
@@ -111,7 +135,8 @@ function SideResizer() {
   }
   const key = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     const step = e.key === 'ArrowLeft' ? -8 : e.key === 'ArrowRight' ? 8 : 0
-    if (e.key === 'Home') commit(SIDE.min)
+    if (e.key === 'Escape' && back.current?.isConnected) back.current.focus()
+    else if (e.key === 'Home') commit(SIDE.min)
     else if (e.key === 'End') commit(SIDE.max)
     else if (step) commit(sideWidth(width + step))
     else return
@@ -127,6 +152,9 @@ function SideResizer() {
       aria-valuemin={SIDE.min}
       aria-valuemax={SIDE.max}
       tabIndex={-1}
+      aria-keyshortcuts={RESIZE_KEYS}
+      title={`Drag to change the sidebar’s width, or press ${IS_MAC ? '⌘⇧\\' : 'Ctrl+Shift+\\'} and use the arrow keys`}
+      ref={edge}
       onPointerDown={down}
       onKeyDown={key}
       onDoubleClick={() => commit(SIDE.default)}

@@ -140,9 +140,9 @@ test('the first run has no target under 24 px', async () => {
   }
 })
 
-// fails if Tab reaches the screen's title row before the sidebar, or stops on the sidebar's resize edge between the
-// account row and the screen (audit-1028 finding 24)
-test('Tab goes from the sidebar toggle down the sidebar, then to the title row, and skips the resize edge', async () => {
+// fails if Tab reaches the screen's title row before the sidebar, stops on the sidebar's resize edge between the
+// account row and the screen (audit-1028 finding 24), or the edge can no longer be reached and moved from the keyboard
+test('Tab goes from the sidebar toggle down the sidebar, then to the title row; the resize edge has its own shortcut', async () => {
   const { app, page } = await launch({ REELSTUDIO_USER_DATA: join(MINE, 'order-data'), REELSTUDIO_ROOT: join(MINE, 'order-root') })
   try {
     await passFirstRun(page)
@@ -163,6 +163,16 @@ test('Tab goes from the sidebar toggle down the sidebar, then to the title row, 
     expect(order).not.toContain('sidebar-resize')
     // the account row is the sidebar's last stop; Add files, the title row's first control, comes next
     expect(order.slice(-2)).toEqual(['account', 'Add files'])
+
+    // Cmd/Ctrl+Shift+\ focuses the edge, the arrow keys size the sidebar, Esc goes back to Add files
+    const edge = page.getByTestId('sidebar-resize')
+    const width = Number(await edge.getAttribute('aria-valuenow'))
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+Backslash' : 'Control+Shift+Backslash')
+    await expect(edge).toBeFocused()
+    await page.keyboard.press('ArrowRight')
+    await expect(edge).toHaveAttribute('aria-valuenow', String(width + 8))
+    await page.keyboard.press('Escape')
+    await expect(addFiles).toBeFocused()
   } finally {
     await app.close()
   }
