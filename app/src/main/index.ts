@@ -112,7 +112,7 @@ import type { AppInfo, DropResult, EngineCache, ExportResult, JobEvent, ProjectJ
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { coverScanOwner, createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
-import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment, forPerson } from '../shared/moments'
+import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment, forPerson, personText } from '../shared/moments'
 import type { LayerItem } from '../shared/lanes'
 import { parsePlatformExportRequest, sameVideo, secondTryPlatforms, type Platform, type PlatformTry, type TryVariable } from '../shared/platforms'
 import { exportPlatforms, sweepExportStaging, type ExportTry } from './platform-export'
@@ -350,7 +350,8 @@ async function startNote(slug: string, { id: noteId, text, attachments, moment, 
         )
       }
       const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
-      const reply = await replyAskingAboutStyle(r, r.summary + extra)
+      // the editor's summary may echo aiText, moment and word ids included
+      const reply = await replyAskingAboutStyle(r, personText(r.summary, aiText, text) + extra)
       return { ...reply, outcome: noteOutcome(before, r), made: { by: 'note', summary: text } }
     },
     { note: text || attachments.map((f) => f.name).join(', '), record, pause: (e) => pauseFor(e, pauseCtx('note', startedAt, editor)) }

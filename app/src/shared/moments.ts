@@ -213,21 +213,34 @@ export function groupMarks(marks: NoteMark[], duration: number, trackPx: number,
 type PersonEvent = { type: string; message?: string; summary?: string }
 
 /**
+ * Editor text without any transcript word id ("w12") or moment wrapper (`At 0:06 (around "…", words w10, w11): `).
+ * The ids are written into the note only for the AI (aiNoteText); every line the person sees passes through this,
+ * including notes saved before replies were cleaned.
+ */
+export function withoutWordIds(line: string): string {
+  if (!/\bw\d+\b|\(around "/.test(line)) return line
+  return line
+    .replace(/(?:At|From) \d+:[0-5]\d(?: to \d+:[0-5]\d)? \(around "[^"]*", words [^()]*\): /g, '')
+    .replace(/\s*\(around "[^"]*"(?:, words [^()]*)?\)/g, '')
+    .replace(/\b(?:at |on )?words? w\d+(?:(?:,| to| and|-) ?w\d+)*/g, '')
+    .replace(/\b(?:on |at )?w\d+(?:(?:,| to| and|-) ?w\d+)*/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.:;)])/g, '$1')
+    .trim()
+}
+
+/** A line the editor wrote about a note, with the person's own words back where it echoed what the AI was handed. */
+export const personText = (line: string, aiText: string, text: string): string =>
+  withoutWordIds(aiText && aiText !== text ? line.split(aiText).join(text) : line)
+
+/**
  * A running note's events as the person may see them. The AI is handed `aiText` (aiNoteText: the moment and
  * transcript word ids written into the note), and anything it or the practice editor echoes would reach the
  * progress card. Each status and tool line gets the person's own words back, and no moment wrapper or word id
  * survives.
  */
 export function forPerson<E extends PersonEvent>(emit: (e: E) => void, aiText: string, text: string): (e: E) => void {
-  const clean = (line: string): string =>
-    (aiText && aiText !== text ? line.split(aiText).join(text) : line)
-      .replace(/At \d+:[0-5]\d \(around "[^"]*", words [^()]*\): /g, '')
-      .replace(/\s*\(around "[^"]*"(?:, words [^()]*)?\)/g, '')
-      .replace(/\b(?:at |on )?words? w\d+(?:(?:,| to| and|-) ?w\d+)*/g, '')
-      .replace(/\b(?:on |at )?w\d+(?:(?:,| to| and|-) ?w\d+)*/g, '')
-      .replace(/\s{2,}/g, ' ')
-      .replace(/\s+([,.:;)])/g, '$1')
-      .trim()
+  const clean = (line: string): string => personText(line, aiText, text)
   return (e) => {
     if (e.type === 'status' && typeof e.message === 'string') return emit({ ...e, message: clean(e.message) })
     if (e.type === 'tool' && typeof e.summary === 'string') return emit({ ...e, summary: clean(e.summary) })
