@@ -243,10 +243,12 @@ export type VendorProblem =
   | 'sign_in_failed'
   | 'sign_in_timeout'
   | 'port_busy'
+  | 'device_code_off'
   | 'free_plan'
   | 'cancelled'
 
-/** What the page learns about a vendor's app. Never the account, a path, a sign-in link or a code. */
+/** What the page learns about a vendor's app. Never the account or a path. A sign-in link and code only in ChatGPT's
+ * sign-in with a code, where the person must read and type them on OpenAI's page. */
 export interface VendorInfo {
   vendor: VendorId
   state: ClaudeCodeState
@@ -257,6 +259,10 @@ export interface VendorInfo {
   /** plain words for the person */
   message?: string
   problem?: VendorProblem
+  /** 'code': ChatGPT's sign-in with a code (after its browser sign-in could not open its port) */
+  signIn?: 'code'
+  /** the code to type and OpenAI's https page for it, once Codex has printed them */
+  deviceCode?: { url: string; code: string }
 }
 
 /** What the page learns about it. Never the account (no e-mail, no organization), never a path. */
@@ -366,6 +372,8 @@ export interface ReelApi {
     vendorCancel(v: VendorId): Promise<void>
     /** Restarts a waiting sign-in so the vendor's app opens a fresh page. */
     vendorSignInAgain(v: VendorId): Promise<void>
+    /** ChatGPT only: connect again, signing in with a code instead of the browser (`codex login --device-auth`). */
+    vendorSignInWithCode(v: VendorId): Promise<VendorInfo>
     onVendor(cb: (i: VendorInfo) => void): () => void
   }
   projects: {

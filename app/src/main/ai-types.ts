@@ -93,7 +93,12 @@ export interface AI {
 /** Mock only (ai-mock.ts): plays install and sign-in for the Connect cards without a real CLI. */
 export interface MockVendor {
   install(v: 'claude' | 'chatgpt', signal: AbortSignal): Promise<void>
-  login(v: 'claude' | 'chatgpt', signal: AbortSignal): Promise<{ code: number | null; portBusy?: boolean; aborted?: boolean }>
+  /** with onDeviceCode: ChatGPT's sign-in with a code */
+  login(
+    v: 'claude' | 'chatgpt',
+    signal: AbortSignal,
+    onDeviceCode?: (c: { url: string; code: string }) => void
+  ): Promise<{ code: number | null; portBusy?: boolean; deviceCodeOff?: boolean; aborted?: boolean }>
 }
 
 export interface ClaudeCodeStatus {

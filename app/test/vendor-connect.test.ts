@@ -441,7 +441,7 @@ describe('Connect: install if missing, sign in, check, choose', () => {
   it("ChatGPT's port held: plain words; Sign in with a code instead runs the code sign-in, shows its code, then checks and chooses", async () => {
     const page = { url: 'https://auth.openai.com/codex/device', code: 'Q42W-7R5TB' }
     const f = flow({
-      states: [out, ready],
+      states: [out, out, ready], // the browser try, the code try, then the check
       login: async (_s, n, onDeviceCode) => {
         if (n === 1) return { code: 1, portBusy: true } // the browser sign-in: the port is held
         expect(onDeviceCode).toBeTypeOf('function') // the second is the code sign-in

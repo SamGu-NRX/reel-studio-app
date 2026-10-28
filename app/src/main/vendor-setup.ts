@@ -183,29 +183,110 @@ export const LOGIN_ARGS: Record<Vendor, string[]> = {
   chatgpt: ['login']
 }
 
+/** Codex's sign-in with a code, for when its browser sign-in cannot open its callback port. */
+export const DEVICE_LOGIN_ARGS = ['login', '--device-auth']
+
+export interface DeviceCode {
+  /** OpenAI's page where the code is entered (https, an openai.com host) */
+  url: string
+  /** the one-time code, as Codex prints it (e.g. Q42W-7R5TB) */
+  code: string
+}
+
 export interface LoginResult {
   code: number | null
-  /** another sign-in already holds the callback port (Codex uses 127.0.0.1:1455) */
+  /** the CLI could not open its callback port (Codex: 127.0.0.1:1455): another program has it, or Windows reserved it */
   portBusy?: boolean
+  /** Codex's code sign-in is not enabled for this server */
+  deviceCodeOff?: boolean
   aborted?: boolean
 }
 
-const PORT_BUSY = /address already in use|address in use|os error 10048|os error 48\b|only one usage of each socket/i
+/**
+ * Codex's callback port could not be opened. In use: "Port 127.0.0.1:1457 is already in use" (Codex tries 1455, then
+ * its fallback 1457), or the OS's own words (10048 on Windows, 48 on macOS). Reserved: Windows keeps excluded port
+ * ranges (Hyper-V / WinNAT, `netsh int ipv4 show excludedportrange`), and binding inside one fails with WSAEACCES,
+ * which Codex 0.163 prints as "An attempt was made to access a socket in a way forbidden by its access permissions.
+ * (os error 10013)". That sentence is Windows' own and is translated on other Windows languages; the number is not.
+ */
+const PORT_HELD = /address already in use|address in use|is already in use|only one usage of each socket|os error (10048|48|10013)\b|forbidden by its access permissions/i
+
+export function loginPortBlocked(output: string): boolean {
+  return PORT_HELD.test(output)
+}
+
+/** Codex 0.163 and later, when its device-code endpoint answers 404 (see codex-rs/login/src/device_code_auth.rs). */
+const DEVICE_CODE_OFF = /device code login is not enabled/i
+
+// eslint-disable-next-line no-control-regex
+const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g
+const CODE_SHAPE = /^[A-Z0-9]{3,}(?:-[A-Z0-9]{3,})+$/
+
+/**
+ * The page and the one-time code from what `codex login --device-auth` prints ("1. Open this link …", "2. Enter this
+ * one-time code …", each value on the next line, in ANSI colours). Null until both are there. Only an https page on
+ * openai.com or one of its subdomains is accepted: it is handed to the page as a link the person opens.
+ */
+export function parseDeviceCode(output: string): DeviceCode | null {
+  const text = output.replace(ANSI, '')
+  const lines = text.split(/\r?\n/).map((l) => l.trim())
+  const after = (re: RegExp): string | undefined => {
+    const i = lines.findIndex((l) => re.test(l))
+    return i < 0 ? undefined : lines.slice(i + 1).find((l) => l.length > 0)
+  }
+  const link = after(/open this link/i)
+  const code = after(/one-time code/i)
+  if (!link || !code || !CODE_SHAPE.test(code)) return null
+  let url: URL
+  try {
+    url = new URL(link)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:' || !(url.hostname === 'openai.com' || url.hostname.endsWith('.openai.com'))) return null
+  return { url: url.href, code }
+}
 
 /**
  * Runs the CLI's own sign-in, hidden. It opens the vendor's page in the browser and waits for the answer on 127.0.0.1.
  * Its output (links carrying the sign-in's state) stays in this function: it is never sent to the page or the log.
  * stdin is closed, so a sign-in code can never be pasted through Reel Studio.
+ *
+ * With `onDeviceCode` (Codex only) it runs `codex login --device-auth` instead, the same way: Codex prints a page and
+ * a one-time code, the person types the code on that page, and Codex learns the answer by asking OpenAI. The page and
+ * the code are the only output that leaves this function, through `onDeviceCode`, once; nothing is logged.
  */
-export function runLogin(d: { vendor: Vendor; bin: string; env: NodeJS.ProcessEnv; platform: NodeJS.Platform; signal?: AbortSignal; spawn?: SpawnFn; systemRoot?: string }): Promise<LoginResult> {
+export function runLogin(d: {
+  vendor: Vendor
+  bin: string
+  env: NodeJS.ProcessEnv
+  platform: NodeJS.Platform
+  signal?: AbortSignal
+  spawn?: SpawnFn
+  systemRoot?: string
+  onDeviceCode?: (c: DeviceCode) => void
+}): Promise<LoginResult> {
+  if (d.onDeviceCode && d.vendor !== 'chatgpt') throw new Error(`${d.vendor} has no sign-in with a code`)
   const spawn = d.spawn ?? nodeSpawn
+  const args = d.onDeviceCode ? DEVICE_LOGIN_ARGS : LOGIN_ARGS[d.vendor]
   return new Promise((resolve) => {
     let out = ''
-    const child = spawn(d.bin, LOGIN_ARGS[d.vendor], { env: vendorEnv(d.env), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: d.platform !== 'win32' })
+    let printed = '' // stdout from the start, for the code (it comes first, in a few hundred bytes)
+    let handedOver = false
+    const child = spawn(d.bin, args, { env: vendorEnv(d.env), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: d.platform !== 'win32' })
     const keep = (b: Buffer | string): void => {
       out = (out + String(b)).slice(-8000)
     }
-    child.stdout?.on('data', keep)
+    child.stdout?.on('data', (b: Buffer | string) => {
+      keep(b)
+      if (!d.onDeviceCode || handedOver || printed.length > 16_000) return
+      printed += String(b)
+      const found = parseDeviceCode(printed)
+      if (found) {
+        handedOver = true
+        d.onDeviceCode(found)
+      }
+    })
     child.stderr?.on('data', keep)
     const stop = (): void => killTree(child, d.platform, spawn, d.systemRoot)
     if (d.signal?.aborted) stop()
@@ -214,7 +295,9 @@ export function runLogin(d: { vendor: Vendor; bin: string; env: NodeJS.ProcessEn
     child.on('close', (code) => {
       d.signal?.removeEventListener('abort', stop)
       if (d.signal?.aborted) return resolve({ code, aborted: true })
-      resolve({ code, ...(code !== 0 && PORT_BUSY.test(out) ? { portBusy: true } : {}) })
+      if (code === 0) return resolve({ code })
+      if (d.onDeviceCode && DEVICE_CODE_OFF.test(out)) return resolve({ code, deviceCodeOff: true })
+      resolve({ code, ...(!d.onDeviceCode && loginPortBlocked(out) ? { portBusy: true } : {}) })
     })
   })
 }

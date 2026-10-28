@@ -29,6 +29,10 @@ const PITCH: Record<VendorId, string> = {
   chatgpt: "Works with your ChatGPT plan, free ones too. Installs OpenAI's Codex app if you don't have it."
 }
 
+// OpenAI's docs: "Enable device code login in your ChatGPT security settings (personal account) or ChatGPT workspace
+// permissions (workspace admin)." Until then OpenAI's page refuses the code, and Codex just keeps waiting.
+const DEVICE_CODE_HINT = "Turn on device code login in ChatGPT's security settings first (work accounts: your workspace admin)."
+
 const busy = (i: VendorInfo | null): boolean => !!i && ['installing', 'signing_in', 'checking'].includes(i.step)
 
 export function VendorCards({ activeId, onConnected }: { activeId?: ProviderInfo['id']; onConnected: (p: ProviderInfo) => void }) {
@@ -75,6 +79,11 @@ export function VendorCards({ activeId, onConnected }: { activeId?: ProviderInfo
     setInstalled((s) => ({ ...s, [v]: false }))
     reel.ai.vendorConnect(v).catch((e) => setError(userMessage(e)))
   }
+  // Only on the person's click, after the browser sign-in could not open its port: never on its own.
+  const signInWithCode = (v: VendorId): void => {
+    setError(null)
+    reel.ai.vendorSignInWithCode(v).catch((e) => setError(userMessage(e)))
+  }
 
   // Recommend what they already have; otherwise Claude first.
   const order: VendorId[] = info.chatgpt?.state === 'ready' && info.claude?.state !== 'ready' ? ['chatgpt', 'claude'] : ['claude', 'chatgpt']
@@ -89,6 +98,7 @@ export function VendorCards({ activeId, onConnected }: { activeId?: ProviderInfo
           primary={k === 0}
           installed={installed[v]}
           onConnect={() => connect(v)}
+          onCode={() => signInWithCode(v)}
           onOther={shown.length > 1 ? () => connect(shown[1 - k]) : undefined}
         />
       ))}
@@ -103,6 +113,7 @@ function VendorCard({
   primary,
   installed,
   onConnect,
+  onCode,
   onOther
 }: {
   vendor: VendorId
@@ -110,6 +121,7 @@ function VendorCard({
   primary: boolean
   installed: boolean
   onConnect: () => void
+  onCode: () => void
   onOther?: () => void
 }) {
   const cancel = (): void => void reel.ai.vendorCancel(v)
@@ -120,9 +132,11 @@ function VendorCard({
     reel.ai.openClaudeSignIn().catch((e) => setFallbackError(userMessage(e)))
   }
   const testid = `vendor-${v}`
-  const attrs = { 'data-testid': testid, 'data-step': info?.step ?? 'loading', 'data-state': info?.state ?? 'loading' }
+  const attrs = { 'data-testid': testid, 'data-step': info?.step ?? 'loading', 'data-state': info?.state ?? 'loading', 'data-sign-in': info?.signIn }
 
   if (!info) return <div className="vendor" {...attrs} />
+
+  if (busy(info) && info.signIn === 'code') return <CodeSignIn v={v} info={info} attrs={attrs} onCancel={cancel} />
 
   if (busy(info)) {
     const installing = info.step === 'installing'
@@ -195,6 +209,8 @@ function VendorCard({
   if (info.step === 'failed') {
     const installProblem = info.problem === 'install_failed' || info.problem === 'not_found_after_install'
     const free = info.problem === 'free_plan'
+    // ChatGPT's port held (in use, or reserved by Windows), or its code sign-in turned off: the code is the way through
+    const offerCode = v === 'chatgpt' && (info.problem === 'port_busy' || info.problem === 'device_code_off')
     return (
       <div className="vendor flow" {...attrs} data-problem={info.problem}>
         <h3>Connect {NAME[v]}</h3>
@@ -214,6 +230,11 @@ function VendorCard({
           ) : (
             <button className="btn small primary" onClick={onConnect} data-testid={`vendor-retry-${v}`}>
               Try again
+            </button>
+          )}
+          {offerCode && (
+            <button className="btn small" onClick={onCode} data-testid={`vendor-code-start-${v}`}>
+              Sign in with a code instead
             </button>
           )}
           {installProblem && (
@@ -245,6 +266,58 @@ function VendorCard({
           {info.message}
         </p>
       )}
+    </div>
+  )
+}
+
+/** ChatGPT's sign-in with a code: OpenAI's page, the code to type there, and the way out. */
+function CodeSignIn({ v, info, attrs, onCancel }: { v: VendorId; info: VendorInfo; attrs: Record<string, string | undefined>; onCancel: () => void }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 1600)
+    return () => clearTimeout(t)
+  }, [copied])
+  const dc = info.deviceCode
+  const copy = (): void => {
+    if (dc) reel.app.copyText(dc.code).then(() => setCopied(true), () => undefined)
+  }
+  return (
+    <div className="vendor flow" {...attrs}>
+      <h3>Connecting {NAME[v]}</h3>
+      <Line on done={false}>
+        {dc ? (
+          <>
+            <b>Enter this code on {MAKER[v]}'s page.</b>
+            <span className="muted-sm">Come back here when the page says you're signed in.</span>
+          </>
+        ) : (
+          <b>Getting a sign-in code from {MAKER[v]}…</b>
+        )}
+      </Line>
+      {dc && (
+        <div className="vendor-code-box">
+          {/* read out one character at a time; a live region, so a screen reader hears it arrive */}
+          <output className="vendor-code" data-testid={`vendor-code-${v}`} aria-label={`Sign-in code: ${dc.code.split('').join(' ')}`}>
+            {dc.code}
+          </output>
+          <div className="row wrap">
+            <a className="btn small primary" href={dc.url} target="_blank" rel="noreferrer" data-testid={`vendor-code-open-${v}`}>
+              <Icon name="external" size={14} /> Open sign-in page
+            </a>
+            <button className="btn small" onClick={copy} data-testid={`vendor-code-copy-${v}`}>
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      )}
+      <p className="muted-sm hint">{DEVICE_CODE_HINT}</p>
+      <div className="row wrap">
+        <span className="spacer" />
+        <button className="btn small ghost" onClick={onCancel} data-testid={`vendor-cancel-${v}`}>
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }
