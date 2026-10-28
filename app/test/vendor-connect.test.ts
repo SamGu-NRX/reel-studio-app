@@ -2,7 +2,7 @@
 // them together (vendor-connect.ts). No real CLI, installer or network: spawn and fetch are fakes.
 import { describe, expect, it } from 'vitest'
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, readFileSync, statSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, posix } from 'node:path'
 import type { ChildProcess } from 'node:child_process'
@@ -108,6 +108,21 @@ describe('installing the vendor app: the vendor\'s own script, as a FILE', () =>
       expect(calls[0].opts.env.HOME).toBe('/Users/p')
       expect(calls[0].opts.env.CODEX_NON_INTERACTIVE).toBe(vendor === 'chatgpt' ? '1' : undefined)
     }
+  })
+
+  // Run on a Mac, win32.join turned a POSIX temp folder into one file name with backslashes, written under the
+  // current folder: every run left scripts named after this computer's temp path in app/.
+  it('fails if a Windows install run on another computer writes its script anywhere but its own folder', async () => {
+    const before = readdirSync(process.cwd()).sort()
+    for (const vendor of ['claude', 'chatgpt'] as const) {
+      const dir = tmp()
+      const { spawn, calls } = fakeSpawn((c) => setTimeout(() => c.finish(0), 5))
+      await runInstall({ vendor, platform: 'win32', dir, env: ENV, fetch: script(), spawn, systemRoot: 'C:\\Windows' })
+      const file = join(dir, `${vendor}-install.ps1`)
+      expect(readdirSync(dir)).toEqual([`${vendor}-install.ps1`])
+      expect(calls[0].args.slice(-2)).toEqual(['-File', file])
+    }
+    expect(readdirSync(process.cwd()).sort()).toEqual(before)
   })
 
   it('a failed installer, a captive-portal page, no internet: plain words, and the page never runs', async () => {

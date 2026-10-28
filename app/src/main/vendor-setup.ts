@@ -7,7 +7,7 @@
 // (measured 2026-10-25). The same script run as a file was not flagged.
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
-import { posix, win32 } from 'node:path'
+import { join, posix, win32 } from 'node:path'
 
 export type Vendor = 'claude' | 'chatgpt'
 
@@ -116,7 +116,12 @@ export interface InstallDeps {
 
 /** Downloads the vendor's installer to a file and runs it hidden. Resolves when it exits 0. */
 export async function runInstall(d: InstallDeps): Promise<void> {
-  const plan = installPlan(d.vendor, d.platform, d.dir, d.systemRoot)
+  const planned = installPlan(d.vendor, d.platform, d.dir, d.systemRoot)
+  // The file is written and run where this computer puts it: the plan joins for the target system, and on a Mac a
+  // win32 plan (tests) would turn the folder into one file name written under the current folder. On Windows and
+  // on a Mac the two are the same path.
+  const fileName = join(d.dir, win32.basename(planned.fileName))
+  const plan = { ...planned, fileName, args: planned.args.map((a) => (a === planned.fileName ? fileName : a)) }
   assertRunsAFile(plan)
   const cantReach = `${APP_NAME[d.vendor]} didn't install: this computer couldn't reach ${VENDOR_NAME[d.vendor]}. Check your internet, then try again.`
   let bytes: Buffer
