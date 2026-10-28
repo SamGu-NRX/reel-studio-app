@@ -172,6 +172,10 @@ test('ChatGPT\'s sign-in port held by Windows: plain words, then one click signs
   await expect(page.getByTestId('vendor-retry-chatgpt')).toHaveText('Try again')
   const withCode = page.getByTestId('vendor-code-start-chatgpt')
   await expect(withCode).toHaveText('Sign in with a code instead')
+  // reserved by Windows: Try again cannot work until the port is freed, so the code is the primary button, first
+  await expect(withCode).toHaveClass(/\bprimary\b/)
+  await expect(page.getByTestId('vendor-retry-chatgpt')).not.toHaveClass(/\bprimary\b/)
+  await expect(chatgpt.locator('.row button').first()).toHaveAttribute('data-testid', 'vendor-code-start-chatgpt')
   await plainWords(page)
   await shot(page, 'connect-08-port-held')
   // never on its own: nothing runs until the click
@@ -218,5 +222,19 @@ test('Cancel while the code is on screen: back to the button', async () => {
   await expect(page.getByTestId('connect-chatgpt')).toBeVisible()
   await expect(chatgpt).not.toHaveAttribute('data-sign-in', 'code')
   expect((await page.evaluate(() => window.reel.ai.active())).id).toBe('none')
+  await app.close()
+})
+
+test('ChatGPT\'s sign-in port only in use by another program: Try again stays the primary button, the code second', async () => {
+  const { app, page, info, chatgpt } = await connectScreen('missing', 'port_in_use')
+  test.skip(info.ai !== 'mock', 'the mock plays the vendor states')
+  await page.getByTestId('connect-chatgpt').click()
+  await expect(chatgpt).toHaveAttribute('data-problem', 'port_busy')
+  await expect(page.getByTestId('vendor-message-chatgpt')).toHaveText(/holding the port ChatGPT's sign-in uses\.$/)
+  await expect(page.getByTestId('vendor-retry-chatgpt')).toHaveClass(/\bprimary\b/)
+  await expect(page.getByTestId('vendor-code-start-chatgpt')).not.toHaveClass(/\bprimary\b/)
+  await expect(chatgpt.locator('.row button').first()).toHaveAttribute('data-testid', 'vendor-retry-chatgpt')
+  await plainWords(page)
+  await shot(page, 'connect-11-port-in-use')
   await app.close()
 })

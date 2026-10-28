@@ -12,6 +12,7 @@ import {
   assertRunsAFile,
   installPlan,
   loginPortBlocked,
+  loginPortReserved,
   parseDeviceCode,
   runInstall,
   runLogin,
@@ -190,13 +191,17 @@ describe('the vendor app\'s own sign-in', () => {
   }
 
   it('port 1455 reserved by Windows (os error 10013, the exact output) is the port case, not a failed sign-in', async () => {
-    expect(await loginWith(RESERVED)).toEqual({ code: 1, portBusy: true })
+    // reserved: retrying cannot work until the port is freed, so portReserved puts the code sign-in first
+    expect(await loginWith(RESERVED)).toEqual({ code: 1, portBusy: true, portReserved: true })
     // the sentence is Windows' own and is translated on other Windows languages; the error number is not
-    expect(await loginWith(['Error logging in: 以一种访问权限不允许的方式做了一个访问套接字的尝试。 (os error 10013)\n'])).toEqual({ code: 1, portBusy: true })
+    expect(await loginWith(['Error logging in: 以一种访问权限不允许的方式做了一个访问套接字的尝试。 (os error 10013)\n'])).toEqual({ code: 1, portBusy: true, portReserved: true })
+    expect(loginPortReserved(RESERVED.join(''))).toBe(true)
   })
 
   it('port 1455 in use: Codex tries its fallback port, then says so in its own words', async () => {
+    // only in use: the other program may let go, so Try again stays first (no portReserved)
     expect(await loginWith(['Error logging in: Port 127.0.0.1:1457 is already in use\n'])).toEqual({ code: 1, portBusy: true })
+    expect(loginPortReserved('Error logging in: Port 127.0.0.1:1457 is already in use')).toBe(false)
   })
 
   it('any other failed sign-in is not the port case', async () => {
@@ -436,6 +441,14 @@ describe('Connect: install if missing, sign in, check, choose', () => {
     f.vc.cancel('claude')
     expect(await a).toBe(await b)
     expect(f.counts().logins).toBe(1)
+  })
+
+  it('the port case tells the page whether the port is reserved (the code first) or only in use (Try again first)', async () => {
+    const reserved = await flow({ states: [out], login: async () => ({ code: 1, portBusy: true, portReserved: true }) }).vc.connect('chatgpt')
+    expect(reserved).toMatchObject({ step: 'failed', problem: 'port_busy', portReserved: true })
+    const inUse = await flow({ states: [out], login: async () => ({ code: 1, portBusy: true }) }).vc.connect('chatgpt')
+    expect(inUse).toMatchObject({ step: 'failed', problem: 'port_busy' })
+    expect(inUse.portReserved).toBeUndefined()
   })
 
   it("ChatGPT's port held: plain words; Sign in with a code instead runs the code sign-in, shows its code, then checks and chooses", async () => {
