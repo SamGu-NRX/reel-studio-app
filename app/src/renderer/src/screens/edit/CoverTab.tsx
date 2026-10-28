@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { CoverCandidate, ProjectJson } from '../../../../shared/api'
 import { coverMoments } from '../../../../shared/cover'
+import { isMirrored, withMirror } from '../../../../shared/mirror'
 import { clock } from '../../../../shared/progress'
 import { CoverPicks } from '../../components/CoverPicks'
 import { setP, type TabProps } from './controls'
@@ -8,8 +9,8 @@ import { OnPhone } from './preview'
 
 type Cover = NonNullable<ProjectJson['cover']>
 
-/** The cover tab: frames picked from the video, any moment of it, and the words on the cover. The phone shows
- * the cover as it will be while this tab is open. */
+/** The cover tab: frames picked from the video, any moment of it, the words on the cover, and Flip the picture,
+ * whose effect shows here first. The phone shows the cover as it will be while this tab is open. */
 export function CoverTab({ d, base, now, change, settle, player, version, loadPicks }: TabProps & { loadPicks: () => Promise<CoverCandidate[]> }) {
   const [picks, setPicks] = useState<CoverCandidate[]>([])
   const first = d.project.sources?.[0]
@@ -33,19 +34,21 @@ export function CoverTab({ d, base, now, change, settle, player, version, loadPi
   const pick = picks.find((c) => Math.abs(c.atSourceTime - at) < 0.01 && c.source === source)
   const raw = d.sourceVideos[source]
   const mirrored = now.p.sources?.find((s) => s.id === source)?.mirror === true
+  // the version's cover and the picked stills were made before this edit's flip: drawn flipped, they show the new one
+  const flipped = mirrored !== (base.p.sources?.find((s) => s.id === source)?.mirror === true)
 
   return (
     <div className="edit-stack">
       <OnPhone player={player}>
         <div className="edit-cover" data-testid="cover-preview">
-          {!frameMoved && !wordsChanged && version?.cover ? (
+          {!frameMoved && !wordsChanged && !flipped && version?.cover ? (
             <img src={version.cover} alt="" />
           ) : pick ? (
-            <img src={pick.image} alt="" />
+            <img src={pick.image} className={flipped ? 'mirrored' : undefined} alt="" />
           ) : raw ? (
             <video key={`${raw}#${at}`} className={mirrored ? 'mirrored' : undefined} src={`${raw}#t=${at.toFixed(2)}`} muted playsInline preload="auto" disablePictureInPicture aria-hidden />
           ) : null}
-          {(frameMoved || wordsChanged || !version?.cover) && cover.text && <span className="edit-cover-words">{cover.text}</span>}
+          {(frameMoved || wordsChanged || flipped || !version?.cover) && cover.text && <span className="edit-cover-words">{cover.text}</span>}
           <span className="phone-tag">Cover</span>
         </div>
       </OnPhone>
@@ -65,6 +68,7 @@ export function CoverTab({ d, base, now, change, settle, player, version, loadPi
         load={loadPicks}
         waiting={coverMoments(d.words, now.kept, source).length}
         chosen={at}
+        flipped={flipped}
         onPick={(c) => setCover({ atSourceTime: c.atSourceTime, source: c.source, exact: null, manual: true })}
       />
       <label className="edit-field">
@@ -83,6 +87,15 @@ export function CoverTab({ d, base, now, change, settle, player, version, loadPi
         />
         <span className="edit-hint tnum">{clock(at)} into the video you filmed. The clearest frame of your face near it is used.</span>
       </label>
+      <div className="edit-rule" />
+      {/* a front-camera take often comes out mirrored: writing behind you reads backwards */}
+      <div className="edit-field">
+        <label className="toggle">
+          <input type="checkbox" checked={isMirrored(now.p)} onChange={(e) => change(setP((p) => ({ sources: withMirror(p.sources, e.target.checked) })))} data-testid="mirror-on" />
+          Flip the picture
+        </label>
+        <p className="edit-hint">For a mirrored video, when writing behind you reads backwards. Subtitles and pictures stay the right way round.</p>
+      </div>
     </div>
   )
 }

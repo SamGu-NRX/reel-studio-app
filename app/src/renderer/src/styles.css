@@ -438,22 +438,26 @@ select.input { -webkit-appearance: none; appearance: none; cursor: pointer; padd
 .cover-img { width: 180px; border-radius: 12px; display: block; background: var(--sunk); aspect-ratio: 9/16; object-fit: cover; }
 /* The current cover sits at the suggestions' size, so the suggestions show without scrolling. */
 .drawer .cover-img { width: 132px; }
-/* Cover suggestions: the same ink ring as the subtitle swatches marks the chosen frame. */
-.cover-picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 12px; max-width: 384px; }
-.cover-pick { border: 0; background: none; padding: 0; font: inherit; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 2px; border-radius: 12px; }
-.cover-pick:focus-visible { outline-offset: 4px; }
-.cover-pick-frame { position: relative; display: block; aspect-ratio: 9/16; margin-bottom: 6px; border-radius: 10px; overflow: hidden; background: var(--sunk); outline: 2px solid transparent; outline-offset: 2px; transition: outline-color .12s, transform .16s var(--ease-out); }
-.cover-pick-frame img { width: 100%; height: 100%; object-fit: cover; display: block; animation: fade .2s ease-out both; }
-@media (hover: hover) and (pointer: fine) { .cover-pick:hover:not(.on) .cover-pick-frame { outline-color: var(--line-strong); } }
-.cover-pick:active .cover-pick-frame { transform: scale(.97); }
-.cover-pick.on .cover-pick-frame { outline-color: var(--ink); }
-.cover-pick-check { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,.85); animation: fade .12s ease-out both; }
-.cover-pick-time { font-size: var(--fs-base); font-weight: 640; color: var(--ink); font-variant-numeric: tabular-nums; }
-.cover-pick-why { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); }
-.cover-pick.on .cover-pick-why { color: var(--ink-2); }
-.cover-pick-wait { margin-bottom: 0; animation: cover-wait 1.4s ease-in-out infinite; }
-.cover-picks-status { grid-column: 1 / -1; }
+/* Cover suggestions (CoverPicks.tsx): one filmstrip, the frames at one size with a line of paper between them and
+   rounded only at the strip's two ends. The chosen frame gets the ink ring that marks a choice; the line under the
+   strip says when and why. Six columns always: the engine looks at six moments at most, so a frame is never wider
+   because fewer came back. */
+.cover-strip { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 10px) / 6); gap: 2px; }
+.cover-frame { position: relative; display: block; aspect-ratio: 9 / 16; border: 0; padding: 0; margin: 0; background: var(--sunk); cursor: pointer; overflow: hidden; }
+.cover-frame:first-child { border-top-left-radius: var(--r-sm); border-bottom-left-radius: var(--r-sm); }
+.cover-frame:last-child { border-top-right-radius: var(--r-sm); border-bottom-right-radius: var(--r-sm); }
+.cover-frame img { width: 100%; height: 100%; object-fit: cover; display: block; animation: fade .2s ease-out both; }
+.cover-strip.flipped img, .edit-cover > img.mirrored { transform: scaleX(-1); }
+.cover-frame::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: inset 0 0 0 2px transparent; transition: box-shadow 120ms ease; }
+@media (hover: hover) and (pointer: fine) { .cover-frame:not(.on):hover::after { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .7); } }
+.cover-frame.on::after { box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 3.5px rgba(255, 255, 255, .85); }
+.cover-frame:focus-visible { z-index: 1; }
+html.kb .cover-frame::after { transition: none; }
+.cover-frame-wait { cursor: default; animation: cover-wait 1.4s ease-in-out infinite; }
 @keyframes cover-wait { 50% { opacity: .5; } }
+.cover-why { min-height: var(--lh-base); margin-top: 8px; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-2); }
+.cover-why b { color: var(--ink); font-weight: 640; margin-right: 4px; }
+
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
 .swatch { border: 0; background: none; padding: 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; font: inherit; font-weight: 600; font-size: var(--fs-sm); color: var(--ink-2); border-radius: 12px; }
 .swatch:focus-visible { outline-offset: 3px; }

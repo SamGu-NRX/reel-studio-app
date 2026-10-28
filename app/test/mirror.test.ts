@@ -45,7 +45,7 @@ describe('flip picture', () => {
 
   it('is wired: the drawer toggle, the update handler, and the flipped stills', () => {
     const src = (f: string) => readFileSync(join(__dirname, '..', 'src', f), 'utf8')
-    const drawer = src('renderer/src/screens/edit/CutTab.tsx')
+    const drawer = src('renderer/src/screens/edit/CoverTab.tsx')
     expect(drawer).toMatch(/Flip the picture/)
     expect(drawer).toMatch(/sources: withMirror\(p\.sources, e\.target\.checked\)/)
     expect(src('main/index.ts')).toMatch(/p\.sources = mergeSourcesPatch\(p\.sources, patch\.sources\)/)

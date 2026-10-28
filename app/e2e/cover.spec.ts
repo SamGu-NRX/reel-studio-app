@@ -1,5 +1,6 @@
-// The cover picker: frames picked from the video, each with its time and why, the chosen one marked, and
-// a pick saved as that exact frame. Run after a build: npx playwright test e2e/cover.spec.ts
+// The cover picker: frames picked from the video in one strip, each named for its time and why, the line under the
+// strip saying both for the chosen one, and a pick saved as that exact frame. Run after a build:
+// npx playwright test e2e/cover.spec.ts
 import { test, expect } from '@playwright/test'
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -21,10 +22,12 @@ test('cover suggestions say when and why, mark the chosen frame, and save it as 
   const picks = page.getByTestId('cover-pick')
   await expect(picks.first()).toBeVisible()
   // the stand-in engine's first frame: eyes open and face in focus beat its neighbours
-  await expect(picks.first()).toContainText(/^0:\d\dEyes open, face in focus$/)
+  await expect(picks.first()).toHaveAccessibleName(/^0:\d\d, Eyes open, face in focus$/)
   await expect(page.getByText('Drag to fine-tune')).toHaveCount(0)
 
   await picks.nth(0).click()
+  // the frames carry no words; the line under the strip reads the chosen one's
+  await expect(page.getByTestId('cover-why')).toHaveText(/^0:\d\d Eyes open, face in focus$/)
   await page.keyboard.press('ArrowRight') // radio buttons: arrows move and pick
   await expect(picks.nth(1)).toHaveAttribute('aria-checked', 'true')
   await expect(picks.nth(1)).toBeFocused()

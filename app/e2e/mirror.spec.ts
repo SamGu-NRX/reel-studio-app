@@ -42,6 +42,7 @@ test('flip a mirrored take from Edit it myself', async () => {
   expect(project().sources[0].mirror).toBeUndefined()
 
   await page.getByTestId('edit-myself').click()
+  await page.getByTestId('tab-cover').click()
   const toggle = page.getByTestId('mirror-on')
   await expect(toggle).toBeVisible()
   await expect(toggle).not.toBeChecked()
@@ -64,6 +65,7 @@ test('flip a mirrored take from Edit it myself', async () => {
 
   // and back: the flag is removed, the project is as it was
   await page.getByTestId('edit-myself').click()
+  await page.getByTestId('tab-cover').click()
   await expect(page.getByTestId('mirror-on')).toBeChecked()
   await page.getByTestId('mirror-on').uncheck()
   await page.getByTestId('make-version').click()

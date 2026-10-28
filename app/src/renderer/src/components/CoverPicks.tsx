@@ -3,16 +3,20 @@ import type { CoverCandidate } from '../../../shared/api'
 import { coverReason } from '../../../shared/cover'
 import { clock } from '../../../shared/progress'
 import { userMessage } from '../api'
-import { Icon } from './icons'
 
 const ARROW_STEP: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }
 
-/** The cover suggestions: the best frame of you near a few moments of the video, each with its time and
- * why it was picked. Picking one hands its exact time back. */
+/**
+ * The cover suggestions as one filmstrip, in the order they happen: the best frame of you near a few moments of
+ * the video, side by side at one size so faces compare at a glance, and the chosen one full size on the phone.
+ * The line under the strip says when and why for the frame pointed at, or else the chosen one. Picking one hands
+ * its exact time back.
+ */
 export function CoverPicks({
   load,
   waiting,
   chosen,
+  flipped,
   onPick
 }: {
   /** the engine's answer; the drawer keeps one per opening so switching tabs does not look again */
@@ -21,10 +25,13 @@ export function CoverPicks({
   waiting: number
   /** the cover's time now, in raw-take seconds */
   chosen: number
+  /** the stills were taken before Flip the picture changed: show them the way the cover will be */
+  flipped: boolean
   onPick: (c: CoverCandidate) => void
 }) {
   const [picks, setPicks] = useState<CoverCandidate[] | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
+  const [pointed, setPointed] = useState<CoverCandidate | null>(null)
 
   useEffect(() => {
     let live = true
@@ -55,6 +62,7 @@ export function CoverPicks({
     onPick(picks[i])
   }
 
+  const said = pointed ?? picks?.find(isChosen) ?? null
   return (
     <section className="stack" aria-labelledby="cover-picks-title">
       <div>
@@ -62,12 +70,12 @@ export function CoverPicks({
         {picks?.length !== 0 && <p className="muted-sm">The moments where your face is clearest. Pick one, or choose any moment below.</p>}
       </div>
       {picks === null ? (
-        <div className="cover-picks" aria-busy="true" data-testid="cover-picks-loading">
-          <p className="muted-sm cover-picks-status" role="status">Looking through your video</p>
+        <div className="cover-strip" aria-busy="true" data-testid="cover-picks-loading">
+          <p className="sr-only" role="status">
+            Looking through your video
+          </p>
           {Array.from({ length: waiting }, (_, i) => (
-            <span key={i} className="cover-pick">
-              <span className="cover-pick-frame cover-pick-wait" />
-            </span>
+            <span key={i} className="cover-frame cover-frame-wait" />
           ))}
         </div>
       ) : picks.length === 0 ? (
@@ -75,35 +83,43 @@ export function CoverPicks({
           {problem ?? 'No clear frame of your face was found. Pick any moment below.'}
         </p>
       ) : (
-        <div className="cover-picks" role="radiogroup" aria-labelledby="cover-picks-title" onKeyDown={onKey} data-testid="cover-picks">
-          {picks.map((c, i) => {
-            const on = isChosen(c)
-            const tabbable = on || (i === 0 && !picks.some(isChosen))
-            const why = coverReason(c.reasons)
-            return (
-              <button
-                key={c.atSourceTime}
-                role="radio"
-                aria-checked={on}
-                tabIndex={tabbable ? 0 : -1}
-                aria-label={`${clock(c.atSourceTime)}, ${why}`}
-                className={`cover-pick${on ? ' on' : ''}`}
-                onClick={() => onPick(c)}
-                data-testid="cover-pick"
-              >
-                <span className="cover-pick-frame">
+        <div>
+          <div
+            className={`cover-strip${flipped ? ' flipped' : ''}`}
+            role="radiogroup"
+            aria-labelledby="cover-picks-title"
+            onKeyDown={onKey}
+            onPointerLeave={() => setPointed(null)}
+            data-testid="cover-picks"
+          >
+            {picks.map((c, i) => {
+              const on = isChosen(c)
+              const tabbable = on || (i === 0 && !picks.some(isChosen))
+              return (
+                <button
+                  key={c.atSourceTime}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  tabIndex={tabbable ? 0 : -1}
+                  aria-label={`${clock(c.atSourceTime)}, ${coverReason(c.reasons)}`}
+                  className={`cover-frame${on ? ' on' : ''}`}
+                  onClick={() => onPick(c)}
+                  onPointerEnter={() => setPointed(c)}
+                  data-testid="cover-pick"
+                >
                   <img src={c.image} alt="" />
-                  {on && (
-                    <span className="cover-pick-check">
-                      <Icon name="check" size={14} stroke={2.5} />
-                    </span>
-                  )}
-                </span>
-                <span className="cover-pick-time">{clock(c.atSourceTime)}</span>
-                <span className="cover-pick-why">{why}</span>
-              </button>
-            )
-          })}
+                </button>
+              )
+            })}
+          </div>
+          <p className="cover-why" aria-hidden data-testid="cover-why">
+            {said && (
+              <>
+                <b className="tnum">{clock(said.atSourceTime)}</b> {coverReason(said.reasons)}
+              </>
+            )}
+          </p>
         </div>
       )}
     </section>
