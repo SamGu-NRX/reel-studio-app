@@ -299,6 +299,8 @@ export function detectLayout(opts: DetectOptions): { findings: RawFinding[]; all
           continue
         }
         if ((axis === 'x' && reachX) || (axis === 'y' && reachY)) continue
+        // truncated on purpose with an ellipsis: the text-overflow check asks for its full text instead
+        if (axis === 'x' && s.textOverflow === 'ellipsis') continue
         const over = axis === 'x' ? Math.max(p.left - r.left, r.right - p.right) : Math.max(p.top - r.top, r.bottom - p.bottom)
         if (over > 2) return { by: a, axis, amount: Math.round(over) }
       }
@@ -424,6 +426,8 @@ export function detectLayout(opts: DetectOptions): { findings: RawFinding[]; all
         )
         break
       }
+      // an absolutely positioned box (a menu, a badge) does not size its parent: spilling past it is placement
+      if (/absolute|fixed/.test(s.position)) break
       if (clipsX && a !== box) break
       if (clipsX) {
         // the box clips its own text: what can spill further out is the box itself (a flex child without min-width: 0)
@@ -498,6 +502,11 @@ export function detectLayout(opts: DetectOptions): { findings: RawFinding[]; all
       if (xOverlap < 0.6 * Math.min(ra.width, rb.width)) continue
       const yOverlap = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top)
       if (yOverlap > 4) continue
+      // one column: their nearest shared box is about as wide as they are (not the page holding two columns)
+      let shared: Element | null = a.parentElement
+      while (shared && !shared.contains(b)) shared = shared.parentElement
+      if (!shared || shared === document.body || shared === document.documentElement) continue
+      if (shared.getBoundingClientRect().width > 1.5 * Math.max(ra.width, rb.width)) continue
       const [upper, lower] = ra.top <= rb.top ? [a, b] : [b, a]
       report(
         { detector: 'nested-scroll', severity: 'P1', detail: `two scroll areas stacked in one column: this one and ${selectorOf(lower)} under it each scroll on their own`, boxes: [toBox(upper.getBoundingClientRect()), toBox(lower.getBoundingClientRect())] },
@@ -534,6 +543,14 @@ export function detectLayout(opts: DetectOptions): { findings: RawFinding[]; all
   for (const run of runs) for (const r of run.visible) items.push({ el: run.owner, unit: unitOf(run), r, kind: 'text' })
   for (const c of controls) items.push({ el: c.el, unit: c.el, r: c.visible, kind: 'control' })
 
+  // open popovers, offers and toasts: what they cover is judged on its own below, not as a pair of overlapping items
+  const POPOVER = '[role="menu"], [role="listbox"], [role="tooltip"], [role="dialog"]:not([aria-modal="true"]), [data-testid$="popover"], [data-testid="toast"]'
+  const popovers = Array.from(document.querySelectorAll(POPOVER)).filter((p) => !hidden(p) && p.getAttribute('aria-hidden') !== 'true' && inScope(p) && !empty(visiblePart(p, p.getBoundingClientRect())))
+  const popOf = (el: Element): Element | null => popovers.find((p) => p.contains(el)) ?? null
+  const stickyOf = (el: Element): Element | null => {
+    for (let e: Element | null = el; e && e !== document.body; e = e.parentElement) if (css(e).position === 'sticky') return e
+    return null
+  }
   const voiced = new Set<Element>()
   for (const run of runs) if (run.visible.length) for (const c of controls) if (c.el.contains(run.owner)) voiced.add(c.el)
   for (let i = 0; i < items.length; i++) {
@@ -568,6 +585,7 @@ export function detectLayout(opts: DetectOptions): { findings: RawFinding[]; all
         }
       }
       if (related(a.unit, b.unit)) continue
+      if (popOf(a.el) !== popOf(b.el)) continue
       const x = intersect(a.r, b.r)
       if (x.right - x.left < 3 || x.bottom - x.top < 3) continue
       // a label stacked on its own field, a field's text inside it: same unit already skipped; a control's label
@@ -584,6 +602,9 @@ export function detectLayout(opts: DetectOptions): { findings: RawFinding[]; all
       const top = topAt(cx, cy)
       const onTop = top && (a.el.contains(top) || a.unit.contains(top)) ? a : top && (b.el.contains(top) || b.unit.contains(top)) ? b : null
       const under = onTop === a ? b : a
+      // content scrolled under a sticky header is how scrolling looks; a heading left under it after a jump is not
+      const sticky = onTop ? stickyOf(onTop.el) : null
+      if (sticky && !sticky.contains(under.el) && !under.el.closest('h1, h2, h3, h4, h5, h6')) continue
       report(
         {
           detector: 'overlap',
@@ -597,12 +618,24 @@ export function detectLayout(opts: DetectOptions): { findings: RawFinding[]; all
     }
   }
 
-  // popovers, offers and toasts over a control of the main content (rule 5)
-  const POPOVER = '[role="menu"], [role="listbox"], [role="tooltip"], [role="dialog"]:not([aria-modal="true"]), [data-testid$="popover"], [data-testid="toast"]'
-  const popovers = Array.from(document.querySelectorAll(POPOVER)).filter((p) => !hidden(p) && p.getAttribute('aria-hidden') !== 'true' && inScope(p) && !empty(visiblePart(p, p.getBoundingClientRect())))
+  /** What opened a popover: what controls it, what it describes, a control beside it in a shared wrapper, or an open button. */
+  const triggerOf = (p: Element): Element | null => {
+    const id = p.id
+    let trigger: Element | null = (id && document.querySelector(`[aria-controls="${CSS.escape(id)}"]`)) || null
+    if (!trigger) trigger = Array.from(document.querySelectorAll('[aria-describedby]')).find((e) => (e.getAttribute('aria-describedby') ?? '').split(/\s+/).some((d) => d && p.querySelector(`#${CSS.escape(d)}`))) ?? null
+    for (let up: Element | null = p.parentElement, n = 0; !trigger && up && up !== document.body && n < 3; up = up.parentElement, n++) {
+      const near = Array.from(up.querySelectorAll(CONTROL)).filter((c) => !p.contains(c) && !hidden(c))
+      if (near.length > 3) break
+      trigger = near[0] ?? null
+    }
+    if (!trigger) trigger = Array.from(document.querySelectorAll('[aria-expanded="true"]')).find((e) => !hidden(e) && !p.contains(e)) ?? null
+    return trigger
+  }
   for (const p of popovers) {
     const pr = p.getBoundingClientRect()
-    const kind = p.matches('[data-testid="toast"]') ? 'toast' : p.matches('[role="menu"], [role="listbox"]') ? 'menu' : 'popover'
+    // a menu or panel the person opened with a click (its button says expanded) covers what is under it while open
+    const opened = p.matches('[role="menu"], [role="listbox"]') || triggerOf(p)?.getAttribute('aria-expanded') === 'true'
+    const kind = p.matches('[data-testid="toast"]') ? 'toast' : opened ? 'menu' : 'popover'
     for (const c of controls) {
       if (p.contains(c.el) || c.el.contains(p)) continue
       const x = intersect(pr, c.visible)
@@ -655,20 +688,7 @@ export function detectLayout(opts: DetectOptions): { findings: RawFinding[]; all
     if (outX > 1 || outY > 1) {
       report({ detector: 'popover-placement', severity: 'P1', detail: `the popover runs ${Math.round(Math.max(outX, outY))} px out of the window`, boxes: [toBox(pr)] }, p)
     }
-    // its trigger: what controls it, what it describes, or the open menu button next to it
-    const id = p.id
-    let trigger: Element | null = (id && document.querySelector(`[aria-controls="${CSS.escape(id)}"]`)) || null
-    if (!trigger) trigger = Array.from(document.querySelectorAll('[aria-describedby]')).find((e) => (e.getAttribute('aria-describedby') ?? '').split(/\s+/).some((d) => d && p.querySelector(`#${CSS.escape(d)}`))) ?? null
-    // the control it sits beside in a shared wrapper (a button and its popover)
-    for (let up: Element | null = p.parentElement, n = 0; !trigger && up && up !== document.body && n < 3; up = up.parentElement, n++) {
-      const near = Array.from(up.querySelectorAll(CONTROL)).filter((c) => !p.contains(c) && !hidden(c))
-      if (near.length > 3) break
-      trigger = near[0] ?? null
-    }
-    if (!trigger) {
-      const open = Array.from(document.querySelectorAll('[aria-expanded="true"][aria-haspopup], [aria-expanded="true"]')).filter((e) => !hidden(e) && !p.contains(e))
-      trigger = open.sort((a, b) => (a.parentElement?.contains(p) ? -1 : 0) - (b.parentElement?.contains(p) ? -1 : 0))[0] ?? null
-    }
+    const trigger = triggerOf(p)
     if (!trigger) continue
     const tr = trigger.getBoundingClientRect()
     const dx = Math.max(0, tr.left - pr.right, pr.left - tr.right)

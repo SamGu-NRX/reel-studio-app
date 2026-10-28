@@ -5,6 +5,7 @@
 //
 //   REELSTUDIO_AUDIT_SCREENS=first-run,home   only these screens (names below)
 //   REELSTUDIO_AUDIT_SIZES=1100x720,1920x1080 only these sizes
+//   REELSTUDIO_AUDIT_SHOTS=all                a screenshot of every state and size, not only those with findings
 //   REELSTUDIO_AUDIT_OUT=<folder>             where findings.json, FINDINGS.md and the shots go
 //                                             (default app/test-results/layout-audit)
 //
@@ -13,7 +14,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Loc
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { APP_DIR, BASE, makeMedia, makeReel, passFirstRun } from './helpers'
+import { APP_DIR, makeMedia, makeReel, passFirstRun } from './helpers'
 import { detectLayout, type RawFinding } from './layout-audit/detect'
 import { ALLOW } from './layout-audit/allowlist'
 import { OUT, commit, counts, outlinedShot, sourceFor, writeScreen, type Finding, type ScreenResult } from './layout-audit/report'
@@ -29,6 +30,7 @@ const pick = (env: string | undefined): Set<string> | null => (env ? new Set(env
 const ONLY_SCREENS = pick(process.env.REELSTUDIO_AUDIT_SCREENS)
 const ONLY_SIZES = pick(process.env.REELSTUDIO_AUDIT_SIZES)
 const SIZES = ALL_SIZES.filter((s) => !ONLY_SIZES || ONLY_SIZES.has(sizeName(s)))
+const ALL_SHOTS = process.env.REELSTUDIO_AUDIT_SHOTS === 'all'
 const FAIL_ON = new Set((process.env.REELSTUDIO_AUDIT_FAIL_ON ?? 'P1,P2').split(','))
 
 type Ctx = { app: ElectronApplication; page: Page; media: ReturnType<typeof makeMedia> }
@@ -50,6 +52,10 @@ interface Screen {
   states: State[]
 }
 
+/** The practice editor: connected, and answers notes from a script (REELSTUDIO_MOCK_NOTE is its delay in ms). */
+const EDITOR = { REELSTUDIO_MOCK_NOTE: '400' }
+const FIXTURE_EDIT = join(APP_DIR, '..', 'engine', 'tests', 'fixtures', 'reference-import', 'talking-head.xml')
+
 // ---- launching -------------------------------------------------------------------------------------------
 // Profiles outside BASE survive Playwright restarting the worker after a failed screen (BASE goes with the worker);
 // the cleanup reporter removes REELSTUDIO_E2E_TMP at the end of the run.
@@ -69,7 +75,6 @@ async function launchIn(dir: string, extra: Record<string, string> = {}): Promis
     REELSTUDIO_MOCK_AI: '1',
     REELSTUDIO_ENGINE_DIR: join(APP_DIR, 'dev', 'fake-engine'),
     FAKE_ENGINE_SLOW: '1',
-    REELSTUDIO_MOCK_NOTE: '400',
     ...extra
   })
   mkdirSync(dir, { recursive: true })
@@ -99,10 +104,14 @@ async function profileFor(screen: Screen, media: Ctx['media']): Promise<string> 
   }
   const dir = join(RUN_DIR, 'reel-profile')
   if (!existsSync(join(dir, '.made'))) {
-    const { app, page } = await launchIn(dir, { REELSTUDIO_MOCK_CLAUDE: 'ready' })
+    const { app, page } = await launchIn(dir, EDITOR)
     try {
       await passFirstRun(page)
       await makeReel(page, media.video)
+      // a second version, so the notes have two version lines and Compare is offered
+      await page.getByTestId('note-input').fill('Make the subtitles bigger')
+      await page.keyboard.press('Enter')
+      await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 240_000 })
     } finally {
       await app.close()
     }
@@ -121,7 +130,7 @@ async function setSize(app: ElectronApplication, page: Page, [w, h]: [number, nu
   await settle(page)
 }
 
-/** Two frames, then until running finite animations end (at most 1.5 s): measure what the person ends up seeing. */
+/** Two frames, then until finite animations end and scrolling stops (each at most 1.5 s): measure what the person ends up seeing. */
 async function settle(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)))
@@ -136,6 +145,17 @@ async function settle(page: Page): Promise<void> {
       })
       if (!running.length) break
       await Promise.race([Promise.all(running.map((a) => a.finished.catch(() => null))), new Promise((r) => setTimeout(r, 300))])
+    }
+    // smooth scrolling (a section link, scrollIntoView) is not an animation: wait until no scroll area moves for 3 frames
+    const scrollers = Array.from(document.querySelectorAll('*')).filter((e) => /auto|scroll/.test(getComputedStyle(e).overflowY + getComputedStyle(e).overflowX))
+    const where = () => scrollers.map((e) => `${e.scrollTop},${e.scrollLeft}`).join('|') + document.documentElement.scrollTop
+    let last = where()
+    let still = 0
+    while (still < 3 && Date.now() < end + 1500) {
+      await frame()
+      const now = where()
+      still = now === last ? still + 1 : 0
+      last = now
     }
     await frame()
   })
@@ -156,7 +176,7 @@ async function audit(screen: Screen): Promise<void> {
           await state.enter(ctx)
           await expect(state.ready(page)).toBeVisible({ timeout: 30_000 })
         } catch (e) {
-          result.unreached.push({ state: state.id, why: String(e instanceof Error ? e.message : e).split('\n')[0].slice(0, 200) })
+          result.unreached.push({ state: state.id, why: String(e instanceof Error ? e.message : e).replace(/\u001b\[\d+m/g, '').split('\n').filter((l) => /\S/.test(l)).slice(0, 2).join(' ').slice(0, 240) })
           return false
         }
         result.states.push(state.id)
@@ -171,7 +191,7 @@ async function audit(screen: Screen): Promise<void> {
           const { findings, allowed } = await page.evaluate(detectLayout, { allow, focal: state.focal, column: state.column })
           result.allowed += allowed
           let shot: string | null = null
-          if (findings.length) {
+          if (findings.length || ALL_SHOTS) {
             shot = join('shots', `${state.id}@${sizeName(size)}.png`)
             await outlinedShot(page, findings, join(OUT, shot))
           }
@@ -314,6 +334,304 @@ SCREENS.push({
   ]
 })
 
+/** Closes whatever menu, popover or dialog a previous state left open. */
+async function closeAll(page: Page): Promise<void> {
+  for (let i = 0; i < 3; i++) {
+    if (!(await page.locator('[role="menu"], [aria-modal="true"], [data-testid="full-stage"]').count())) return
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(150)
+  }
+}
+const blur = (page: Page) => page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+const openReel = async (page: Page): Promise<void> => {
+  await closeAll(page)
+  if (await page.getByTestId('timeline').isVisible()) return
+  await page.getByTestId('nav-home').click()
+  await page.getByTestId('project-card').first().click()
+  await expect(page.getByTestId('timeline')).toBeVisible()
+}
+const MAIN = 'main.main'
+
+SCREENS.push({
+  id: 'home',
+  profile: 'ready',
+  states: [{ id: 'home-empty', enter: click('nav-home'), ready: byTestId('reels-empty'), focal: '[data-testid="reels-empty"]', column: MAIN }]
+})
+
+// New reel: the base shows a plan form with no editor (heading "Plan this reel") and its drop card as .planned-frame;
+// r12-plan shows one "Connect your editor" step and the card as the drop zone. Either marker counts.
+const DROP_CARD = '[data-testid="drop-zone"], [data-testid="planned-stage"] .planned-frame'
+async function say(page: Page, text: string): Promise<void> {
+  await page.getByTestId('note-input').fill(text)
+  // the box takes words while the editor answers, but sends only once it has
+  await expect(page.getByTestId('send')).toBeEnabled({ timeout: 30_000 })
+  await page.getByTestId('note-input').press('Enter')
+}
+
+SCREENS.push({
+  id: 'new-reel',
+  profile: 'ready',
+  states: [
+    {
+      id: 'new-reel-no-editor',
+      enter: click('new-reel'),
+      ready: (page) => page.getByRole('heading', { name: 'Plan this reel' }).or(page.getByRole('button', { name: 'Connect your editor' })).first(),
+      focal: DROP_CARD,
+      column: '[data-testid="planned-stage"]'
+    },
+    {
+      // a toast over the screen: a file that is not a video, given to the stage's file picker
+      id: 'new-reel-toast',
+      enter: async ({ page, media }) => {
+        await page.getByTestId('planned-stage').getByTestId('file-input').setInputFiles([media.doc])
+      },
+      ready: byTestId('toast')
+    }
+  ]
+})
+
+SCREENS.push({
+  id: 'new-reel-editor',
+  profile: 'ready',
+  env: EDITOR,
+  states: [
+    {
+      id: 'new-reel-editor',
+      enter: click('new-reel'),
+      ready: (page) => page.getByRole('heading', { name: 'Plan with your editor' }),
+      focal: DROP_CARD,
+      column: '[data-testid="planned-stage"]'
+    },
+    {
+      id: 'new-reel-editor-chat',
+      enter: async ({ page }) => {
+        if (!(await page.getByTestId('plan-question').count())) await say(page, 'How I make sourdough without a mixer')
+      },
+      ready: byTestId('plan-question')
+    },
+    {
+      // the practice editor asks two questions, then proposes the plan: its card in the chat (base) or on the stage
+      // beside the drop zone (r12-plan)
+      id: 'new-reel-proposed-plan',
+      enter: async ({ page }) => {
+        if (await page.getByTestId('plan-card').count()) return
+        const questions = page.getByTestId('plan-question')
+        if (!(await questions.count())) await say(page, 'How I make sourdough without a mixer')
+        await expect(questions.first()).toBeVisible({ timeout: 30_000 })
+        if ((await questions.count()) < 2) {
+          await say(page, 'People who have never baked bread')
+          await expect(questions.nth(1)).toBeVisible({ timeout: 30_000 })
+        }
+        await say(page, 'You do not need fancy gear')
+      },
+      ready: byTestId('plan-card')
+    }
+  ]
+})
+
+SCREENS.push({
+  id: 'reel',
+  profile: 'reel',
+  env: EDITOR,
+  states: [
+    { id: 'home-with-reels', enter: click('nav-home'), ready: byTestId('project-card') },
+    { id: 'reel-notes-timeline', enter: async ({ page }) => openReel(page), ready: byTestId('timeline'), focal: 'section.stage [data-testid="phone"]', column: 'section.stage' },
+    {
+      id: 'reel-moment-chip',
+      enter: async ({ page }) => {
+        await openReel(page)
+        await blur(page)
+        await page.keyboard.press('c')
+      },
+      ready: byTestId('moment-chip')
+    },
+    {
+      id: 'reel-speed-menu',
+      enter: async ({ page }) => {
+        await openReel(page)
+        await page.getByTestId('speed').first().click()
+      },
+      ready: (page) => page.getByRole('menu').first()
+    },
+    {
+      id: 'reel-shape-menu',
+      enter: async ({ page }) => {
+        await openReel(page)
+        await page.getByTestId('shape').first().click()
+      },
+      ready: (page) => page.getByRole('menu').first()
+    },
+    {
+      id: 'reel-compare',
+      enter: async ({ page }) => {
+        await openReel(page)
+        if (!(await page.getByTestId('done-compare').isVisible())) await page.getByTestId(/^compare-\d+$/).last().click()
+      },
+      ready: byTestId('done-compare')
+    },
+    {
+      id: 'reel-full-stage',
+      enter: async ({ page }) => {
+        if (await page.getByTestId('done-compare').isVisible()) await page.getByTestId('done-compare').click()
+        await openReel(page)
+        await page.getByTestId('full-screen').first().click()
+      },
+      ready: byTestId('full-stage')
+    }
+  ]
+})
+
+const openEdit = async (page: Page): Promise<void> => {
+  await openReel(page)
+  if (!(await page.getByTestId('drawer').isVisible())) await page.getByTestId('edit-myself').click()
+  await expect(page.getByTestId('drawer')).toBeVisible()
+}
+SCREENS.push({
+  id: 'edit',
+  profile: 'reel',
+  env: EDITOR,
+  states: [
+    {
+      id: 'edit-subtitles',
+      enter: async ({ page }) => {
+        await openEdit(page)
+        await page.getByTestId('tab-captions').click()
+      },
+      ready: byTestId('drawer')
+    },
+    {
+      id: 'edit-sounds',
+      enter: async ({ page }) => {
+        await openEdit(page)
+        await page.getByRole('tab', { name: /^Sound/ }).first().click()
+      },
+      ready: (page) => page.getByRole('tab', { name: /^Sound/, selected: true }).first()
+    }
+  ]
+})
+
+SCREENS.push({
+  id: 'share',
+  profile: 'reel',
+  env: EDITOR,
+  states: [
+    {
+      id: 'share-open',
+      enter: async ({ page }) => {
+        await openReel(page)
+        await page.getByTestId('share').click()
+      },
+      ready: byTestId('share-pop')
+    },
+    {
+      id: 'share-try-two',
+      enter: async ({ page }) => {
+        if (!(await page.getByTestId('share-pop').isVisible())) {
+          await openReel(page)
+          await page.getByTestId('share').click()
+        }
+        await page.getByTestId('share-platforms-toggle').click()
+      },
+      ready: (page) => page.getByRole('radiogroup', { name: 'What Try 2 changes' })
+    },
+    {
+      id: 'more-reels',
+      enter: async ({ page }) => {
+        await openReel(page)
+        if (await page.getByTestId('share-pop').isVisible()) await page.keyboard.press('Escape')
+        await page.getByTestId('more').click()
+        await page.getByTestId('more-reels').click()
+      },
+      ready: (page) => page.getByRole('region', { name: 'Reels in this video' })
+    }
+  ]
+})
+
+SCREENS.push({
+  id: 'library',
+  profile: 'reel',
+  env: EDITOR,
+  states: (['images', 'videos', 'music', 'sfx'] as const).map((tab) => ({
+    id: `library-${tab}`,
+    enter: async ({ page }: Ctx) => {
+      await closeAll(page)
+      await page.getByTestId('nav-library').click()
+      await page.getByTestId(`library-tab-${tab}`).click()
+    },
+    ready: (page: Page) => page.locator(`[data-testid="library-tab-${tab}"][aria-selected="true"]`)
+  }))
+})
+
+SCREENS.push({
+  id: 'my-style',
+  profile: 'ready',
+  states: [
+    { id: 'my-style-empty', enter: click('nav-style'), ready: byTestId('style-empty'), focal: '[data-testid="style-empty"]', column: MAIN },
+    {
+      id: 'my-style-rules',
+      enter: async ({ page }) => {
+        await page.getByTestId('style-add').click()
+        await page.getByTestId('style-add-input').fill('Always use big subtitles')
+        await page.keyboard.press('Enter')
+      },
+      ready: byTestId('style-rule')
+    },
+    {
+      id: 'my-style-learn',
+      enter: async ({ app, page }) => {
+        // the native folder picker can't be driven: it answers with an exported Premiere Pro timeline
+        await app.evaluate(({ dialog }, f) => {
+          ;(dialog as any).showOpenDialog = async () => ({ canceled: false, filePaths: [f] })
+        }, FIXTURE_EDIT)
+        await page.getByTestId('style-learn').click()
+      },
+      ready: byTestId('style-lesson')
+    }
+  ]
+})
+
+SCREENS.push({
+  id: 'insights',
+  profile: 'ready',
+  states: [{ id: 'insights-empty', enter: click('nav-insights'), ready: byTestId('insights-empty'), focal: '[data-testid="insights-empty"]', column: MAIN }]
+})
+
+const SETTINGS_SECTIONS = ['editor', 'privacy', 'reels', 'posting', 'about', 'advanced'] as const
+SCREENS.push({
+  id: 'settings',
+  profile: 'ready',
+  states: [
+    ...SETTINGS_SECTIONS.map((k) => ({
+      id: `settings-${k}`,
+      enter: async ({ page }: Ctx) => {
+        await closeAll(page)
+        if (!(await page.getByTestId('settings-search').isVisible())) await page.getByTestId('account').click()
+        await page.getByTestId(`settings-nav-${k}`).click()
+      },
+      ready: (page: Page) => page.locator(`[data-testid="settings-nav-${k}"][aria-current="true"]`)
+    })),
+    {
+      id: 'settings-advanced-server-form',
+      enter: async ({ page }) => {
+        if (!(await page.getByTestId('settings-search').isVisible())) await page.getByTestId('account').click()
+        await page.getByTestId('settings-nav-advanced').click()
+        await page.getByTestId('own-server-toggle').click()
+      },
+      ready: byTestId('connection-address')
+    },
+    {
+      id: 'confirm-reset-first-run',
+      enter: async ({ page }) => {
+        await closeAll(page)
+        if (!(await page.getByTestId('settings-search').isVisible())) await page.getByTestId('account').click()
+        await page.getByTestId('settings-nav-advanced').click()
+        await page.getByRole('button', { name: 'Reset…' }).click()
+      },
+      ready: (page) => page.getByRole('dialog', { name: 'Reset the first run?' })
+    }
+  ]
+})
+
 for (const screen of SCREENS) {
   test(`layout: ${screen.id}`, async () => {
     test.skip(!!ONLY_SCREENS && !ONLY_SCREENS.has(screen.id), 'not in REELSTUDIO_AUDIT_SCREENS')
@@ -321,4 +639,3 @@ for (const screen of SCREENS) {
     await audit(screen)
   })
 }
-void BASE
