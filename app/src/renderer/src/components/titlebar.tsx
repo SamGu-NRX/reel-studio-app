@@ -1,5 +1,7 @@
 // The title-bar row (spec section 2): the sidebar's part holds the toggle and the wordmark; the content part holds
 // the current screen's title on the left and its actions on the right. Screens fill those two with <TitleBarSlot>.
+// The two parts are separate elements so the page can put the sidebar between them: Tab then goes toggle, sidebar,
+// the screen's title row, the screen (audit-1028 finding 24).
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Logo } from './brand'
@@ -38,35 +40,39 @@ export function TitleBarSlot({ title, actions }: { title?: ReactNode; actions?: 
   )
 }
 
-/** The row itself. On a Mac the traffic lights sit at its left (main/window.ts centres them on it); Windows draws its buttons at the right. */
+/** The sidebar's part of the row. On a Mac the traffic lights sit at its left (main/window.ts centres them on it). */
 export function TitleBar({ rail, onToggle }: { rail: boolean; onToggle: () => void }) {
-  const { setTitle, setActions } = useSlots('TitleBar')
   const label = rail ? 'Show the sidebar' : 'Collapse the sidebar'
   return (
-    <header className="titlebar">
-      <div className="tb-side">
-        <IconButton
-          icon="sidebar"
-          label={label}
-          className="sbt"
-          shortcut={`${MOD}\\`}
-          onClick={() => onToggle()}
-          aria-expanded={!rail}
-          aria-controls="sidebar"
-          aria-keyshortcuts={IS_MAC ? 'Meta+\\' : 'Control+\\'}
-          data-testid="sidebar-toggle"
-        />
-        <div className="wordmark" aria-hidden>
-          <span className="logo">
-            <Logo />
-          </span>
-          Reel Studio
-        </div>
+    <div className="titlebar tb-side">
+      <IconButton
+        icon="sidebar"
+        label={label}
+        className="sbt"
+        shortcut={`${MOD}\\`}
+        onClick={() => onToggle()}
+        aria-expanded={!rail}
+        aria-controls="sidebar"
+        aria-keyshortcuts={IS_MAC ? 'Meta+\\' : 'Control+\\'}
+        data-testid="sidebar-toggle"
+      />
+      <div className="wordmark" aria-hidden>
+        <span className="logo">
+          <Logo />
+        </span>
+        Reel Studio
       </div>
-      <div className="tb-main">
-        <div className="tb-title" ref={setTitle} data-testid="titlebar-title" />
-        <div className="tb-actions" ref={setActions} data-testid="titlebar-actions" />
-      </div>
+    </div>
+  )
+}
+
+/** The screen's part of the row, after the sidebar in the page. Windows draws its window buttons at its right. */
+export function TitleBarMain() {
+  const { setTitle, setActions } = useSlots('TitleBarMain')
+  return (
+    <header className="titlebar tb-main">
+      <div className="tb-title" ref={setTitle} data-testid="titlebar-title" />
+      <div className="tb-actions" ref={setActions} data-testid="titlebar-actions" />
     </header>
   )
 }

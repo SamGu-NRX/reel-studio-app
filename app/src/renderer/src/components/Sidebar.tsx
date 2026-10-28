@@ -74,7 +74,11 @@ function applyWidth(w: number): void {
   root.setProperty('--rail-scale', String(RAIL_W / w))
 }
 
-/** Drag the sidebar's edge (or use the arrow keys on it) between 232 and 360 px; a double-click goes back to 248. */
+/**
+ * Drag the sidebar's edge between 232 and 360 px; a double-click goes back to 248. It is out of the Tab order, so Tab
+ * goes from the account row to the screen (audit-1028 finding 24); once a click has focused it, the arrow keys, Home
+ * and End still move it. From the keyboard, Cmd/Ctrl+\ folds the sidebar to the rail and back.
+ */
 function SideResizer() {
   const [width, setWidth] = useState(() => sideWidth(localStorage.getItem(WIDTH_KEY)))
   useEffect(() => applyWidth(width), [width])
@@ -122,7 +126,7 @@ function SideResizer() {
       aria-valuenow={width}
       aria-valuemin={SIDE.min}
       aria-valuemax={SIDE.max}
-      tabIndex={0}
+      tabIndex={-1}
       onPointerDown={down}
       onKeyDown={key}
       onDoubleClick={() => commit(SIDE.default)}

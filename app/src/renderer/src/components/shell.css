@@ -1,7 +1,13 @@
 /* The window (spec section 2): one title-bar row across the top, the sidebar, the page. */
 
-/* ---- the title-bar row: the sidebar's part (after the traffic lights on a Mac), then the screen's part ---- */
+/* ---- the title-bar row: the sidebar's part (after the traffic lights on a Mac), then the screen's part. They are two
+   fixed elements (titlebar.tsx), the second starting where the first ends, so the sidebar can sit between them in the
+   page and in the Tab order. ---- */
 .titlebar { display: flex; align-items: center; z-index: 30; }
+.titlebar.tb-side { right: auto; height: var(--titlebar); }
+.titlebar.tb-main { left: var(--side-open); height: var(--titlebar); }
+.rail .titlebar.tb-main { left: 124px; }
+.platform-win32.rail .titlebar.tb-main, .platform-linux.rail .titlebar.tb-main { left: 64px; }
 .titlebar :is(button, a, input, textarea, select, [role="button"], [contenteditable="true"]) { -webkit-app-region: no-drag; pointer-events: auto; }
 .tb-side { width: var(--side-open); flex: none; height: 100%; display: flex; align-items: center; gap: 8px; padding-left: 84px; overflow: hidden; }
 .platform-win32 .tb-side, .platform-linux .tb-side { padding-left: 12px; }

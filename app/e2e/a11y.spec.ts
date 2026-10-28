@@ -139,3 +139,31 @@ test('the first run has no target under 24 px', async () => {
     await app.close()
   }
 })
+
+// fails if Tab reaches the screen's title row before the sidebar, or stops on the sidebar's resize edge between the
+// account row and the screen (audit-1028 finding 24)
+test('Tab goes from the sidebar toggle down the sidebar, then to the title row, and skips the resize edge', async () => {
+  const { app, page } = await launch({ REELSTUDIO_USER_DATA: join(MINE, 'order-data'), REELSTUDIO_ROOT: join(MINE, 'order-root') })
+  try {
+    await passFirstRun(page)
+    await page.getByTestId('nav-library').click()
+    const addFiles = page.getByTestId('titlebar-actions').getByRole('button', { name: 'Add files' })
+    await expect(addFiles).toBeVisible()
+    await page.getByTestId('sidebar-toggle').focus()
+    const order: string[] = []
+    for (let i = 0; i < 20; i++) {
+      order.push(await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null
+        return el?.dataset.testid ?? el?.textContent?.trim() ?? ''
+      }))
+      if (await addFiles.evaluate((el) => el === document.activeElement)) break
+      await page.keyboard.press('Tab')
+    }
+    expect(order.slice(0, 2)).toEqual(['sidebar-toggle', 'new-reel'])
+    expect(order).not.toContain('sidebar-resize')
+    // the account row is the sidebar's last stop; Add files, the title row's first control, comes next
+    expect(order.slice(-2)).toEqual(['account', 'Add files'])
+  } finally {
+    await app.close()
+  }
+})
