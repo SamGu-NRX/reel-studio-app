@@ -563,6 +563,8 @@ export type VendorProblem =
   | 'device_code_off'
   | 'free_plan'
   | 'cancelled'
+  /** ChatGPT: `codex login status` was slow or unclear, so no sign-in starts until the person chooses Sign in */
+  | 'status_unknown'
 
 /** What the page learns about a vendor's app. Never the account or a path. A sign-in link and code only in ChatGPT's
  * sign-in with a code, where the person must read and type them on OpenAI's page. */
@@ -801,6 +803,9 @@ export interface ReelApi {
     vendorSignInAgain(v: VendorId): Promise<void>
     /** ChatGPT only: connect again, signing in with a code instead of the browser (`codex login --device-auth`). */
     vendorSignInWithCode(v: VendorId): Promise<VendorInfo>
+    /** Connect, starting the sign-in even though the app could not tell whether it is signed in (status_unknown):
+     * only on the person's own click, since Codex clears the credentials it has when a sign-in starts. */
+    vendorSignIn(v: VendorId): Promise<VendorInfo>
     onVendor(cb: (i: VendorInfo) => void): () => void
     /** Settings > "Double-check each edit" (off by default). */
     checkEdits(): Promise<boolean>

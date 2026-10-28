@@ -210,6 +210,8 @@ export interface MockVendor {
 
 export interface ClaudeCodeStatus {
   state: 'missing' | 'broken' | 'signed_out' | 'ready'
+  /** with 'signed_out': could not tell (Codex: a slow or unclear `codex login status`) */
+  unknown?: boolean
   bin?: string
   version?: string
   plan?: string

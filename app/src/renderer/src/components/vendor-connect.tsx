@@ -126,7 +126,24 @@ export function VendorRows({
       .catch((e) => setError({ v, text: userMessage(e) }))
   }
 
+  // Status unknown: Sign in is the person's own choice (Codex clears what it has when a sign-in starts)
+  const signIn = (v: VendorId): void => {
+    setError(null)
+    setAsked(v)
+    reel.ai
+      .vendorSignIn(v)
+      .then((i) => setInfo((s) => ({ ...s, [v]: i })))
+      .catch((e) => setError({ v, text: userMessage(e) }))
+      .finally(() => setAsked((a) => (a === v ? null : a)))
+  }
+
   const order: VendorId[] = info.chatgpt?.state === 'ready' && info.claude?.state !== 'ready' ? ['chatgpt', 'claude'] : ['claude', 'chatgpt']
+  // A row that is connecting, failed or unsure holds the screen's one filled button; the leading row's pill goes quiet
+  const needs = (v: VendorId): boolean => {
+    const i = info[v]
+    return asked === v || error?.v === v || running(i) || i?.step === 'failed' || i?.problem === 'status_unknown'
+  }
+  const leadIdle = lead && !order.some(needs)
   return (
     <>
       {order.map((v, k) => (
@@ -135,7 +152,7 @@ export function VendorRows({
           vendor={v}
           info={info[v]}
           on={!!active?.connected && active.id === PROVIDER[v]}
-          primary={lead && k === 0}
+          primary={leadIdle && k === 0}
           installed={installed[v]}
           asked={asked === v}
           error={error?.v === v ? error.text : null}
@@ -143,6 +160,8 @@ export function VendorRows({
           onLook={() => void refresh(v)}
           onConnect={() => connect(v)}
           onCode={() => signInWithCode(v)}
+          onCheck={() => refresh(v)}
+          onSignIn={() => signIn(v)}
           onOther={() => connect(order[1 - k])}
           onDisconnect={onDisconnect}
         />
@@ -163,6 +182,8 @@ function VendorRow({
   onLook,
   onConnect,
   onCode,
+  onCheck,
+  onSignIn,
   onOther,
   onDisconnect
 }: {
@@ -177,10 +198,14 @@ function VendorRow({
   error: string | null
   onConnect: () => void
   onCode: () => void
+  /** asks the app's status again, nothing else */
+  onCheck: () => Promise<void>
+  onSignIn: () => void
   onOther: () => void
   onDisconnect: () => void
 }) {
   const [fallbackError, setFallbackError] = useState<string | null>(null)
+  const [checking, setChecking] = useState(false)
   const row = useRef<HTMLDivElement>(null)
   const step = info?.step ?? 'loading'
   const attrs = { 'data-testid': `vendor-${v}`, 'data-step': step, 'data-state': info?.state ?? 'loading', ...(info?.problem ? { 'data-problem': info.problem } : {}), ...(info?.signIn ? { 'data-sign-in': info.signIn } : {}) }
@@ -230,6 +255,35 @@ function VendorRow({
       <Button size="small" kind="tertiary" onClick={onDisconnect} data-testid="use-no-ai">
         Disconnect
       </Button>
+    )
+  } else if (info.problem === 'status_unknown' && !running(info) && !asked && !error) {
+    // The app could not tell whether ChatGPT is signed in. Nothing starts on its own: Check again only asks again,
+    // and Sign in is the person's choice, because a sign-in makes Codex forget the one it has.
+    tone = 'plain'
+    status = <span data-testid={`vendor-message-${v}`}>{info.message}</span>
+    action = (
+      <Button
+        size="small"
+        kind="primary"
+        disabled={checking}
+        onClick={() => {
+          setChecking(true)
+          void onCheck().finally(() => setChecking(false))
+        }}
+        data-testid={`vendor-check-${v}`}
+      >
+        {checking ? 'Checking…' : 'Check again'}
+      </Button>
+    )
+    more = (
+      <div className="pv-more vendor-steps">
+        <div className="row wrap vsteps-acts">
+          <Button size="small" disabled={checking} onClick={onSignIn} data-testid={`vendor-signin-${v}`}>
+            Sign in
+          </Button>
+        </div>
+        <p className="vsteps-hint">Sign in starts a new sign-in, and your Codex app forgets the one it has.</p>
+      </div>
     )
   } else if (running(info) && info.signIn === 'code') {
     const dc = info.deviceCode
@@ -413,7 +467,10 @@ function VendorRow({
 
   // One announcer per row that is always there, so each step is read out once; the steps list itself is not live.
   const said = !info || !running(info) ? ''
-    : info.signIn === 'code' ? (info.deviceCode ? `Your sign-in code is ready. Enter it on ${MAKER[v]}'s page.` : 'Getting a sign-in code.')
+    : info.signIn === 'code'
+      ? info.deviceCode
+        ? `Your sign-in code is ${info.deviceCode.code.split('').join(' ')}. Enter it on ${MAKER[v]}'s page.`
+        : 'Getting a sign-in code.'
     : step === 'installing' ? `Installing ${APP[v]}. Takes a minute or two.`
     : step === 'signing_in' ? `Finish signing in in your browser. It's ${MAKER[v]}'s page.`
     : 'Checking that it worked.'
@@ -459,8 +516,8 @@ function DeviceCodeBox({ v, code, url }: { v: VendorId; code: string; url: strin
   }, [copied])
   return (
     <div className="vcode-box">
-      {/* read out one character at a time */}
-      <p className="vcode selectable" data-testid={`vendor-code-${v}`} aria-label={`Sign-in code: ${code.split('').join(' ')}`}>
+      {/* the row's announcer reads it out one character at a time */}
+      <p className="vcode selectable" data-testid={`vendor-code-${v}`}>
         {code}
       </p>
       <div className="row wrap vsteps-acts">
@@ -471,6 +528,9 @@ function DeviceCodeBox({ v, code, url }: { v: VendorId; code: string; url: strin
           {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
+      <p className="sr-only" role="status">
+        {copied ? 'Copied the code.' : ''}
+      </p>
     </div>
   )
 }

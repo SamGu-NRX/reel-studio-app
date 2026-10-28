@@ -203,6 +203,7 @@ test('ChatGPT\'s sign-in port held by Windows: plain words, then one click signs
   await expect(withCode).toHaveClass(/\bprimary\b/)
   await expect(page.getByTestId('vendor-retry-chatgpt')).not.toHaveClass(/\bprimary\b/)
   await expect(chatgpt.locator('.pv-main > button')).toHaveAttribute('data-testid', 'vendor-code-start-chatgpt')
+  await expect(page.getByTestId('connect-claude')).not.toHaveClass(/\bprimary\b/) // one filled button on the screen
   await plainWords(page)
   await shot(page, 'connect-12-port-reserved')
   // never on its own: nothing runs until the click
@@ -263,5 +264,30 @@ test('ChatGPT\'s sign-in port only in use by another program: Try again stays th
   await expect(chatgpt.locator('.pv-main > button')).toHaveAttribute('data-testid', 'vendor-retry-chatgpt')
   await plainWords(page)
   await shot(page, 'connect-15-port-in-use')
+  await app.close()
+})
+
+test('ChatGPT\'s status unknown: it says so, Check again only asks again, and only Sign in starts a sign-in', async () => {
+  const { app, page, info, chatgpt } = await connectScreen('missing', 'status_unknown')
+  test.skip(info.ai !== 'mock', 'the mock plays the vendor states')
+  await expect(chatgpt).toHaveAttribute('data-problem', 'status_unknown')
+  await expect(page.getByTestId('vendor-message-chatgpt')).toHaveText("Couldn't tell whether ChatGPT is signed in.")
+  await expect(page.getByTestId('connect-chatgpt')).toHaveCount(0) // no button that would start a sign-in by itself
+  // the safe choice is the row's filled pill; Sign in waits under the row and says what it does
+  await expect(chatgpt.locator('.pv-main > button')).toHaveAttribute('data-testid', 'vendor-check-chatgpt')
+  await expect(page.getByTestId('vendor-check-chatgpt')).toHaveClass(/\bprimary\b/)
+  await expect(page.getByTestId('vendor-signin-chatgpt')).not.toHaveClass(/\bprimary\b/)
+  await expect(page.getByTestId('connect-claude')).not.toHaveClass(/\bprimary\b/) // one filled button on the screen
+  await expect(chatgpt).toContainText('your Codex app forgets the one it has')
+  await plainWords(page)
+  await shot(page, 'connect-16-status-unknown')
+  await page.getByTestId('vendor-check-chatgpt').click()
+  await expect(page.getByTestId('vendor-check-chatgpt')).toHaveText('Check again')
+  await expect(page.getByTestId('vendor-message-chatgpt')).toHaveText("Couldn't tell whether ChatGPT is signed in.")
+  await page.waitForTimeout(500)
+  await expect(chatgpt).not.toHaveAttribute('data-step', 'signing_in')
+  expect(await page.evaluate(() => window.reel.ai.vendorStatus('chatgpt'))).toMatchObject({ step: 'idle', problem: 'status_unknown' })
+  await page.getByTestId('vendor-signin-chatgpt').click()
+  await expect(page.locator('[data-provider="codex-cli"]')).toContainText('Connected', { timeout: 15_000 })
   await app.close()
 })

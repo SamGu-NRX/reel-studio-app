@@ -919,6 +919,7 @@ function registerIpc(): void {
   handle('ai:vendorCancel', (_e, v) => vendors.cancel(vendorOf(v)))
   handle('ai:vendorSignInAgain', (_e, v) => void vendors.signInAgain(vendorOf(v)))
   handle('ai:vendorSignInWithCode', (_e, v) => vendors.signInWithCode(vendorOf(v)))
+  handle('ai:vendorSignIn', (_e, v) => vendors.signIn(vendorOf(v)))
 
   handle('projects:list', () => listProjects())
   handle('projects:search', (_e, query: string) => searchProjects(query))
