@@ -100,7 +100,8 @@ describe('installing the vendor app: the vendor\'s own script, as a FILE', () =>
       const body = '#!/bin/sh\n# héllo\n' + 'echo ok\n'.repeat(40)
       const { spawn, calls } = fakeSpawn((c) => setTimeout(() => c.finish(0), 5))
       await runInstall({ vendor, platform: 'darwin', dir, env: ENV, fetch: script(body), spawn })
-      const file = posix.join(dir, `${vendor}-install.sh`) // the plan for macOS joins with /
+      // runInstall writes and runs the script where this computer puts it (the plan's own path joins with /)
+      const file = join(dir, `${vendor}-install.sh`)
       expect(readFileSync(file, 'utf8')).toBe(body)
       if (process.platform !== 'win32') expect(statSync(file).mode & 0o111).not.toBe(0)
       expect(calls).toHaveLength(1)

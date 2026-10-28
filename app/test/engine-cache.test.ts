@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { clearEngineCache, engineCacheSize } from '../src/main/engine-cache'
 import { engineCacheDir, engineEnv, initPaths } from '../src/main/paths'
 import { sizeLine } from '../src/shared/size'
@@ -58,14 +58,15 @@ describe('engineCacheDir', () => {
   })
 
   it("fails if an install's cache moves away from the engine's own default, or an isolated profile shares it", () => {
+    // paths.ts joins with this computer's separator, so the expectations do too (a Windows host runs these as well)
     initPaths({ ...base, platform: 'darwin', env: {} })
-    expect(engineCacheDir()).toBe('/Users/zoe/Library/Caches/ReelStudio')
+    expect(engineCacheDir()).toBe(join('/Users/zoe', 'Library', 'Caches', 'ReelStudio'))
     initPaths({ ...base, platform: 'linux', env: { XDG_CACHE_HOME: '/xdg' } })
-    expect(engineCacheDir()).toBe('/xdg/reelstudio')
+    expect(engineCacheDir()).toBe(join('/xdg', 'reelstudio'))
     initPaths({ ...base, platform: 'darwin', env: { REELSTUDIO_USER_DATA: '/data/Reel Studio' } })
     expect(engineCacheDir()).toBe(join('/data/Reel Studio', 'engine cache'))
     initPaths({ ...base, platform: 'darwin', env: { REELSTUDIO_USER_DATA: '/data/Reel Studio', REELENGINE_CACHE_DIR: '/explicit/cache' } })
-    expect(engineCacheDir()).toBe('/explicit/cache')
+    expect(engineCacheDir()).toBe(resolve('/explicit/cache'))
   })
 })
 
