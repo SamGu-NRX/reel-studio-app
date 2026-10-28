@@ -57,19 +57,22 @@ describe('hand-mirrored engine constraints', () => {
   });
 });
 
+/** Runs `code` in the engine's own Python through uv, the same way on every platform (Windows has no `python3`). */
+const enginePython = (code: string, input?: string): string =>
+  execFileSync('uv', ['run', '--no-project', '--python', '3.11', '--with-editable', './engine[dev]', 'python', '-c', code],
+    { cwd: path.resolve(__dirname, '../..'), input, encoding: 'utf8' });
+
 it('keeps the AI cut vocabulary identical to the engine table', () => {
-  const engine = path.resolve(__dirname, '../../engine');
-  const table = execFileSync('python3', ['-c', 'import json; from reelengine.cut_style import CUT_STYLES; print(json.dumps(CUT_STYLES))'],
-    { cwd: engine, encoding: 'utf8' });
+  const table = enginePython('import json; from reelengine.cut_style import CUT_STYLES; print(json.dumps(CUT_STYLES))');
   expect(CUT_STYLES).toEqual(JSON.parse(table));
 });
 
 it('rejects malformed preset values in both project validators', async () => {
   const { validateProject, withDefaults } = await import('../src/project');
   const cases = ['clean', 'standard', 'hyper', 'punchline', ['clean'], ['standard'], [], {}, null, 1, true, 'toString', 'unknown'];
-  const python = execFileSync('uv', ['run', '--no-project', '--python', '3.11', '--with-editable', './engine[dev]', 'python', '-c',
-    'import json, sys; from reelengine import project; cases=json.load(sys.stdin); print(json.dumps([not project.validate(dict(project.new_project("t"), cutStyle={"preset": value, "seed": 1})) for value in cases]))'],
-    { cwd: path.resolve(__dirname, '../..'), input: JSON.stringify(cases), encoding: 'utf8' });
+  const python = enginePython(
+    'import json, sys; from reelengine import project; cases=json.load(sys.stdin); print(json.dumps([not project.validate(dict(project.new_project("t"), cutStyle={"preset": value, "seed": 1})) for value in cases]))',
+    JSON.stringify(cases));
   const expected = [true, true, true, true, false, false, false, false, false, false, false, false, false];
   expect(JSON.parse(python)).toEqual(expected);
   expect(cases.map((preset) => validateProject({ ...withDefaults({}), cutStyle: { preset, seed: 1 } }).length === 0)).toEqual(expected);

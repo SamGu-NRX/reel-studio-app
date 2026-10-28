@@ -89,6 +89,7 @@ def assert_signals(path, spans):
         cursor += end - start
 
 
+@pytest.mark.needs_libass
 def test_three_clips_render_in_sync_without_transcript(tmp_path, media):
     spans = [("s1", 3.2, 4.4), ("s2", 1.3, 2.4), ("s1", 0.4, 1.8)]
     keep = [clip(f"c{i}", *span) for i, span in enumerate(spans, 1)]

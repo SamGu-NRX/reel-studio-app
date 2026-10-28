@@ -38,12 +38,15 @@ async function smallTargets(page: Page): Promise<string[]> {
         const cx = r.left + r.width / 2
         const cy = r.top + r.height / 2
         // a point past the window's edge can't be hit-tested; scrolled into view, the rest of the control is there
-        ok = [[0, 0], [-11.5, 0], [11.5, 0], [0, -11.5], [0, 11.5]].every(([dx, dy]) => {
-          const [x, y] = [cx + dx, cy + dy]
-          if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return true
-          const hit = document.elementFromPoint(x, y)
-          return !!hit && el.contains(hit)
-        })
+        const hits = [[0, 0], [-11.5, 0], [11.5, 0], [0, -11.5], [0, 11.5]]
+          .map(([dx, dy]) => [cx + dx, cy + dy])
+          .filter(([x, y]) => x >= 0 && y >= 0 && x < innerWidth && y < innerHeight)
+          .map(([x, y]) => document.elementFromPoint(x, y))
+        // Under an open popover or menu it doesn't belong to, a control can't be pressed right now: it is measured on
+        // the screen without that popover. (Windows' wider right inset puts Share's popover over the drag handle.)
+        // Anything else over one of its points, a neighbour included, still counts against it.
+        if (hits.some((hit) => { const layer = hit?.closest('[role=dialog], [role=menu]'); return !!layer && !layer.contains(el) })) continue
+        ok = hits.every((hit) => !!hit && el.contains(hit))
       }
       if (!ok) out.push(`${el.getAttribute('data-testid') ?? el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 30)} ${Math.round(r.width)}x${Math.round(r.height)}`)
     }

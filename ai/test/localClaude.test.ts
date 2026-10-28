@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { AIError, claudeCandidates, claudeFromLoginShell, createAI, detectLocalClaude, findClaude, modelForRole } from '../src';
 import type { Runner } from '../src/providers/localClaude';
 import { FakeHost, tmpDir } from './helpers';
+import { fakeCli } from './fake-cli';
 
 // Built in code so no e-mail-like string sits in the source (the public export's leak gate reads every file).
 const EMAIL = ['someone', 'mail.test'].join('@');
@@ -33,9 +34,7 @@ const signedOut = cli({ auth: { code: 1, stdout: authJson(false) } });
 const noProvider = () => ({ host: new FakeHost(tmpDir()), settingsDir: tmpDir(), localCodex: { bin: null } });
 /** A stand-in `claude` that answers one stream-json turn with `result`. */
 function fakeClaude(result: Record<string, unknown>): string {
-  const bin = path.join(tmpDir(), 'claude');
-  fs.writeFileSync(bin, `#!/bin/sh\ncat >/dev/null\necho '${JSON.stringify({ type: 'result', ...result })}'\n`, { mode: 0o755 });
-  return bin;
+  return fakeCli('claude', { stdout: JSON.stringify({ type: 'result', ...result }) });
 }
 const answers = () => fakeClaude({ result: 'OK', is_error: false });
 
@@ -256,8 +255,7 @@ describe('the Claude check can be cancelled', () => {
   // fails if Cancel on "Checking Claude…" leaves the check running, or saves Claude as the editor anyway
   it('stops the check call and saves nothing', async () => {
     const dir = tmpDir();
-    const slow = path.join(tmpDir(), 'claude');
-    fs.writeFileSync(slow, '#!/bin/sh\nexec sleep 30\n', { mode: 0o755 });
+    const slow = fakeCli('claude', { sleepSeconds: 30 });
     const ai = createAI({ host: new FakeHost(tmpDir()), settingsDir: dir, localClaude: { bin: slow, run: signedIn } });
     const t0 = Date.now();
     const check = ai.setActive('claude-cli');
@@ -303,9 +301,8 @@ describe('a model per role (Settings › Editor › Models)', () => {
   // fails if a role's choice is saved but the call still goes out with the default model
   it('runs the check with the Edits model and a script with the Writes titles model', async () => {
     const log = path.join(tmpDir(), 'argv.log');
-    const bin = path.join(tmpDir(), 'claude');
     const script = JSON.stringify({ title: 'T', hook: 'H', script: 'S', onScreenText: [] });
-    fs.writeFileSync(bin, `#!/bin/sh\necho "$*" >> '${log}'\ncat >/dev/null\necho '${JSON.stringify({ type: 'result', is_error: false, result: script })}'\n`, { mode: 0o755 });
+    const bin = fakeCli('claude', { argsLog: log, stdout: JSON.stringify({ type: 'result', is_error: false, result: script }) });
     let choices = { editor: 'opus', checker: 'auto', writer: 'fable' };
     const ai = createAI({ ...noProvider(), localClaude: { bin, run: signedIn }, roleModels: () => choices });
     await ai.setActive('claude-cli');

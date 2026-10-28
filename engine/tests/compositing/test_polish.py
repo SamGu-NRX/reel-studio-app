@@ -25,6 +25,7 @@ def video(tmp_path_factory):
 
 
 @pytest.mark.parametrize("keep", [((1.0, 5.0), (6.0, 11.0)), ((0.1, 11.9),)])
+@pytest.mark.needs_libass
 def test_render_has_every_planned_frame(tmp_path, video, keep):
     """The fps filter used to drop the last frame of every render (one frame short)."""
     pdir = tmp_path / "p"
@@ -38,6 +39,7 @@ def test_render_has_every_planned_frame(tmp_path, video, keep):
     assert meter["overall"]["brollStarts"] == meter["overall"]["zoomStarts"] == 0
 
 
+@pytest.mark.needs_libass
 def test_sound_lasts_as_long_as_the_picture(tmp_path):
     """A take whose sound stops 40 ms before its picture used to render with the sound ending early."""
     take = tmp_path / "media" / "take.mp4"
@@ -148,6 +150,7 @@ def test_cli_search_images_needs_words():
 
 # --- versions: only finals are versions; previews share one scratch folder ----------------------
 
+@pytest.mark.needs_libass
 def test_previews_never_make_version_folders(tmp_path, video):
     pdir = tmp_path / "p"
     fx.make_project(pdir, video, keep=((1.0, 5.0), (6.0, 11.0)))
@@ -179,6 +182,7 @@ def test_previews_never_make_version_folders(tmp_path, video):
     assert render.run(pdir, draft=False, root=tmp_path, verify=False)["version"] == 2
 
 
+@pytest.mark.needs_libass
 def test_meter_drops_broll_removed_after_a_render(tmp_path, video):
     from reelengine import project
 
@@ -197,6 +201,7 @@ def test_meter_drops_broll_removed_after_a_render(tmp_path, video):
     assert after["visualChanges"]["overall"]["brollStarts"] == 0
 
 
+@pytest.mark.needs_libass
 def test_window_meter_counts_only_visual_starts_in_the_rendered_interval(tmp_path, video):
     pdir = tmp_path / "p"
     fx.make_project(pdir, video, keep=((0.1, 11.9),), extra={

@@ -209,6 +209,7 @@ def test_cover_and_its_candidates_are_flipped_like_the_video(tmp_path, take):
 # --- the real render: picture flipped, captions not ----------------------------------------------
 
 @pytest.mark.parametrize("hw", ["software", "cuda"])
+@pytest.mark.needs_libass
 def test_render_flips_the_picture_but_not_the_captions(tmp_path, take, monkeypatch, hw):
     if hw == "cuda":
         if tools.hwaccel() != "cuda" or "scale_cuda" not in tools.filters():

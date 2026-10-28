@@ -24,6 +24,7 @@ def edit(pdir, change):
     return p
 
 
+@pytest.mark.needs_libass
 def test_frames_refuse_a_preview_that_a_newer_one_replaced(pdir):
     """Fails if frames shows the newest video when asked for an earlier render."""
     first = render.run(pdir, draft=True, cover=False)
@@ -36,6 +37,7 @@ def test_frames_refuse_a_preview_that_a_newer_one_replaced(pdir):
     assert render_identity.inspect(pdir, second["renderId"])["timeline"]["words"][0]["id"] == "w0"
 
 
+@pytest.mark.needs_libass
 def test_a_manifest_names_its_video_without_a_machine_path(pdir):
     """Fails if a manifest written on Windows names a video a Mac (or a moved folder) cannot resolve."""
     result = render.run(pdir, draft=True, cover=False)
@@ -43,6 +45,7 @@ def test_a_manifest_names_its_video_without_a_machine_path(pdir):
     assert result["file"].endswith("draft.mp4") and result["file"] != "draft.mp4"
 
 
+@pytest.mark.needs_libass
 def test_a_verify_report_left_from_another_render_is_refused(pdir):
     """Fails if a newer video is checked or inspected against an older render's verify report."""
     render.run(pdir, draft=True, cover=False)
@@ -57,6 +60,7 @@ def test_a_verify_report_left_from_another_render_is_refused(pdir):
         assert err.value.code == "RENDER_MISMATCH"
 
 
+@pytest.mark.needs_libass
 def test_an_export_copy_verifies_against_the_render_it_was_copied_from(pdir):
     """Fails if `verify --project` refuses the Library copy the installed-app e2e checks."""
     result = render.run(pdir, cover=False)
@@ -66,6 +70,7 @@ def test_an_export_copy_verifies_against_the_render_it_was_copied_from(pdir):
     assert verify.run(copy, project_dir=pdir)["renderId"] == result["renderId"]
 
 
+@pytest.mark.needs_libass
 def test_a_new_version_records_what_changed_since_the_last(pdir):
     """Fails if a version's receipt misses the cut or caption change, or a re-render with no change adds one."""
     render.run(pdir, cover=False)
@@ -85,6 +90,7 @@ def test_a_new_version_records_what_changed_since_the_last(pdir):
     assert project.read_json(pdir / "versions" / "v2" / "receipts.json") == receipts
 
 
+@pytest.mark.needs_libass
 def test_a_notes_preview_resolves_by_its_id(pdir):
     """Fails if a preview a note rendered into its own folder (render --out) cannot be inspected by its id."""
     out = pdir / "work" / "notes" / "n1"

@@ -22,6 +22,7 @@ def _probe(entries: str, mp4: Path) -> list:
     return [line.split(",") for line in out.split()]
 
 
+@pytest.mark.needs_libass
 def test_final_export_has_a_keyframe_every_second(tmp_path, take):
     pdir = tmp_path / "p"
     fx.make_project(pdir, take, keep=((0.5, 7.5),))
