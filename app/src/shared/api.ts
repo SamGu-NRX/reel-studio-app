@@ -50,6 +50,8 @@ export interface ProjectSummary {
   pausedFor: PausedFor | null
   /** Why Version 1 didn't finish (app.json `lastError`), for its card. Null unless `status` is 'failed'. */
   failedWhy: string | null
+  /** The code of that failure (app.json `lastError`): a file with no sound offers another video, not Try again. */
+  failedCode: string | null
   /** A version of it was posted (app.json `posted`). */
   posted: boolean
 }
