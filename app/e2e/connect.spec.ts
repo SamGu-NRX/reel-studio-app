@@ -169,3 +169,23 @@ test('a Claude plan the app reports as free: never chosen, with the way out', as
   await shot(page, 'connect-07-free-plan')
   await app.close()
 })
+
+test('fails if a first look that went wrong leaves a row with nothing to press', async () => {
+  const mine = mkdtempSync(join(BASE, 'connect-look-'))
+  const { app, page } = await launch({ REELSTUDIO_ROOT: join(mine, 'Documents', 'Reel Studio'), REELSTUDIO_USER_DATA: join(mine, 'user data') })
+  await passFirstRun(page)
+  // the main process can't answer "is Claude's app here?" until the test lets it
+  await app.evaluate(({ ipcMain }) => {
+    const g = globalThis as { lookFails?: boolean }
+    g.lookFails = true
+    ipcMain.removeHandler('ai:vendorStatus')
+    ipcMain.handle('ai:vendorStatus', async (_e, v: string) =>
+      g.lookFails ? { ok: false, error: { code: 'LOOK', userMessage: 'no' } } : { ok: true, value: { vendor: v, state: 'missing', step: 'idle' } })
+  })
+  await openSettings(page)
+  await expect(page.getByTestId('vendor-claude')).toContainText("Couldn't look for Anthropic's Claude Code app")
+  await app.evaluate(() => void ((globalThis as { lookFails?: boolean }).lookFails = false))
+  await page.getByTestId('vendor-look-claude').click()
+  await expect(page.getByTestId('connect-claude')).toBeVisible()
+  await app.close()
+})

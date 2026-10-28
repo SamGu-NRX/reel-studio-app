@@ -62,6 +62,8 @@ export function VendorRows({
   // The click before main's first step: "Use Claude" checks Claude with one short message, which shows no step.
   const [asked, setAsked] = useState<VendorId | null>(null)
   const [error, setError] = useState<{ v: VendorId; text: string } | null>(null)
+  // the first look at a vendor's app failed, so there is no answer to show yet
+  const [lookFailed, setLookFailed] = useState<Record<VendorId, boolean>>({ claude: false, chatgpt: false })
   const infoRef = useRef(info)
   infoRef.current = info
   const announce = useRef(onConnected)
@@ -71,8 +73,10 @@ export function VendorRows({
     try {
       const i = await reel.ai.vendorStatus(v)
       setInfo((s) => ({ ...s, [v]: i }))
+      setLookFailed((s) => ({ ...s, [v]: false }))
     } catch {
-      /* keep the last answer */
+      // a later failure keeps the last answer; a first one says so and offers another look
+      if (!infoRef.current[v]) setLookFailed((s) => ({ ...s, [v]: true }))
     }
   }, [])
 
@@ -122,6 +126,8 @@ export function VendorRows({
           installed={installed[v]}
           asked={asked === v}
           error={error?.v === v ? error.text : null}
+          lookFailed={lookFailed[v]}
+          onLook={() => void refresh(v)}
           onConnect={() => connect(v)}
           onOther={() => connect(order[1 - k])}
           onDisconnect={onDisconnect}
@@ -139,12 +145,16 @@ function VendorRow({
   installed,
   asked,
   error,
+  lookFailed,
+  onLook,
   onConnect,
   onOther,
   onDisconnect
 }: {
   vendor: VendorId
   info: VendorInfo | null
+  lookFailed: boolean
+  onLook: () => void
   on: boolean
   primary: boolean
   installed: boolean
@@ -159,11 +169,16 @@ function VendorRow({
   const step = info?.step ?? 'loading'
   const attrs = { 'data-testid': `vendor-${v}`, 'data-step': step, 'data-state': info?.state ?? 'loading', ...(info?.problem ? { 'data-problem': info.problem } : {}) }
 
-  // The pill pressed gives way to Cancel, and Cancel to the row's next pill: focus follows to the button in the same
-  // place, never to the page.
+  // The pill pressed gives way to Cancel, and Cancel to the row's next pill. React keeps the same button when it can;
+  // when the focused control went away instead (a link in the steps), focus comes back to the row's pill, never to
+  // the page. Only a row that had the focus takes it back.
+  const owned = useRef(false)
   useEffect(() => {
-    if (document.activeElement === document.body) row.current?.querySelector<HTMLElement>('.pv-main > button')?.focus({ preventScroll: true })
+    if (owned.current && document.activeElement === document.body)
+      row.current?.querySelector<HTMLElement>('.pv-main > button')?.focus({ preventScroll: true })
   }, [step, asked, on])
+  // a window sign-in that failed belongs to the attempt it was part of
+  useEffect(() => setFallbackError(null), [step])
 
   const cancel = (): void => {
     void reel.ai.vendorCancel(v)
@@ -178,7 +193,15 @@ function VendorRow({
   let action: ReactNode = null
   let more: ReactNode = null
 
-  if (!info) {
+  if (!info && lookFailed) {
+    tone = 'error'
+    status = `Couldn't look for ${APP[v]} on ${HERE}.`
+    action = (
+      <Button size="small" onClick={onLook} data-testid={`vendor-look-${v}`}>
+        Try again
+      </Button>
+    )
+  } else if (!info) {
     status = (
       <>
         <Spinner /> Looking on {HERE}…
@@ -195,12 +218,9 @@ function VendorRow({
   } else if (running(info)) {
     const installing = step === 'installing'
     const signing = step === 'signing_in'
+    // the steps below carry the detail and the one spinner; the row's line only says a connect is running
     tone = 'busy'
-    status = (
-      <>
-        <Spinner /> {installing ? `Installing ${APP[v]}…` : signing ? 'Finish signing in in your browser' : 'Checking that it worked…'}
-      </>
-    )
+    status = 'Connecting…'
     action = (
       <Button size="small" kind="tertiary" onClick={cancel} data-testid={`vendor-cancel-${v}`}>
         Cancel
@@ -330,8 +350,24 @@ function VendorRow({
       )
   }
 
+  // One announcer per row that is always there, so each step is read out once; the steps list itself is not live.
+  const said = !info || !running(info) ? ''
+    : step === 'installing' ? `Installing ${APP[v]}. Takes a minute or two.`
+    : step === 'signing_in' ? `Finish signing in in your browser. It's ${MAKER[v]}'s page.`
+    : 'Checking that it worked.'
   return (
-    <div ref={row} {...attrs}>
+    <div
+      ref={row}
+      {...attrs}
+      onFocus={() => (owned.current = true)}
+      onBlur={(e) => {
+        // a control that was removed blurs with nowhere to go: the row still owns the focus
+        if (e.relatedTarget) owned.current = row.current?.contains(e.relatedTarget) ?? false
+      }}
+    >
+      <p className="sr-only" role="status">
+        {said}
+      </p>
       <ProviderRow id={PROVIDER[v]} mark={<BrandMark name={MARK[v]} size={20} />} name={NAME[v]} status={status} tone={tone} action={action}>
         {more}
       </ProviderRow>
