@@ -2,7 +2,8 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PlacedWord } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
 import { momentLabel } from '../../../shared/moments'
-import { leadIn, type Join } from '../../../shared/sfx'
+import { laneLayout, pictureLabel, videoLabel, type Lanes, type PicturePart, type VideoPart } from '../../../shared/lanes'
+import { leadIn } from '../../../shared/sfx'
 import { Icon } from './icons'
 import { useFollowPlayhead, type Playhead } from './playhead'
 import type { Transport } from './transport'
@@ -16,17 +17,6 @@ export interface TimelineMark {
   text: string
 }
 
-/** What Edit it myself adds to the timeline while it is open (ShowMeHow.tsx). Times are on the version's clock. */
-export interface TimelineAudio {
-  /** each sound effect at its hit, by its moment key, with its name and why it plays there; `off`: it won't play */
-  sounds: { key: string; at: number; label: string; off: boolean }[]
-  /** the song's fade-in and fade-out in seconds, or null with no song */
-  music: { fadeIn: number; fadeOut: number } | null
-  /** the cuts: where one kept span meets the next. The voice fades out and in at a plain one; at a J or L join it
-   * crosses the cut (shared/sfx.ts Join `bridge`), drawn as a bar from the tick over the seconds it crosses. */
-  joins: Pick<Join, 't' | 'bridge'>[]
-}
-
 const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v))
 // A press that moves less than this is a seek, more is a range. 4 px is the prototype's number.
 const DRAG_PX = 4
@@ -34,14 +24,31 @@ const DRAG_PX = 4
 const MIN_RANGE_S = 0.6
 // Each mark is a 24 px target (WCAG 2.5.8); marks closer than that share one.
 const MARK_PX = 24
+// The first hover on your video waits this long before it names the part, so sweeping across the timeline to seek
+// doesn't flash a tip; moving on to the next part then names it at once.
+const VIDEO_TIP_MS = 300
+
+/** Arrow keys, Home and End move between the buttons of one lane: each lane is one stop in the tab order. */
+function rove(e: React.KeyboardEvent<HTMLElement>): void {
+  const items = [...e.currentTarget.querySelectorAll<HTMLButtonElement>(':scope > button')]
+  const i = items.indexOf(document.activeElement as HTMLButtonElement)
+  const to = ({ ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: items.length - 1 } as Partial<Record<string, number>>)[e.key]
+  if (i < 0 || to === undefined) return
+  e.preventDefault()
+  items[clamp(to, 0, items.length - 1)].focus()
+}
 
 /**
- * The timeline under the video, as wide as the stage: a tick where each phrase starts, the notes that made versions,
- * the notes still waiting. Click to seek, drag the head to scrub, drag anywhere else for a range (the composer gets it).
- * The arrows step a second; with Shift they stretch a range from the playhead.
+ * The timeline under the video, as wide as the stage, in three lanes on the version's clock:
+ * - above, Pictures: a bar while each picture the editor laid over the video is on screen;
+ * - on the rail, Your video: the kept speech, with a tick at each cut, and a clip from another video drawn thicker;
+ * - below, Sound: a flag at each sound effect, and the song's fades.
+ * On the rail too: a tick where each phrase starts, the notes that made versions and the notes still waiting.
+ * Click to seek, drag the head to scrub, drag anywhere else for a range (the composer gets it). The arrows step a
+ * second; with Shift they stretch a range from the playhead.
  *
- * The marks sit beside the slider, not in it: a slider's children are presentational, so a screen reader never
- * reached marks inside it. Each is its own button in the tab order, named by what it is.
+ * The lanes sit beside the slider, not in it: a slider's children are presentational, so a screen reader never
+ * reached marks inside it. Each lane is a named group, one stop in the tab order; its arrows move between items.
  */
 export function Timeline({
   playhead,
@@ -51,9 +58,11 @@ export function Timeline({
   marks,
   onRange,
   onPlay,
-  audio = null,
+  lanes = null,
   selectedSound = null,
-  onSound
+  onSound,
+  selectedPicture = null,
+  onPicture
 }: {
   playhead: Playhead
   transport: Transport
@@ -62,9 +71,13 @@ export function Timeline({
   marks: TimelineMark[]
   onRange: (r: { at: number; to: number }) => void
   onPlay: (v: number) => void
-  audio?: TimelineAudio | null
+  /** the version's lanes, or what Edit it myself makes of them while it is open; null until they are known */
+  lanes?: Lanes | null
   selectedSound?: string | null
   onSound?: (key: string) => void
+  selectedPicture?: string | null
+  /** a picture picked on the timeline: Reel opens it in Edit it myself */
+  onPicture?: (id: string) => void
 }) {
   const track = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
@@ -80,6 +93,19 @@ export function Timeline({
   const [sel, setSel] = useState<{ a: number; b: number } | null>(null)
   const [lit, setLit] = useState<string | null>(null)
   const keyRange = useRef<{ at: number; to: number } | null>(null)
+  // the item of each lane that takes the tab stop: the last one focused while it is still there, else the first
+  const [stop, setStop] = useState<Record<string, string>>({})
+  const stopAt = (lane: string, key: string, keys: string[]): 0 | -1 => ((keys.includes(stop[lane]) ? stop[lane] : keys[0]) === key ? 0 : -1)
+  const focusIn = (lane: string, key: string): void => {
+    setLit(key)
+    setStop((s) => (s[lane] === key ? s : { ...s, [lane]: key }))
+  }
+  // the part of your video under the pointer, named after VIDEO_TIP_MS
+  const [hoverPart, setHoverPart] = useState<number | null>(null)
+  const hoverTimer = useRef<number | undefined>(undefined)
+  // the part under the pointer now, which the delayed tip names when it fires
+  const hoverNow = useRef<number | null>(null)
+  useLayoutEffect(() => () => window.clearTimeout(hoverTimer.current), [])
 
   const follow = useCallback(
     (t: number) => {
@@ -111,7 +137,8 @@ export function Timeline({
   }
 
   const down = (ev: React.PointerEvent<HTMLDivElement>) => {
-    if (!duration || ev.button !== 0 || (ev.target as HTMLElement).closest('.tl-mark, .tl-sound')) return
+    if (!duration || ev.button !== 0 || (ev.target as HTMLElement).closest('.tl-mark, .tl-sound, .tl-pic')) return
+    clearHover()
     const el = ev.currentTarget
     el.setPointerCapture(ev.pointerId)
     const t0 = tAt(ev.clientX)
@@ -158,6 +185,25 @@ export function Timeline({
     el.addEventListener('pointercancel', cancel)
   }
 
+  const video = lanes?.video ?? []
+  const clearHover = (): void => {
+    window.clearTimeout(hoverTimer.current)
+    hoverTimer.current = undefined
+    setHoverPart(null)
+  }
+  // only the rail names a part; the lanes above and below have their own items
+  const hover = (ev: React.PointerEvent<HTMLDivElement>) => {
+    if (!duration || ev.buttons || !video.length || ev.pointerType !== 'mouse') return
+    const b = track.current!.getBoundingClientRect()
+    const y = ev.clientY - b.top
+    const t = tAt(ev.clientX)
+    const i = y >= RAIL_BAND[0] && y <= RAIL_BAND[1] && !(ev.target as HTMLElement).closest('.tl-mark, .tl-sound, .tl-pic') ? video.findIndex((p) => t >= p.t0 && t <= p.t1) : -1
+    if (i < 0) return clearHover()
+    hoverNow.current = i
+    if (hoverPart !== null) return setHoverPart(i)
+    if (hoverTimer.current === undefined) hoverTimer.current = window.setTimeout(() => setHoverPart(hoverNow.current), VIDEO_TIP_MS)
+  }
+
   const key = (e: React.KeyboardEvent) => {
     if (e.key === 'Home' || e.key === 'End') {
       e.preventDefault()
@@ -180,17 +226,24 @@ export function Timeline({
 
   const pct = (t: number): string => `${(clamp(t, 0, duration) / (duration || 1)) * 100}%`
   const groups = markGroups(marks, duration, width)
-  const sounds = audio ? markGroups(audio.sounds, duration, width) : []
+  const sounds = lanes ? markGroups(lanes.sounds, duration, width) : []
+  const pictures = lanes?.pictures ?? []
+  const bars = useMemo(() => laneLayout(pictures, duration, width), [pictures, duration, width])
+  const videos = Math.max(1, ...video.map((p) => p.video))
+  const litPart = video.find((p) => lit === `v${p.t0}`)
+  const pictureKeys = pictures.map((p) => p.id)
+  const videoKeys = video.map((p) => `v${p.t0}`)
+  const soundKeys = sounds.map((g) => g.items[0].key)
   const tipSide = (at: number): string => (at / duration < 0.2 ? ' start' : at / duration > 0.8 ? ' end' : '')
   // the song's fades under the rail: a ramp up at the start and down at the end, joined by a hairline at full level
   const ramp = (() => {
-    if (!audio?.music || !duration) return null
-    const fi = (Math.min(audio.music.fadeIn / duration, 0.5) * 1000).toFixed(1)
-    const fo = (1000 - Math.min(audio.music.fadeOut / duration, 0.5) * 1000).toFixed(1)
+    if (!lanes?.music || !duration) return null
+    const fi = (Math.min(lanes.music.fadeIn / duration, 0.5) * 1000).toFixed(1)
+    const fo = (1000 - Math.min(lanes.music.fadeOut / duration, 0.5) * 1000).toFixed(1)
     return { fades: `M0 6L${fi} 0V6ZM${fo} 0L1000 6H${fo}Z`, level: `M${fi} 0.5H${fo}` }
   })()
   return (
-    <div className="tl" onPointerDown={down}>
+    <div className="tl" onPointerDown={down} onPointerMove={hover} onPointerLeave={clearHover}>
       <div
         ref={track}
         className="tl-track"
@@ -206,6 +259,10 @@ export function Timeline({
           <path d={ticks} />
         </svg>
         <span className="tl-rail" aria-hidden />
+        {duration > 0 &&
+          video.map((p) =>
+            p.kind === 'clip' ? <span key={p.t0} className="tl-clip" style={{ left: pct(p.t0), width: `calc(${pct(p.t1)} - ${pct(p.t0)})` }} aria-hidden data-testid="timeline-clip" /> : null
+          )}
         <span className="tl-fill" ref={fill} aria-hidden />
         {ramp && (
           <svg className="tl-music" viewBox="0 0 1000 6" preserveAspectRatio="none" aria-hidden data-testid="timeline-music">
@@ -214,7 +271,7 @@ export function Timeline({
           </svg>
         )}
         {duration > 0 &&
-          audio?.joins.map(({ t, bridge }) => (
+          lanes?.joins.map(({ t, bridge }) => (
             <span key={t} className="tl-join" style={{ left: pct(t) }} aria-hidden data-testid="timeline-join" data-bridge={bridge?.kind}>
               {bridge && <i className={bridge.kind} style={{ width: `max(6px, ${(bridge.seconds / duration) * (width || 0)}px)` }} />}
             </span>
@@ -232,6 +289,7 @@ export function Timeline({
             <i />
           </span>
         </span>
+        {hoverPart !== null && video[hoverPart] && !sel && <VideoTip part={video[hoverPart]} videos={videos} side={tipSide(mid(video[hoverPart]))} left={pct(mid(video[hoverPart]))} />}
       </div>
       {duration > 0 && groups.length > 0 && (
         <div className="tl-marks" role="group" aria-label="Notes on the timeline">
@@ -267,8 +325,64 @@ export function Timeline({
           })}
         </div>
       )}
+      {duration > 0 && bars.length > 0 && (
+        <div className="tl-lane tl-pics" role="group" aria-label="Pictures on the timeline" onKeyDown={rove}>
+          {pictures.map((p, i) => {
+            const bar = bars[i]
+            const on = p.id === selectedPicture
+            return (
+              <button
+                key={p.id}
+                className={`tl-pic${on ? ' on' : ''}${p.skipped ? ' off' : ''}`}
+                style={{ left: bar.hitX, width: bar.hitW }}
+                tabIndex={stopAt('pictures', p.id, pictureKeys)}
+                aria-label={pictureLabel(p)}
+                aria-current={on || undefined}
+                onPointerEnter={() => setLit(p.id)}
+                onPointerLeave={() => setLit(null)}
+                onFocus={() => focusIn('pictures', p.id)}
+                onBlur={() => setLit(null)}
+                onClick={() => {
+                  // on the picture, not before it, so a paused player shows it
+                  transport.seek(p.t0 + Math.min(0.5, (p.t1 - p.t0) / 2))
+                  onPicture?.(p.id)
+                }}
+                data-testid="timeline-picture"
+              >
+                <i style={{ left: bar.x - bar.hitX, width: bar.w }} />
+                {lit === p.id && <PictureTip part={p} side={tipSide(p.t0)} />}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {duration > 0 && video.length > 0 && (
+        <div className="tl-lane tl-video" role="group" aria-label="Your video on the timeline" onKeyDown={rove}>
+          {video.map((p) => {
+            const k = `v${p.t0}`
+            return (
+              <button
+                key={k}
+                className="tl-part"
+                style={{ left: pct(p.t0), width: `calc(${pct(p.t1)} - ${pct(p.t0)})` }}
+                tabIndex={stopAt('video', k, videoKeys)}
+                aria-label={videoLabel(p, videos)}
+                onFocus={() => focusIn('video', k)}
+                onBlur={() => setLit(null)}
+                onClick={() => transport.seek(p.t0)}
+                data-testid="timeline-part"
+              />
+            )
+          })}
+          {litPart && (
+            <span className="tl-part-ring" style={{ left: pct(litPart.t0), width: `calc(${pct(litPart.t1)} - ${pct(litPart.t0)})` }} aria-hidden>
+              <VideoTip part={litPart} videos={videos} side={tipSide(mid(litPart))} />
+            </span>
+          )}
+        </div>
+      )}
       {duration > 0 && sounds.length > 0 && (
-        <div className="tl-marks" role="group" aria-label="Sound effects on the timeline">
+        <div className="tl-lane tl-sounds" role="group" aria-label="Sound effects on the timeline" onKeyDown={rove}>
           {sounds.map(({ at, items }) => {
             const key = items[0].key
             const on = items.some((m) => m.key === selectedSound)
@@ -280,9 +394,10 @@ export function Timeline({
                 style={{ left: pct(at) }}
                 aria-label={items.map((m) => `${m.label.replace(' · ', ', ')}${m.off ? ", won't play" : ''}`).join('; ')}
                 aria-current={on || undefined}
+                tabIndex={stopAt('sounds', key, soundKeys)}
                 onPointerEnter={() => setLit(key)}
                 onPointerLeave={() => setLit(null)}
-                onFocus={() => setLit(key)}
+                onFocus={() => focusIn('sounds', key)}
                 onBlur={() => setLit(null)}
                 onClick={() => {
                   onSound?.(on ? selectedSound! : key)
@@ -291,10 +406,10 @@ export function Timeline({
                 data-testid="timeline-sound"
               >
                 <svg viewBox="0 0 10 12" aria-hidden>
-                  <path d="M1.5 1h7a.5.5 0 0 1 .5.5V7l-4 4-4-4V1.5a.5.5 0 0 1 .5-.5z" />
+                  <path d="M5 1l4 4v5.5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5V5z" />
                 </svg>
                 {lit === key && (
-                  <span className={`tl-tip${tipSide(at)}`}>
+                  <span className={`tl-tip below${tipSide(at)}`}>
                     {items.map((m) => {
                       const [what, why] = m.label.split(' · ')
                       return (
@@ -329,4 +444,34 @@ export function markGroups<T extends { at: number }>(marks: T[], duration: numbe
 /** What a screen reader hears on a mark: what each note there made, or that it waits, and when. */
 export function markLabel(items: TimelineMark[]): string {
   return items.map((m) => (m.v ? `Version ${m.v}, at ${clock(m.at)}: ${m.text}` : `Waiting, at ${clock(m.at)}: ${m.text}`)).join('; ')
+}
+
+// Where the rail is in the track (reel.css .tl-rail and .tl-clip), give or take a few pixels: a hover there names
+// the part of your video under it.
+const RAIL_BAND = [16, 32] as const
+const mid = (p: { t0: number; t1: number }): number => (p.t0 + p.t1) / 2
+
+function VideoTip({ part, videos, side, left }: { part: VideoPart; videos: number; side: string; left?: string }) {
+  const name = part.kind === 'clip' ? `Video ${part.video}, played whole` : videos > 1 ? `Your video ${part.video}` : 'Your video'
+  return (
+    <span className={`tl-tip${side}`} style={left === undefined ? undefined : { left }} aria-hidden data-testid="timeline-part-tip">
+      <span>
+        <b>{name}</b> <span className="tnum">{clock(part.t0)}–{clock(part.t1)}</span>
+      </span>
+      {part.said && <span>“{part.said}”</span>}
+    </span>
+  )
+}
+
+function PictureTip({ part, side }: { part: PicturePart; side: string }) {
+  return (
+    <span className={`tl-tip${side}`}>
+      <span>
+        <b>{part.what}</b> <span className="tnum">{clock(part.t0)}–{clock(part.t1)}</span>
+      </span>
+      {part.line && <span>For “{part.line}”</span>}
+      {part.why && <span>{part.why}</span>}
+      {part.skipped && <span className="warn">Left out: {part.skipped}</span>}
+    </span>
+  )
 }

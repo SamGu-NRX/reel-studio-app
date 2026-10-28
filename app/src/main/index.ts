@@ -99,11 +99,12 @@ import { createPidRegistry } from './orphans'
 import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
-import type { AppInfo, DropResult, EngineCache, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlacedWord, PlatformExportResult, VersionInfo, LearnedRule, MergeRequest, StyleRule } from '../shared/api'
+import type { AppInfo, DropResult, EngineCache, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlatformExportResult, VersionInfo, VersionTimeline, LearnedRule, MergeRequest, StyleRule } from '../shared/api'
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { coverScanOwner, createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
 import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment, forPerson } from '../shared/moments'
+import type { LayerItem } from '../shared/lanes'
 import { parsePlatformExportRequest, secondTryPlatforms, type Platform, type PlatformTry } from '../shared/platforms'
 import { exportPlatforms, sweepExportStaging, type ExportTry } from './platform-export'
 import { versionMessage } from '../shared/describe'
@@ -619,13 +620,23 @@ async function exportVersion(slug: string, n: number): Promise<ExportResult> {
 // Every word version `n` (0 = the Preview) plays, placed by that render's own timeline: the segments
 // the engine cut it from (render.json segmentsDetail, docs/versions.md). null when the version or its
 // timeline is missing.
-async function readTimeline(slug: string, n: number): Promise<{ duration: number; words: PlacedWord[]; segments: RenderSegment[] } | null> {
+async function readTimeline(slug: string, n: number): Promise<VersionTimeline | null> {
   const dir = projectDir(slug)
-  const file = n === 0 ? join(dir, 'versions', PREVIEW_DIR, 'render_draft.json') : join(dir, 'versions', `v${n}`, 'render.json')
-  const r = await readJson<{ duration?: number; segmentsDetail?: RenderSegment[] }>(file, {})
+  const vdir = join(dir, 'versions', n === 0 ? PREVIEW_DIR : `v${n}`)
+  const r = await readJson<{ duration?: number; segmentsDetail?: RenderSegment[]; layerItems?: unknown }>(join(vdir, n === 0 ? 'render_draft.json' : 'render.json'), {})
   if (typeof r.duration !== 'number' || !r.segmentsDetail?.length) return null
-  const words = await readWords(dir, await readProject(slug))
-  return { duration: r.duration, words: placeWords(r.segmentsDetail, words), segments: r.segmentsDetail }
+  const project = await readProject(slug)
+  const words = await readWords(dir, project)
+  // the version's own copy, saved by its render; the reel's project.json when it is gone
+  const own = (await readJson<ProjectJson | null>(join(vdir, 'project.json'), null)) ?? project
+  const layers = Array.isArray(r.layerItems) ? r.layerItems.filter((x): x is LayerItem => !!x && typeof x === 'object' && typeof x.id === 'string') : []
+  return {
+    duration: r.duration,
+    words: placeWords(r.segmentsDetail, words),
+    segments: r.segmentsDetail,
+    project: { broll: own.broll, sfx: own.sfx, music: own.music, cut: own.cut, sources: own.sources },
+    layers
+  }
 }
 
 // Before → after rows for version `n`: its saved project.json against the version before it, or for

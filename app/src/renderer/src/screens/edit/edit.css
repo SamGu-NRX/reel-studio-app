@@ -68,6 +68,11 @@ label.edit-row-main { flex-direction: row; align-items: center; gap: 10px; curso
 .edit-list > .sfx-row.on, .edit-list > .sfx-row.on + .sfx-row { box-shadow: none; }
 .sfx-row.on { background: var(--wash); }
 html.kb .sfx-row { transition: none; }
+/* A picture picked on the timeline, or by its thumbnail: the same wash. */
+.edit-row.picture-row { padding: 8px 6px; margin: 0 -6px; border-radius: var(--r-sm); transition: background-color 150ms ease; }
+.edit-list > .picture-row.on, .edit-list > .picture-row.on + .picture-row { box-shadow: none; }
+.picture-row.on { background: var(--wash); }
+html.kb .picture-row { transition: none; }
 .sfx-row > .edit-row-main { width: 100%; }
 .sfx-head { display: flex; align-items: flex-start; gap: 6px; }
 .sfx-name { flex: 1; min-width: 0; border: 0; background: none; padding: 4px 0; margin: 0; font: inherit; color: var(--ink); text-align: left; cursor: pointer; line-height: var(--lh-base); border-radius: 4px; }
