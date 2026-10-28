@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { cliEnv, codexCandidates, codexFromLoginShell, CodexCliProvider, createAI, detectCodex, findCodex } from '../src';
+import { classifyCodexLoginStatus, cliEnv, codexCandidates, codexFromLoginShell, CodexCliProvider, createAI, detectCodex, findCodex } from '../src';
 import type { Runner } from '../src/providers/localClaude';
 import { FakeHost, tmpDir } from './helpers';
 
@@ -100,6 +100,62 @@ describe('asking the Codex app if it is signed in', () => {
     const run = cli({});
     await detectCodex({ bin: '/x/codex', run });
     expect(run.calls).toEqual([['/x/codex', '--version'], ['/x/codex', 'login', 'status']]);
+  });
+});
+
+// `codex login status` as Codex 0.163.0 and 0.165.0 print it on Windows (captured 2026-10-28, both write to stderr).
+// Signed in with ChatGPT: the person's own install. API key: a throwaway CODEX_HOME given a fake key. Error: a
+// throwaway CODEX_HOME whose auth.json is not JSON (a locked or damaged file answers the same way, exit 1).
+const STATUS = {
+  chatgpt163: { code: 0, stdout: '', stderr: 'Logged in using ChatGPT\n' },
+  apiKey163: { code: 0, stdout: '', stderr: 'Logged in using an API key - sk-batch***00000\n' },
+  apiKey165: { code: 0, stdout: '', stderr: 'API key configured - sk-batch***00000\nAuthentication is checked when you send a request.\n' },
+  signedOut163: { code: 1, stdout: '', stderr: 'Not logged in\n' },
+  signedOut165: { code: 1, stdout: '', stderr: 'Not logged in\n' },
+  error163: { code: 1, stdout: '', stderr: 'Error checking login status: key must be a string at line 1 column 2\n' },
+  error165: { code: 1, stdout: '', stderr: 'Error checking login status: key must be a string at line 1 column 2\n' },
+};
+
+// A sign-in makes Codex clear (and revoke) the credentials it has before it starts, so only a clear "Not logged in"
+// may count as signed out. Anything Reel Studio cannot read is unknown: it never starts a sign-in on its own.
+describe('signed in, signed out or unknown', () => {
+  it('classifies what Codex 0.163.0 and 0.165.0 print', () => {
+    expect(classifyCodexLoginStatus(STATUS.chatgpt163)).toEqual({ kind: 'signed_in', authMethod: 'chatgpt' });
+    expect(classifyCodexLoginStatus(STATUS.apiKey163)).toEqual({ kind: 'signed_in', authMethod: 'api_key' });
+    expect(classifyCodexLoginStatus(STATUS.apiKey165)).toEqual({ kind: 'signed_in', authMethod: 'api_key' });
+    expect(classifyCodexLoginStatus(STATUS.signedOut163)).toEqual({ kind: 'signed_out' });
+    expect(classifyCodexLoginStatus(STATUS.signedOut165)).toEqual({ kind: 'signed_out' });
+    expect(classifyCodexLoginStatus(STATUS.error163)).toEqual({ kind: 'unknown' });
+    expect(classifyCodexLoginStatus(STATUS.error165)).toEqual({ kind: 'unknown' });
+  });
+
+  it('anything else is unknown: another exit code, no words, words it does not know, "Not logged in" with exit 0', () => {
+    expect(classifyCodexLoginStatus({ code: 2, stdout: '', stderr: '' })).toEqual({ kind: 'unknown' });
+    expect(classifyCodexLoginStatus({ code: 1, stdout: '', stderr: '' })).toEqual({ kind: 'unknown' });
+    expect(classifyCodexLoginStatus({ code: 0, stdout: 'Welcome to Codex\n', stderr: '' })).toEqual({ kind: 'unknown' });
+    expect(classifyCodexLoginStatus({ code: 0, stdout: '', stderr: 'Not logged in\n' })).toEqual({ kind: 'unknown' });
+    expect(classifyCodexLoginStatus({ code: null, stdout: '', stderr: 'Logged in using ChatGPT\n' })).toEqual({ kind: 'unknown' });
+  });
+
+  it('detectCodex: signed in (ChatGPT, or an API key in 0.165\'s words) is ready; "Not logged in" is signed out', async () => {
+    expect(await detectCodex({ bin: '/x/codex', run: cli({ status: STATUS.chatgpt163 }) })).toMatchObject({ state: 'ready', authMethod: 'chatgpt' });
+    const key = await detectCodex({ bin: '/x/codex', run: cli({ status: STATUS.apiKey165 }) });
+    expect(key).toMatchObject({ state: 'ready', signedIn: true, authMethod: 'api_key' });
+    expect(JSON.stringify(key)).not.toContain('sk-batch');
+    const out = await detectCodex({ bin: '/x/codex', run: cli({ status: STATUS.signedOut165 }) });
+    expect(out).toMatchObject({ state: 'signed_out', signedIn: false, reason: 'Your Codex app is not signed in yet.' });
+    expect(out.unknown).toBeUndefined();
+  });
+
+  it('detectCodex: an error answer (exit 1 without "Not logged in") is unknown, not signed out', async () => {
+    expect(await detectCodex({ bin: '/x/codex', run: cli({ status: STATUS.error165 }) }))
+      .toMatchObject({ state: 'signed_out', signedIn: false, unknown: true, reason: 'We could not tell if your Codex app is signed in. Click Check again.' });
+  });
+
+  it('detectCodex: too slow (timed out) or could not be asked is unknown', async () => {
+    expect(await detectCodex({ bin: '/x/codex', run: cli({ status: Object.assign(new Error('slow'), { code: 'cli_timeout' }) }) }))
+      .toMatchObject({ state: 'signed_out', unknown: true, reason: 'Your Codex app took too long to answer. Click Check again.' });
+    expect(await detectCodex({ bin: '/x/codex', run: cli({ status: new Error('EBUSY') }) })).toMatchObject({ state: 'signed_out', unknown: true });
   });
 });
 

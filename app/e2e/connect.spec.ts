@@ -162,3 +162,21 @@ test('a Claude plan the app reports as free: never chosen, with the way out', as
   await shot(page, 'connect-07-free-plan')
   await app.close()
 })
+
+test('ChatGPT\'s status unknown: it says so, Check again only asks again, and only Sign in starts a sign-in', async () => {
+  const { app, page, info, chatgpt } = await connectScreen('missing', 'status_unknown')
+  test.skip(info.ai !== 'mock', 'the mock plays the vendor states')
+  await expect(chatgpt).toHaveAttribute('data-problem', 'status_unknown')
+  await expect(page.getByTestId('vendor-message-chatgpt')).toHaveText("Couldn't tell whether ChatGPT is signed in.")
+  await expect(page.getByTestId('connect-chatgpt')).toHaveCount(0) // no button that would start a sign-in by itself
+  await plainWords(page)
+  await shot(page, 'connect-08-status-unknown')
+  await page.getByTestId('vendor-check-chatgpt').click()
+  await expect(page.getByTestId('vendor-message-chatgpt')).toHaveText("Couldn't tell whether ChatGPT is signed in.")
+  await page.waitForTimeout(500)
+  await expect(chatgpt).not.toHaveAttribute('data-step', 'signing_in')
+  expect(await page.evaluate(() => (window as any).reel.ai.vendorStatus('chatgpt'))).toMatchObject({ step: 'idle', problem: 'status_unknown' })
+  await page.getByTestId('vendor-signin-chatgpt').click()
+  await expect(page.getByTestId('ai-connected')).toHaveText('Using ChatGPT through your Codex app.', { timeout: 15_000 })
+  await app.close()
+})

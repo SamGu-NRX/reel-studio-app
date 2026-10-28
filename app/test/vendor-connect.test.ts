@@ -358,6 +358,37 @@ describe('Connect: install if missing, sign in, check, choose', () => {
     expect(f.counts().logins).toBe(1)
   })
 
+  // A sign-in makes Codex clear the credentials it has first, so an unclear status (slow, an error answer) must never
+  // start one on its own: only the person's "Sign in" does.
+  const unknown = { state: 'signed_out', bin: '/x/codex', version: '0.165.0', unknown: true } as CliStatus
+
+  it("ChatGPT's status unknown: Connect says so and starts no sign-in (and no install)", async () => {
+    const f = flow({ states: [unknown] })
+    expect(await f.vc.connect('chatgpt')).toMatchObject({ step: 'failed', problem: 'status_unknown', message: "Couldn't tell whether ChatGPT is signed in." })
+    expect(f.counts()).toEqual({ logins: 0, installs: 0 })
+    expect(f.selected).toEqual([])
+  })
+
+  it('unknown right after an install: no sign-in either', async () => {
+    const f = flow({ states: [missing, unknown] })
+    expect(await f.vc.connect('chatgpt')).toMatchObject({ step: 'failed', problem: 'status_unknown' })
+    expect(f.counts()).toEqual({ logins: 0, installs: 1 })
+  })
+
+  it('the card shows it before any click; Sign in is the person\'s explicit choice and does start the sign-in', async () => {
+    const f = flow({ states: [unknown, unknown, ready] })
+    expect(await f.vc.status('chatgpt')).toMatchObject({ step: 'idle', problem: 'status_unknown', message: "Couldn't tell whether ChatGPT is signed in." })
+    expect(await f.vc.signIn('chatgpt')).toMatchObject({ step: 'done' })
+    expect(f.counts().logins).toBe(1)
+    expect(f.selected).toEqual(['chatgpt'])
+  })
+
+  it('a clear "signed out" still signs in at once, as before', async () => {
+    const f = flow({ states: [{ state: 'signed_out', bin: '/x/codex', version: '0.165.0' }, ready] })
+    expect(await f.vc.connect('chatgpt')).toMatchObject({ step: 'done' })
+    expect(f.counts().logins).toBe(1)
+  })
+
   it('the old in-app ChatGPT sign-in was retired: the ChatGPT card says why, until it is connected', async () => {
     const f = flow({ states: [{ state: 'missing', chatgptMoved: true }] })
     expect(await f.vc.status('chatgpt')).toMatchObject({ step: 'idle', message: MOVED_NOTE })
