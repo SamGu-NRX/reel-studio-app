@@ -66,7 +66,7 @@ test('sounds: add at the playhead, a level, a removal and a fade, carried by the
   // fails if the keyboard can't reach the picked kind's play button, so it couldn't stop what it plays
   await page.getByRole('button', { name: /^Add a sound effect at/ }).click()
   const picker = page.getByTestId('sfx-picker')
-  await expect(picker.locator('input[type=radio]:checked')).toBeFocused()
+  await expect(picker.getByRole('radio', { checked: true })).toBeFocused()
   await page.keyboard.press('Tab')
   await expect(picker.getByTestId('sfx-others')).toBeFocused()
   await page.keyboard.press('Tab')
