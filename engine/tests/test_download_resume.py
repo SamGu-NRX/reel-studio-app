@@ -243,3 +243,21 @@ def test_a_pinned_model_downloads_its_revision_and_refuses_other_bytes(env, monk
     with pytest.raises(EngineError) as e:
         transcribe.download_model("tiny.en")
     assert e.value.code == "DOWNLOAD_CORRUPT" and not (d / "config.json").exists()
+
+
+def test_two_apps_downloading_into_one_models_folder_fetch_it_once(env):
+    """The stable app and the nightly share the models folder. Both asking for the model at the same
+    time must leave one checked copy, fetched once: the second waits, then finds it present."""
+    d, start = env
+    plan = Plan([])
+    plan.throttle = 0.03                                         # ~2 MB/s: both are running at once
+    start(plan)
+    envv = dict(os.environ, PYTHONPATH=str(ENGINE))
+    cmd = [sys.executable, "-m", "reelengine", "download-model", "--name", "tiny.en"]
+    procs = [subprocess.Popen(cmd, cwd=str(ENGINE), env=envv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+             for _ in range(2)]
+    outs = [p.communicate(timeout=120) for p in procs]
+    assert [p.returncode for p in procs] == [0, 0], [o[1][-2000:] for o in outs]
+    assert (d / "model.bin").read_bytes() == MODEL
+    assert not (d / "model.bin.part").exists()
+    assert plan.requests == [(0, "ok")]                          # one fetch of model.bin, from the start

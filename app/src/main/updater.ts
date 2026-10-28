@@ -1,5 +1,6 @@
 import type { MessageBoxOptions } from 'electron'
-import { allowedReleaseUrl, pageFor, type ReleaseCheck } from './update-check'
+import { channelOf } from '../shared/channel'
+import { allowedReleaseUrl, isReleaseVersion, pageFor, type ReleaseCheck } from './update-check'
 import { notesSince, releaseEntries } from './release-notes'
 import {
   FIRST_CHECK_DELAY_MS,
@@ -46,6 +47,7 @@ type Action = 'check' | 'download' | 'install'
 const why = (e: unknown): string => String(e instanceof Error ? e.message : e).slice(0, 300)
 
 export function createUpdater(d: UpdaterDeps) {
+  const channel = channelOf(d.version)
   let state = initialUpdateState(d.version, d.mode, true, d.disabledReason)
   let active: Action | null = null
   let checking: Promise<CheckOutcome | null> | null = null
@@ -81,7 +83,7 @@ export function createUpdater(d: UpdaterDeps) {
   function applyFound({ update: found, releases: all, pageOnly }: ReleaseCheck): void {
     const releases = releaseEntries(all)
     if (found) {
-      const url = allowedReleaseUrl(found.releaseUrl) ?? pageFor(`v${found.version}`)
+      const url = allowedReleaseUrl(found.releaseUrl, channel) ?? pageFor(`v${found.version}`)
       const { notes, older } = notesSince(all, d.version)
       const downloaded = state.downloadedVersion === found.version
       const page = pageOnly || found.version === rejected
@@ -195,7 +197,7 @@ export function createUpdater(d: UpdaterDeps) {
       dismissed = validDismissal(mem.updateDismissed)
       const kept = stillNewer(mem.updateLatest, d.version)
       if (mem.updateLatest && !kept) remember({ updateLatest: null })
-      const first: UpdateState = { ...state, autoCheck: mem.checkUpdates, releases: validHistory(mem.updateHistory) }
+      const first: UpdateState = { ...state, autoCheck: mem.checkUpdates, releases: validHistory(mem.updateHistory, channel) }
       set(mem.checkUpdates ? offerRemembered(first, mem.updateLatest) : first)
       armSnoozeEnd()
     },
@@ -281,18 +283,18 @@ export function createUpdater(d: UpdaterDeps) {
 
     async openRelease(version?: unknown): Promise<void> {
       if (version !== undefined) {
-        if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)) return
+        if (!isReleaseVersion(version, channel)) return
         const listed = state.releases.find((r) => r.version === version)
-        await d.openExternal((listed && allowedReleaseUrl(listed.url)) ?? pageFor(`v${version}`))
+        await d.openExternal((listed && allowedReleaseUrl(listed.url, channel)) ?? pageFor(`v${version}`))
         return
       }
       const v = state.downloadedVersion ?? state.availableVersion
-      const url = allowedReleaseUrl(state.releaseUrl) ?? (v ? pageFor(`v${v}`) : null)
+      const url = allowedReleaseUrl(state.releaseUrl, channel) ?? (v ? pageFor(`v${v}`) : null)
       if (url) await d.openExternal(url)
     },
 
     async dismiss(version: unknown): Promise<UpdateState> {
-      if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)) return state
+      if (!isReleaseVersion(version, channel)) return state
       dismissed = { version, at: d.now() }
       await d.save({ updateDismissed: dismissed })
       set(state)

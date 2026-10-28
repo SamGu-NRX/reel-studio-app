@@ -9,6 +9,7 @@
 # Output: <app-dir>/release/mac-arm64/<Product>.app and release/Reel-Studio-<version>-arm64.dmg (electron-builder's,
 #         NOT sealed: its signature is broken by electron-builder's edits, so a downloaded copy can show "damaged").
 #         <app-dir>/release/signed/Reel-Studio-<version>-arm64.dmg  <- THE ONE TO HAND OUT while we have no Apple
+#         (a nightly version, x.y.z-nightly.YYYYMMDD.N, builds "Reel Studio (Nightly).app" and Reel-Studio-Nightly-*: make-config.js)
 #         certificate: the same app with a valid ad-hoc seal + hardened runtime, so a downloaded copy shows the normal
 #         "Open Anyway" path (docs/install-mac.md). With a certificate, run sign-mac.sh instead and hand out its dmg.
 set -euo pipefail
@@ -66,6 +67,7 @@ export RS_REPO_ROOT="$REPO" RS_RUNTIME_DIR="$RUNTIME" RS_APP_DIR="$APP_DIR"
 
 # 3. package (unsigned dmg + the unpacked .app that sign-mac.sh signs)
 bash "$HERE/dmg/render-background.sh" "$HERE/.build/dmg"
+bash "$HERE/dmg/render-background.sh" "$HERE/.build/dmg-nightly" "$HERE/dmg/background-nightly.svg"
 CFG="$(node "$HERE/make-config.js")"
 cd "$APP_DIR"
 # electron-builder cannot always resolve a range like "^44.8.0" inside an npm workspace: hand it the installed version.

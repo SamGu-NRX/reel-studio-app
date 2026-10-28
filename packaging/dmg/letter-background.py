@@ -27,7 +27,7 @@ SVG = HERE / "background.svg"
 # SF Pro lettering used, so the window keeps its layout. The tracking makes each line as wide as it was then, to within
 # half a pixel in the rendered 2x image; Inter at its default spacing came out 6 px wider (headline) and 7 px narrower.
 LINES = [
-    dict(id="headline", text="Drag Reel Studio into Applications.", font="Inter-Bold.ttf",
+    dict(id="headline", text="Drag {product} into Applications.", font="Inter-Bold.ttf",
          cap_height=16.21, baseline=104.0, centre=320.0, tracking_em=-0.028),
     dict(id="subline", text="Once copied, open it from Applications.", font="Inter-Regular.ttf",
          cap_height=8.43, baseline=367.0, centre=320.0, tracking_em=0.016),
@@ -37,6 +37,10 @@ LINES = [
 def num(v: float) -> str:
     s = f"{v:.2f}".rstrip("0").rstrip(".")
     return "0" if s == "-0" else s
+
+
+# The nightly's window is the same art with its own name in the headline (packaging/make-config.js picks it).
+PRODUCTS = {SVG: "Reel Studio", HERE / "background-nightly.svg": "Reel Studio (Nightly)"}
 
 
 def outline(line: dict) -> str:
@@ -49,7 +53,7 @@ def outline(line: dict) -> str:
 
     font = hb.Font(hb.Face(path.read_bytes()))
     buf = hb.Buffer()
-    buf.add_str(line["text"])
+    buf.add_str(line["text"].format(product=line["product"]))
     buf.guess_segment_properties()
     hb.shape(font, buf)
 
@@ -67,8 +71,8 @@ def outline(line: dict) -> str:
     return pen.getCommands()
 
 
-def letter(svg: str) -> str:
-    for line in LINES:
+def letter(svg: str, product: str) -> str:
+    for line in ({**line, "product": product} for line in LINES):
         pattern = re.compile(rf'(<path id="{line["id"]}" d=")[^"]*(")')
         if len(pattern.findall(svg)) != 1:
             sys.exit(f'letter-background: background.svg needs exactly one <path id="{line["id"]}" d="...">')
@@ -80,13 +84,14 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--check", action="store_true", help="exit 1 if background.svg differs from a fresh run")
     args = ap.parse_args()
-    old = SVG.read_text()
-    new = letter(old)
-    if args.check:
-        if new != old:
-            sys.exit("letter-background: background.svg is out of date; run: uv run --script packaging/dmg/letter-background.py")
-        return
-    SVG.write_text(new)
+    source = SVG.read_text()
+    for out, product in PRODUCTS.items():
+        new = letter(source, product)
+        if args.check:
+            if not out.exists() or new != out.read_text():
+                sys.exit(f"letter-background: {out.name} is out of date; run: uv run --script packaging/dmg/letter-background.py")
+            continue
+        out.write_text(new)
 
 
 if __name__ == "__main__":

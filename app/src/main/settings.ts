@@ -2,8 +2,9 @@
 // Instagram API v26.0: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login
 // App settings (not user content): first-run flag and storage location.
 import { existsSync, promises as fs } from 'node:fs'
-import { dirname } from 'node:path'
-import { defaultRoot, legacyRoot, settingsFile } from './paths'
+import { dirname, join } from 'node:path'
+import { PRODUCT_NAME } from '../shared/channel'
+import { channel, defaultRoot, legacyRoot, settingsFile, stableLibraryRoots } from './paths'
 import { writeJson } from './store'
 import type { SpeechCheckResult } from './models'
 import type { ReleaseEntry } from '../shared/update'
@@ -106,14 +107,25 @@ export function saveSettings(patch: Partial<Settings>): Promise<Settings> {
 
 /**
  * The library folder, decided on an install's first launch and saved, so it never moves by itself. An install made
- * before ~/Movies became the default already has a settings file and keeps its library in Documents. Call it before
+ * before ~/Movies became the default already has a settings file and keeps its library in Documents. The nightly always
+ * starts in its own folder (paths.ts defaultRoot). Call it before
  * anything else in this launch writes settings.
  */
 export async function settleLibraryRoot(): Promise<string> {
   const installedBefore = existsSync(settingsFile())
   const saved = (await loadSettings()).root
   if (saved) return saved
-  const root = installedBefore ? legacyRoot() : defaultRoot()
+  // The nightly has no older installs of its own, and the legacy folder is the stable app's library.
+  const root = installedBefore && channel() === 'stable' ? legacyRoot() : defaultRoot()
   await saveSettings({ root })
   return root
+}
+
+/** The stable app's libraries as the nightly sees them: both defaults, and the folder its settings saved (read only). */
+export async function stableLibraries(appDataDir: string): Promise<string[]> {
+  const saved: unknown = await fs
+    .readFile(join(appDataDir, PRODUCT_NAME.stable, 'settings.json'), 'utf8')
+    .then((t) => (JSON.parse(t) as { root?: unknown }).root)
+    .catch(() => null)
+  return [...stableLibraryRoots(), ...(typeof saved === 'string' && saved ? [saved] : [])]
 }

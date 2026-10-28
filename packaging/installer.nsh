@@ -4,7 +4,13 @@
 ; fileAssociations use APP_ASSOCIATE, which also overwrites HKCU\Software\Classes\.<ext> (the per-user default app)
 ; and never restores it on uninstall: on a Windows 11 test machine it replaced PotPlayer's entry for all seven types
 ; and left a dangling default after uninstalling. So only OpenWithProgids and our own class are written here.
-!define RS_PROGID "ReelStudio.Video"
+; The nightly (its own appId and name, packaging/make-config.js) installs beside the stable app, so it registers its
+; own class: sharing one would let the nightly's uninstall remove the stable app's "Open with" entry.
+!if "${PRODUCT_NAME}" == "Reel Studio (Nightly)"
+  !define RS_PROGID "ReelStudio.Nightly.Video"
+!else
+  !define RS_PROGID "ReelStudio.Video"
+!endif
 
 !macro rsOpenWith EXT
   WriteRegStr SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "${RS_PROGID}" ""
@@ -16,7 +22,7 @@
 !macro customInstall
   WriteRegStr SHCTX "Software\Classes\${RS_PROGID}" "" "Video"
   WriteRegStr SHCTX "Software\Classes\${RS_PROGID}\DefaultIcon" "" "$appExe,0"
-  WriteRegStr SHCTX "Software\Classes\${RS_PROGID}\shell\open" "" "Open with Reel Studio"
+  WriteRegStr SHCTX "Software\Classes\${RS_PROGID}\shell\open" "" "Open with ${PRODUCT_NAME}"
   WriteRegStr SHCTX "Software\Classes\${RS_PROGID}\shell\open\command" "" '"$appExe" "%1"'
   ; the same extensions as mac.fileAssociations in electron-builder.yml
   !insertmacro rsOpenWith "mp4"

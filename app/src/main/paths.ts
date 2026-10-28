@@ -4,7 +4,8 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
+import { PRODUCT_NAME, type Channel } from '../shared/channel'
 
 export interface PathContext {
   isPackaged: boolean
@@ -16,6 +17,10 @@ export interface PathContext {
   moviesDir: string
   /** app.getPath('userData') */
   userDataDir: string
+  /** app.getPath('appData'): the folder that holds every app's userData. The nightly reads the stable app's models there. */
+  appDataDir?: string
+  /** shared/channel.ts channelOf(app.getVersion()); stable when left out */
+  channel?: Channel
   /** The app/ folder in dev (where package.json lives). */
   appDir: string
   /** Optional override of the Reel Studio root (Settings > Storage). */
@@ -42,6 +47,8 @@ function need(): PathContext {
 }
 
 const isWin = (): boolean => need().platform === 'win32'
+const isNightly = (): boolean => need().channel === 'nightly'
+export const channel = (): Channel => need().channel ?? 'stable'
 const env = (): NodeJS.ProcessEnv => need().env ?? process.env
 
 /** Repo root in dev (the folder holding app/, engine/, templates/). */
@@ -68,11 +75,39 @@ export function reelStudioRoot(): string {
   return defaultRoot()
 }
 
-/** A new install's library folder: ~/Movies is not one of the folders macOS asks about. */
-export const defaultRoot = (): string => join(need().moviesDir, 'Reel Studio')
+/** The library folder's own name: the nightly keeps its reels apart from the stable app's. */
+export const libraryFolderName = (): string => PRODUCT_NAME[channel()]
 
-/** The library folder of installs made before ~/Movies became the default. */
-export const legacyRoot = (): string => join(need().documentsDir, 'Reel Studio')
+/** A new install's library folder: ~/Movies is not one of the folders macOS asks about. */
+export const defaultRoot = (): string => join(need().moviesDir, libraryFolderName())
+
+/** The library folder of stable installs made before ~/Movies became the default. Never the nightly's. */
+export const legacyRoot = (): string => join(need().documentsDir, PRODUCT_NAME.stable)
+
+/** The stable app's library folders, both defaults. The nightly never adopts, moves or writes into them. */
+export const stableLibraryRoots = (): string[] => [legacyRoot(), join(need().moviesDir, PRODUCT_NAME.stable)]
+
+const within = (child: string, parent: string): boolean => {
+  const r = relative(resolve(parent), resolve(child))
+  return r === '' || (!r.startsWith('..') && !isAbsolute(r))
+}
+
+/**
+ * Settings › Storage: the library folder for a folder the person picked. Picking the library folder itself keeps it;
+ * any other folder gets one inside it. The nightly refuses a folder that is, holds, or sits inside a stable library,
+ * so it cannot write into the person's real reels. `stableRoots` adds the root the stable app saved, if it has one.
+ */
+export function chosenRoot(picked: string, stableRoots: string[] = stableLibraryRoots()): string {
+  const name = libraryFolderName()
+  const root = picked.split(/[\\/]/).filter(Boolean).pop() === name ? picked : join(picked, name)
+  if (isNightly() && stableRoots.some((s) => within(root, s) || within(s, root))) {
+    throw Object.assign(new Error(`refusing ${root}: it overlaps the stable app's library`), {
+      code: 'STABLE_LIBRARY',
+      userMessage: `That folder holds Reel Studio's own library. ${name} keeps its reels in a separate folder; pick another place.`
+    })
+  }
+  return root
+}
 
 export const projectsDir = (): string => join(reelStudioRoot(), 'Projects')
 export const libraryDir = (): string => join(reelStudioRoot(), 'Library')
@@ -83,7 +118,20 @@ export const stylePath = (): string => join(reelStudioRoot(), 'My style.json')
 
 export const settingsDir = (): string => need().userDataDir
 export const settingsFile = (): string => join(need().userDataDir, 'settings.json')
-export const modelsDir = (): string => env().REELSTUDIO_MODELS_DIR ?? join(need().userDataDir, 'models')
+/**
+ * Downloaded speech models. The nightly reads and writes the stable app's folder, so the 500 MB model is fetched once
+ * per computer; an isolated profile (REELSTUDIO_USER_DATA, tests) keeps its own. Downloads into it are atomic and
+ * locked (engine transcribe.download_model), so both apps can fetch at once.
+ */
+export function modelsDir(): string {
+  const c = need()
+  if (env().REELSTUDIO_MODELS_DIR) return env().REELSTUDIO_MODELS_DIR as string
+  if (isNightly() && !env().REELSTUDIO_USER_DATA) {
+    if (!c.appDataDir) throw new Error('paths: the nightly needs appDataDir to find the shared models folder')
+    return join(c.appDataDir, PRODUCT_NAME.stable, 'models')
+  }
+  return join(c.userDataDir, 'models')
+}
 /** Files attached to a note while a job runs on its reel. They move into the project when their note runs. */
 export const noteStagingRoot = (): string => join(need().userDataDir, 'note-staging')
 /** One folder per project folder, not per name: videos with the same name in two storage folders (Settings >
@@ -102,9 +150,11 @@ export function engineCacheDir(): string {
   if (e.REELENGINE_CACHE_DIR) return resolve(e.REELENGINE_CACHE_DIR)
   if (e.REELSTUDIO_USER_DATA) return join(settingsDir(), 'engine cache')
   const home = need().homeDir as string
-  if (isWin()) return join(e.LOCALAPPDATA || join(home, 'AppData', 'Local'), 'ReelStudio', 'cache')
-  if (need().platform === 'darwin') return join(home, 'Library', 'Caches', 'ReelStudio')
-  return join(e.XDG_CACHE_HOME || join(home, '.cache'), 'reelstudio')
+  // The nightly's engine may write a newer cache format, so it never shares the stable app's cache.
+  const n = isNightly() ? 'ReelStudio-Nightly' : 'ReelStudio'
+  if (isWin()) return join(e.LOCALAPPDATA || join(home, 'AppData', 'Local'), n, 'cache')
+  if (need().platform === 'darwin') return join(home, 'Library', 'Caches', n)
+  return join(e.XDG_CACHE_HOME || join(home, '.cache'), n.toLowerCase())
 }
 
 // ---- Bundled resources -----------------------------------------------------------------------
@@ -232,8 +282,9 @@ export function engineEnv(): NodeJS.ProcessEnv {
     REELENGINE_MODELS: modelsDir(),
     REELENGINE_ROOT: reelStudioRoot()
   }
-  // The engine's cache default ignores Electron's isolated userData directory.
-  if (out.REELENGINE_CACHE === undefined && env().REELSTUDIO_USER_DATA) out.REELENGINE_CACHE = settingsDir()
+  // The engine's own default (tools.appdata_dir) is the stable app's folder, which neither an isolated profile nor
+  // the nightly may write to.
+  if (out.REELENGINE_CACHE === undefined && (env().REELSTUDIO_USER_DATA || isNightly())) out.REELENGINE_CACHE = settingsDir()
   out.REELENGINE_CACHE_DIR = engineCacheDir()
   // Only absolute paths: a bare name means "not found", and the engine does its own PATH search.
   if (isAbsolute(ffmpegPath())) out.REELENGINE_FFMPEG = ffmpegPath()

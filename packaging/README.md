@@ -10,14 +10,14 @@ Proven on Windows x64 and macOS arm64 by `spike/`.
 | `licenses/` | Committed GPL-3.0, LGPL-3.0, LGPL-2.1, YuNet MIT texts (checksum-pinned in `fetch_runtime.py`, which refuses to build without them) and `npm-licenses.txt` (from `gen_npm_notices.py`). Shipped as `resources/licenses/texts/`. |
 | `mirror_gpl_sources.py` | Downloads the FFmpeg + library source we owe under the GPL/LGPL into `release/gpl-sources/`. Attach everything in it to the GitHub release (see THIRD_PARTY.md). |
 | `electron-builder.yml` | The config TEMPLATE (do not pass it to electron-builder directly). |
-| `make-config.js` | Fills the template's `${env.RS_*}` with absolute paths -> `.build/electron-builder.resolved.yml`. |
+| `make-config.js` | Fills the template's `${env.RS_*}` with absolute paths -> `.build/electron-builder.resolved.yml`. A nightly version (`x.y.z-nightly.YYYYMMDD.N`) also gets the nightly's identity: see "Nightly builds" below. |
 | `after-pack.js` | electron-builder hook: pre-compiles Python bytecode inside the packed app before signing. |
 | `build-win.ps1` / `build-mac.sh` | One command each: fetch runtime, build the app JS, package. `-Spike` / `--spike` packages the spike instead of `app/`. |
 | `check-win-unpacked.ps1` | Fails if `release\win-unpacked\resources` holds a `.venv` (the README's engine dev venv). `build-win.ps1` runs it after packaging. |
 | `test-win-install.ps1` | Silent-installs a built installer into a folder with spaces, runs `--self-test`, prints every check, uninstalls, and fails if the uninstall left a copy of that installer in `%LOCALAPPDATA%\*-updater\installer.exe` (the installer's own copy, removed by `installer.nsh`; other apps' copies there don't count). |
 | `test-mac-install.sh` | Copies the app out of a `.dmg` into a folder with spaces, fails unless codesign, Gatekeeper (`spctl`) and the stapled ticket pass (`--unsigned` reports them for a local build), then runs `--self-test` with a time limit. The app (or the spike) uses a test profile next to the copy, kept between runs; `--fresh` empties it, so the spike downloads its speech model again. The app's `--self-test` (`app/src/main/self-test.ts`) runs the engine's `doctor`, from a throw-away profile when none is given, and opens no window. |
 | `sign-mac.sh` | Developer ID sign (inside-out) + notarize + staple + dmg. Run it in a GUI session. Guide: `docs/signing-mac.md`. |
-| `dmg/` | Finder install window, shared Retina background renderer and art provenance. `make-dmg.sh` builds the release image; `electron-builder.yml` uses the same art and icon positions. `letter-background.py` writes the copy into `background.svg` as Inter outlines; run it after changing the copy. |
+| `dmg/` | Finder install window, shared Retina background renderer and art provenance. `make-dmg.sh` builds the release image; `electron-builder.yml` uses the same art and icon positions. `letter-background.py` writes the copy into `background.svg` and the nightly's `background-nightly.svg` as Inter outlines; run it after changing the copy. |
 | `entitlements.main.plist` / `entitlements.inherit.plist` | Hardened-runtime entitlements: `allow-jit` only, for the Electron main process and its helper apps. Python, ffmpeg and every dylib are signed with none. |
 | `spike/` | Minimal Electron app with `--self-test` that proves the bundled Python/ffmpeg/model/transcribe chain works from an INSTALLED copy. |
 
@@ -43,6 +43,20 @@ Installed copies update from the GitHub release tagged `v<version>`. Attach, nex
   `latest.yml` names that installer, its version and its SHA-512. Without `latest.yml`, Windows copies cannot update.
   The `.blockmap` is not needed.
 * Mac: the three files from `app/release/signed/` (`docs/signing-mac.md`, "Release").
+
+### Nightly builds
+
+The version alone makes a build a nightly: `x.y.z-nightly.YYYYMMDD.N`, the pattern in `app/src/shared/channel.ts`. The
+fork's nightly workflow sets it before building and never commits it. A nightly is a separate app beside the stable one:
+
+* "Reel Studio (Nightly)", appId `dev.reelstudio.app.nightly`, package name `reel-studio-nightly`: its own userData
+  folder, Windows install folder, uninstall entry (NSIS derives its GUID from the appId), "Open with" class
+  (`installer.nsh`) and updater cache. Icons from `icons/nightly/`, DMG window from `dmg/background-nightly.svg`.
+* `Reel-Studio-Nightly-<version>-arm64.dmg` and `Reel-Studio-Nightly-Setup-<version>-x64.exe`.
+* It shares one thing with the stable app: the downloaded speech models (`app/src/main/paths.ts` `modelsDir`). Its
+  library, settings, caches and logs are its own, and it refuses a library folder that overlaps the stable app's.
+* It updates only from the fork's `v*-nightly.*` prereleases. The Mac nightly is ad-hoc signed, so it opens the release
+  page instead of installing (`sign-mac.sh` makes no update zip for it); Windows installs from `latest.yml`.
 
 First run downloads about 250 MB of Python wheels + ffmpeg into `packaging/cache` and `packaging/runtime`
 (both gitignored); later runs reuse them.

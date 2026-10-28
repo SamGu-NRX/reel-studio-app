@@ -13,6 +13,7 @@ import { assertIpcSender, validateIpcArgs } from './ipc-guard'
 import {
   appIconPath,
   binDir,
+  chosenRoot,
   engineCacheDir,
   engineDir,
   engineEnv,
@@ -25,6 +26,8 @@ import {
   noteStagingDir,
   noteStagingRoot,
   logsDir,
+  modelsDir,
+  defaultRoot,
   projectsDir,
   pythonExe,
   reelStudioRoot,
@@ -96,7 +99,7 @@ import { InstagramService } from './instagram'
 import { registerInstagramIpc } from './instagram-ipc'
 import { registerInsightsIpc } from './insights-ipc'
 import { InstagramError } from './instagram-http'
-import { loadSettings, saveSettings, settleLibraryRoot, showsFirstRun } from './settings'
+import { loadSettings, saveSettings, settleLibraryRoot, showsFirstRun, stableLibraries } from './settings'
 import { clearEngineCache, engineCacheSize } from './engine-cache'
 import { createPidRegistry } from './orphans'
 import { settleLastRun } from './last-run'
@@ -119,10 +122,10 @@ import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { assertWordCutEditable } from '../shared/cut'
 import { displayPath } from '../shared/display-path'
-import { RELEASES_REPO } from '../shared/config'
+import { channelOf, RELEASES_REPOS } from '../shared/channel'
 import { registerPhoneIpc, stopPhoneShare, cloudSavesRunning, cloudSavesSettled } from './phone-ipc'
 import { forChat, pickClipboardType, registerAttachmentIpc, unstage, checkNoteAttachments } from './attachments'
-import { RELEASES_API, releasePageBackend, type FetchLike } from './update-check'
+import { releasesApi, releasePageBackend, type FetchLike } from './update-check'
 import { createPermissions, notificationsWanted, parseFakes, type NotifyResult, type Permissions } from './permissions'
 import { helperInstruction, MAC_PANES } from './mac-permission'
 import { MacPermissionHelper } from './mac-permission-helper'
@@ -136,6 +139,9 @@ import { takeNote } from './note-intake'
 const TEST = process.env.REELSTUDIO_TEST === '1'
 const DEV_PROVIDERS = process.env.REELSTUDIO_DEV === '1'
 const SELF_TEST = selfTestArgs(process.argv)
+// Stable or nightly, from the version alone (shared/channel.ts). The packaged name already differs per channel.
+const CHANNEL = channelOf(app.getVersion())
+const RELEASES_REPO = RELEASES_REPOS[CHANNEL]
 const rendererUrl = !app.isPackaged && process.env.ELECTRON_RENDERER_URL
   ? process.env.ELECTRON_RENDERER_URL
   : pathToFileURL(join(__dirname, '../renderer/index.html')).href
@@ -156,6 +162,8 @@ initPaths({
   documentsDir: app.getPath('documents'),
   moviesDir: app.getPath('videos'),
   userDataDir: app.getPath('userData'),
+  appDataDir: app.getPath('appData'),
+  channel: CHANNEL,
   appDir: app.getAppPath(),
   rootOverride: SELF_TEST.selfTest ? join(app.getPath('userData'), 'Reel Studio') : null
 })
@@ -389,6 +397,7 @@ function readUpdateFeed(): string | null {
 const updateFeed = app.isPackaged || TEST_FEED ? readUpdateFeed() : null
 const updateEnv = {
   platform: process.platform,
+  channel: CHANNEL,
   isPackaged: app.isPackaged || !!TEST_FEED,
   test: (TEST && !TEST_FEED) || SELF_TEST.selfTest,
   hasFeed: updateFeed !== null,
@@ -409,7 +418,7 @@ const updates = createUpdater({
           updater: autoUpdater,
           version: app.getVersion(),
           fetch: githubFetch,
-          releasesApi: TEST_FEED ? `${TEST_FEED}/releases` : RELEASES_API,
+          releasesApi: TEST_FEED ? `${TEST_FEED}/releases` : releasesApi(CHANNEL),
           releaseFolder: (tag) => (TEST_FEED ? `${TEST_FEED}/download/${tag}` : `https://github.com/${RELEASES_REPO}/releases/download/${tag}`),
           log,
           devFeedFile: TEST_FEED ? updateFeed ?? undefined : undefined,
@@ -807,7 +816,7 @@ function registerIpc(): void {
   })
   handle('app:setRoot', async (_e, p: string) => {
     if (jobs.runningCount()) throw { code: 'BUSY', userMessage: 'Wait until no reel is being made, then change where reels are kept.' }
-    const root = basename(p) === 'Reel Studio' ? p : join(p, 'Reel Studio')
+    const root = chosenRoot(p, CHANNEL === 'nightly' ? await stableLibraries(app.getPath('appData')) : undefined)
     await fs.mkdir(root, { recursive: true })
     // indexing pauses while the Library moves, and starts again in the new place (footage-search-tool)
     await footageIndex.pause()
@@ -1558,6 +1567,9 @@ async function selfTestAndQuit(): Promise<void> {
     seconds: Math.round((Date.now() - t0) / 100) / 10,
     electron: process.versions.electron,
     version: app.getVersion(),
+    channel: CHANNEL,
+    // where this build keeps the shared speech models and a new library, for checking an install without opening it
+    paths: { models: modelsDir(), defaultLibrary: defaultRoot() },
     isPackaged: app.isPackaged,
     platform: process.platform,
     arch: process.arch,

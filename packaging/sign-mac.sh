@@ -176,9 +176,14 @@ notarize() { # notarize <file-to-submit> <what>
   fi
 }
 
-DMG="$OUT/Reel-Studio-$DMG_VER-arm64.dmg"
-UPDATE_ZIP="$OUT/Reel-Studio-$DMG_VER-arm64-mac.zip"
+# "Reel Studio" -> Reel-Studio, "Reel Studio (Nightly)" -> Reel-Studio-Nightly: the names electron-builder gives them.
+ARTIFACT="$(printf '%s' "$PRODUCT" | tr -d '()' | tr ' ' '-')"
+DMG="$OUT/$ARTIFACT-$DMG_VER-arm64.dmg"
+UPDATE_ZIP="$OUT/$ARTIFACT-$DMG_VER-arm64-mac.zip"
 LATEST_YML="$OUT/latest-mac.yml"
+# The Mac nightly is ad-hoc signed, so Squirrel.Mac could not install an update zip: it opens its release page
+# instead (app/src/main/update-machine.ts updateMode), and gets no zip or latest-mac.yml.
+NIGHTLY=0; ! printf '%s' "$DMG_VER" | grep -Eq -- '-nightly\.[0-9]{8}\.[0-9]+$' || NIGHTLY=1
 if [ "$SKIP_NOTARIZE" = 1 ]; then
   say "4/6 Notarize: SKIPPED"
 else
@@ -204,8 +209,10 @@ fi
 # permissions, extended attributes), which Squirrel.Mac needs to accept the update; `zip` would break it.
 # Its checksum is taken only now, after signing and stapling, so latest-mac.yml matches the uploaded bytes.
 rm -f "$UPDATE_ZIP" "$LATEST_YML"
-ditto -c -k --sequesterRsrc --keepParent "$SIGNED" "$UPDATE_ZIP"
-node "$HERE/latest-mac.js" "$UPDATE_ZIP" "$DMG_VER" "$LATEST_YML"
+if [ "$NIGHTLY" = 0 ]; then
+  ditto -c -k --sequesterRsrc --keepParent "$SIGNED" "$UPDATE_ZIP"
+  node "$HERE/latest-mac.js" "$UPDATE_ZIP" "$DMG_VER" "$LATEST_YML"
+fi
 
 # ---------- 6. final checks ----------
 say "6/6 Final checks"
@@ -220,16 +227,22 @@ else
     spctl -a -vv --type open --context context:primary-signature "$DMG"
   fi
 fi
-UNZIP="$(mktemp -d -t rsupdatezip)"
-ditto -x -k "$UPDATE_ZIP" "$UNZIP"
-codesign --verify --deep --strict "$UNZIP/$PRODUCT.app" || die "the update zip does not unpack to a validly signed app"
-[ -f "$UNZIP/$PRODUCT.app/Contents/Resources/app-update.yml" ] || die "app-update.yml is missing from the app: the publish block in packaging/electron-builder.yml did not reach the build"
-if [ "$SKIP_NOTARIZE" = 0 ]; then xcrun stapler validate "$UNZIP/$PRODUCT.app"; fi
-rm -rf "$UNZIP"
+if [ "$NIGHTLY" = 0 ]; then
+  UNZIP="$(mktemp -d -t rsupdatezip)"
+  ditto -x -k "$UPDATE_ZIP" "$UNZIP"
+  codesign --verify --deep --strict "$UNZIP/$PRODUCT.app" || die "the update zip does not unpack to a validly signed app"
+  [ -f "$UNZIP/$PRODUCT.app/Contents/Resources/app-update.yml" ] || die "app-update.yml is missing from the app: the publish block in packaging/electron-builder.yml did not reach the build"
+  if [ "$SKIP_NOTARIZE" = 0 ]; then xcrun stapler validate "$UNZIP/$PRODUCT.app"; fi
+  rm -rf "$UNZIP"
+else
+  [ -f "$SIGNED/Contents/Resources/app-update.yml" ] || die "app-update.yml is missing from the app: the publish block in packaging/electron-builder.yml did not reach the build"
+fi
 echo
 echo "DONE."
 echo "  Signed app : $SIGNED"
 echo "  Installer  : $DMG   ($(du -h "$DMG" | cut -f1))"
-echo "  Update zip : $UPDATE_ZIP   ($(du -h "$UPDATE_ZIP" | cut -f1))"
-echo "  Update feed: $LATEST_YML"
+if [ "$NIGHTLY" = 0 ]; then
+  echo "  Update zip : $UPDATE_ZIP   ($(du -h "$UPDATE_ZIP" | cut -f1))"
+  echo "  Update feed: $LATEST_YML"
+fi
 if [ "$SKIP_NOTARIZE" = 1 ]; then echo "  (not notarized: do not upload these to a release)"; fi

@@ -10,6 +10,7 @@
 #   RS_ENGINE_DIR   folder that CONTAINS the `reelengine` package (engine/ in the repo)
 #   RS_TEMPLATES_DIR  templates/ (b-roll treatments + animations)
 #   RS_APP_DIR      the project dir (app/): its resources/test-animation ships too
+#   RS_ICONS        set by make-config.js: packaging/icons, or packaging/icons/nightly for a nightly version
 #
 # Installed layout (process.resourcesPath):
 #   python/            bundled CPython + site-packages        (python.exe | bin/python3)
@@ -34,6 +35,10 @@ compression: normal
 
 directories:
   output: release
+
+# A prerelease version (the nightly's x.y.z-nightly.YYYYMMDD.N) must still write latest.yml: installed copies read
+# that name from the release folder (main/updater-electron.ts), and a nightly.yml would never be found.
+detectUpdateChannel: false
 
 # The per-user install folder is %LOCALAPPDATA%\Programs\<package.json "name">; the real app's name is the
 # scoped "@reelstudio/app", which would give an ugly folder. Only the packaged copy of package.json changes.
@@ -75,7 +80,7 @@ extraResources:
       - "!**/package-lock.json"
       - "!**/.DS_Store"
   # app/src/main/mac-permission-helper.ts shows the app icon
-  - from: ${env.RS_REPO_ROOT}/packaging/icons/icon.png
+  - from: ${env.RS_ICONS}/icon.png
     to: icon.png
   # app/resources/test-animation is read by the app from <resources>/test-animation (app/src/main/paths.ts)
   - from: ${env.RS_APP_DIR}/resources/test-animation
@@ -112,7 +117,7 @@ mac:
       # Offer Open With without taking over the person's default video app.
       rank: Alternate
   category: public.app-category.video
-  icon: ${env.RS_REPO_ROOT}/packaging/icons/icon.icns
+  icon: ${env.RS_ICONS}/icon.icns
   minimumSystemVersion: "14.0"
   hardenedRuntime: true
   gatekeeperAssess: false
@@ -142,7 +147,7 @@ dmg:
     - { x: 474, y: 214, type: link, path: /Applications }
 
 win:
-  icon: ${env.RS_REPO_ROOT}/packaging/icons/icon.ico
+  icon: ${env.RS_ICONS}/icon.ico
   target:
     - target: nsis
       arch: [x64]
