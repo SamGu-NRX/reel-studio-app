@@ -918,6 +918,7 @@ function registerIpc(): void {
   handle('ai:vendorConnect', (_e, v) => vendors.connect(vendorOf(v)))
   handle('ai:vendorCancel', (_e, v) => vendors.cancel(vendorOf(v)))
   handle('ai:vendorSignInAgain', (_e, v) => void vendors.signInAgain(vendorOf(v)))
+  handle('ai:vendorSignInWithCode', (_e, v) => vendors.signInWithCode(vendorOf(v)))
 
   handle('projects:list', () => listProjects())
   handle('projects:search', (_e, query: string) => searchProjects(query))
@@ -1350,8 +1351,10 @@ function createVendors(): VendorConnect {
       // Test switch only: OpenAI's Windows installer rewrites the user PATH; put it back exactly as it was.
       return TEST_VENDOR_ENV && process.platform === 'win32' && v === 'chatgpt' ? withUserPathKept(run, log) : run()
     },
-    login: (v, bin, signal) =>
-      mock ? mock.login(v, signal) : runLogin({ vendor: v, bin, env: TEST_LOGIN_ENV ?? process.env, platform: process.platform, signal, systemRoot: process.env.SystemRoot }),
+    login: (v, bin, signal, onDeviceCode) =>
+      mock
+        ? mock.login(v, signal, onDeviceCode)
+        : runLogin({ vendor: v, bin, env: TEST_LOGIN_ENV ?? process.env, platform: process.platform, signal, systemRoot: process.env.SystemRoot, onDeviceCode }),
     // Choosing Claude first sends it one short message (ai setActive); Cancel stops that too. The sidebar's editor
     // line follows like every other change of editor (changesAI).
     select: async (v, signal) => {

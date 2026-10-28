@@ -34,6 +34,10 @@ const PITCH: Record<VendorId, string> = {
 }
 const HERE = IS_MAC ? 'this Mac' : 'this PC'
 
+// OpenAI's docs: "Enable device code login in your ChatGPT security settings (personal account) or ChatGPT workspace
+// permissions (workspace admin)." Until then OpenAI's page refuses the code, and Codex just keeps waiting.
+const DEVICE_CODE_HINT = "Turn on device code login in ChatGPT's security settings first (work accounts: your workspace admin)."
+
 const running = (i: VendorInfo | null): boolean => !!i && ['installing', 'signing_in', 'checking'].includes(i.step)
 
 /** The "connected" line for the person's own apps, else "Connected to <label>". */
@@ -113,6 +117,15 @@ export function VendorRows({
       .finally(() => setAsked((a) => (a === v ? null : a)))
   }
 
+  // ChatGPT only, and only on the person's click after its browser sign-in could not open its port: never on its own
+  const signInWithCode = (v: VendorId): void => {
+    setError(null)
+    reel.ai
+      .vendorSignInWithCode(v)
+      .then((i) => setInfo((s) => ({ ...s, [v]: i })))
+      .catch((e) => setError({ v, text: userMessage(e) }))
+  }
+
   const order: VendorId[] = info.chatgpt?.state === 'ready' && info.claude?.state !== 'ready' ? ['chatgpt', 'claude'] : ['claude', 'chatgpt']
   return (
     <>
@@ -129,6 +142,7 @@ export function VendorRows({
           lookFailed={lookFailed[v]}
           onLook={() => void refresh(v)}
           onConnect={() => connect(v)}
+          onCode={() => signInWithCode(v)}
           onOther={() => connect(order[1 - k])}
           onDisconnect={onDisconnect}
         />
@@ -148,6 +162,7 @@ function VendorRow({
   lookFailed,
   onLook,
   onConnect,
+  onCode,
   onOther,
   onDisconnect
 }: {
@@ -161,13 +176,14 @@ function VendorRow({
   asked: boolean
   error: string | null
   onConnect: () => void
+  onCode: () => void
   onOther: () => void
   onDisconnect: () => void
 }) {
   const [fallbackError, setFallbackError] = useState<string | null>(null)
   const row = useRef<HTMLDivElement>(null)
   const step = info?.step ?? 'loading'
-  const attrs = { 'data-testid': `vendor-${v}`, 'data-step': step, 'data-state': info?.state ?? 'loading', ...(info?.problem ? { 'data-problem': info.problem } : {}) }
+  const attrs = { 'data-testid': `vendor-${v}`, 'data-step': step, 'data-state': info?.state ?? 'loading', ...(info?.problem ? { 'data-problem': info.problem } : {}), ...(info?.signIn ? { 'data-sign-in': info.signIn } : {}) }
 
   // The pill pressed gives way to Cancel, and Cancel to the row's next pill. React keeps the same button when it can;
   // when the focused control went away instead (a link in the steps), focus comes back to the row's pill, never to
@@ -214,6 +230,33 @@ function VendorRow({
       <Button size="small" kind="tertiary" onClick={onDisconnect} data-testid="use-no-ai">
         Disconnect
       </Button>
+    )
+  } else if (running(info) && info.signIn === 'code') {
+    const dc = info.deviceCode
+    tone = 'busy'
+    status = 'Connecting…'
+    action = (
+      <Button size="small" kind="tertiary" onClick={cancel} data-testid={`vendor-cancel-${v}`}>
+        Cancel
+      </Button>
+    )
+    more = (
+      <div className="pv-more vendor-steps">
+        <ol className="vsteps">
+          <Step state="now">
+            {dc ? (
+              <>
+                <b>Enter this code on {MAKER[v]}'s page.</b>
+                <span>Come back here when the page says you're signed in.</span>
+              </>
+            ) : (
+              <b>Getting a sign-in code from {MAKER[v]}…</b>
+            )}
+          </Step>
+        </ol>
+        {dc && <DeviceCodeBox v={v} code={dc.code} url={dc.url} />}
+        <p className="vsteps-hint">{DEVICE_CODE_HINT}</p>
+      </div>
     )
   } else if (running(info)) {
     const installing = step === 'installing'
@@ -300,14 +343,32 @@ function VendorRow({
   } else if (step === 'failed' || error) {
     const free = info.problem === 'free_plan'
     const installProblem = info.problem === 'install_failed' || info.problem === 'not_found_after_install'
+    // ChatGPT's port held (in use, or reserved by Windows), or its code sign-in turned off: a code is the way through
+    const offerCode = v === 'chatgpt' && !error && (info.problem === 'port_busy' || info.problem === 'device_code_off')
+    // Reserved by Windows, Try again fails every time until the port is freed, so the code is the row's filled pill.
+    // Only in use, the other program may let go: Try again stays the pill and the code waits under the row.
+    const codeFirst = offerCode && info.portReserved === true
     tone = free ? 'plain' : 'error'
     status = <span data-testid={`vendor-message-${v}`}>{error ?? info.message}</span>
-    action = (
-      <Button size="small" onClick={onConnect} data-testid={`vendor-retry-${v}`}>
+    const retry = (kind: 'primary' | 'secondary') => (
+      <Button size="small" kind={kind} onClick={onConnect} data-testid={`vendor-retry-${v}`}>
         {free ? 'Check again' : 'Try again'}
       </Button>
     )
-    if (installProblem || free)
+    const code = (kind: 'primary' | 'secondary') => (
+      <Button size="small" kind={kind} onClick={onCode} data-testid={`vendor-code-start-${v}`}>
+        Sign in with a code instead
+      </Button>
+    )
+    action = codeFirst ? code('primary') : retry(offerCode ? 'primary' : 'secondary')
+    if (offerCode)
+      more = (
+        <div className="pv-more vendor-steps">
+          <div className="row wrap vsteps-acts">{codeFirst ? retry('secondary') : code('secondary')}</div>
+          {codeFirst && <p className="vsteps-hint">Trying again won't help until Windows lets go of the port, usually after a restart.</p>}
+        </div>
+      )
+    else if (installProblem || free)
       more = (
         <div className="pv-more vendor-steps">
           <div className="row wrap vsteps-acts">
@@ -352,6 +413,7 @@ function VendorRow({
 
   // One announcer per row that is always there, so each step is read out once; the steps list itself is not live.
   const said = !info || !running(info) ? ''
+    : info.signIn === 'code' ? (info.deviceCode ? `Your sign-in code is ready. Enter it on ${MAKER[v]}'s page.` : 'Getting a sign-in code.')
     : step === 'installing' ? `Installing ${APP[v]}. Takes a minute or two.`
     : step === 'signing_in' ? `Finish signing in in your browser. It's ${MAKER[v]}'s page.`
     : 'Checking that it worked.'
@@ -384,5 +446,31 @@ function Step({ state, children }: { state: 'now' | 'done' | 'later'; children: 
       </span>
       <span className="vstep-what">{children}</span>
     </li>
+  )
+}
+
+/** ChatGPT's sign-in code: read here, typed on OpenAI's page, often on another screen. */
+function DeviceCodeBox({ v, code, url }: { v: VendorId; code: string; url: string }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 1600)
+    return () => clearTimeout(t)
+  }, [copied])
+  return (
+    <div className="vcode-box">
+      {/* read out one character at a time */}
+      <p className="vcode selectable" data-testid={`vendor-code-${v}`} aria-label={`Sign-in code: ${code.split('').join(' ')}`}>
+        {code}
+      </p>
+      <div className="row wrap vsteps-acts">
+        <a className="btn small primary" href={url} target="_blank" rel="noreferrer" data-testid={`vendor-code-open-${v}`}>
+          <Icon name="external" size={14} /> Open sign-in page
+        </a>
+        <Button size="small" onClick={() => void reel.app.copyText(code).then(() => setCopied(true), () => undefined)} data-testid={`vendor-code-copy-${v}`}>
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+      </div>
+    </div>
   )
 }
