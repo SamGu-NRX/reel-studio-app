@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { countsOf, findPastEdits } from '../src/main/past-edits'
 import { validateIpcArgs } from '../src/main/ipc-guard'
 import { makePastEditsHome } from '../e2e/past-edits-home'
+import { APP_DIR, PYTHON } from './helpers'
 
 const fresh = (): string => mkdtempSync(join(tmpdir(), 'past-edits-'))
 const shape = (found: Awaited<ReturnType<typeof findPastEdits>>) => found.map((f) => [f.file, f.app, f.kind, f.readable, f.where])
@@ -66,5 +68,20 @@ describe('Learn from my past edits: finding them', () => {
     expect(() => validateIpcArgs('style:learn', [['/Users/someone/secret.xml']])).toThrow()
     expect(() => validateIpcArgs('style:learn', [[]])).toThrow()
     expect(() => validateIpcArgs('style:reveal', ['/etc/passwd'])).toThrow()
+  })
+
+  // fails if the e2e stand-in engine counts timelines differently from the real one (it once showed 2 for an
+  // export the real engine reads 1 from, because it counted every event's projects)
+  it('the stand-in engine’s reference-scan counts timelines as the real engine does', () => {
+    const fixtures = join(APP_DIR, '..', 'engine', 'tests', 'fixtures', 'reference-import')
+    const files = ['cut.fcpxmld', 'ntsc-lanes.fcpxml', 'talking-head.xml'].map((f) => join(fixtures, f))
+    const scan = (pythonPath: string) => {
+      const out = execFileSync(PYTHON, ['-I', '-c', 'import sys; sys.path.insert(0, sys.argv.pop(1)); from reelengine.__main__ import main; sys.argv[0] = "reelengine"; sys.exit(main())', pythonPath, 'reference-scan', ...files], { encoding: 'utf8' })
+      const done = JSON.parse(out.trim().split('\n').pop()!)
+      return done.result.files.map((f: { timelines?: number }) => f.timelines)
+    }
+    const real = scan(join(APP_DIR, '..', 'engine'))
+    expect(real).toEqual([1, 1, 1])
+    expect(scan(join(APP_DIR, 'dev', 'fake-engine'))).toEqual(real)
   })
 })

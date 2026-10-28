@@ -77,7 +77,15 @@ test('Learn from my past edits lists the edits on this computer by app, and lear
   const home = join(mine, 'home')
   mkdirSync(root, { recursive: true })
   makePastEditsHome(home)
-  const { app, page } = await launch({ REELSTUDIO_ROOT: root, REELSTUDIO_USER_DATA: join(mine, 'user data'), REELSTUDIO_TEST_PAST_EDITS_HOME: home })
+  // Final Cut Pro is installed; Premiere Pro isn't
+  const apps = join(mine, 'Applications')
+  mkdirSync(join(apps, 'Final Cut Pro.app'), { recursive: true })
+  const { app, page } = await launch({
+    REELSTUDIO_ROOT: root,
+    REELSTUDIO_USER_DATA: join(mine, 'user data'),
+    REELSTUDIO_TEST_PAST_EDITS_HOME: home,
+    REELSTUDIO_TEST_APPS_DIR: apps
+  })
   try {
     await passFirstRun(page)
     await page.getByTestId('nav-style').click()
@@ -94,6 +102,10 @@ test('Learn from my past edits lists the edits on this computer by app, and lear
     // each app's section is named by its heading (aria-labelledby broke on the space in "Final Cut Pro")
     await expect(groups.nth(0)).toHaveAccessibleName('Final Cut Pro')
     await expect(groups.nth(1)).toHaveAccessibleName('Premiere Pro')
+    // the installed editor's own icon from the system; the missing one gets the neutral icon, never a drawn copy
+    await expect(groups.nth(0).getByTestId('learn-app-icon')).toHaveAttribute('src', /^data:image\/png;base64,/)
+    await expect(groups.nth(1).getByTestId('learn-app-icon')).toHaveCount(0)
+    await expect(groups.nth(1).getByTestId('learn-app-neutral')).toBeVisible()
     // Return learns from what is ticked: the Learn button has the focus once the list is there
     await expect(page.getByTestId('learn-go')).toBeFocused()
     const items = sheet.getByTestId('learn-item')

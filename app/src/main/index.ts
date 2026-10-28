@@ -73,6 +73,7 @@ import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { libraryPreview } from './library-preview'
 import { readLesson } from './style-learn'
 import { countsOf, findPastEdits, mdfind, type FindDeps, type Found } from './past-edits'
+import { appIcons, regDefault, type IconDeps } from './app-icons'
 import { createJobManager } from './jobs'
 import { createPauser, pauseFor, quitQuestion } from './pause'
 import { createNoteQueue, noteOutcome, type NoteToRun, type StartHand } from './note-queue'
@@ -1329,6 +1330,23 @@ function registerIpc(): void {
     if (!readable.length) return {}
     return countsOf(readable, await runEngine('reference-scan', readable.map((f) => f.path)))
   })
+  // the editors' own icons, looked up once a session; tests see only the apps in REELSTUDIO_TEST_APPS_DIR
+  let editorIcons: ReturnType<typeof appIcons> | null = null
+  const iconDeps = (): IconDeps => ({
+    platform: process.platform,
+    spotlight: TEST || process.platform !== 'darwin' ? null : mdfind,
+    registry: TEST || process.platform !== 'win32' ? null : regDefault,
+    appFolders: TEST
+      ? [process.env.REELSTUDIO_TEST_APPS_DIR].filter((d): d is string => !!d)
+      : process.platform === 'darwin'
+        ? ['/Applications', join(app.getPath('home'), 'Applications')]
+        : [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter((d): d is string => !!d),
+    fileIcon: async (p) => {
+      const icon = await app.getFileIcon(p, { size: 'normal' })
+      return icon.isEmpty() ? null : icon.toDataURL()
+    }
+  })
+  handle('style:appIcons', () => (editorIcons ??= appIcons(iconDeps())))
   handle('style:reveal', (_e, id: string) => {
     const f = foundEdit(id)
     if (TEST) log(`[style] reveal ${f.file}`)

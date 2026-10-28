@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { PastEdit, PastEditCounts, StyleLesson } from '../../../shared/api'
 import { reel, userMessage } from '../api'
 import { FOLDER_APP, IS_MAC, Modal, Spinner } from '../components/ui'
+import { Icon } from '../components/icons'
 import '../components/learn.css'
 
 const APPS: PastEdit['app'][] = ['Final Cut Pro', 'Premiere Pro']
@@ -38,31 +39,13 @@ const slug = (app: string): string => app.toLowerCase().replace(/\s+/g, '-')
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
 
-/** The app's mark beside its name: Premiere Pro's "Pr" tile, and a clapperboard for Final Cut Pro. */
-function AppMark({ app }: { app: PastEdit['app'] }) {
-  if (app === 'Premiere Pro') {
-    return (
-      <svg className="learn-mark" viewBox="0 0 20 20" aria-hidden>
-        <rect width="20" height="20" rx="4.5" fill="#00005B" />
-        <text x="10" y="14" textAnchor="middle" fontSize="10" fontWeight="700" fill="#9999FF" fontFamily="var(--font-ui)">
-          Pr
-        </text>
-      </svg>
-    )
-  }
+/** The editor's own icon from the system when it is installed, else a neutral one; its name sits beside it. */
+function AppMark({ icon }: { icon?: string }) {
+  if (icon) return <img className="learn-mark" src={icon} width={20} height={20} alt="" data-testid="learn-app-icon" />
   return (
-    <svg className="learn-mark" viewBox="0 0 20 20" aria-hidden>
-      <rect width="20" height="20" rx="4.5" fill="#1C1C1E" />
-      <path d="M4.5 9h11v6.2a.8.8 0 0 1-.8.8H5.3a.8.8 0 0 1-.8-.8z" fill="#F2F2F7" />
-      <path d="m4.3 6.6 10.6-2.4.5 2.2-10.6 2.4z" fill="url(#fcp-stripe)" />
-      <defs>
-        <linearGradient id="fcp-stripe" x1="0" x2="1">
-          <stop offset="0" stopColor="#FF5E5B" />
-          <stop offset=".5" stopColor="#B36BFF" />
-          <stop offset="1" stopColor="#3FA9FF" />
-        </linearGradient>
-      </defs>
-    </svg>
+    <span className="learn-mark neutral" data-testid="learn-app-neutral">
+      <Icon name="film" size={16} />
+    </span>
   )
 }
 
@@ -70,6 +53,7 @@ export function LearnSheet({ onClose, onLearned }: { onClose: () => void; onLear
   const titleId = useId()
   const [edits, setEdits] = useState<PastEdit[] | null>(null)
   const [counts, setCounts] = useState<PastEditCounts>({})
+  const [icons, setIcons] = useState<Partial<Record<PastEdit['app'], string>>>({})
   const [ticked, setTicked] = useState<Set<string>>(new Set())
   const [reading, setReading] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -110,6 +94,8 @@ export function LearnSheet({ onClose, onLearned }: { onClose: () => void; onLear
 
   useEffect(() => {
     void look()
+    // an icon that can't be read leaves the neutral one; nothing to tell the person
+    reel.style.appIcons().then(setIcons, () => undefined)
   }, [look])
   // back from Final Cut Pro or Premiere Pro with a new export: look again
   useEffect(() => {
@@ -211,7 +197,7 @@ export function LearnSheet({ onClose, onLearned }: { onClose: () => void; onLear
               return (
                 <section key={app} className="learn-group" aria-labelledby={`${titleId}-${slug(app)}`} data-testid="learn-group">
                   <h3 id={`${titleId}-${slug(app)}`} className="learn-app">
-                    <AppMark app={app} />
+                    <AppMark icon={icons[app]} />
                     {app}
                   </h3>
                   {readable.length > 0 && (

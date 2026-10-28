@@ -14,6 +14,7 @@
   font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 620;
 }
 .learn-mark { width: 20px; height: 20px; flex: none; }
+.learn-mark.neutral { display: grid; place-items: center; color: var(--ink-2); }
 .learn-items { list-style: none; margin: 0; padding: 0; }
 /* an edit that appears while the sheet is open (a new export) fades in, so the eye finds it */
 .learn-items > li.fresh { transition: opacity 180ms cubic-bezier(.2, .8, .2, 1); @starting-style { opacity: 0; } }

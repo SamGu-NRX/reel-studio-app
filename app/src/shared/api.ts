@@ -982,6 +982,8 @@ export interface ReelApi {
     learn(ids?: string[]): Promise<StyleLesson | null>
     /** How far learn() has read. */
     onLearnProgress(cb: (p: { done: number; total: number }) => void): () => void
+    /** The installed editors' own icons as data URLs; an editor that isn't installed is missing. */
+    appIcons(): Promise<Partial<Record<PastEdit['app'], string>>>
     /** Show a found edit in Finder or File Explorer. */
     reveal(id: string): Promise<void>
     /** Keep these rules from a lesson; each remembers `from`, the export names it was read from. */

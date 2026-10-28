@@ -473,6 +473,17 @@ def _item(kind: str, name: str, start: float, dur: float, media: dict) -> dict:
             "trackRange": {"start": {"value": start * 100, "rate": 100}, "duration": {"value": dur * 100, "rate": 100}}}
 
 
+def _fcpx_projects(root) -> list:
+    """The projects the real engine reads (reference_import._Fcpx.projects): the first event's in a library, the
+    first top-level event's, or the first top-level project."""
+    if root.find("library") is not None:
+        event = root.find("library/event")
+        return [] if event is None else event.findall("project")
+    if root.find("event") is not None:
+        return root.find("event").findall("project")
+    return root.findall("project")[:1]
+
+
 def cmd_import_reference(args: list[str]) -> dict:
     """The real command's record shape (reelengine/reference_import.py) for simple exports, without OpenTimelineIO:
     Final Cut's spine and connected clips, Premiere's tracks of clip, generator and transition items."""
@@ -486,7 +497,7 @@ def cmd_import_reference(args: list[str]) -> dict:
     if root.tag == "fcpxml":
         adapter = "fcpx_xml"
         assets = {a.get("id"): a for a in root.iter("asset")}
-        for project in root.iter("project"):
+        for project in _fcpx_projects(root):
             lanes: dict[str, list] = {}
             spine = project.find("./sequence/spine")
             for clip in list(spine if spine is not None else []):
@@ -556,7 +567,7 @@ def cmd_reference_scan(args: list[str]) -> dict:
             files.append({"path": arg, "error": {"code": "BAD_XML", "message": "This file isn't a readable edit export. "
                                                  "Export it again from your editor and try once more."}})
             continue
-        n = len(list(root.iter("project"))) if root.tag == "fcpxml" else len(root.findall("sequence") + root.findall(".//children/sequence"))
+        n = len(_fcpx_projects(root)) if root.tag == "fcpxml" else len(root.findall("sequence") + root.findall(".//children/sequence"))
         files.append({"path": arg, "timelines": n} if n else {"path": arg, "error": {"code": "NO_TIMELINE", "message":
                       "This export has no timeline in it. In your editor, export the project or sequence itself, not just its clips, and try again."}})
     return {"files": files}

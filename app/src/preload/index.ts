@@ -177,6 +177,7 @@ const api: ReelApi = {
     count: () => call('style:count'),
     learn: (ids) => call('style:learn', ids),
     onLearnProgress: (cb) => on<{ done: number; total: number }>('style:learnProgress', cb),
+    appIcons: () => call('style:appIcons'),
     reveal: (id) => call('style:reveal', id),
     keepLearned: (rules, from) => call('style:keepLearned', rules, from),
     update: (id, patch) => call('style:update', id, patch),
