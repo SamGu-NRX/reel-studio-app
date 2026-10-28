@@ -197,6 +197,9 @@ export interface LoginResult {
   code: number | null
   /** the CLI could not open its callback port (Codex: 127.0.0.1:1455): another program has it, or Windows reserved it */
   portBusy?: boolean
+  /** with portBusy: Windows reserved the port (os error 10013), so the browser sign-in fails every time until it is
+   * freed (a reboot, or a WinNAT restart); "in use" alone may clear when the other program lets go */
+  portReserved?: boolean
   /** Codex's code sign-in is not enabled for this server */
   deviceCodeOff?: boolean
   aborted?: boolean
@@ -213,6 +216,13 @@ const PORT_HELD = /address already in use|address in use|is already in use|only 
 
 export function loginPortBlocked(output: string): boolean {
   return PORT_HELD.test(output)
+}
+
+const PORT_RESERVED = /os error 10013\b|forbidden by its access permissions/i
+
+/** The reserved case of loginPortBlocked: WSAEACCES, which no retry fixes. */
+export function loginPortReserved(output: string): boolean {
+  return PORT_RESERVED.test(output)
 }
 
 /** Codex 0.163 and later, when its device-code endpoint answers 404 (see codex-rs/login/src/device_code_auth.rs). */
@@ -297,7 +307,8 @@ export function runLogin(d: {
       if (d.signal?.aborted) return resolve({ code, aborted: true })
       if (code === 0) return resolve({ code })
       if (d.onDeviceCode && DEVICE_CODE_OFF.test(out)) return resolve({ code, deviceCodeOff: true })
-      resolve({ code, ...(!d.onDeviceCode && loginPortBlocked(out) ? { portBusy: true } : {}) })
+      if (!d.onDeviceCode && loginPortBlocked(out)) return resolve({ code, portBusy: true, ...(loginPortReserved(out) ? { portReserved: true } : {}) })
+      resolve({ code })
     })
   })
 }

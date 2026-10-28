@@ -25,8 +25,9 @@ const NOT_CONNECTED: ProviderStatus = { id: 'none', connected: true, label: 'No 
 //   port_reserved  signed out; the browser sign-in cannot open its port (Windows reserved it); the sign-in with a code
 //                  shows MOCK-26CODE after 0.4 s and finishes 4 s later (the person typed it on OpenAI's page)
 //   code_off       as port_reserved, but sign-in with a code is turned off for the account
-type MockMode = 'missing' | 'installing' | 'install_failed' | 'broken' | 'signed_out' | 'browser' | 'signs_in' | 'free' | 'ready' | 'port_reserved' | 'code_off'
-const MODES: MockMode[] = ['missing', 'installing', 'install_failed', 'broken', 'signed_out', 'browser', 'signs_in', 'free', 'ready', 'port_reserved', 'code_off']
+//   port_in_use    as port_reserved, but the port is only in use by another program (Try again stays first)
+type MockMode = 'missing' | 'installing' | 'install_failed' | 'broken' | 'signed_out' | 'browser' | 'signs_in' | 'free' | 'ready' | 'port_reserved' | 'code_off' | 'port_in_use'
+const MODES: MockMode[] = ['missing', 'installing', 'install_failed', 'broken', 'signed_out', 'browser', 'signs_in', 'free', 'ready', 'port_reserved', 'code_off', 'port_in_use']
 export const MOCK_DEVICE_CODE = { url: 'https://auth.openai.com/codex/device', code: 'MOCK-26CODE' }
 const CLAUDE_LABEL = 'Claude (your Claude Code app)'
 const CODEX_LABEL = 'ChatGPT (your Codex app)'
@@ -92,7 +93,7 @@ export const createMockAI: CreateAI = ({ host }) => {
   const modeOf = (v: string | undefined): MockMode => MODES.find((m) => m === v) ?? 'missing'
   const mode = { claude: modeOf(process.env.REELSTUDIO_MOCK_CLAUDE), chatgpt: modeOf(process.env.REELSTUDIO_MOCK_CODEX) }
   const startState = (m: MockMode): ClaudeCodeStatus['state'] =>
-    m === 'ready' ? 'ready' : m === 'broken' ? 'broken' : ['signed_out', 'browser', 'signs_in', 'free', 'port_reserved', 'code_off'].includes(m) ? 'signed_out' : 'missing'
+    m === 'ready' ? 'ready' : m === 'broken' ? 'broken' : ['signed_out', 'browser', 'signs_in', 'free', 'port_reserved', 'code_off', 'port_in_use'].includes(m) ? 'signed_out' : 'missing'
   const state = { claude: startState(mode.claude), chatgpt: startState(mode.chatgpt) }
   const plan: { claude?: string; chatgpt?: string } = {}
   let chosen: 'claude-cli' | 'codex-cli' | null = null
@@ -160,8 +161,9 @@ export const createMockAI: CreateAI = ({ host }) => {
         if (await until(signal, 800)) state[v] = 'signed_out'
       },
       async login(v, signal, onDeviceCode) {
-        if (mode[v] === 'port_reserved' || mode[v] === 'code_off') {
-          if (!onDeviceCode) return (await until(signal, 300)) ? { code: 1, portBusy: true } : { code: null, aborted: true }
+        if (mode[v] === 'port_reserved' || mode[v] === 'code_off' || mode[v] === 'port_in_use') {
+          const held = mode[v] === 'port_in_use' ? { portBusy: true } : { portBusy: true, portReserved: true }
+          if (!onDeviceCode) return (await until(signal, 300)) ? { code: 1, ...held } : { code: null, aborted: true }
           if (mode[v] === 'code_off') return (await until(signal, 300)) ? { code: 1, deviceCodeOff: true } : { code: null, aborted: true }
           if (!(await until(signal, 400))) return { code: null, aborted: true }
           onDeviceCode(MOCK_DEVICE_CODE)

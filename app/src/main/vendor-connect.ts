@@ -114,7 +114,7 @@ export function createVendorConnect(deps: VendorDeps) {
       if (signal.aborted) return emit(info(v, st, 'idle', { problem: 'cancelled' }))
       if (run.restart) continue // "Open the sign-in page again": a fresh sign-in, which opens a fresh page
       if (r.aborted) return fail(v, st, 'sign_in_timeout', VENDOR_MESSAGES.sign_in_timeout(v))
-      if (r.portBusy) return fail(v, st, 'port_busy', VENDOR_MESSAGES.port_busy(v))
+      if (r.portBusy) return emit(info(v, st, 'failed', { problem: 'port_busy', message: VENDOR_MESSAGES.port_busy(v), ...(r.portReserved ? { portReserved: true } : {}) }))
       if (r.deviceCodeOff) return fail(v, st, 'device_code_off', VENDOR_MESSAGES.device_code_off(v))
       emit(info(v, st, 'checking'))
       st = await deps.status(v)

@@ -211,6 +211,14 @@ function VendorCard({
     const free = info.problem === 'free_plan'
     // ChatGPT's port held (in use, or reserved by Windows), or its code sign-in turned off: the code is the way through
     const offerCode = v === 'chatgpt' && (info.problem === 'port_busy' || info.problem === 'device_code_off')
+    // Reserved by Windows: Try again fails every time until the port is freed, so the code is the primary button,
+    // first. Only in use, the other program may let go: Try again stays first.
+    const codeFirst = offerCode && info.portReserved === true
+    const codeButton = offerCode && (
+      <button className={`btn small${codeFirst ? ' primary' : ''}`} onClick={onCode} data-testid={`vendor-code-start-${v}`}>
+        Sign in with a code instead
+      </button>
+    )
     return (
       <div className="vendor flow" {...attrs} data-problem={info.problem}>
         <h3>Connect {NAME[v]}</h3>
@@ -228,14 +236,13 @@ function VendorCard({
               </button>
             </>
           ) : (
-            <button className="btn small primary" onClick={onConnect} data-testid={`vendor-retry-${v}`}>
-              Try again
-            </button>
-          )}
-          {offerCode && (
-            <button className="btn small" onClick={onCode} data-testid={`vendor-code-start-${v}`}>
-              Sign in with a code instead
-            </button>
+            <>
+              {codeFirst && codeButton}
+              <button className={`btn small${codeFirst ? '' : ' primary'}`} onClick={onConnect} data-testid={`vendor-retry-${v}`}>
+                Try again
+              </button>
+              {!codeFirst && codeButton}
+            </>
           )}
           {installProblem && (
             <a className="btn small" href={VENDOR_INSTALL_PAGES[v]} target="_blank" rel="noreferrer" data-testid={`vendor-install-page-${v}`}>

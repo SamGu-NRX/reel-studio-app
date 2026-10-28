@@ -98,7 +98,7 @@ export interface MockVendor {
     v: 'claude' | 'chatgpt',
     signal: AbortSignal,
     onDeviceCode?: (c: { url: string; code: string }) => void
-  ): Promise<{ code: number | null; portBusy?: boolean; deviceCodeOff?: boolean; aborted?: boolean }>
+  ): Promise<{ code: number | null; portBusy?: boolean; portReserved?: boolean; deviceCodeOff?: boolean; aborted?: boolean }>
 }
 
 export interface ClaudeCodeStatus {

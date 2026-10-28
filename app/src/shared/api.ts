@@ -259,6 +259,8 @@ export interface VendorInfo {
   /** plain words for the person */
   message?: string
   problem?: VendorProblem
+  /** port_busy only: Windows reserved the port, so trying again cannot work until it is freed: the code goes first */
+  portReserved?: boolean
   /** 'code': ChatGPT's sign-in with a code (after its browser sign-in could not open its port) */
   signIn?: 'code'
   /** the code to type and OpenAI's https page for it, once Codex has printed them */
