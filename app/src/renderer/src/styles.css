@@ -458,15 +458,7 @@ html.kb .cover-frame::after { transition: none; }
 .cover-why { min-height: var(--lh-base); margin-top: 8px; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-2); }
 .cover-why b { color: var(--ink); font-weight: 640; margin-right: 4px; }
 
-.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
-.swatch { border: 0; background: none; padding: 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; font: inherit; font-weight: 600; font-size: var(--fs-sm); color: var(--ink-2); border-radius: 12px; }
-.swatch:focus-visible { outline-offset: 3px; }
-.swatch-frame { width: 74px; aspect-ratio: 3/4; border-radius: 12px; background: linear-gradient(170deg, #8a8178, #4a433d 70%); position: relative; overflow: hidden; outline: 2px solid transparent; outline-offset: 2px; transition: outline-color .12s; }
-.swatch:hover .swatch-frame { outline-color: var(--line-strong); }
-.swatch.on .swatch-frame { outline-color: var(--ink); }
-.swatch.on { color: var(--ink); }
-
-/* The engine's subtitle look, drawn over the phone (live preview) and in the swatches. */
+/* The engine's subtitle look, drawn over the phone (live preview) and in Subtitles' look rows. */
 .sub-sample {
   position: absolute; left: 50%; transform: translate(-50%, -50%); width: max-content; text-align: center;
   font-family: 'Reel Subtitles', Montserrat, 'Segoe UI', sans-serif; font-weight: 600; pointer-events: none;

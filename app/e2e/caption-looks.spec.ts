@@ -1,5 +1,6 @@
 // The subtitle looks in "Edit it myself": a Size the person picked survives every look, Karaoke shows both
-// colour rows, and colours the AI editor picked that match no option leave the rows unchecked but reachable by Tab.
+// colour rows, colours the AI editor picked that match no option leave the rows unchecked but reachable by Tab, and
+// each look's word fits its strip at the smallest window.
 //
 // Run: npx playwright test e2e/caption-looks.spec.ts (after npm run build). Same env as smoke.spec.ts.
 import { test, expect } from '@playwright/test'
@@ -53,6 +54,19 @@ test('caption looks: size through look switches, Karaoke rows, colours that matc
     await expect(page.getByTestId('cap-color-white')).toHaveAttribute('aria-checked', 'true')
     await expect(page.getByTestId('cap-highlight-yellow')).toHaveAttribute('aria-checked', 'true')
     await shot(page, 'looks-karaoke-rows')
+
+    // fails if a look's word is cut off by its strip at the smallest window (Bold pop's ran off its tile at 1100)
+    await page.setViewportSize({ width: 1100, height: 720 })
+    const strips = page.locator('.look-strip')
+    await expect(strips).toHaveCount(5)
+    for (const strip of await strips.all()) {
+      const inside = await strip.evaluate((el) => {
+        const s = el.getBoundingClientRect()
+        const w = el.querySelector('.sub-sample')!.getBoundingClientRect()
+        return w.left >= s.left && w.right <= s.right && w.top >= s.top && w.bottom <= s.bottom
+      })
+      expect(inside).toBe(true)
+    }
   } finally {
     await app.close()
   }

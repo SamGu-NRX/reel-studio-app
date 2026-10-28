@@ -1,4 +1,5 @@
 import type { ProjectJson } from '../../../../shared/api'
+import { SIZE_PER_EM } from '../../../../shared/caption-fit'
 import { CAPTION_PRESETS, applyPreset, lookFromStyle, presetOf, rowPosition } from '../../../../shared/caption-presets'
 import { SubtitleSample } from '../../components/Player'
 import { arrowPick, Segmented, tabStop } from '../../components/ui'
@@ -35,35 +36,43 @@ const positionKey = (st: Style): string => (Number(st.position ?? 0.75) < 0.69 ?
 const colorKey = (st: Style): string => COLORS.find((x) => x.color === String(st.color ?? '#FFFFFF').toUpperCase())?.key ?? ''
 const highlightKey = (st: Style): string => HIGHLIGHTS.find((x) => x.color === String(st.highlight).toUpperCase())?.key ?? ''
 
-const SWATCH_WIDTH = 56
 const LOOK_KEYS = CAPTION_PRESETS.map((p) => p.key)
+/** One word, the same in every look, so the rows differ only by the look. */
+const LOOK_WORD = 'Bread'
+/**
+ * All five looks drawn at one scale, the width of a reel at which Clean's subtitles are 18 px: Bold pop then reads
+ * bigger and Minimal smaller, as they are on the phone. At 18 px each, Bold pop would look like Clean.
+ */
+const LOOK_SCALE_WIDTH = (18 * SIZE_PER_EM * 1080) / Number(CAPTION_PRESETS[0].style.size)
 
-/** The looks to start from, each drawn on a small frame with two words of the reel. */
-function Looks({ value, text, onPick }: { value: string | null; text: string; onPick: (k: string) => void }) {
+/** The looks to start from, one row each: a word drawn in the look on a dark strip, and the look's name. */
+function Looks({ value, onPick }: { value: string | null; onPick: (k: string) => void }) {
   return (
-    <div className="swatches" role="radiogroup" aria-label="Look" data-testid="cap-look" onKeyDown={(e) => arrowPick(e, LOOK_KEYS, value, onPick)}>
+    <div className="looks" role="radiogroup" aria-label="Look" data-testid="cap-look" onKeyDown={(e) => arrowPick(e, LOOK_KEYS, value, onPick)}>
       {CAPTION_PRESETS.map((o) => (
         <button
           key={o.key}
+          type="button"
           role="radio"
           aria-checked={o.key === value}
           tabIndex={tabStop(o.key, value, LOOK_KEYS)}
           data-key={o.key}
-          className={`swatch${o.key === value ? ' on' : ''}`}
+          className={`look${o.key === value ? ' on' : ''}`}
           onClick={() => onPick(o.key)}
           data-testid={`cap-look-${o.key}`}
         >
-          <span className="swatch-frame">
-            <SubtitleSample look={{ ...lookFromStyle(o.style), position: 0.5 }} text={text} width={SWATCH_WIDTH} />
+          <span className="look-dot" aria-hidden />
+          <span className="look-strip" aria-hidden>
+            <SubtitleSample look={{ ...lookFromStyle(o.style), position: 0.5 }} text={LOOK_WORD} width={LOOK_SCALE_WIDTH} />
           </span>
-          <span className="swatch-label">{o.label}</span>
+          <span className="look-name">{o.label}</span>
         </button>
       ))}
     </div>
   )
 }
 
-export function SubtitlesTab({ now, change, next, sample }: TabProps & { sample: string }) {
+export function SubtitlesTab({ now, change, next }: TabProps) {
   const captions: Captions = now.p.captions ?? { enabled: true }
   const style = (captions.style ?? {}) as Style
   const set = (fn: (c: Captions) => Captions) => change(setP((p) => ({ captions: fn(p.captions ?? { enabled: true }) })))
@@ -80,8 +89,7 @@ export function SubtitlesTab({ now, change, next, sample }: TabProps & { sample:
         <div className="edit-stack" data-testid="caption-controls">
           <div className="edit-field">
             <span className="edit-label">Look</span>
-            {/* two words: a whole line shrinks to fit the small frame and can't be read */}
-            <Looks value={presetOf(style)} text={sample.split(' ').slice(0, 2).join(' ')} onPick={(k) => set((c) => ({ ...c, style: applyPreset(k, (c.style ?? {}) as Style) }))} />
+            <Looks value={presetOf(style)} onPick={(k) => set((c) => ({ ...c, style: applyPreset(k, (c.style ?? {}) as Style) }))} />
           </div>
           <div className="edit-field">
             <span className="edit-label">Size</span>
