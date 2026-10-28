@@ -456,6 +456,13 @@ input[type="checkbox"]:disabled { cursor: default; opacity: .45; }
 @media (hover: hover) and (pointer: fine) {
   input[type="checkbox"]:not(:checked, :disabled):hover, .pl-tick > input:not(:checked, :disabled):hover + span { box-shadow: inset 0 0 0 1.5px var(--ink-2); }
 }
+/* Windows high contrast drops the shadow that draws the box: a real checkbox goes back to the system's own, and a
+   tick's span draws its edge and fill in system colours */
+@media (forced-colors: active) {
+  input[type="checkbox"] { appearance: auto; }
+  .pl-tick > span { forced-color-adjust: none; border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
+  .pl-tick > input:checked + span { border-color: Highlight; background: Highlight; color: HighlightText; }
+}
 .toggle { display: flex; gap: 12px; align-items: center; cursor: pointer; font-weight: 600; min-height: 32px; }
 .slider { width: 100%; max-width: 420px; }
 .cover-img { width: 180px; border-radius: 12px; display: block; background: var(--sunk); aspect-ratio: 9/16; object-fit: cover; }
@@ -471,13 +478,17 @@ input[type="checkbox"]:disabled { cursor: default; opacity: .45; }
 .cover-frame:last-child { border-top-right-radius: var(--r-sm); border-bottom-right-radius: var(--r-sm); }
 .cover-frame img { width: 100%; height: 100%; object-fit: cover; display: block; animation: fade .2s ease-out both; }
 .cover-strip.flipped img, .edit-cover > img.mirrored { transform: scaleX(-1); }
-.cover-frame::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: inset 0 0 0 2px transparent; transition: box-shadow 120ms ease; }
+.cover-frame::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
 @media (hover: hover) and (pointer: fine) { .cover-frame:not(.on):hover::after { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .7); } }
 .cover-frame.on::after { box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 3.5px rgba(255, 255, 255, .85); }
 .cover-frame:focus-visible { z-index: 1; }
-html.kb .cover-frame::after { transition: none; }
-.cover-frame-wait { cursor: default; animation: cover-wait 1.4s ease-in-out infinite; }
-@keyframes cover-wait { 50% { opacity: .5; } }
+.cover-frame-wait { cursor: default; }
+/* the frames being looked for pulse; with reduced motion they sit still under the status line */
+@media (prefers-reduced-motion: no-preference) {
+  .cover-frame-wait { animation: cover-wait 1.4s ease-in-out infinite; }
+  @keyframes cover-wait { 50% { opacity: .5; } }
+}
+.cover-status { margin-bottom: 8px; }
 .cover-why { min-height: var(--lh-base); margin-top: 8px; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-2); }
 .cover-why b { color: var(--ink); font-weight: 640; margin-right: 4px; }
 

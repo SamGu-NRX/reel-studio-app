@@ -34,7 +34,7 @@ import { reel, userMessage } from '../../api'
 import { useNotify } from '../../App'
 import { Icon } from '../../components/icons'
 import { byKeyboard, reducedMotion } from '../../components/motion'
-import { arrowPick, IS_MAC, Segmented, tabStop } from '../../components/ui'
+import { IS_MAC, Segmented } from '../../components/ui'
 import { usePlayhead } from '../../components/playhead'
 import { fileTitle, setP, type TabProps } from './controls'
 import { useAudition } from './preview'
@@ -476,7 +476,6 @@ function SoundPicker({
 }) {
   const box = useRef<HTMLDivElement>(null)
   const kinds = JOBS.map((j) => ({ ...j, sounds: pack.filter((p) => p.kind === j.kind) })).filter((k) => k.sounds.length)
-  const kindKeys = kinds.map((k) => k.kind)
   const kindOf = (id: string) => pack.find((p) => p.id === id)!.kind
   const [pick, setPick] = useState(() => (pack.some((p) => p.id === firstChoice(moment.at)) ? firstChoice(moment.at) : pack[0].id))
   // the sound each kind's row stands for: its first, or the one last picked from its others
@@ -485,16 +484,14 @@ function SoundPicker({
   const hover = useRef<{ id: string; timer: number } | null>(null)
   const hovered = useRef(false)
   const soundOf = (kind: string) => chosen[kind] ?? kinds.find((k) => k.kind === kind)!.sounds[0].id
+  // picking only picks: the radio's click plays, and an arrow key that moves the pick clicks the radio too
   const pickKind = (kind: string) => {
-    const id = soundOf(kind)
-    setPick(id)
+    setPick(soundOf(kind))
     if (open !== kind) setOpen(null)
-    onPlay(id, 'pick')
   }
   const pickSound = (id: string) => {
     setChosen((c) => ({ ...c, [kindOf(id)]: id }))
     setPick(id)
-    onPlay(id, 'pick')
   }
   const rest = () => {
     if (hover.current) window.clearTimeout(hover.current.timer)
@@ -519,7 +516,7 @@ function SoundPicker({
   }
   useEffect(() => rest, [])
   useEffect(() => {
-    box.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')?.focus({ preventScroll: true })
+    box.current?.querySelector<HTMLElement>('input[type="radio"]:checked')?.focus({ preventScroll: true })
     box.current?.scrollIntoView({ block: 'nearest', behavior: reducedMotion() || byKeyboard() ? 'auto' : 'smooth' })
   }, [])
   const pickKey = kindOf(pick)
@@ -530,71 +527,64 @@ function SoundPicker({
       <p className="sfx-picker-h">
         At <span className="tnum">{clock(moment.t)}</span>, {why}
       </p>
-      {/* the arrow keys move between kinds only from a kind: inside a kind's others they move between its sounds */}
-      <div className="sfx-kinds" role="radiogroup" aria-label="Which sound" onKeyDown={(e) => (e.target as HTMLElement).matches('.sfx-kind-name') && arrowPick(e, kindKeys, pickKey, pickKind)}>
+      {/* Native radios, so each group is one Tab stop with the arrow keys inside it, and the disclosure and play
+          buttons beside them stay buttons. Picking by key or click plays the sound; clicking the picked one plays it
+          again. */}
+      <fieldset className="sfx-kinds">
+        <legend className="sr-only">Which sound</legend>
         {kinds.map((k) => {
           const on = k.kind === pickKey
           const id = soundOf(k.kind)
           return (
             <div key={k.kind} className={`sfx-kind${on ? ' on' : ''}`} data-testid="sfx-kind">
               <div className="sfx-kind-h">
-                <button
-                  role="radio"
-                  aria-checked={on}
-                  tabIndex={tabStop(k.kind, pickKey, kindKeys)}
-                  data-key={k.kind}
-                  className="sfx-kind-name"
-                  onClick={() => pickKind(k.kind)}
-                  data-testid={`sfx-kind-${k.kind}`}
-                >
+                <label className="sfx-kind-name">
+                  <input type="radio" name="sfx-kind" value={k.kind} checked={on} onChange={() => pickKind(k.kind)} onClick={() => onPlay(id, 'pick')} data-testid={`sfx-kind-${k.kind}`} />
                   <b>{k.name}</b> <span>{k.purpose}</span>
-                </button>
+                </label>
                 {on && k.sounds.length > 1 && (
                   <button className="btn ghost small sfx-others" aria-expanded={open === k.kind} aria-controls={`sfx-others-${k.kind}`} onClick={() => setOpen(open === k.kind ? null : k.kind)} data-testid="sfx-others">
                     {k.others}
                     <Icon name="chevron-down" size={12} stroke={2} className={open === k.kind ? 'open' : undefined} />
                   </button>
                 )}
-                {/* the keyboard hears a kind by picking it: one Tab stop for the list, not one per play button */}
-                <button className="icon-btn small" tabIndex={-1} aria-label={`${playing === id ? 'Stop' : 'Play'} ${k.name.toLowerCase()}, ${sfxName(id).variant}`} onClick={() => onPlay(id, 'button')}>
+                {/* the picked kind's button is a Tab stop, so the keyboard can stop what it plays; the others play by picking */}
+                <button
+                  className="icon-btn small"
+                  tabIndex={on ? 0 : -1}
+                  aria-label={`${playing === id ? 'Stop' : 'Play'} ${k.name.toLowerCase()}, ${sfxName(id).variant}`}
+                  onClick={() => onPlay(id, 'button')}
+                >
                   <Icon name={playing === id ? 'pause' : 'play'} size={12} stroke={2} />
                 </button>
               </div>
               {on && open === k.kind && (
-                <div
-                  id={`sfx-others-${k.kind}`}
-                  className="sfx-variants"
-                  role="radiogroup"
-                  aria-label={`Which ${k.name.toLowerCase()}`}
-                  onKeyDown={(e) => arrowPick(e, k.sounds.map((p) => p.id), pick, pickSound)}
-                  onPointerLeave={leave}
-                >
+                <fieldset id={`sfx-others-${k.kind}`} className="sfx-variants" onPointerLeave={leave}>
+                  <legend className="sr-only">Which {k.name.toLowerCase()}</legend>
                   {k.sounds.map((p) => (
-                    <button
-                      key={p.id}
-                      role="radio"
-                      aria-checked={pick === p.id}
-                      tabIndex={tabStop(p.id, pick, k.sounds.map((x) => x.id))}
-                      data-key={p.id}
-                      className={`sfx-variant${pick === p.id ? ' on' : ''}`}
-                      onClick={() => {
-                        rest()
-                        hovered.current = false
-                        pickSound(p.id)
-                      }}
-                      onPointerMove={() => pointAt(p.id)}
-                      onPointerLeave={rest}
-                      data-testid={`sfx-choice-${p.id}`}
-                    >
+                    <label key={p.id} className={`sfx-variant${pick === p.id ? ' on' : ''}`} onPointerMove={() => pointAt(p.id)} onPointerLeave={rest}>
+                      <input
+                        type="radio"
+                        name={`sfx-${k.kind}`}
+                        value={p.id}
+                        checked={pick === p.id}
+                        onChange={() => pickSound(p.id)}
+                        onClick={() => {
+                          rest()
+                          hovered.current = false
+                          onPlay(p.id, 'pick')
+                        }}
+                        data-testid={`sfx-choice-${p.id}`}
+                      />
                       {sfxName(p.id).variant}
-                    </button>
+                    </label>
                   ))}
-                </div>
+                </fieldset>
               )}
             </div>
           )
         })}
-      </div>
+      </fieldset>
       {near && (
         <p className="edit-row-sub warn">
           {near.title} is less than 2 seconds away. Only one sound plays in 2 seconds, so one of them will be left out.

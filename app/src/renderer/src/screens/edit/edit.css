@@ -93,34 +93,36 @@ html.kb .picture-row { transition: none; }
 @starting-style { .sfx-picker { opacity: 0; transform: translateY(-4px) scale(.98); } }
 html.kb .sfx-picker { transition: none; }
 .sfx-picker-h { color: var(--ink-2); font-size: var(--fs-sm); line-height: var(--lh-sm); }
-/* One row per kind, hairlines between; the picked kind has the soft wash a selected row has everywhere, and its
-   other sounds open inside that wash, the chosen one on the segmented control's lifted thumb. */
-.sfx-kinds { display: flex; flex-direction: column; margin: 0 -6px; }
+/* One row per kind, hairlines between; the picked kind has the soft wash a selected row has everywhere (the same
+   150 ms colour change as .sfx-row), and its other sounds open inside that wash, the chosen one on the segmented
+   control's lifted thumb. Each choice is a native radio laid unseen over its label, which shows its focus. */
+.sfx-kinds { border: 0; padding: 0; margin: 0 -6px; min-width: 0; display: flex; flex-direction: column; }
 .sfx-kind { border-radius: var(--r-sm); padding: 0 2px 0 8px; transition: background-color 150ms ease; }
 .sfx-kind + .sfx-kind { box-shadow: inset 0 1px 0 var(--line); }
 .sfx-kind.on, .sfx-kind.on + .sfx-kind { box-shadow: none; }
 .sfx-kind.on { background: var(--wash); }
 .sfx-kind-h { display: flex; align-items: center; gap: 4px; min-height: 36px; }
 .sfx-kind-name {
-  flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: baseline; gap: 6px; border: 0; background: none; padding: 9px 0; margin: 0;
-  font: inherit; text-align: left; color: var(--ink); cursor: pointer; border-radius: 4px;
-  /* the arrow keys move focus along the rows: the sticky footer never covers the focused one */
+  position: relative; flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: baseline; gap: 6px; padding: 9px 0;
+  color: var(--ink); cursor: pointer; border-radius: 4px;
+  /* the arrow keys move the pick along the rows: the sticky footer never covers the picked one */
   scroll-margin-bottom: 64px;
 }
 .sfx-kind-name b { font-weight: 620; flex: none; }
 .sfx-kind-name span { color: var(--ink-3); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.sfx-kind-name, .sfx-variant) > input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+:is(.sfx-kind-name, .sfx-variant):has(> input:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
 .sfx-others .icon { transition: transform 150ms cubic-bezier(.2, .8, .2, 1); }
 .sfx-others .icon.open { transform: rotate(180deg); }
-.sfx-variants { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 0 8px; margin-left: -10px; }
+.sfx-variants { border: 0; padding: 0 0 8px; margin: 0 0 0 -10px; min-width: 0; display: flex; flex-wrap: wrap; gap: 2px; }
 .sfx-variant {
-  height: 28px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; font: inherit; font-size: var(--fs-sm); font-weight: 520;
-  color: var(--ink-2); cursor: pointer; scroll-margin-bottom: 64px;
-  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  position: relative; display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px;
+  font-size: var(--fs-sm); font-weight: 520; color: var(--ink-2); cursor: pointer; scroll-margin-bottom: 64px;
 }
 .sfx-variant.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(22, 30, 26, .12), 0 0 0 .5px rgba(22, 30, 26, .08); }
 @media (hover: hover) and (pointer: fine) { .sfx-variant:not(.on):hover { color: var(--ink); } }
-html.kb :is(.sfx-kind, .sfx-variant, .sfx-others .icon) { transition: none; }
-html.kb :is(.sfx-kind-name, .sfx-variant, .sfx-name):focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+html.kb :is(.sfx-kind, .sfx-others .icon) { transition: none; }
+html.kb .sfx-name:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 /* Add stays in reach while the person listens down the list: the footer sticks to the panel's bottom edge. */
 .sfx-picker-f {
   position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 6px;
@@ -144,16 +146,15 @@ html.kb .library-pick:active { transform: none; }
   display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 4px; margin: 0 -4px; border: 0; border-radius: var(--r-sm);
   background: none; font: inherit; text-align: left; color: var(--ink-2); cursor: pointer;
 }
-.look-dot { width: 16px; height: 16px; flex: none; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--ink-4); transition: box-shadow 120ms ease; }
+.look-dot { width: 16px; height: 16px; flex: none; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--ink-3); }
 .look.on .look-dot { box-shadow: inset 0 0 0 5px var(--ink); }
 .look-strip { position: relative; flex: none; width: 168px; height: 36px; border-radius: 6px; overflow: hidden; background: linear-gradient(170deg, #8a8178, #4a433d 70%); }
 .look-name { flex: 1; min-width: 0; font-weight: 560; }
 .look.on .look-name { color: var(--ink); }
 @media (hover: hover) and (pointer: fine) {
   .look:not(.on):hover .look-name { color: var(--ink); }
-  .look:not(.on):hover .look-dot { box-shadow: inset 0 0 0 1.5px var(--ink-3); }
+  .look:not(.on):hover .look-dot { box-shadow: inset 0 0 0 1.5px var(--ink-2); }
 }
-html.kb .look-dot { transition: none; }
 
 /* What happens to the edit while the editor is busy, then the footer: "2 changes · Undo · Make Version 5". */
 .edit-wait { flex: none; color: var(--ink-3); font-size: var(--fs-sm); line-height: var(--lh-sm); padding: 8px 0 0; }

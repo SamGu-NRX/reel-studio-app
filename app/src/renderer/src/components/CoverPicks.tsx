@@ -70,13 +70,15 @@ export function CoverPicks({
         {picks?.length !== 0 && <p className="muted-sm">The moments where your face is clearest. Pick one, or choose any moment below.</p>}
       </div>
       {picks === null ? (
-        <div className="cover-strip" aria-busy="true" data-testid="cover-picks-loading">
-          <p className="sr-only" role="status">
+        <div>
+          <p className="muted-sm cover-status" role="status">
             Looking through your video
           </p>
-          {Array.from({ length: waiting }, (_, i) => (
-            <span key={i} className="cover-frame cover-frame-wait" />
-          ))}
+          <div className="cover-strip" aria-busy="true" data-testid="cover-picks-loading">
+            {Array.from({ length: waiting }, (_, i) => (
+              <span key={i} className="cover-frame cover-frame-wait" />
+            ))}
+          </div>
         </div>
       ) : picks.length === 0 ? (
         <p className="muted-sm" data-testid="cover-picks-none">
