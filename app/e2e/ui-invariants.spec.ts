@@ -201,7 +201,14 @@ async function act(page: Page, app: ElectronApplication, action: Action, random:
     }
     const menu = await click(root.getByTestId('moment-suggest').locator('xpath=following-sibling::button[1]'))
     if (menu !== 'clicked') return menu
-    return click(root.getByTestId('point-at-spot'))
+    // the menu renders after the click: wait for its item, and close a menu whose item never came, so a walk never
+    // leaves it open over the notes
+    const item = root.getByTestId('point-at-spot')
+    if (!(await item.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false))) {
+      await page.keyboard.press('Escape')
+      return 'skipped: the menu showed no Point at a spot'
+    }
+    return click(item)
   }
   if (action === 'compare') {
     if (await root.getByTestId('done-compare').count()) return click(root.getByTestId('done-compare'))

@@ -21,7 +21,7 @@ test('installed app: the Claude choice, in this computer\'s real state', async (
     if (EXE) expect(info.engine.mode).toBe('real')
     expect(info.ai).toBe('package')
     // one build: no flavour field, just these
-    expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'fasterExports', 'firstRunAgain', 'firstRunDone', 'footageIndex', 'models', 'phoneView', 'platform', 'root', 'rootDisplay', 'sharing', 'soundEffects', 'test', 'userName', 'version'])
+    expect(Object.keys(info).sort()).toEqual(['ai', 'dev', 'engine', 'fasterExports', 'firstRunAgain', 'firstRunDone', 'footageIndex', 'models', 'phoneView', 'platform', 'root', 'rootDisplay', 'sharing', 'soundEffects', 'test', 'timeline', 'userName', 'version'])
 
     const providers = (await page.evaluate(() => (window as any).reel.ai.providers())) as { id: string; label: string; detail?: string }[]
     expect(providers.map((p) => p.id)).toEqual(['claude', 'claude-cli', 'codex-cli', 'none'])
