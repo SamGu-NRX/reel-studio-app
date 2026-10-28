@@ -133,10 +133,13 @@ html.kb .rrow .hit:focus-visible { outline: 2px solid var(--ink); outline-offset
 }
 .rrow .card-act { position: relative; z-index: 4; }
 
+/* From the keyboard, and with reduced motion, a picture doesn't move or change size; the hover wash stays. */
 html.kb .rcard .im, html.kb .rrow .rthumb { transition: none; }
+html.kb :is(.rcard .hit:active ~ .im, .rrow .hit:active ~ .rthumb) { transform: none; }
 @media (prefers-reduced-motion: reduce) {
   .rcard .im, .rrow .rthumb { transition: none; }
   .rcard .pb i, .rrow .pb i { transition: none; }
+  .rcard:hover .im, .rcard .hit:active ~ .im, .rrow .hit:active ~ .rthumb { transform: none; }
 }
 
 /* No reels yet: the sample, and one invitation */
