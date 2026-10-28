@@ -45,6 +45,7 @@
 /* Cmd/Ctrl+Shift+\ focuses it (Sidebar.tsx); Chromium may not count that chord for :focus-visible, so keyboard mode shows it too */
 .side-resize:focus-visible::after, html.kb .side-resize:focus::after, html.side-resizing .side-resize::after { opacity: 1; }
 .side-resize:focus-visible, html.kb .side-resize:focus { outline: 2px solid var(--ink); outline-offset: -2px; }
+html.kb .side-resize::after { transition: none; }
 .rail .side-resize { display: none; }
 html.side-resizing, html.side-resizing * { cursor: col-resize !important; user-select: none; }
 
