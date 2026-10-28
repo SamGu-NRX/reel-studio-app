@@ -29,8 +29,9 @@ html.kb :is(.tpill, .transport .speed, .stage-dock .pp, .stage-dock .speed):acti
   .transport .speed.on { min-width: 28px; padding: 0 4px; }
   .transport .icon-btn { width: 28px; height: 28px; }
   .transport .segmented > button { padding: 0 8px; }
-  /* with Show Timeline's button in the row too (timeline-legible), 10 px gaps ran 19 px past a 418 px row */
-  .tr-row { gap: 6px; }
+  /* with Show Timeline's button in the row too (timeline-legible), 10 px gaps ran 19 px past a 418 px row.
+     Two classes: reel.css's .tr-row loads after this file and would win a tie. */
+  .transport .tr-row { gap: 6px; }
 }
 @container transport (max-width: 400px) {
   .transport .tc > span { display: none; }
