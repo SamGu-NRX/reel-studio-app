@@ -98,7 +98,7 @@ import { clearEngineCache, engineCacheSize } from './engine-cache'
 import { createPidRegistry } from './orphans'
 import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
-import { createVendorConnect, type CliStatus, type VendorConnect } from './vendor-connect'
+import { claudeCheckWords, createVendorConnect, type CliStatus, type VendorConnect } from './vendor-connect'
 import { runInstall, runLogin, testVendorEnv, testVendorLoginEnv, type Vendor } from './vendor-setup'
 import { withUserPathKept } from './user-path'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
@@ -1338,7 +1338,20 @@ function createVendors(): VendorConnect {
     },
     login: (v, bin, signal) =>
       mock ? mock.login(v, signal) : runLogin({ vendor: v, bin, env: TEST_LOGIN_ENV ?? process.env, platform: process.platform, signal, systemRoot: process.env.SystemRoot }),
-    select: (v) => ai.setActive(v === 'claude' ? 'claude-cli' : 'codex-cli'),
+    // Choosing Claude first sends it one short message (ai setActive); Cancel stops that too. The sidebar's editor
+    // line follows like every other change of editor (changesAI).
+    select: async (v, signal) => {
+      const stop = (): void => void ai.cancelCheck?.()
+      signal.addEventListener('abort', stop, { once: true })
+      try {
+        await ai.setActive(v === 'claude' ? 'claude-cli' : 'codex-cli')
+      } catch (e) {
+        throw signal.aborted || v !== 'claude' ? e : { code: 'CHECK_FAILED', userMessage: claudeCheckWords(e, process.platform) }
+      } finally {
+        signal.removeEventListener('abort', stop)
+        ai.active().then((p) => broadcast('ai:change', p), () => {})
+      }
+    },
     emit: (i) => broadcast('ai:vendor', i),
     log
   })

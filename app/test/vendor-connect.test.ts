@@ -358,6 +358,35 @@ describe('Connect: install if missing, sign in, check, choose', () => {
     expect(f.counts().logins).toBe(1)
   })
 
+  // On beta, choosing Claude sends it one short message first (ai index.ts setActive), which can fail or be cancelled.
+  it('fails if a choice the AI refuses reads as an unfinished sign-in instead of saying why', async () => {
+    const seen: VendorInfo[] = []
+    const vc = createVendorConnect({
+      status: async () => ready,
+      install: async () => undefined,
+      login: async () => ({ code: 0 }),
+      select: async () => { throw { code: 'cli_limited', userMessage: 'Your Claude plan is at its limit. Try again after it resets.' } },
+      emit: (i) => void seen.push(i)
+    })
+    expect(await vc.connect('claude')).toMatchObject({ step: 'failed', problem: 'sign_in_failed', message: 'Your Claude plan is at its limit. Try again after it resets.' })
+  })
+
+  it('fails if Cancel during that first message leaves it running or reads as a failure', async () => {
+    let stopped = false
+    const vc = createVendorConnect({
+      status: async () => ready,
+      install: async () => undefined,
+      login: async () => ({ code: 0 }),
+      select: (_v, signal) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => { stopped = true; reject({ code: 'cancelled' }) })),
+      emit: () => undefined
+    })
+    const p = vc.connect('claude')
+    await new Promise((r) => setTimeout(r, 5))
+    vc.cancel('claude')
+    expect(await p).toMatchObject({ step: 'idle', problem: 'cancelled' })
+    expect(stopped).toBe(true)
+  })
+
   it('the old in-app ChatGPT sign-in was retired: the ChatGPT card says why, until it is connected', async () => {
     const f = flow({ states: [{ state: 'missing', chatgptMoved: true }] })
     expect(await f.vc.status('chatgpt')).toMatchObject({ step: 'idle', message: MOVED_NOTE })

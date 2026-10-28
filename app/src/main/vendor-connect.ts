@@ -17,8 +17,9 @@ export interface VendorDeps {
   status(v: Vendor): Promise<CliStatus>
   install(v: Vendor, signal: AbortSignal): Promise<void>
   login(v: Vendor, bin: string, signal: AbortSignal): Promise<LoginResult>
-  /** makes it the AI editor (ai.setActive) */
-  select(v: Vendor): Promise<void>
+  /** makes it the AI editor (ai.setActive). It may first check the app answers, so it can fail with plain words
+   * (`userMessage`) and stops on `signal`. */
+  select(v: Vendor, signal: AbortSignal): Promise<void>
   emit(info: VendorInfo): void
   log?(line: string): void
   /** how long a sign-in may wait in the browser (default 10 minutes) */
@@ -35,6 +36,23 @@ export const VENDOR_MESSAGES: Record<Exclude<VendorProblem, 'install_failed' | '
   sign_in_timeout: () => "We stopped waiting for the sign-in. Try again when you're ready.",
   port_busy: () => 'Another ChatGPT sign-in is already open. Close it and try again.',
   free_plan: () => "You're signed in, but your Claude plan doesn't include the Claude Code app. It needs Claude Pro or Max."
+}
+
+/** Choosing Claude sends it one short message first (ai index.ts setActive): why that failed, in plain words. */
+export function claudeCheckWords(e: unknown, platform: NodeJS.Platform): string {
+  const x = (e ?? {}) as { code?: unknown; userMessage?: unknown }
+  switch (x.code) {
+    case 'cli_limited':
+      return 'Your Claude plan is at its limit. Try again after it resets.'
+    case 'cli_timeout':
+      return "Claude took too long to answer. Check you're online, then try again."
+    case 'cli_error':
+      return "Claude didn't answer. Open your Claude Code app once to check it works, then try again."
+    case 'cli_missing':
+      return `The Claude Code app isn't on ${platform === 'darwin' ? 'this Mac' : 'this PC'} any more.`
+    default:
+      return typeof x.userMessage === 'string' && x.userMessage ? x.userMessage : VENDOR_MESSAGES.sign_in_failed('claude')
+  }
 }
 
 export const MOVED_NOTE = "ChatGPT now connects through OpenAI's Codex app. Click Connect ChatGPT once."
@@ -111,7 +129,13 @@ export function createVendorConnect(deps: VendorDeps) {
     if (st.state !== 'ready') return fail(v, st, 'sign_in_failed', VENDOR_MESSAGES.sign_in_failed(v))
     // Anthropic's own page already stops a free account (it never comes back); this catches a plan it lets through.
     if (v === 'claude' && st.plan?.toLowerCase() === 'free') return fail(v, st, 'free_plan', VENDOR_MESSAGES.free_plan(v))
-    await deps.select(v)
+    try {
+      await deps.select(v, signal)
+    } catch (e) {
+      if (signal.aborted) return emit(info(v, st, 'idle', { problem: 'cancelled' }))
+      const said = (e as { userMessage?: unknown } | null)?.userMessage
+      return fail(v, st, 'sign_in_failed', typeof said === 'string' && said ? said : VENDOR_MESSAGES.sign_in_failed(v))
+    }
     return emit(info(v, st, 'done'))
   }
 
