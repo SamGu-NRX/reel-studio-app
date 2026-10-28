@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { ProviderInfo } from '../../../shared/api'
 import type { Go } from '../nav'
-import { reel } from '../api'
 import { Icon, type IconName } from './icons'
 import { UpdateButton } from './UpdateButton'
 import { byKeyboard, reducedMotion } from './motion'
@@ -12,7 +11,16 @@ import './shell.css'
 const RAIL_KEY = 'rs.sidebar-rail'
 const WIDTH_KEY = 'rs.sidebar-width'
 const RAIL_W = 64
+const RESIZE_KEYS = IS_MAC ? 'Meta+Shift+\\' : 'Control+Shift+\\'
+/** The page's and the title row's slide when the sidebar folds, so a second fold can stop it before measuring. */
+const slides = new WeakMap<HTMLElement, Animation>()
+/** The sidebar toggle in the title row: where focus goes when the resize edge it was on is hidden or has nowhere to return. */
+const sidebarToggle = (): HTMLElement | null => document.querySelector<HTMLElement>('.titlebar .sbt')
+/** Shift+\: matched by the character it types, or by the key's place when a layout types something else there. */
+const isResizeChord = (e: KeyboardEvent): boolean =>
+  (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === '\\' || e.key === '|' || e.code === 'Backslash')
 
+// Insights is always here, so analytics have one place to live before any reel is posted (spec.md section 9).
 const NAV: { key: 'home' | 'library' | 'style' | 'insights'; label: string; icon: IconName }[] = [
   { key: 'home', label: 'Reels', icon: 'film' },
   { key: 'library', label: 'Library', icon: 'folder' },
@@ -35,7 +43,10 @@ export function useRail(): [boolean, (byShortcut?: boolean) => void] {
   const [rail, setRail] = useState(() => localStorage.getItem(RAIL_KEY) === '1')
   // byKeyboard() does not count Cmd/Ctrl shortcuts (motion.ts), so the shortcut says so itself
   const toggle = useCallback((byShortcut = false) => {
+    // folding hides the resize edge: focus on it moves to the toggle first, so it isn't left on nothing
+    if (document.activeElement?.classList.contains('side-resize')) sidebarToggle()?.focus()
     const moving = Array.from(document.querySelectorAll<HTMLElement>('.main, .tb-main'))
+    // where each is on screen now, partway through a slide included
     const before = moving.map((el) => el.getBoundingClientRect().left)
     const instant = byShortcut || byKeyboard() || reducedMotion()
     document.documentElement.classList.toggle('rail-instant', instant)
@@ -44,19 +55,22 @@ export function useRail(): [boolean, (byShortcut?: boolean) => void] {
       return !r
     })
     if (instant) {
+      moving.forEach((el) => slides.get(el)?.cancel())
       requestAnimationFrame(() => document.documentElement.classList.remove('rail-instant'))
       return
     }
     requestAnimationFrame(() =>
       moving.forEach((el, i) => {
+        // a slide still running would be measured as part of the new place: stop it, then slide from where it was
+        slides.get(el)?.cancel()
         const dx = before[i] - el.getBoundingClientRect().left
-        el.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 200, easing: 'cubic-bezier(.23, 1, .32, 1)' })
+        slides.set(el, el.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 200, easing: 'cubic-bezier(.23, 1, .32, 1)' }))
       })
     )
   }, [])
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === '\\') {
         e.preventDefault()
         toggle(true)
       }
@@ -74,9 +88,32 @@ function applyWidth(w: number): void {
   root.setProperty('--rail-scale', String(RAIL_W / w))
 }
 
-/** Drag the sidebar's edge (or use the arrow keys on it) between 232 and 360 px; a double-click goes back to 248. */
+/**
+ * Drag the sidebar's edge between 232 and 360 px; a double-click goes back to 248. It is out of the Tab order, so Tab
+ * goes from the account row to the screen (audit-1028 finding 24). Cmd/Ctrl+Shift+\ focuses it from anywhere; then
+ * the arrow keys, Home and End size the sidebar and Esc goes back to where you were.
+ */
 function SideResizer() {
   const [width, setWidth] = useState(() => sideWidth(localStorage.getItem(WIDTH_KEY)))
+  const edge = useRef<HTMLDivElement>(null)
+  const back = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (!isResizeChord(e)) return
+      const el = edge.current
+      // folded to the rail, the edge is hidden: there is no width to set
+      if (!el || el.offsetParent === null) return
+      e.preventDefault()
+      // pressed again on the edge, Esc still goes back to where the first press came from
+      if (document.activeElement !== el) back.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      // Chromium doesn't count a Cmd/Ctrl chord as keyboard use, so :focus-visible may not match; shell.css shows the
+      // edge's focus under html.kb, which motion.ts clears on the next pointer press
+      document.documentElement.classList.add('kb')
+      el.focus()
+    }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [])
   useEffect(() => applyWidth(width), [width])
   const commit = (w: number) => {
     setWidth(w)
@@ -107,7 +144,11 @@ function SideResizer() {
   }
   const key = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     const step = e.key === 'ArrowLeft' ? -8 : e.key === 'ArrowRight' ? 8 : 0
-    if (e.key === 'Home') commit(SIDE.min)
+    if (e.key === 'Escape') {
+      back.current?.focus()
+      // gone, hidden or not focusable: the toggle, so focus never stays on the edge
+      if (document.activeElement === e.currentTarget) sidebarToggle()?.focus()
+    } else if (e.key === 'Home') commit(SIDE.min)
     else if (e.key === 'End') commit(SIDE.max)
     else if (step) commit(sideWidth(width + step))
     else return
@@ -119,25 +160,20 @@ function SideResizer() {
       role="separator"
       aria-orientation="vertical"
       aria-label="Sidebar width"
+      aria-controls="sidebar"
       aria-valuenow={width}
       aria-valuemin={SIDE.min}
       aria-valuemax={SIDE.max}
-      tabIndex={0}
+      tabIndex={-1}
+      aria-keyshortcuts={RESIZE_KEYS}
+      title={`Drag to change the sidebar’s width, or press ${IS_MAC ? '⌘⇧\\' : 'Ctrl+Shift+\\'} and use the arrow keys`}
+      ref={edge}
       onPointerDown={down}
       onKeyDown={key}
       onDoubleClick={() => commit(SIDE.default)}
       data-testid="sidebar-resize"
     />
   )
-}
-
-/** Insights joins the sidebar once a reel has been posted (ux-foundation-b.md section 6). Read again on every screen change. */
-function usePosted(section: string): boolean {
-  const [posted, setPosted] = useState(false)
-  useEffect(() => {
-    reel.projects.list().then((reels) => setPosted(reels.some((r) => r.posted)), () => {})
-  }, [section])
-  return posted
 }
 
 export function Sidebar({
@@ -153,7 +189,6 @@ export function Sidebar({
   userName: string | null
   onNewReel: () => void
 }) {
-  const posted = usePosted(section)
   const name = providerName(provider)
   const who = userName?.trim() || 'You'
   const inSettings = section === 'settings'
@@ -170,7 +205,7 @@ export function Sidebar({
           <Icon name="plus" size={16} stroke={1.75} />
           <span className="lbl">New reel</span>
         </button>
-        {NAV.filter((n) => n.key !== 'insights' || posted).map((n) => (
+        {NAV.map((n) => (
           <button
             key={n.key}
             className={section === n.key ? 'on' : undefined}

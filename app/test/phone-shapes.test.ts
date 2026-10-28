@@ -47,4 +47,14 @@ describe('phone shapes', () => {
       expect(trim(id).sides).toBeGreaterThan(0.03)
     }
   })
+
+  // fails if the shape menu writes a phone height first ("16:9"), which reads as a landscape phone, or names a
+  // proportion the drawn screen doesn't have
+  it("writes each shape's proportion width first, matching its screen", () => {
+    for (const s of SHAPES) {
+      const [w, h] = s.ratio.split(':').map(Number)
+      expect(w, s.label).toBeLessThan(h)
+      expect(w / h, s.label).toBeCloseTo(s.w / s.h, 2)
+    }
+  })
 })

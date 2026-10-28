@@ -12,7 +12,7 @@ import { Icon } from '../components/icons'
 import { useUpdateState } from '../components/update'
 import { UpdateSettingsRow, WhatsNew } from '../components/UpdateSettings'
 import { useNotify } from '../App'
-import { Models, Privacy } from '../components/ModelsAndPrivacy'
+import { CHECKS_NOTE, Models, Privacy } from '../components/ModelsAndPrivacy'
 import { TitleBarSlot } from '../components/titlebar'
 import { findSettings, SECTIONS, SETTING_IDS, SETTINGS, type SectionId, type SettingId } from '../components/settings-index'
 import { Marked, SearchHits, SearchScope, SettingRow, Switch, useShown } from '../components/settings-rows'
@@ -210,7 +210,7 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
               {checkEdits !== null && (
                 <SettingRow
                   id="check-edits"
-                  line="After each note, your editor looks at the change again and fixes what it missed. Notes take longer and use more of your AI plan."
+                  line={`${CHECKS_NOTE} before you see it, and your editor fixes what the check finds. Notes take longer and use more of your AI plan.`}
                   control={<Switch on={checkEdits} disabled={savingChecks} labelledBy="set-check-edits" onToggle={() => void toggleCheckEdits()} testid="check-edits" />}
                 />
               )}
@@ -334,6 +334,8 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
               <Subhead ids={['own-server', 'api-key']}>Other editors</Subhead>
               <Connections onConnected={setActive} />
               <AnthropicKey active={active} onConnected={setActive} />
+              {/* the keys let your editor search for pictures; they are not editors (audit-1028 finding 16) */}
+              <Subhead ids={['stock-keys']}>Stock photos and footage</Subhead>
               <StockKeys />
               <Subhead ids={['engine-cache', 'logs', 'first-run']}>Troubleshooting</Subhead>
               <CacheRow onError={(m) => notify(m, 'error')} />

@@ -54,7 +54,7 @@ test('fails if Stop during a two-platform export leaves files, says "Stopped.", 
     await expect(platforms.getByRole('checkbox', { name: 'Instagram Reels' })).toBeChecked()
 
     // No editor: the app picks the cover, and nothing on the section speaks as "I".
-    await expect(platforms.getByTestId('try-two-proposal')).toHaveText(/^Try 2 uses another cover: the frame at 0:0\d\.$/)
+    await expect(platforms.getByTestId('try-two-proposal')).toHaveText(/^Try 2: the same reel, with the 0:0\d frame as its cover\.$/)
     await expect(platforms.getByRole('radiogroup', { name: 'What Try 2 changes' })).toHaveCount(0)
     await expect(platforms.getByTestId('try-two')).not.toContainText(/\bI\b/)
 

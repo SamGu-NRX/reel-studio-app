@@ -7,7 +7,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun, startReel } from './helpers'
+import { BASE, launch, makeMedia, makeReel, passFirstRun, startReel } from './helpers'
 
 function profile(name: string) {
   const dir = mkdtempSync(join(BASE, `${name}-`))
@@ -99,18 +99,57 @@ test('a video with no sound says so where the video would be, and another video 
 
     await page.getByTestId('nav-home').click()
     await expect(card(page)).toHaveAttribute('data-state', 'failed')
-    // the card shows the file's first frame, not a blank gradient
-    await expect(page.locator('.rcard .im img')).toHaveJSProperty('naturalWidth', 320)
+    // its row in Needs you shows the file's first frame, not a blank gradient
+    await expect(page.locator('.rrow .rthumb img')).toHaveJSProperty('naturalWidth', 320)
     await expect(page.getByRole('button', { name: /^Try again:/ })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /^Choose another video:/ })).toBeVisible()
     // its pill takes another video into the same reel, which starts again
-    await page.locator('.rcard').getByTestId('file-input').setInputFiles([media.video])
+    await page.locator('.rrow').getByTestId('file-input').setInputFiles([media.video])
     await expect(card(page)).toHaveAttribute('data-state', 'making')
     await expect(card(page)).toHaveCount(1)
     await card(page).click()
     await expect(page.locator('.reel-page')).toHaveAttribute('data-slug', slug!)
     await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 240_000 })
     await expect(page.getByTestId('chat')).toContainText('Your video, my first take.mp4')
+  } finally {
+    await app.close()
+  }
+})
+
+// fails if Needs you or Making go back to full-size cards, the Making row stops naming its step, or Recent's cards stop
+// growing with the window (audit-1028 finding 19)
+test('stuck and running reels are short rows, the Making row names its step, and Recent cards grow with the window', async () => {
+  test.setTimeout(8 * 60_000)
+  const media = makeMedia()
+  const { app, page } = await launch(profile('rows'))
+  const slow = (seconds: string) => app.evaluate((_e, s) => void (process.env.FAKE_ENGINE_SLOW = s), seconds)
+  try {
+    await passFirstRun(page)
+    await makeReel(page, media.video)
+    // one the person paused (Needs you), one still listening (Making)
+    await slow('60')
+    await startReel(page, media.video)
+    await page.getByTestId('stop').click()
+    await expect(page.getByTestId('first-paused')).toBeVisible({ timeout: 60_000 })
+    await slow('600')
+    await startReel(page, media.video)
+    await page.getByTestId('nav-home').click()
+
+    for (const name of ['Needs you', 'Making']) {
+      const row = section(page, name).locator('[data-slug]')
+      await expect(row).toHaveCount(1)
+      // a card here was 145 x 257 plus its words; a row is a 40 px picture beside one line
+      const box = (await row.boundingBox())!
+      expect(box.height, `${name}: a row, not a card`).toBeLessThan(100)
+      expect((await row.locator('.rthumb').boundingBox())!.width).toBeLessThanOrEqual(40)
+    }
+    await expect(section(page, 'Making').getByTestId('card-status')).toHaveText(/^Making Version 1 · .*Listening to your video$/)
+    await expect(section(page, 'Needs you').getByRole('button', { name: /^Resume:/ })).toBeVisible()
+
+    // the page is 1280 wide: Recent's card takes a column at least 168 px wide, not 140
+    const recent = section(page, 'Recent').locator('.rcard')
+    await expect(recent).toHaveCount(1)
+    expect((await recent.boundingBox())!.width).toBeGreaterThanOrEqual(168)
   } finally {
     await app.close()
   }

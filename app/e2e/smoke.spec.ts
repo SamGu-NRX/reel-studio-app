@@ -49,9 +49,6 @@ test('make a reel end to end', async () => {
   await expect(page.getByTestId('project-card')).toHaveCount(0)
   await shot(page, '04-home')
 
-  // nothing posted yet, so no Insights in the sidebar
-  await expect(page.getByTestId('nav-insights')).toHaveCount(0)
-
   // ---- library: add a song, a picture and a file it cannot use ----
   await page.getByTestId('nav-library').click()
   await page.getByTestId('file-input').setInputFiles([media.song, media.picture, media.doc])

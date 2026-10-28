@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectSummary } from '../src/shared/api'
-import { activity, stateOf } from '../src/renderer/src/screens/home-state'
+import { activity, stateOf, stepWords } from '../src/renderer/src/screens/home-state'
 
 const now = new Date('2026-10-23T12:00:00Z')
 const reel = (slug: string, over: Partial<ProjectSummary> = {}): ProjectSummary => ({
@@ -54,5 +54,21 @@ describe('Activity on Reels (ux-foundation-b.md 3.4)', () => {
   it('reads a planned reel as waiting for its video whatever app.json says', () => {
     expect(stateOf(reel('x', { noVideo: true, status: 'interrupted' }))).toBe('novideo')
     expect(stateOf(reel('x', { status: 'new' }))).toBe('making')
+  })
+})
+
+describe("the Making row's step (Home.tsx Row)", () => {
+  const steps = [
+    { id: 'copy' as const, state: 'done' as const },
+    { id: 'listen' as const, state: 'done' as const },
+    { id: 'edit' as const, state: 'now' as const }
+  ]
+  // fails if the row names a step the Reel screen's strip doesn't: the strip names the wait while the editor is
+  // waited on, and what a note's job says it is doing (Composer.tsx)
+  it('names the current step, the editor wait, or a note job\'s own words, as the strip does', () => {
+    expect(stepWords({ message: 'Picking takes', waiting: false, steps })).toBe('Picking takes and pictures')
+    expect(stepWords({ message: 'Waiting for Claude', waiting: true, steps })).toBe('Waiting for Claude')
+    expect(stepWords({ message: 'Double-checking your change', waiting: false })).toBe('Double-checking your change')
+    expect(stepWords({ message: ' ', waiting: false })).toBeNull()
   })
 })

@@ -466,8 +466,9 @@ export function Outs({
                 </p>
                 <p className="muted-sm">{NEVER_SHARED}</p>
                 <div className="sp-help-b">
-                  <button type="button" className="btn small" onClick={() => answer(false)} data-testid="help-no">Don’t share</button>
-                  <button type="button" className="btn small" onClick={() => answer(true)} data-testid="help-yes">Share</button>
+                  {/* "data", not "Share": inside Share's popover a bare Share reads as sharing the reel */}
+                  <button type="button" className="btn small" onClick={() => answer(false)} data-testid="help-no">Don’t share data</button>
+                  <button type="button" className="btn small" onClick={() => answer(true)} data-testid="help-yes">Share data</button>
                 </div>
               </div>
             )}

@@ -6,7 +6,7 @@ import { IS_MAC, Toast } from './components/ui'
 import { draggingOut } from './components/Player'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Sidebar, useRail } from './components/Sidebar'
-import { TitleBar, TitleBarProvider } from './components/titlebar'
+import { TitleBar, TitleBarMain, TitleBarProvider } from './components/titlebar'
 import { useInputMode } from './components/motion'
 import { Home } from './screens/Home'
 import { Reel } from './screens/Reel'
@@ -252,6 +252,7 @@ export function App() {
         <div className={`shell ${platform}${rail ? ' rail' : ''}${arriving ? ' arriving' : ''}`}>
           <TitleBar rail={rail} onToggle={toggleRail} />
           <Sidebar section={section} go={go} provider={provider} userName={info.userName} onNewReel={() => void newReel(go, notify)} />
+          <TitleBarMain />
           <main className="main">
             <ErrorBoundary resetKey={JSON.stringify(screen)} onReset={() => go({ name: 'home' })}>
               {screen.name === 'home' && <Home go={go} />}

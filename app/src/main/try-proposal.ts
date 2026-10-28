@@ -1,6 +1,7 @@
 // Try 2 for Share › Other platforms: the connected editor decides the one change; with no editor, or when its answer
 // can't be used, the app picks another cover and says so without "I" (ux-foundation-b section 3.3).
 import type { PlacedWord } from '../shared/api'
+import { clock } from '../shared/progress'
 import type { RenderSegment } from '../shared/moments'
 import { appCoverPick, parseTryProposal, type TryProposal, type TryVariable } from '../shared/platforms'
 import type { AI } from './ai-types'
@@ -22,7 +23,8 @@ export async function proposeTry({ ai, caption, variable, timeline, cover, log }
 }): Promise<{ proposal: TryProposal; notice?: string }> {
   const { duration, words } = timeline
   const coverSeconds = cover ? outputTime(timeline.segments, cover.source, cover.atSourceTime) : null
-  const appPick = (): TryProposal => ({ variable: 'cover', value: appCoverPick(duration, words, coverSeconds), reason: null })
+  const appCover = appCoverPick(duration, words, coverSeconds)
+  const appPick = (): TryProposal => ({ variable: 'cover', value: appCover, reason: null })
   const active = await ai.active().catch(() => null)
   if (!active?.connected || active.id === 'none' || !ai.proposeTry) return { proposal: appPick() }
   try {
@@ -35,6 +37,7 @@ export async function proposeTry({ ai, caption, variable, timeline, cover, log }
     return { proposal }
   } catch (e) {
     log(`[try 2] the editor's proposal is not used: ${(e as { message?: string; userMessage?: string })?.userMessage ?? (e as Error)?.message ?? String(e)}`)
-    return { proposal: appPick(), notice: "The editor didn't choose Try 2 this time, so it uses another cover." }
+    // Share shows this in place of its own line, so Try 2 is said once, with the frame (audit-1028 finding 18)
+    return { proposal: appPick(), notice: `Your editor didn’t pick a change, so Try 2 changes the cover to the ${clock(appCover)} frame.` }
   }
 }
