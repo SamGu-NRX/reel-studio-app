@@ -111,6 +111,11 @@ export function notesLog(input: {
   let open: Entry | null = input.planned ? null : first
 
   for (const m of chat.filter((x) => !x.plan)) {
+    // more reels from this video: its job has no note, so its lines follow whatever the log shows last
+    if (m.reels) {
+      entries[entries.length - 1]?.extra.push(m)
+      continue
+    }
     if (m.from === 'you') {
       open = { key: m.id, day: null, at: m.at, ask: { kind: 'note', text: m.text, moment: m.moment ?? null, attachments: m.attachments ?? [] }, result: null, extra: [], outcome: m.outcome, jobId: m.jobId }
       entries.push(open)

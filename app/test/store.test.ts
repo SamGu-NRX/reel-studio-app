@@ -27,6 +27,7 @@ import {
   planReel,
   readProject,
   settleInterrupted,
+  summary,
   stamp
 } from '../src/main/store'
 import { classifyByExtension } from '../src/main/library'
@@ -547,5 +548,18 @@ describe('a reel planned before it has a video', () => {
     expect(await settleInterrupted(slug)).toBe('settled')
     const st = await readAppState(slug)
     expect([st.status, st.job, st.chat[0].outcome]).toEqual(['planned', null, 'stopped'])
+  })
+
+  // fails if Home lists a reel as being made while the editor only reads it for more reels, or a quit then leaves
+  // "Send your note again" for a note nobody sent
+  it('keeps a reel ready on Home while the editor looks for more reels in it, and settles a look cut short without a line', async () => {
+    setupPaths()
+    await ensureRoot()
+    fakeProject('looked', { versions: [1] })
+    await updateAppState('looked', (s) => void (s.job = { id: 'j7', kind: 'propose', startedAt: '' }))
+    expect((await summary('looked'))?.status).toBe('ready')
+    expect(await settleInterrupted('looked')).toBe('settled')
+    const st = await readAppState('looked')
+    expect([st.job, st.chat]).toEqual([null, []])
   })
 })

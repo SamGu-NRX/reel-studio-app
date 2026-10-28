@@ -17,6 +17,7 @@ import type {
   ProjectSummary,
   ScreenStatus,
   ReelPlan,
+  StoredProposal,
   ScriptResult,
   VersionInfo,
   VersionMade,
@@ -57,6 +58,10 @@ export interface AppState {
   posted?: { version: number; platform: 'instagram'; at: string }[]
   /** The plan made before the video: in the planning chat or the plain form (shared/plan.ts checks it). */
   plan?: ReelPlan
+  /** The reels the editor last found in this reel's video (main/propose-reels.ts). */
+  proposal?: StoredProposal
+  /** This reel was made from another reel's proposal: that reel, and which of its candidates. */
+  from?: { slug: string; candidate: string }
 }
 
 const EMPTY_STATE: AppState = { chat: [], job: null, status: 'new', lastError: null }
@@ -542,7 +547,8 @@ export async function settleInterrupted(slug: string): Promise<'settled' | 'unre
   // a note's private copy and drafts (ai editor.ts applyNote), which it deletes itself unless the app died
   await fs.rm(join(dir, 'work', 'notes'), { recursive: true, force: true })
   await updateAppState(slug, (st) => {
-    if (st.job?.kind === 'script') settleNote(st, st.job.id, 'stopped')
+    // a script or a look for more reels writes no version: one cut short changes nothing to finish
+    if (st.job?.kind === 'script' || st.job?.kind === 'propose') settleNote(st, st.job.id, 'stopped')
     else st.status = st.job?.kind === 'first-edit' || !existsSync(join(dir, 'versions')) ? 'interrupted' : 'ready'
     if (saved) {
       const reply = saved.reply ?? `I made your change. It is Version ${saved.version}.`
@@ -692,7 +698,8 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
   const last = versions[versions.length - 1]
   const src = p.sources?.[0]
   const srcPath = src && (isAbsolute(src.path) ? src.path : join(dir, ...src.path.split('/')))
-  const status: ScreenStatus = st.job
+  // looking for more reels in it leaves a reel where it is on Home: no version is being made
+  const status: ScreenStatus = st.job && st.job.kind !== 'propose'
     ? 'working'
     : versions.length
       ? 'ready'
@@ -833,7 +840,8 @@ export async function detail(slug: string): Promise<ProjectDetail> {
     queueHeld: !!st.queueHeld,
     job: st.job ? { id: st.job.id, kind: st.job.kind, message: 'Working on it', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false, waiting: false, waitingForRender: false } : null,
     aiEdited: !!st.aiEdited,
-    plan: st.plan ?? null
+    plan: st.plan ?? null,
+    proposal: st.proposal ?? null
   }
 }
 

@@ -110,6 +110,7 @@ import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMom
 import { parsePlatformExportRequest, sameVideo, secondTryPlatforms, type Platform, type PlatformTry, type TryVariable } from '../shared/platforms'
 import { exportPlatforms, sweepExportStaging, type ExportTry } from './platform-export'
 import { proposeTry } from './try-proposal'
+import { foldProposal, makeReels, seedReel, startProposal, type ReelSeed, type ReelsDeps } from './propose-reels'
 import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { assertWordCutEditable } from '../shared/cut'
@@ -495,8 +496,9 @@ function owned(args: string[], owner: string | null): string[] {
   return owner ? [...args, '--owner', owner] : args
 }
 
-/** `basic`: the version is made without the editor (a failed Version 1's "Make a basic version"). */
-function startFirstEdit(slug: string, initArgs: { title: string; files: string[] } | null, basic = false): string {
+/** `basic`: the version is made without the editor (a failed Version 1's "Make a basic version"). `initArgs.from`: a reel
+ * made from another reel's proposal, which starts from that reel's listening results and the proposed words. */
+function startFirstEdit(slug: string, initArgs: { title: string; files: string[]; from?: ReelSeed } | null, basic = false): string {
   const dir = projectDir(slug)
   const startedAt = Date.now()
   let editor: string | null = null
@@ -512,6 +514,7 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
         (p) => emit({ type: 'status', message: 'Copying your video', pct: Math.round(p.pct * 0.01) }),
         signal
       )
+      if (initArgs.from) await seedReel(slug, initArgs.from)
     }
     // a reel planned before it had a video: the editor reads its script from project.json (again on a resume,
     // in case the app closed between the copy and this)
@@ -1164,6 +1167,12 @@ function registerIpc(): void {
     return parseCoverCandidates(r, source, projectDir(slug))
   })
   handle('projects:stopCoverCandidates', (_e, slug: string) => coverScans.stop(slug))
+
+  // More reels from this video (main/propose-reels.ts)
+  const reelsDeps = (): ReelsDeps => ({ jobs, ai, startFirstEdit: (slug, init) => startFirstEdit(slug, init) })
+  handle('projects:proposeReels', (_e, slug: string) => startProposal(reelsDeps(), slug))
+  handle('projects:makeReels', (_e, slug: string, ids: string[]) => makeReels(reelsDeps(), slug, ids))
+  handle('projects:foldReels', (_e, slug: string, folded: boolean) => foldProposal(slug, folded))
 
   handle('projects:proposeTry', async (_e, slug: string, n: number, ask: { caption: string; variable?: TryVariable }) => {
     const timeline = await readTimeline(slug, n)

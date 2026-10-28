@@ -87,6 +87,10 @@ export function validateIpcArgs(channel: string, args: unknown[]): void {
     case 'projects:exportPlatforms': ok = finite(second) && Number.isInteger(second) && second >= 0 && object(third); break
     case 'projects:proposeTry': ok = finite(second) && Number.isInteger(second) && second >= 0 && object(third) && text(third.caption) &&
       third.caption.length <= 100_000 && (third.variable === undefined || (TRY_VARIABLES as readonly unknown[]).includes(third.variable)); break
+    // a pick names 1 to 5 of the proposal's candidates (ai propose.ts REEL_LIMIT), each once
+    case 'projects:makeReels': ok = Array.isArray(second) && second.length >= 1 && second.length <= 5 && new Set(second).size === second.length &&
+      second.every((id) => text(id) && /^r\d+$/.test(id)); break
+    case 'projects:foldReels': ok = typeof second === 'boolean'; break
     case 'style:keepLearned': ok = Array.isArray(first) && first.every((r) => object(r) && text(r.text) && text(r.evidence)) && text(second); break
     case 'library:preview': ok = path(first); break
     case 'cloud:save': ok = path(first) && path(second) && text(third) && third.length > 0; break

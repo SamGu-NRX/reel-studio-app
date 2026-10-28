@@ -78,3 +78,13 @@ it('fails if a Connect call for anything but Claude or ChatGPT gets past the gua
     expect(() => validateIpcArgs(channel, [{ vendor: 'claude' }])).toThrow()
   }
 })
+
+// more reels: a pick names one to five of the proposal's candidates, each once; Not now and Show say which
+it('fails if a pick of reels that is not 1 to 5 candidate ids, or a fold that is not yes or no, gets past the guard', () => {
+  expect(() => validateIpcArgs('projects:makeReels', ['reel', ['r1', 'r3']])).not.toThrow()
+  for (const ids of [[], ['r1', 'r2', 'r3', 'r4', 'r5', 'r6'], ['r1', 'r1'], ['../reel'], ['r1x'], 'r1'])
+    expect(() => validateIpcArgs('projects:makeReels', ['reel', ids])).toThrow()
+  expect(() => validateIpcArgs('projects:makeReels', ['../reel', ['r1']])).toThrow()
+  expect(() => validateIpcArgs('projects:foldReels', ['reel', true])).not.toThrow()
+  expect(() => validateIpcArgs('projects:foldReels', ['reel', 'yes'])).toThrow()
+})
