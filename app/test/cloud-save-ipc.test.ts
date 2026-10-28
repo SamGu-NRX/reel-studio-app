@@ -18,7 +18,7 @@ afterEach(async () => {
 it.skipIf(process.platform !== 'darwin' && process.platform !== 'win32')('fails if saving to one drive waits on the other drives answering', async () => {
   const handlers = new Map<string, Parameters<PhoneIpcDeps['handle']>[1]>()
   const root = join(home, 'Reel Studio')
-  registerPhoneIpc({ handle: (channel, fn) => handlers.set(channel, fn), roots: () => [root], send: () => {}, log: () => {}, test: true })
+  registerPhoneIpc({ handle: (channel, fn) => handlers.set(channel, fn), roots: () => [root], plan: () => Promise.reject(new Error('no plan in this test')), send: () => {}, log: () => {}, test: true })
   const video = join(root, 'Family reel.mp4')
   await fs.mkdir(root)
   await fs.writeFile(video, 'complete video')
@@ -42,7 +42,7 @@ it.skipIf(process.platform !== 'darwin' && process.platform !== 'win32')('fails 
 it.skipIf(process.platform !== 'darwin' && process.platform !== 'win32')('fails if quitting waits more than 15 s for a save on a stalled drive', async () => {
   const handlers = new Map<string, Parameters<PhoneIpcDeps['handle']>[1]>()
   const root = join(home, 'Reel Studio')
-  registerPhoneIpc({ handle: (channel, fn) => handlers.set(channel, fn), roots: () => [root], send: () => {}, log: () => {}, test: true })
+  registerPhoneIpc({ handle: (channel, fn) => handlers.set(channel, fn), roots: () => [root], plan: () => Promise.reject(new Error('no plan in this test')), send: () => {}, log: () => {}, test: true })
   const video = join(root, 'Family reel.mp4')
   await fs.mkdir(root, { recursive: true })
   await fs.writeFile(video, 'complete video')

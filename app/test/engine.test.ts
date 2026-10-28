@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createEngineRunner, killAllEngines, LineSplitter, parseEngineLine, type EngineError } from '../src/main/engine'
 import { isAlive } from '../src/main/proctree'
 import { APP_DIR, FAKE_ENGINE, makeClip, PYTHON, setupPaths } from './helpers'
-import { engineEnv, initPaths } from '../src/main/paths'
+import { engineCacheDir, engineEnv, initPaths } from '../src/main/paths'
 
 it('applies engine cache precedence', () => {
   const userDataDir = join(APP_DIR, 'isolated user data')
@@ -16,11 +16,12 @@ it('applies engine cache precedence', () => {
 
   initPaths({ ...base, env: { REELSTUDIO_USER_DATA: userDataDir } })
   expect(engineEnv().REELENGINE_CACHE).toBe(userDataDir)
-  expect(engineEnv().REELENGINE_CACHE_DIR).toBe(join(userDataDir, 'cache'))
+  expect(engineEnv().REELENGINE_CACHE_DIR).toBe(join(userDataDir, 'engine cache'))
 
+  // every engine process gets the folder Settings › Advanced measures and clears: the engine's own default here
   initPaths({ ...base, env: {} })
   expect(engineEnv().REELENGINE_CACHE).toBeUndefined()
-  expect(engineEnv().REELENGINE_CACHE_DIR).toBeUndefined()
+  expect(engineEnv().REELENGINE_CACHE_DIR).toBe(engineCacheDir())
 })
 
 describe('LineSplitter', () => {

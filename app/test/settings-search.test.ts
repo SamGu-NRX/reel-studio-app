@@ -40,7 +40,7 @@ describe('Settings sections', () => {
   it("fails if the sections leave spec section 8's order, or Advanced loses a row it holds", () => {
     expect(Object.keys(SECTIONS)).toEqual(['editor', 'privacy', 'reels', 'posting', 'about', 'advanced'])
     const advanced = SETTING_IDS.filter((id) => SETTINGS[id].section === 'advanced')
-    expect(advanced).toEqual(['model-edits', 'model-checks', 'model-titles', 'own-server', 'api-key', 'engine-cache', 'logs', 'first-run'])
+    expect(advanced).toEqual(['model-edits', 'model-checks', 'model-titles', 'own-server', 'api-key', 'stock-keys', 'engine-cache', 'logs', 'first-run'])
   })
 
   it('fails if the Advanced rows are missed by the words people use for them', () => {

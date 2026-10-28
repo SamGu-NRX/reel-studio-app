@@ -674,7 +674,7 @@ export function createAI(opts: CreateAIOptions) {
     },
     /** One turn of a planned reel's planning chat: a short question back, or the whole plan (editor.ts planTurn). */
     async planTurn(input: PlanTurnInput, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<PlanTurnResult> {
-      return editor.planTurn(deps(), await modelProvider('writer'), input, onEvent, signal);
+      return editor.planTurn(deps(opts.host), await modelProvider('writer'), input, onEvent, signal);
     },
     async styleRules() { return style.list(); },
     async removeStyleRule(id: string, options?: { forget?: boolean }) { return style.remove(id, options); },
