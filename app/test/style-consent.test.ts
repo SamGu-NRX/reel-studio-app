@@ -79,7 +79,7 @@ describe('answering a typed My style question (lowercase captions)', () => {
     expect(chat[0].actions).toEqual(['remember-yes', 'remember-no'])
     fail = false
     await answer()
-    expect(chat.at(-1)?.text).toBe('Saved. Your next reels will start with lowercase subtitles. You can change or remove it in My style.')
+    expect(chat.at(-1)?.text).toBe('Saved. Your next reels will start with lowercase subtitles. You can pause or forget it in My style.')
   })
 
   it('No on a question whose Yes was saved just before a crash takes the rule back out', async () => {

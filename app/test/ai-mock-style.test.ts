@@ -93,4 +93,26 @@ describe('My style in the stand-in AI', () => {
     expect(r.styleProposal).toBeUndefined()
     expect(r.summary).not.toMatch(/lowercase/)
   })
+
+  it('fails if new words are not dated as the package dates them, or a pause dates a rule', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rs-mock-style '))
+    const unused = (): never => { throw new Error('not used by My style') }
+    const ai = createMockAI({ host: { reelStudioRoot: () => root, runEngine: unused, renderAnimation: unused }, settingsDir: root })
+    const rule = await ai.addStyleRule!('Big subtitles', { byYou: true })
+    expect(rule.byYou).toBe(true)
+    const edited = await ai.updateStyleRule!(rule.id, { text: 'Bigger subtitles.' })
+    expect(Date.parse(edited.updatedAt!)).toBeGreaterThanOrEqual(Date.parse(rule.createdAt))
+    expect((await ai.updateStyleRule!(rule.id, { paused: true })).updatedAt).toBe(edited.updatedAt)
+  })
+
+  it('fails if the same words again add a copy of a paused rule instead of turning it back on', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rs-mock-style '))
+    const unused = (): never => { throw new Error('not used by My style') }
+    const ai = createMockAI({ host: { reelStudioRoot: () => root, runEngine: unused, renderAnimation: unused }, settingsDir: root })
+    const rule = await ai.addStyleRule!('Keep music quieter under talking.')
+    await ai.updateStyleRule!(rule.id, { paused: true })
+    expect(await ai.addStyleRule!('keep music quieter under talking')).toMatchObject({ id: rule.id })
+    expect(await ai.styleRules()).toMatchObject([{ id: rule.id }])
+    expect((await ai.styleRules())[0].paused).toBeUndefined()
+  })
 })

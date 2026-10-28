@@ -1,6 +1,6 @@
 // "Remember this for next time?" for lowercase captions, end to end in the built app with the stand-in engine and
 // the mock AI playing a connected Claude Code app (REELSTUDIO_MOCK_CLAUDE=ready): a lowercase note makes a new
-// version, the app asks once, Yes saves the rule to My style, the next video starts lowercase, and after Remove
+// version, the app asks once, Yes saves the rule to My style, the next video starts lowercase, and after Forget
 // the video after that does not.
 //
 // Run: npm run build && npx playwright test e2e/remember-caption-case.spec.ts
@@ -21,7 +21,7 @@ async function newVideo(page: Page, video: string): Promise<string> {
   return projects().find((s) => !before.includes(s))!
 }
 
-test('a lowercase note is remembered only on Yes, starts the next video lowercase, and stops after Remove', async () => {
+test('a lowercase note is remembered only on Yes, starts the next video lowercase, and stops after Forget', async () => {
   test.setTimeout(15 * 60_000)
   const media = makeMedia()
   const { app, page } = await launch({ REELSTUDIO_ROOT: ROOT, REELSTUDIO_USER_DATA: join(MINE, 'user data'), REELSTUDIO_MOCK_CLAUDE: 'ready', FAKE_ENGINE_SLOW: '1' })
@@ -50,11 +50,12 @@ test('a lowercase note is remembered only on Yes, starts the next video lowercas
     await page.getByTestId('nav-style').click()
     const rule = page.getByTestId('style-rule')
     await expect(rule).toHaveCount(1)
-    await expect(rule).toContainText('Use lowercase subtitles.')
-    await expect(rule).toContainText(/Learned (\w+ \d+|\d+ \w+) from .+, Version \d+/)
+    await expect(rule).toContainText('Lowercase subtitles')
+    await expect(rule).toContainText(/from .+, just now/)
     await shot(page, 'remember-02-my-style')
     // editing it says, before anything changes, that new words make it a sentence the AI reads
-    await page.getByRole('button', { name: 'Edit "Use lowercase subtitles."' }).click()
+    await page.getByRole('button', { name: 'Subtitles: Lowercase subtitles' }).click()
+    await page.getByRole('button', { name: 'Edit "Lowercase subtitles"' }).click()
     await expect(page.getByTestId('style-edit-input')).toHaveAccessibleDescription(
       'If you change these words, they become a sentence the AI reads, and the app no longer makes new reels lowercase by itself.'
     )
@@ -66,9 +67,9 @@ test('a lowercase note is remembered only on Yes, starts the next video lowercas
     expect(captionCase(second)).toBe('lower')
     await expect(page.getByTestId('chat')).toContainText('Subtitles are lowercase, from My style.')
 
-    // 6. Remove stops it
+    // 6. Forget stops it
     await page.getByTestId('nav-style').click()
-    await page.getByRole('button', { name: 'Remove "Use lowercase subtitles."' }).click()
+    await page.getByRole('button', { name: 'Forget "Lowercase subtitles"' }).click()
     await expect(page.getByTestId('style-rule')).toHaveCount(0)
     const third = await newVideo(page, media.video)
     expect(captionCase(third)).not.toBe('lower')

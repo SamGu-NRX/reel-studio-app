@@ -70,7 +70,9 @@ the app applies itself when a new video is made (only `{"kind":"caption-case","c
 (project, title, version) and `consent` (the question the person said Yes to). `forgotten` lists the questions of
 removed rules, so answering one again cannot bring a rule back. All of these are optional. An older version ignores `paused`, reads a
 typed rule as a plain sentence, cannot answer a typed question, and may drop `forgotten` if it
-rewrites the file. A file there that can't be parsed is kept as `My style.damaged.json`
+rewrites the file. `updatedAt` is when a rule's words last changed (a pause does not count), and `byYou` marks a
+rule typed in with Add a rule; My style lists the newest first by the first and names the source from the second.
+A file there that can't be parsed is kept as `My style.damaged.json`
 (`My style.damaged 2.json` and so on if that name is taken) and a new one starts, with the copy's name in
 `damaged`; My style says so while the copy is there.
 

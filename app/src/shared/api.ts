@@ -535,6 +535,10 @@ export interface StyleRule {
   /** Learned from another editor's export (My style, Learn from my past edits): its file name. */
   imported?: { file: string }
   consent?: { proposal: string; at: string }
+  /** When its words last changed. Pausing does not count, so a paused rule keeps its place in the list. */
+  updatedAt?: string
+  /** Typed in by the person with Add a rule, not learned from a note or an export. */
+  byYou?: true
 }
 
 /** One rule "Learn from my past edits" read from an export, with what it was read from. Nothing is saved until the person keeps it. */

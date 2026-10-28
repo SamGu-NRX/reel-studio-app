@@ -94,7 +94,7 @@ export const createMockAI: CreateAI = ({ host }) => {
     await writeJson(styleFile(), { ...s, rules })
   }
   /** As the real package's StyleStore.add: the same words again turn a paused rule back on instead of adding a copy. */
-  const addRule = (text: string, from?: Pick<StyleRule, 'source' | 'imported'>): Promise<{ added: boolean; rule: StyleRule }> =>
+  const addRule = (text: string, from?: Pick<StyleRule, 'source' | 'imported' | 'byYou'>): Promise<{ added: boolean; rule: StyleRule }> =>
     withStyle(async (s) => {
       const dup = s.rules.find((r) => sameRule(r.text) === sameRule(text))
       if (dup) {
@@ -404,6 +404,7 @@ export const createMockAI: CreateAI = ({ host }) => {
         if (!rule) throw { code: 'NOT_FOUND', userMessage: 'That rule is not in My style any more.' }
         if (patch.text !== undefined) {
           rule.text = cleanRule(patch.text)
+          rule.updatedAt = new Date().toISOString()
           if (rule.text !== LOWERCASE_CAPTIONS) delete rule.payload
         }
         if (patch.paused === true) rule.paused = true

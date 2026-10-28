@@ -1992,17 +1992,19 @@ const tools: ToolDef[] = [
       let text: string;
       try { text = cleanRuleText(args.rule); } catch { throw new ToolInputError('rule is empty'); }
       const existing = await ctx.style.find(text);
-      if (existing && existing.paused && noteAsksToRemember(ctx.userNote)) {
-        // The note asks again for a rule paused in My style: add() turns it back on. Not in styleRuleIds, because
-        // undoing this note must not delete a rule that was there before it.
-        const r = await ctx.style.add(text);
-        return { content: { ok: true, alreadySaved: r.rule.text, turnedBackOn: true }, summary: `Turned back on in My style: "${r.rule.text}"` };
-      }
-      if (existing) return { content: { ok: true, alreadySaved: existing.text } };
+      // A note that asks again for a paused rule goes on as a new ask (PR #83: otherwise the app says "Saved" for a
+      // rule it skips). Saving it turns the rule back on (StyleStore.add).
+      if (existing && !(existing.paused && noteAsksToRemember(ctx.userNote))) return { content: { ok: true, alreadySaved: existing.text } };
       if (noteAsksToRemember(ctx.userNote) && ctx.note) {
         // saved to My style with the note itself, never before (editor.ts applyNote)
         if (!ctx.state.styleRulesAdded.includes(text)) ctx.state.styleRulesAdded.push(text);
         return { content: { ok: true, saved: text }, summary: `Saved to My style: "${text}"` };
+      }
+      if (existing) {
+        // No note copy to save it with: add() turns it back on now. Not in styleRuleIds, because undoing this note
+        // must not delete a rule that was there before it.
+        const r = await ctx.style.add(text);
+        return { content: { ok: true, alreadySaved: r.rule.text, turnedBackOn: true }, summary: `Turned back on in My style: "${r.rule.text}"` };
       }
       if (noteAsksToRemember(ctx.userNote)) {
         const r = await ctx.style.add(text);

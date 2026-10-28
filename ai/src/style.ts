@@ -23,6 +23,10 @@ export interface StyleRule {
   imported?: { file: string };
   /** the question the person said Yes to */
   consent?: { proposal: string; at: string };
+  /** When its words last changed. Pausing does not count, so a paused rule keeps its place in My style. */
+  updatedAt?: string;
+  /** Typed in by the person with Add a rule, not learned from a note or an export. */
+  byYou?: true;
 }
 /** `damaged`: the file name of a damaged My style.json kept next to this one when My style started over.
  * `forgotten`: questions whose rule was removed, so answering one again cannot bring it back, and the words of
@@ -225,7 +229,7 @@ export class StyleStore {
   /** Adds a rule unless an equivalent one already exists. Every caller is the person asking for the rule (Yes to a
    * suggestion, an "always..." note, a rule typed in My style or kept from an export), so an equivalent paused rule
    * is turned back on (PR #83 review, option A). `from`: where it was learned. */
-  async add(text: string, from?: Pick<StyleRule, 'source' | 'imported'>): Promise<{ added: boolean; rule: StyleRule }> {
+  async add(text: string, from?: Pick<StyleRule, 'source' | 'imported' | 'byYou'>): Promise<{ added: boolean; rule: StyleRule }> {
     return this.serial(() => this.addNow(text, from));
   }
 
@@ -247,7 +251,7 @@ export class StyleStore {
     return (await this.list()).find((r) => normalize(r.text) === n);
   }
 
-  private async addNow(text: string, from?: Pick<StyleRule, 'source' | 'imported'>): Promise<{ added: boolean; rule: StyleRule }> {
+  private async addNow(text: string, from?: Pick<StyleRule, 'source' | 'imported' | 'byYou'>): Promise<{ added: boolean; rule: StyleRule }> {
     const clean = cleanRuleText(text);
     const data = await this.read();
     const dup = data.rules.find((r) => normalize(r.text) === normalize(clean));
@@ -261,6 +265,7 @@ export class StyleStore {
     const rule: StyleRule = {
       id: randomUUID(), text: clean, createdAt: new Date().toISOString(),
       ...(from?.source ? { source: from.source } : {}), ...(from?.imported ? { imported: from.imported } : {}),
+      ...(from?.byYou ? { byYou: true as const } : {}),
     };
     await this.write({ ...data, rules: [...data.rules, rule] });
     return { added: true, rule };
@@ -313,6 +318,7 @@ export class StyleStore {
       if (!rule) throw { code: 'NOT_FOUND', userMessage: 'That rule is not in My style any more.' };
       if (patch.text !== undefined) {
         rule.text = cleanRuleText(patch.text);
+        rule.updatedAt = new Date().toISOString();
         if (rule.payload && rule.text !== LOWERCASE_CAPTIONS) delete rule.payload;
       }
       if (patch.paused === true) rule.paused = true;

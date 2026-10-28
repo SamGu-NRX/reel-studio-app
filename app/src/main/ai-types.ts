@@ -133,7 +133,7 @@ export interface AI {
    * (learn()) never proposes its words again; false when the app takes back a rule the AI saved on its own. */
   removeStyleRule(id: string, options?: { forget?: boolean }): Promise<{ rule: StyleRule; index: number } | null>
   /** Saves one My style rule (after the user said Yes, typed in My style, or learned from an export). Optional: older packages lack it. */
-  addStyleRule?(text: string, from?: Pick<StyleRule, 'source' | 'imported'>): Promise<StyleRule>
+  addStyleRule?(text: string, from?: Pick<StyleRule, 'source' | 'imported' | 'byYou'>): Promise<StyleRule>
   /** Undo of removeStyleRule. */
   restoreStyleRule?(rule: StyleRule, index: number): Promise<void>
   /** My style started over because its file was damaged; the damaged copy is kept next to it. Optional: older packages lack it. */

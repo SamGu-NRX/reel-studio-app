@@ -143,7 +143,7 @@ async function systemPrompt(deps: EditorDeps): Promise<string> {
 function withStyleEcho(summary: string, state: ToolState): string {
   if (!state.styleRulesAdded.length) return summary;
   const rules = state.styleRulesAdded.map((r) => `"${r}"`).join(' and ');
-  return `${summary} I also saved ${state.styleRulesAdded.length === 1 ? 'this' : 'these'} to My style for your future reels: ${rules} You can remove ${state.styleRulesAdded.length === 1 ? 'it' : 'them'} in Settings.`;
+  return `${summary} I also saved ${state.styleRulesAdded.length === 1 ? 'this' : 'these'} to My style for your future reels: ${rules} You can pause or forget ${state.styleRulesAdded.length === 1 ? 'it' : 'them'} there.`;
 }
 
 /** When a first edit stopped without calling finish (step cap, or it stopped using tools), never claim

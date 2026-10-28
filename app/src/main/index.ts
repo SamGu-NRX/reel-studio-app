@@ -1204,7 +1204,7 @@ function registerIpc(): void {
   handle('style:add', (_e, text: string) => {
     if (!ai.addStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be saved to My style. Try again later.' }
     if (!text.trim()) throw { code: 'EMPTY', userMessage: 'Type the rule first.' }
-    return ai.addStyleRule(text)
+    return ai.addStyleRule(text, { byYou: true })
   })
   handle('style:remove', async (_e, id: string) => {
     const gone = await ai.removeStyleRule(id)
@@ -1236,7 +1236,7 @@ function registerIpc(): void {
   handle('style:update', (_e, id: string, patch: { text?: unknown; paused?: unknown }) => {
     if (!ai.updateStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be changed in My style. Try again later.' }
     const text = typeof patch?.text === 'string' ? patch.text : undefined
-    if (text !== undefined && !text.trim()) throw { code: 'EMPTY', userMessage: 'Type the rule first, or press Remove.' }
+    if (text !== undefined && !text.trim()) throw { code: 'EMPTY', userMessage: 'Type the rule first, or press Forget.' }
     return ai.updateStyleRule(id, { text, paused: typeof patch?.paused === 'boolean' ? patch.paused : undefined })
   })
   handle('style:answer', (_e, slug: string, messageId: string, yes: boolean) =>

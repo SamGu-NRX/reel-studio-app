@@ -1,54 +1,83 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import type { StyleLesson, StyleRule } from '../../../shared/api'
+import { classifyKind, KIND_NAME, newestFirst, shortLine, sourceDetail, sourceLine, type MemoryKind } from '../../../shared/memory'
 import { reel, userMessage } from '../api'
 import { Spinner } from '../components/ui'
-import { Icon } from '../components/icons'
+import { Icon, type IconName } from '../components/icons'
+import { byKeyboard, reducedMotion } from '../components/motion'
 import { TitleBarSlot } from '../components/titlebar'
 import '../components/library.css'
 
-const day = (iso: string): string => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-
-/** When and from what a rule was learned, in plain words. */
-function learned(r: StyleRule): ReactNode {
-  const when = day(r.createdAt)
-  if (r.imported) return `Learned ${when} from ${r.imported.file}`
-  if (r.source?.note) {
-    return (
-      <>
-        Learned {when} from your note <q>{r.source.note}</q> on {r.source.title}
-        {r.source.version ? `, Version ${r.source.version}` : ''}
-      </>
-    )
-  }
-  if (r.source) return `Learned ${when} from ${r.source.title}${r.source.version ? `, Version ${r.source.version}` : ''}`
-  return `Added ${when}`
-}
+const KIND_ICON: Record<MemoryKind, IconName> = { captions: 'type', pacing: 'timer', music: 'music', cuts: 'scissors', look: 'aperture' }
 
 const UNDO_MS = 8000
+const EASE = 'cubic-bezier(.2, .8, .2, 1)'
 
+/** What the open line says under the full sentence: who uses the rule, or that nobody does while it is paused. */
+function usedBy(r: StyleRule): string {
+  if (r.paused) return 'Paused. Not used on new reels until you resume it.'
+  return r.payload ? 'The app sets this on every new reel.' : 'Your editor reads this on every new reel.'
+}
+
+const exact = (iso: string | undefined): string | null => {
+  const t = Date.parse(iso ?? '')
+  return Number.isNaN(t) ? null : new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+/** The open line's "which note, and when": the note or files, then the exact time it was saved and last edited. */
+function learnedWhen(r: StyleRule): string | null {
+  const saved = exact(r.createdAt)
+  const edited = exact(r.updatedAt)
+  const parts = [sourceDetail(r), saved && `${r.byYou ? 'Added' : 'Saved'} ${saved}`, edited && `edited ${edited}`]
+  return parts.filter(Boolean).join(' · ') || null
+}
+
+/** My style: every saved rule as one short line, newest first. */
 export function MyStyle() {
   const [rules, setRules] = useState<StyleRule[] | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [adding, setAdding] = useState<string | null>(null)
-  const [removed, setRemoved] = useState<{ rule: StyleRule; index: number } | null>(null)
+  const [forgot, setForgot] = useState<{ rule: StyleRule; at: number } | null>(null)
+  const [refocus, setRefocus] = useState<string | null>(null)
   const [lesson, setLesson] = useState<(StyleLesson & { keep: boolean[] }) | null>(null)
   const [learning, setLearning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [damaged, setDamaged] = useState(false)
   const editButtons = useRef(new Map<string, HTMLButtonElement>())
+  const forgetButtons = useRef(new Map<string, HTMLButtonElement>())
   const addButton = useRef<HTMLButtonElement>(null)
-  const undoTimer = useRef<number | undefined>(undefined)
+  // Undo's countdown: `due` while it runs, `left` while the pointer or keyboard focus holds it
+  const expiry = useRef<{ timer?: number; due: number; left: number; hover: boolean; focus: boolean } | null>(null)
   const undoButton = useRef<HTMLButtonElement>(null)
+  const forgotRow = useRef<HTMLLIElement>(null)
+  const fade = useRef<Animation | null>(null)
+  // the rows below a lapsed Undo, and how far they move up when it goes
+  const slide = useRef<{ rows: Element[]; by: number } | null>(null)
+  const [said, setSaid] = useState('')
+  const list = useRef<HTMLUListElement>(null)
   const load = () => Promise.all([reel.style.rules().then(setRules), reel.style.damaged().then(setDamaged)])
   useEffect(() => {
     void load()
-    return () => window.clearTimeout(undoTimer.current)
+    return () => window.clearTimeout(expiry.current?.timer)
   }, [])
+  useLayoutEffect(() => {
+    const s = slide.current
+    if (forgot || !s) return
+    slide.current = null
+    for (const row of s.rows) row.animate([{ transform: `translateY(${s.by}px)` }, { transform: 'none' }], { duration: 200, easing: EASE })
+  }, [forgot])
 
-  // the removed row's Undo takes the focus its Remove button had
+  // the forgotten row's Undo takes the focus its Forget button had, and Undo gives it back
   useEffect(() => {
-    if (removed) undoButton.current?.focus()
-  }, [removed])
+    if (forgot) undoButton.current?.focus()
+  }, [forgot])
+  useEffect(() => {
+    const el = refocus && forgetButtons.current.get(refocus)
+    if (!el) return
+    el.focus()
+    setRefocus(null)
+  }, [refocus, rules])
 
   const run = async (change: () => Promise<unknown>): Promise<boolean> => {
     setError(null)
@@ -76,17 +105,71 @@ export function MyStyle() {
     if (!adding?.trim()) return
     if (await run(() => reel.style.add(adding))) setAdding(null)
   }
-  const remove = async (r: StyleRule) => {
-    const index = rules?.findIndex((x) => x.id === r.id) ?? 0
+  const settle = () => {
+    window.clearTimeout(expiry.current?.timer)
+    expiry.current = null
+    fade.current?.cancel()
+    fade.current = null
+  }
+  // The Undo row leaves in one step. If it had the focus, the next row's first control gets it, else the row
+  // before, else Add a rule, so the keyboard is not sent back to the top of the window. The rows below move up
+  // by its height, which they cover with a transform (not in keyboard mode, and not under reduced motion).
+  const gone = (el: HTMLLIElement | null) => {
+    fade.current = null
+    const near = el && (el.nextElementSibling ?? el.previousElementSibling)
+    const target = el?.contains(document.activeElement) ? (near?.querySelector<HTMLElement>('button, input') ?? addButton.current) : null
+    const rows: Element[] = []
+    for (let n = el?.nextElementSibling; n; n = n.nextElementSibling) rows.push(n)
+    slide.current = el && rows.length && !byKeyboard() && !reducedMotion() ? { rows, by: el.offsetHeight } : null
+    setForgot(null)
+    setSaid('')
+    if (target) requestAnimationFrame(() => target.focus())
+  }
+  // When Undo runs out, its row fades and goes; in keyboard mode it goes at once (keyboard actions never animate)
+  const lapse = () => {
+    expiry.current = null
+    const el = forgotRow.current
+    if (!el || byKeyboard()) return gone(el)
+    fade.current = el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: EASE, fill: 'forwards' })
+    fade.current.finished.then(() => gone(el), () => undefined)
+  }
+  const countdown = (ms: number) => {
+    const x = expiry.current
+    if (!x) return
+    x.due = Date.now() + ms
+    x.timer = window.setTimeout(lapse, ms)
+  }
+  // Undo waits while the pointer rests on its row or keyboard focus is in it, and the time left runs on after
+  // (WCAG 2.2.1). Focus put there by the app after a click does not hold it, or Undo would stay until the next click.
+  const hold = (part: 'hover' | 'focus', on: boolean) => {
+    const x = expiry.current
+    if (!x) return
+    x[part] = on
+    if (x.hover || x.focus) {
+      if (x.timer === undefined) return
+      window.clearTimeout(x.timer)
+      x.timer = undefined
+      x.left = Math.max(0, x.due - Date.now())
+    } else if (x.timer === undefined) countdown(x.left)
+  }
+  const forget = async (r: StyleRule, at: number) => {
     if (!(await run(() => reel.style.remove(r.id)))) return
-    window.clearTimeout(undoTimer.current)
-    setRemoved({ rule: r, index })
-    undoTimer.current = window.setTimeout(() => setRemoved(null), UNDO_MS)
+    settle()
+    if (open === r.id) setOpen(null)
+    setForgot({ rule: r, at })
+    setSaid(`Forgot “${shortLine(r.text)}”.`)
+    expiry.current = { due: 0, left: UNDO_MS, hover: false, focus: false }
+    countdown(UNDO_MS)
   }
   const undo = async () => {
-    if (!removed) return
-    window.clearTimeout(undoTimer.current)
-    if (await run(() => reel.style.restore(removed.rule.id))) setRemoved(null)
+    if (!forgot) return
+    settle()
+    const id = forgot.rule.id
+    if (await run(() => reel.style.restore(id))) {
+      setForgot(null)
+      setSaid('')
+      setRefocus(id)
+    }
   }
   const learn = async () => {
     setError(null)
@@ -111,8 +194,9 @@ export function MyStyle() {
   }
 
   const kept = lesson?.keep.filter(Boolean).length ?? 0
-  const shown: (StyleRule | 'removed')[] = [...(rules ?? [])]
-  if (removed) shown.splice(Math.min(removed.index, shown.length), 0, 'removed')
+  const now = Date.now()
+  const shown: (StyleRule | 'forgot')[] = newestFirst(rules ?? [])
+  if (forgot) shown.splice(Math.min(forgot.at, shown.length), 0, 'forgot')
 
   return (
     <div className="page style-page">
@@ -136,7 +220,13 @@ export function MyStyle() {
           </>
         }
       />
-      <p className="style-intro">Your editor follows these on every reel. A note that starts with “always” adds one.</p>
+      {shown.length > 0 && (
+        <p className="style-intro">Your editor follows these on every new reel, newest first. A note that starts with “always” can add one.</p>
+      )}
+      {/* Forget's message, read out by screen readers; always mounted so a change to its text is announced */}
+      <p className="sr-only" role="status" data-testid="style-said">
+        {said}
+      </p>
       {/* the status region is there before the line is, so a screen reader announces the line when it arrives */}
       <div role="status" className="style-status">
         {damaged && (
@@ -220,86 +310,130 @@ export function MyStyle() {
         </form>
       )}
 
-      {rules && !rules.length && !removed && adding === null && (
+      {rules && !rules.length && !forgot && adding === null && (
         <div className="style-empty" data-testid="style-empty">
-          <h2>No rules yet</h2>
-          <p>Start a note with “always”, like “always use big subtitles”, and it is added here. Or learn from edits you made in Final Cut Pro or Premiere Pro.</p>
+          <h2>Nothing learned yet</h2>
+          <p>
+            Start a note with “always”, like “always use big subtitles”, and say Yes when you’re asked to remember it. Or learn from
+            edits you made in Final Cut Pro or Premiere Pro.
+          </p>
         </div>
       )}
 
       {shown.length > 0 && (
-        <ul className="style-rows">
-          {shown.map((r) =>
-            r === 'removed' ? (
-              <li key="removed" className="style-row removed" role="status">
-                <span className="style-t">
-                  <span>Removed “{removed!.rule.text.replace(/\.$/, '')}”.</span>
-                </span>
-                <button ref={undoButton} className="btn small" onClick={() => void undo()} data-testid="style-undo">
-                  <Icon name="undo" size={14} />
-                  Undo
+        <ul ref={list} className="mem-rows">
+          {shown.map((r, at) => {
+            if (r === 'forgot') {
+              return (
+                <li
+                  key="forgot"
+                  ref={forgotRow}
+                  className="mem forgot"
+                  onPointerEnter={() => hold('hover', true)}
+                  onPointerLeave={() => hold('hover', false)}
+                  onFocus={() => hold('focus', byKeyboard())}
+                  onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && hold('focus', false)}
+                >
+                  <span className="mem-said">Forgot “{shortLine(forgot!.rule.text)}”.</span>
+                  <button ref={undoButton} className="btn small" onClick={() => void undo()} data-testid="style-undo">
+                    <Icon name="undo" size={14} />
+                    Undo
+                  </button>
+                </li>
+              )
+            }
+            if (editing?.id === r.id) {
+              return (
+                <li key={r.id}>
+                  <form className="style-form" onSubmit={save} onKeyDown={(e) => e.key === 'Escape' && stopEditing(r.id)}>
+                    <input
+                      className="input"
+                      value={editing.text}
+                      onChange={(e) => setEditing({ id: r.id, text: e.target.value })}
+                      aria-label="Rule"
+                      aria-describedby={r.payload ? `edit-hint-${r.id}` : undefined}
+                      autoFocus
+                      data-testid="style-edit-input"
+                    />
+                    <button className="btn small" type="submit" disabled={!editing.text.trim()}>
+                      Save
+                    </button>
+                    <button className="btn small ghost" type="button" onClick={() => stopEditing(r.id)}>
+                      Cancel
+                    </button>
+                  </form>
+                  {r.payload && (
+                    <p id={`edit-hint-${r.id}`} className="muted-sm style-edit-hint" data-testid="style-edit-hint">
+                      If you change these words, they become a sentence the AI reads, and the app no longer makes new reels lowercase by itself.
+                    </p>
+                  )}
+                </li>
+              )
+            }
+            const kind = classifyKind(r.text)
+            const line = shortLine(r.text)
+            const isOpen = open === r.id
+            const from = isOpen ? learnedWhen(r) : null
+            // the forgotten row sits among these, so a rule's place is counted without it
+            const place = forgot && at > forgot.at ? at - 1 : at
+            return (
+              <li key={r.id} className={`mem${r.paused ? ' paused' : ''}${isOpen ? ' open' : ''}`} data-testid="style-rule">
+                <span className="mem-kind">{kind && <Icon name={KIND_ICON[kind]} size={16} />}</span>
+                <button
+                  className="mem-line"
+                  aria-expanded={isOpen}
+                  aria-controls={isOpen ? `mem-more-${r.id}` : undefined}
+                  onClick={() => setOpen(isOpen ? null : r.id)}
+                >
+                  {kind && <span className="sr-only">{KIND_NAME[kind]}: </span>}
+                  {line}
                 </button>
-              </li>
-            ) : editing?.id === r.id ? (
-              <li key={r.id}>
-                <form className="style-form" onSubmit={save} onKeyDown={(e) => e.key === 'Escape' && stopEditing(r.id)}>
-                  <input
-                    className="input"
-                    value={editing.text}
-                    onChange={(e) => setEditing({ id: r.id, text: e.target.value })}
-                    aria-label="Rule"
-                    aria-describedby={r.payload ? `edit-hint-${r.id}` : undefined}
-                    autoFocus
-                    data-testid="style-edit-input"
-                  />
-                  <button className="btn small" type="submit" disabled={!editing.text.trim()}>
-                    Save
-                  </button>
-                  <button className="btn small ghost" type="button" onClick={() => stopEditing(r.id)}>
-                    Cancel
-                  </button>
-                </form>
-                {r.payload && (
-                  <p id={`edit-hint-${r.id}`} className="muted-sm style-edit-hint" data-testid="style-edit-hint">
-                    If you change these words, they become a sentence the AI reads, and the app no longer makes new reels lowercase by itself.
-                  </p>
-                )}
-              </li>
-            ) : (
-              <li key={r.id} className="style-row" data-testid="style-rule">
-                <span className="style-t">
-                  <b className={r.paused ? 'paused' : undefined}>
-                    {r.text}
-                    {r.paused && <span className="badge interrupted" style={{ marginLeft: 8 }}>Paused</span>}
-                  </b>
-                  <span>{learned(r)}</span>
-                </span>
-                <span className="style-acts">
-                  <button
-                    className="btn small ghost"
-                    ref={(el) => {
-                      if (el) editButtons.current.set(r.id, el)
-                      else editButtons.current.delete(r.id)
-                    }}
-                    onClick={() => setEditing({ id: r.id, text: r.text })}
-                    aria-label={`Edit "${r.text}"`}
-                  >
-                    Edit
-                  </button>
+                <span className="mem-state">{r.paused && 'Paused'}</span>
+                <span className="mem-acts">
                   <button
                     className="btn small ghost"
                     onClick={() => void run(() => reel.style.update(r.id, { paused: !r.paused }))}
-                    aria-label={`${r.paused ? 'Turn back on' : 'Pause'} "${r.text}"`}
+                    aria-label={`${r.paused ? 'Resume' : 'Pause'} "${line}"`}
                   >
-                    {r.paused ? 'Turn back on' : 'Pause'}
+                    {r.paused ? 'Resume' : 'Pause'}
                   </button>
-                  <button className="btn small ghost danger" onClick={() => void remove(r)} aria-label={`Remove "${r.text}"`}>
-                    Remove
+                  <button
+                    className="btn small ghost"
+                    ref={(el) => {
+                      if (el) forgetButtons.current.set(r.id, el)
+                      else forgetButtons.current.delete(r.id)
+                    }}
+                    onClick={() => void forget(r, place)}
+                    aria-label={`Forget "${line}"`}
+                  >
+                    Forget
                   </button>
                 </span>
+                <span className="mem-src">{sourceLine(r, now)}</span>
+                {isOpen && (
+                  <div className="mem-more" id={`mem-more-${r.id}`}>
+                    <p className="mem-full">“{r.text}”</p>
+                    {from && <p className="mem-from">{from}</p>}
+                    <p className="mem-use">
+                      {usedBy(r)}
+                      <button
+                        className="btn small ghost"
+                        ref={(el) => {
+                          if (el) editButtons.current.set(r.id, el)
+                          else editButtons.current.delete(r.id)
+                        }}
+                        onClick={() => setEditing({ id: r.id, text: r.text })}
+                        aria-label={`Edit "${line}"`}
+                      >
+                        <Icon name="pencil" size={14} />
+                        Edit
+                      </button>
+                    </p>
+                  </div>
+                )}
               </li>
             )
-          )}
+          })}
         </ul>
       )}
     </div>
