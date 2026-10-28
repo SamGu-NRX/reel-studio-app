@@ -1,16 +1,15 @@
 // The subtitle lines under Cut › Fix words in "Edit it myself": a fix typed over a word and an Enter in a line go into the project,
 // anchored on word ids, and the next version's lines show them. Same env as smoke.spec.ts.
 import { test, expect } from '@playwright/test'
-import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, makeMedia, passFirstRun, startReel } from './helpers'
+import { BASE, launch, makeMedia, newProjectFolder, passFirstRun, projectFolders, startReel } from './helpers'
 
 const MINE = mkdtempSync(join(BASE, 'subs-'))
 const ROOT = join(MINE, 'Documents', 'Reel Studio')
 
-function projectJson(): any {
-  const dir = join(ROOT, 'Projects')
-  return JSON.parse(readFileSync(join(dir, readdirSync(dir)[0], 'project.json'), 'utf8'))
+function projectJson(dir: string): any {
+  return JSON.parse(readFileSync(join(dir, 'project.json'), 'utf8'))
 }
 
 test('fix a word and break a line in the Subtitles list', async () => {
@@ -18,8 +17,10 @@ test('fix a word and break a line in the Subtitles list', async () => {
   const media = makeMedia()
   const { app, page } = await launch({ REELSTUDIO_ROOT: ROOT, REELSTUDIO_USER_DATA: join(MINE, 'user data') })
   await passFirstRun(page)
+  const before = projectFolders(ROOT)
   await startReel(page, media.video)
   await expect(page.getByTestId('player')).toBeVisible({ timeout: 10 * 60_000 })
+  const dir = newProjectFolder(ROOT, before)
   await page.getByTestId('edit-myself').click()
   await page.getByTestId('cut-mode-fix').click()
 
@@ -36,7 +37,7 @@ test('fix a word and break a line in the Subtitles list', async () => {
 
   await page.getByTestId('make-version').click()
   await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 })
-  const cap = projectJson().captions
+  const cap = projectJson(dir).captions
   expect(cap.split).toEqual(['w1'])
   expect(cap.corrections).toEqual([{ from: 'placeholder', to: 'Placeholders', at: 'w2' }])
   await expect(page.getByTestId('chat')).toContainText('fixed a word and changed the subtitle lines')

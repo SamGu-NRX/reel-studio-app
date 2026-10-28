@@ -1,7 +1,7 @@
 // Shared helpers for the Electron end-to-end tests.
 import { expect, _electron as electron, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -156,6 +156,22 @@ export async function passFirstRun(page: Page): Promise<void> {
     await page.reload()
   }
   await expect(home).toBeVisible()
+}
+
+/** The project folders under a root's Projects folder (none before its first reel). */
+export function projectFolders(root: string): string[] {
+  const dir = join(root, 'Projects')
+  return existsSync(dir) ? readdirSync(dir).filter((s) => !s.startsWith('.')) : []
+}
+
+/**
+ * The one project folder that appeared since `before` (from projectFolders), as a path. A root can hold other tests'
+ * projects, and readdir order is the file system's (NTFS lists names sorted), so the first folder listed can be another's.
+ */
+export function newProjectFolder(root: string, before: string[]): string {
+  const made = projectFolders(root).filter((s) => !before.includes(s))
+  expect(made, 'exactly one new project').toHaveLength(1)
+  return join(root, 'Projects', made[0])
 }
 
 /**
