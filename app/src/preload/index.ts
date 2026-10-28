@@ -58,6 +58,7 @@ const api: ReelApi = {
     setSharing: (sharing) => call('app:setSharing', sharing),
     setPhoneView: (view) => call('app:setPhoneView', view),
     setSoundEffects: (on) => call('app:setSoundEffects', on),
+    setTimeline: (shown) => call('app:setTimeline', shown),
     engineCache: () => call('app:engineCache'),
     clearEngineCache: () => call('app:clearEngineCache'),
     showLogs: () => call('app:showLogs'),

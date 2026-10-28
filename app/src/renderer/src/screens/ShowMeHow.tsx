@@ -18,7 +18,7 @@ import { soundPack, SoundTab } from './edit/SoundTab'
 import { SubtitlesTab } from './edit/SubtitlesTab'
 import type { RenderSegment } from '../../../shared/moments'
 import { joinsOf, musicFades, newToTheEar, sfxVolume, soundRows, soundTime, type SoundEffect, type VersionClock } from '../../../shared/sfx'
-import { clipsOf, pictureParts, pictureWhy, videoParts, type Lanes } from '../../../shared/lanes'
+import { clipsOf, pictureParts, pictureWhy, soundParts, videoParts, type Lanes } from '../../../shared/lanes'
 import './edit/edit.css'
 
 export type { PlayerHandle } from './edit/preview'
@@ -262,7 +262,7 @@ export function ShowMeHow({
   const music = now.p.music
   // each lane from what it depends on, so dragging a fade or a level works out only the sounds again
   const sounds = useMemo(
-    () => soundRows(now.p.sfx ?? [], vclock, joins, now.p.broll, now.kept, said, new Map(pack.map((p) => [p.id, p]))).flatMap((r) => (r.t === null ? [] : [{ key: r.key, at: r.t, label: `${r.title} · ${r.why}`, off: !!r.warn }])),
+    () => soundParts(soundRows(now.p.sfx ?? [], vclock, joins, now.p.broll, now.kept, said, new Map(pack.map((p) => [p.id, p])))),
     [now.p.sfx, now.p.broll, now.kept, vclock, joins, said, pack]
   )
   const fades = useMemo(() => (music?.enabled !== false && music?.track ? musicFades(music) : null), [music])
@@ -276,8 +276,8 @@ export function ShowMeHow({
     const layers = new Map((shown?.layers ?? []).flatMap((l) => (l.id && unchanged.has(l.id) ? [[l.id, l] as const] : [])))
     const had = new Set((base.p.broll ?? []).map((b) => b.id))
     const why = (id: string) => (had.has(id) ? pictureWhy(id, d.versions, d.project.notes ?? [], version?.n ?? 0) : `New: in Version ${next} once you make it`)
-    return pictureParts(now.p.broll ?? [], { placed: shown?.words ?? [], segments }, layers, shown?.duration ?? 0, why)
-  }, [now.p.broll, shown, segments, base.p.broll, d.versions, d.project.notes, version?.n, next])
+    return pictureParts(now.p.broll ?? [], { placed: shown?.words ?? [], segments }, layers, shown?.duration ?? 0, why, (b) => pictureUrl(b, d.brollThumbs, images))
+  }, [now.p.broll, shown, segments, base.p.broll, d.versions, d.project.notes, d.brollThumbs, images, version?.n, next])
   const lanes = useMemo(
     (): Lanes => ({ video: videoLane, pictures, sounds, music: fades, joins: joins.map(({ t, bridge }) => ({ t, bridge })) }),
     [videoLane, pictures, sounds, fades, joins]

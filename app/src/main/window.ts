@@ -126,7 +126,7 @@ function zoom(w: Electron.BaseWindow | undefined, step: -1 | 0 | 1): void {
  * (pasting a key fails). Windows gets no menu bar: Ctrl+C/V work natively there and the renderer
  * handles the app shortcuts itself (and checks for updates from Settings).
  */
-export function installMenu(send: (c: AppCommand) => void, dev: boolean, checkForUpdates: () => void): void {
+export function installMenu(send: (c: AppCommand) => void, dev: boolean, toggleTimeline: (shown: boolean) => void, checkForUpdates: () => void): void {
   if (process.platform !== 'darwin') {
     Menu.setApplicationMenu(null)
     return
@@ -183,6 +183,8 @@ export function installMenu(send: (c: AppCommand) => void, dev: boolean, checkFo
         { label: 'Zoom In', accelerator: 'Cmd+Plus', click: (_i, w) => zoom(w, 1) },
         { label: 'Zoom Out', accelerator: 'Cmd+-', click: (_i, w) => zoom(w, -1) },
         { type: 'separator' },
+        // checked until the saved setting says otherwise (showTimelineInMenu)
+        { id: TIMELINE_ITEM, label: 'Show Timeline', type: 'checkbox', checked: true, accelerator: 'Shift+Cmd+T', click: (i) => toggleTimeline(i.checked) },
         { role: 'togglefullscreen' }
       ]
     },
@@ -193,6 +195,14 @@ export function installMenu(send: (c: AppCommand) => void, dev: boolean, checkFo
     }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+const TIMELINE_ITEM = 'show-timeline'
+
+/** View › Show Timeline's check, after the setting changed somewhere else (the Reel screen's own button). */
+export function showTimelineInMenu(shown: boolean): void {
+  const item = Menu.getApplicationMenu()?.getMenuItemById(TIMELINE_ITEM)
+  if (item) item.checked = shown
 }
 
 /** What the OS was told, for the e2e (notifications are not shown in tests). */

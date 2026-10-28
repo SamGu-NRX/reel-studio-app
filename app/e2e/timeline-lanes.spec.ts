@@ -5,9 +5,9 @@
 // The reels are made by the fake engine, then given a fixture edit (words, cut, pictures, sounds, a render's
 // segments and a video of the same length), so a long reel with many pictures and a multi-source reel can be drawn
 // without the real engine. Run after a build, as smoke.spec.ts.
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BASE, launch, makeMedia, makeReel, passFirstRun, shot } from './helpers'
 
@@ -29,8 +29,19 @@ interface Fixture {
   clip?: boolean
 }
 
+// The Library pictures the fixture places, so the timeline has stills to show
+const STILLS: [string, string][] = [
+  ['cup.png', 'testsrc2=size=320x320'],
+  ['dog.png', 'smptebars=size=320x320'],
+  ['park.jpg', 'mandelbrot=size=320x320']
+]
+
 /** Gives the reel on screen a fixture Version 1: words, a cut, pictures, sounds and a song, and a render of them. */
 function seed(slug: string, f: Fixture): void {
+  const images = join(ROOT, 'Library', 'Images')
+  mkdirSync(images, { recursive: true })
+  for (const [name, src] of STILLS)
+    if (!existsSync(join(images, name))) execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', src, '-frames:v', '1', join(images, name)])
   const dir = join(ROOT, 'Projects', slug)
   const p = JSON.parse(readFileSync(join(dir, 'project.json'), 'utf8'))
   const words = Array.from({ length: Math.floor(f.seconds / 0.45) }, (_, i) => ({ id: `f${i}`, w: LEXICON[i % LEXICON.length], s: i * 0.45, e: i * 0.45 + 0.32, source: 's1' }))
@@ -99,6 +110,16 @@ async function shoot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: join(__dirname, 'screenshots', `${name}-timeline.png`), clip: { x: Math.max(0, b.x - 24), y: b.y - 96, width: b.width + 48, height: b.height + 132 } })
 }
 
+/** A lane's icon sits in the gutter left of time, level with the lane's items. */
+async function expectBeside(page: Page, lane: string, item: Locator): Promise<void> {
+  const icon = page.getByTestId('lane-gutter').locator(`[title="${lane}"]`)
+  await expect(icon).toBeVisible()
+  const a = (await icon.boundingBox())!
+  const b = (await item.boundingBox())!
+  expect(a.x + a.width).toBeLessThanOrEqual(b.x + 0.5)
+  expect(Math.abs(a.y + a.height / 2 - (b.y + b.height / 2))).toBeLessThan(8)
+}
+
 test('timeline lanes: pictures, your video and sounds, each named and reachable by keyboard', async () => {
   test.setTimeout(20 * 60_000)
   const media = makeMedia()
@@ -116,6 +137,16 @@ test('timeline lanes: pictures, your video and sounds, each named and reachable 
   await expect(pictures.nth(2)).toHaveAccessibleName(/^Words on screen: “before work”, 0:\d\d to 0:\d\d, for the line “.+”/)
   await expect(video.first()).toHaveAccessibleName(/^Your video, 0:00 to 0:0\d: “every morning I make coffee first…”$/)
   await expect(sounds.first()).toHaveAccessibleName(/^Whoosh at 0:0\d, on “\w+”$/)
+  await shoot(page, 'lanes-00-short')
+  // what each lane holds, before any hover: its icon beside it, a picture's still at its start where the picture is
+  // wide enough, a glyph for words on screen, a sound's kind beside its flag
+  await expectBeside(page, 'Pictures', pictures.first())
+  await expectBeside(page, 'Your video', page.locator('.tl-rail'))
+  await expectBeside(page, 'Sound', sounds.first())
+  await expect(pictures.first().getByTestId('timeline-thumb').locator('img')).toBeVisible()
+  await expect(pictures.nth(2).getByTestId('timeline-thumb')).toBeVisible()
+  await expect(pictures.nth(2).getByTestId('timeline-thumb').locator('img')).toHaveCount(0)
+  await expect(sounds.first().getByText('Whoosh', { exact: true })).toBeVisible()
   await slider.focus()
   await page.keyboard.press('Tab')
   await expect(pictures.first()).toBeFocused()
@@ -128,6 +159,12 @@ test('timeline lanes: pictures, your video and sounds, each named and reachable 
   await page.keyboard.press('ArrowRight')
   await expect(video.nth(1)).toBeFocused()
   await page.keyboard.press('Tab')
+  await expect(sounds.first()).toBeFocused()
+  // the song's fades, which a pointer reads by hovering its line, are the next stop
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('group', { name: 'Song on the timeline' }).getByRole('button')).toBeFocused()
+  await expect(page.getByRole('group', { name: 'Song on the timeline' }).getByRole('button')).toHaveAccessibleName('Song: fades in over 1.2 s, out over 2 s')
+  await page.keyboard.press('Shift+Tab')
   await expect(sounds.first()).toBeFocused()
   // back into the pictures: the one last focused keeps the stop
   await page.keyboard.press('Shift+Tab')
@@ -159,6 +196,8 @@ test('timeline lanes: pictures, your video and sounds, each named and reachable 
   await page.setViewportSize({ width: 1100, height: 720 })
   await reelWith(page, media.video, { seconds: 200, pictures: 36 })
   await expect(pictures).toHaveCount(36)
+  // too short here for stills: every picture is a bar, so none covers its neighbour
+  await expect(page.getByTestId('timeline-thumb')).toHaveCount(0)
   // every picture keeps a target of its own: none is covered by its neighbours
   const boxes = await pictures.evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ l: r.left, r: r.right })))
   for (let i = 1; i < boxes.length; i++) expect(boxes[i].l).toBeGreaterThanOrEqual(boxes[i - 1].r - 0.5)
@@ -184,5 +223,59 @@ test('timeline lanes: pictures, your video and sounds, each named and reachable 
   await expect(page.getByTestId('timeline-part-tip')).toContainText('Video 2, played whole')
   await shoot(page, 'lanes-06-multi-source-hover')
 
+  await app.close()
+})
+
+const timelineItem = (app: ElectronApplication) =>
+  app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('show-timeline')?.checked ?? null)
+const clickTimelineItem = (app: ElectronApplication) =>
+  app.evaluate(({ Menu, BrowserWindow }) => Menu.getApplicationMenu()!.getMenuItemById('show-timeline')!.click({}, BrowserWindow.getAllWindows()[0], undefined))
+
+test('timeline toggle: hiding gives the phone the height, is remembered, and brings the timeline back reachable', async () => {
+  test.setTimeout(10 * 60_000)
+  const mine = mkdtempSync(join(BASE, 'toggle-'))
+  const env = { REELSTUDIO_ROOT: join(mine, 'Documents', 'Reel Studio'), REELSTUDIO_USER_DATA: join(mine, 'user data'), REELENGINE_CACHE: join(mine, 'engine-cache') }
+  const media = makeMedia()
+  let { app, page } = await launch(env)
+  await passFirstRun(page)
+  await makeReel(page, media.video)
+  // the app is launched twice: these find their element on the page there is now
+  const slider = () => page.getByRole('slider', { name: /^Time in your reel/ })
+  const toggle = () => page.getByRole('button', { name: 'Show timeline' })
+  const height = async () => (await page.getByTestId('player').boundingBox())!.height
+  await expect(slider()).toBeVisible()
+  await expect(toggle()).toHaveAttribute('aria-pressed', 'true')
+  expect(await timelineItem(app)).toBe(true)
+  const tall = await height()
+
+  // View › Show Timeline, with focus on the timeline: it goes, the phone grows, and focus waits on the button
+  await slider().focus()
+  await clickTimelineItem(app)
+  await expect(slider()).toHaveCount(0)
+  await expect(toggle()).toHaveAttribute('aria-pressed', 'false')
+  await expect(toggle()).toBeFocused()
+  await expect.poll(height).toBeGreaterThan(tall + 40)
+  // Edit it myself works without it
+  await page.getByTestId('edit-myself').click()
+  await page.getByRole('tab', { name: 'Pictures' }).click()
+  await expect(page.getByTestId('drawer')).toBeVisible()
+  await page.getByTestId('drawer-close').click()
+  await app.close()
+
+  // remembered on this computer
+  ;({ app, page } = await launch(env))
+  await page.locator('[data-testid=project-card]').first().click()
+  await expect(page.getByTestId('play')).toBeVisible()
+  await expect(slider()).toHaveCount(0)
+  expect(await timelineItem(app)).toBe(false)
+  await shot(page, 'lanes-07-timeline-hidden')
+
+  // the Reel screen's button brings it back, and the menu follows; the keyboard reaches it from the play button
+  await toggle().click()
+  await expect(slider()).toBeVisible()
+  expect(await timelineItem(app)).toBe(true)
+  await page.getByTestId('play').focus()
+  await page.keyboard.press('Shift+Tab')
+  await expect(page.getByTestId('timeline-part').last()).toBeFocused()
   await app.close()
 })

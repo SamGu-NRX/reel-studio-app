@@ -27,6 +27,7 @@ import { NotesLog, useVersionRows, type FirstState } from '../components/NotesLo
 import { Composer, region, type Chip } from '../components/Composer'
 import { Timeline, type TimelineMark } from '../components/Timeline'
 import { lanesOf, pictureWhy, type Lanes } from '../../../shared/lanes'
+import { TIMELINE_SHORTCUT, useTimelineShown } from '../components/timelineShown'
 import { keptIds } from '../../../shared/cut'
 import type { SoundEffect } from '../../../shared/sfx'
 import { soundPack } from './edit/SoundTab'
@@ -50,9 +51,11 @@ const ACTION_TAB: Partial<Record<ChatAction, Tab>> = {
 
 const NOTIFY_ASKED = 'rs.notify-asked'
 const pinsKey = (slug: string): string => `rs.pins.${slug}`
-/** After closing something from the keyboard, focus lands on the timeline rather than the page. */
+/** After closing something from the keyboard, focus lands on the timeline rather than the page, or on the button that
+ * shows it when it is hidden. */
 const keyboardBackToTimeline = (): void => {
-  if (byKeyboard()) requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="timeline"]')?.focus())
+  if (byKeyboard())
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="timeline"], [data-testid="timeline-toggle"]')?.focus())
 }
 const typing = (t: EventTarget | null): boolean => {
   const el = t as HTMLElement | null
@@ -115,6 +118,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const [more, setMore] = useState(false)
   const moreBtn = useRef<HTMLButtonElement>(null)
   const [phoneView, setPhoneView] = usePhoneView()
+  const [timelineShown, setTimelineShown] = useTimelineShown()
   const [shape] = usePhoneShape()
   const [full, setFull] = useState(false)
   const [holding, setHolding] = useState(false)
@@ -422,8 +426,9 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     if (!d || !v || timeline.video !== shownVideo || shownN === undefined) return null
     const why = (id: string) => pictureWhy(id, d.versions, d.project.notes ?? [], shownN)
     const kept = new Set(keptIds(d.words, v.project.cut?.keep))
-    return lanesOf(v.project, { placed: v.words, segments: v.segments, words: d.words, kept, duration: v.duration, layers: new Map(v.layers.map((l) => [l.id!, l])) }, pack, why)
-  }, [timeline, shownVideo, shownN, d?.versions, d?.project.notes, d?.words, pack]) // eslint-disable-line react-hooks/exhaustive-deps
+    const thumb = (b: { id: string }) => d.brollThumbs[b.id] ?? null
+    return lanesOf(v.project, { placed: v.words, segments: v.segments, words: d.words, kept, duration: v.duration, layers: new Map(v.layers.map((l) => [l.id!, l])) }, pack, why, thumb)
+  }, [timeline, shownVideo, shownN, d?.versions, d?.project.notes, d?.words, d?.brollThumbs, pack]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // a planning turn holds the send button; whatever the box said while it ran is stale once the editor answers
   const planAnswering = d?.status === 'planned' && !!job
@@ -913,7 +918,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
               </FullStage>
               {src && (
                 <>
-                  <Timeline
+                  {timelineShown && <Timeline
                     playhead={playhead}
                     transport={transport}
                     duration={duration}
@@ -939,10 +944,19 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                       if (!byKeyboard()) noteField.current?.focus()
                     }}
                     onPlay={(n) => !drawer && watch(n)}
-                  />
+                  />}
                   <TransportRow transport={transport} playhead={playhead}>
                     <ShapeMenu />
                     {viewSwitch}
+                    <IconButton
+                      icon="timeline"
+                      label="Show timeline"
+                      shortcut={TIMELINE_SHORTCUT}
+                      className="tl-toggle"
+                      aria-pressed={timelineShown}
+                      onClick={() => void setTimelineShown(!timelineShown).catch((e) => notify(userMessage(e), 'error'))}
+                      data-testid="timeline-toggle"
+                    />
                     <IconButton icon="fullscreen" label="Full screen" shortcut="F" aria-keyshortcuts="F" onClick={() => setFull(true)} data-testid="full-screen" />
                   </TransportRow>
                 </>

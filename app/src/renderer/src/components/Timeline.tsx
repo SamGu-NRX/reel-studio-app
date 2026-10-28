@@ -2,9 +2,9 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PlacedWord } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
 import { momentLabel } from '../../../shared/moments'
-import { laneLayout, pictureLabel, videoLabel, type Lanes, type PicturePart, type VideoPart } from '../../../shared/lanes'
+import { laneLayout, pictureLabel, videoLabel, type Lanes, type PictureKind, type PicturePart, type VideoPart } from '../../../shared/lanes'
 import { leadIn } from '../../../shared/sfx'
-import { Icon } from './icons'
+import { Icon, type IconName } from './icons'
 import { useFollowPlayhead, type Playhead } from './playhead'
 import type { Transport } from './transport'
 
@@ -100,11 +100,11 @@ export function Timeline({
     setLit(key)
     setStop((s) => (s[lane] === key ? s : { ...s, [lane]: key }))
   }
-  // the part of your video under the pointer, named after VIDEO_TIP_MS
-  const [hoverPart, setHoverPart] = useState<number | null>(null)
+  // what the pointer is over on the rail (a part of your video, by index) or the song's line, named after VIDEO_TIP_MS
+  const [hoverPart, setHoverPart] = useState<number | 'song' | null>(null)
   const hoverTimer = useRef<number | undefined>(undefined)
-  // the part under the pointer now, which the delayed tip names when it fires
-  const hoverNow = useRef<number | null>(null)
+  // what is under the pointer now, which the delayed tip names when it fires
+  const hoverNow = useRef<number | 'song' | null>(null)
   useLayoutEffect(() => () => window.clearTimeout(hoverTimer.current), [])
 
   const follow = useCallback(
@@ -137,7 +137,7 @@ export function Timeline({
   }
 
   const down = (ev: React.PointerEvent<HTMLDivElement>) => {
-    if (!duration || ev.button !== 0 || (ev.target as HTMLElement).closest('.tl-mark, .tl-sound, .tl-pic')) return
+    if (!duration || ev.button !== 0 || (ev.target as HTMLElement).closest('.tl-mark, .tl-sound, .tl-pic, .tl-gutter')) return
     clearHover()
     const el = ev.currentTarget
     el.setPointerCapture(ev.pointerId)
@@ -191,14 +191,17 @@ export function Timeline({
     hoverTimer.current = undefined
     setHoverPart(null)
   }
-  // only the rail names a part; the lanes above and below have their own items
+  // the rail names the part of your video under the pointer, and the song's line names the song; the items above
+  // and below have their own tips
   const hover = (ev: React.PointerEvent<HTMLDivElement>) => {
-    if (!duration || ev.buttons || !video.length || ev.pointerType !== 'mouse') return
+    if (!duration || ev.buttons || ev.pointerType !== 'mouse') return
     const b = track.current!.getBoundingClientRect()
     const y = ev.clientY - b.top
     const t = tAt(ev.clientX)
-    const i = y >= RAIL_BAND[0] && y <= RAIL_BAND[1] && !(ev.target as HTMLElement).closest('.tl-mark, .tl-sound, .tl-pic') ? video.findIndex((p) => t >= p.t0 && t <= p.t1) : -1
-    if (i < 0) return clearHover()
+    const free = !(ev.target as HTMLElement).closest('.tl-mark, .tl-sound, .tl-pic, .tl-gutter')
+    const part = free && y >= RAIL_BAND[0] && y <= RAIL_BAND[1] ? video.findIndex((p) => t >= p.t0 && t <= p.t1) : -1
+    const i = part >= 0 ? part : free && lanes?.music && y >= SONG_BAND[0] && y <= SONG_BAND[1] ? 'song' : null
+    if (i === null) return clearHover()
     hoverNow.current = i
     if (hoverPart !== null) return setHoverPart(i)
     if (hoverTimer.current === undefined) hoverTimer.current = window.setTimeout(() => setHoverPart(hoverNow.current), VIDEO_TIP_MS)
@@ -235,15 +238,36 @@ export function Timeline({
   const videoKeys = video.map((p) => `v${p.t0}`)
   const soundKeys = sounds.map((g) => g.items[0].key)
   const tipSide = (at: number): string => (at / duration < 0.2 ? ' start' : at / duration > 0.8 ? ' end' : '')
-  // the song's fades under the rail: a ramp up at the start and down at the end, joined by a hairline at full level
-  const ramp = (() => {
-    if (!lanes?.music || !duration) return null
-    const fi = (Math.min(lanes.music.fadeIn / duration, 0.5) * 1000).toFixed(1)
-    const fo = (1000 - Math.min(lanes.music.fadeOut / duration, 0.5) * 1000).toFixed(1)
-    return { fades: `M0 6L${fi} 0V6ZM${fo} 0L1000 6H${fo}Z`, level: `M${fi} 0.5H${fo}` }
+  // the song's loudness under the flags: it rises over its fade-in, holds, and falls over its fade-out. A fade is drawn
+  // at least FADE_PX wide, so a short one on a long reel still slopes.
+  const song = (() => {
+    if (!lanes?.music || !duration || !width) return null
+    const min = FADE_PX / width
+    const fi = (Math.min(Math.max(lanes.music.fadeIn / duration, min), 0.5) * 1000).toFixed(1)
+    const fo = (1000 - Math.min(Math.max(lanes.music.fadeOut / duration, min), 0.5) * 1000).toFixed(1)
+    return `M0 9L${fi} 1H${fo}L1000 9`
   })()
+  // a sound's kind word sits beside its flag where it fits before the next one
+  const soundWords = sounds.map(({ at, items }, i) => {
+    const word = items.length > 1 ? `${items.length} sounds` : items[0].kind
+    const next = sounds[i + 1]
+    const room = ((next ? next.at : duration) - at) / (duration || 1) * width - WORD_GAP
+    return room >= textWidth(word) ? word : null
+  })
+  const laneFull = { pictures: pictures.length > 0, video: video.length > 0, sound: sounds.length > 0 || !!lanes?.music }
   return (
     <div className="tl" onPointerDown={down} onPointerMove={hover} onPointerLeave={clearHover}>
+      <span className="tl-gutter" aria-hidden data-testid="lane-gutter">
+        <span className={`tl-lane-icon pics${laneFull.pictures ? '' : ' empty'}`} title="Pictures">
+          <Icon name="image" size={16} stroke={1.5} />
+        </span>
+        <span className={`tl-lane-icon video${laneFull.video ? '' : ' empty'}`} title="Your video">
+          <Icon name="film" size={16} stroke={1.5} />
+        </span>
+        <span className={`tl-lane-icon sound${laneFull.sound ? '' : ' empty'}`} title="Sound">
+          <Icon name="music" size={16} stroke={1.5} />
+        </span>
+      </span>
       <div
         ref={track}
         className="tl-track"
@@ -264,10 +288,9 @@ export function Timeline({
             p.kind === 'clip' ? <span key={p.t0} className="tl-clip" style={{ left: pct(p.t0), width: `calc(${pct(p.t1)} - ${pct(p.t0)})` }} aria-hidden data-testid="timeline-clip" /> : null
           )}
         <span className="tl-fill" ref={fill} aria-hidden />
-        {ramp && (
-          <svg className="tl-music" viewBox="0 0 1000 6" preserveAspectRatio="none" aria-hidden data-testid="timeline-music">
-            <path className="fade" d={ramp.fades} />
-            <path className="level" d={ramp.level} />
+        {song && (
+          <svg className="tl-music" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden data-testid="timeline-music">
+            <path d={song} />
           </svg>
         )}
         {duration > 0 &&
@@ -289,7 +312,8 @@ export function Timeline({
             <i />
           </span>
         </span>
-        {hoverPart !== null && video[hoverPart] && !sel && <VideoTip part={video[hoverPart]} videos={videos} side={tipSide(mid(video[hoverPart]))} left={pct(mid(video[hoverPart]))} />}
+        {typeof hoverPart === 'number' && video[hoverPart] && !sel && <VideoTip part={video[hoverPart]} videos={videos} side={tipSide(mid(video[hoverPart]))} left={pct(mid(video[hoverPart]))} />}
+        {hoverPart === 'song' && lanes?.music && !sel && <SongTip fadeIn={lanes.music.fadeIn} fadeOut={lanes.music.fadeOut} />}
       </div>
       {duration > 0 && groups.length > 0 && (
         <div className="tl-marks" role="group" aria-label="Notes on the timeline">
@@ -349,7 +373,14 @@ export function Timeline({
                 }}
                 data-testid="timeline-picture"
               >
-                <i style={{ left: bar.x - bar.hitX, width: bar.w }} />
+                {bar.thumb && (
+                  <span className="tl-thumb" style={{ left: bar.x - bar.hitX }} data-testid="timeline-thumb">
+                    {p.thumb ? <img src={p.thumb} alt="" draggable={false} /> : <Icon name={GLYPHS[p.kind]} size={12} stroke={1.75} />}
+                  </span>
+                )}
+                {(!bar.thumb || bar.w > THUMB_W + THUMB_GAP) && (
+                  <i style={bar.thumb ? { left: bar.x - bar.hitX + THUMB_W + THUMB_GAP, width: bar.w - THUMB_W - THUMB_GAP } : { left: bar.x - bar.hitX, width: bar.w }} />
+                )}
                 {lit === p.id && <PictureTip part={p} side={tipSide(p.t0)} />}
               </button>
             )
@@ -383,8 +414,9 @@ export function Timeline({
       )}
       {duration > 0 && sounds.length > 0 && (
         <div className="tl-lane tl-sounds" role="group" aria-label="Sound effects on the timeline" onKeyDown={rove}>
-          {sounds.map(({ at, items }) => {
+          {sounds.map(({ at, items }, i) => {
             const key = items[0].key
+            const word = soundWords[i]
             const on = items.some((m) => m.key === selectedSound)
             const off = items.every((m) => m.off)
             return (
@@ -408,6 +440,11 @@ export function Timeline({
                 <svg viewBox="0 0 10 12" aria-hidden>
                   <path d="M5 1l4 4v5.5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5V5z" />
                 </svg>
+                {word && (
+                  <span className="tl-sound-word" aria-hidden>
+                    {word}
+                  </span>
+                )}
                 {lit === key && (
                   <span className={`tl-tip below${tipSide(at)}`}>
                     {items.map((m) => {
@@ -426,7 +463,34 @@ export function Timeline({
           })}
         </div>
       )}
+      {duration > 0 && lanes?.music && (
+        <div className="tl-lane tl-songs" role="group" aria-label="Song on the timeline">
+          <button
+            className="tl-song"
+            aria-label={`Song: fades in over ${secs(lanes.music.fadeIn)}, out over ${secs(lanes.music.fadeOut)}`}
+            onFocus={() => setLit('song')}
+            onBlur={() => setLit(null)}
+            onClick={() => transport.seek(0)}
+            data-testid="timeline-song"
+          />
+          {lit === 'song' && (
+            <span className="tl-song-ring" aria-hidden>
+              <SongTip fadeIn={lanes.music.fadeIn} fadeOut={lanes.music.fadeOut} />
+            </span>
+          )}
+        </div>
+      )}
     </div>
+  )
+}
+
+function SongTip({ fadeIn, fadeOut }: { fadeIn: number; fadeOut: number }) {
+  return (
+    <span className="tl-tip start song" aria-hidden data-testid="timeline-song-tip">
+      <span>
+        <b>Song</b> fades in over {secs(fadeIn)}, out over {secs(fadeOut)}
+      </span>
+    </span>
   )
 }
 
@@ -448,7 +512,32 @@ export function markLabel(items: TimelineMark[]): string {
 
 // Where the rail is in the track (reel.css .tl-rail and .tl-clip), give or take a few pixels: a hover there names
 // the part of your video under it.
-const RAIL_BAND = [16, 32] as const
+const RAIL_BAND = [22, 38] as const
+// The song's line under the flags (reel.css .tl-music), the same way.
+const SONG_BAND = [46, 60] as const
+const FADE_PX = 6
+// A sound's button starts 12 px left of its moment and holds 21 px before its word and 4 after, so with a word it
+// ends at moment + word + 13 px; the next one starts 12 px before its own moment. A word shows only when that fits.
+const WORD_GAP = 25
+// A picture's thumbnail, then paper before the rest of its bar (shared/lanes.ts THUMB_MIN is their sum).
+const THUMB_W = 16
+const THUMB_GAP = 4
+const GLYPHS: Record<PictureKind, IconName> = { picture: 'image', clip: 'video', words: 'type', animation: 'sparkles', wall: 'layers' }
+const secs = (s: number): string => `${Number(s.toFixed(1))} s`
+
+// Measured once per word in the timeline's own type (reel.css .tl-sound-word), so a word is shown only where it fits.
+const widths = new Map<string, number>()
+let measure: CanvasRenderingContext2D | null = null
+function textWidth(word: string): number {
+  const known = widths.get(word)
+  if (known !== undefined) return known
+  measure ??= document.createElement('canvas').getContext('2d')
+  if (!measure) return Infinity
+  measure.font = `600 11px ${getComputedStyle(document.documentElement).getPropertyValue('--font-ui') || 'sans-serif'}`
+  const w = measure.measureText(word).width
+  widths.set(word, w)
+  return w
+}
 const mid = (p: { t0: number; t1: number }): number => (p.t0 + p.t1) / 2
 
 function VideoTip({ part, videos, side, left }: { part: VideoPart; videos: number; side: string; left?: string }) {
