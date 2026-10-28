@@ -55,6 +55,7 @@ def test_named_kinds_render(tmp_path, take, kind):
     rows = encode(ctx, take, spans, "named")
     if kind == "drift":
         sizes = widths(rows)[round(spans[0].t0 * FPS):round(spans[0].t1 * FPS)]
+        assert sizes[-1] - sizes[0] > 30, "drift rendered static instead of moving toward its target"
         assert sizes[0] == pytest.approx(144, abs=2)
         assert sizes[-1] == pytest.approx(144 * 1.3, abs=2)
         assert np.all(np.diff(sizes) >= -1), sizes
@@ -94,6 +95,9 @@ def test_multiple_ramps_keep_their_own_crop(tmp_path, take):
     for i, span in enumerate(spans):
         alone = widths(encode(ctx, take, [span], f"alone{i}"))
         a, b = round(span.t0 * FPS), round(span.t1 * FPS)
+        # Once the entrance ends, the zoom must hold instead of running its curve backward.
+        held = combined[a + span.ramp_in:b]
+        assert np.all(np.abs(held - 144 * span.scale) <= 2), held
         assert np.max(np.abs(combined[a:b] - alone[a:b])) <= 1
 
 
