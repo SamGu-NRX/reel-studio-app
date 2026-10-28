@@ -224,7 +224,9 @@ html.kb .tl-sound:focus-visible { outline: 2px solid var(--ink); outline-offset:
 .tl-tip .tnum { font-variant-numeric: tabular-nums; color: var(--ink-3); }
 .tl-tip.dark { background: var(--ink); color: #fff; font-weight: 650; font-variant-numeric: tabular-nums; bottom: calc(100% - 2px); }
 
-.transport { flex: none; display: flex; align-items: center; gap: 10px; height: 40px; margin-top: 4px; }
+.transport { flex: none; height: 40px; margin-top: 4px; }
+/* the row is inside the container (preview.css), so a narrow stage can tighten its gap */
+.tr-row { display: flex; align-items: center; gap: 10px; height: 100%; }
 .transport .pp {
   width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--ink); color: #fff; display: grid; place-items: center; flex: none; cursor: pointer;
   transition: transform 120ms var(--ease-out);

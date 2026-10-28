@@ -1187,15 +1187,17 @@ function TransportRow({ transport, playhead, children }: { transport: Transport;
   const second = usePlayhead(playhead, Math.floor)
   return (
     <div className="transport">
-      <button className="pp" onClick={() => transport.toggle()} aria-label={playing ? 'Pause' : 'Play'} data-testid="play">
-        <Icon name={playing ? 'pause' : 'play'} size={14} stroke={2} />
-      </button>
-      <span className="tc" data-testid="time">
-        {clock(second)} <span>/ {clock(duration)}</span>
-      </span>
-      <span className="sp" />
-      <SpeedMenu transport={transport} />
-      {children}
+      <div className="tr-row">
+        <button className="pp" onClick={() => transport.toggle()} aria-label={playing ? 'Pause' : 'Play'} data-testid="play">
+          <Icon name={playing ? 'pause' : 'play'} size={14} stroke={2} />
+        </button>
+        <span className="tc" data-testid="time">
+          {clock(second)} <span>/ {clock(duration)}</span>
+        </span>
+        <span className="sp" />
+        <SpeedMenu transport={transport} />
+        {children}
+      </div>
     </div>
   )
 }
