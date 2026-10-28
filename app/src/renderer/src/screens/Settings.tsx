@@ -2,6 +2,7 @@ import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from
 import type { AppInfo, EngineCache, PermissionStatus } from '../../../shared/api'
 import { sizeLine } from '../../../shared/size'
 import { RELEASES_REPO } from '../../../shared/config'
+import { channelOf, productName } from '../../../shared/channel'
 import { reel, userMessage } from '../api'
 import type { Go, SettingsSection } from '../nav'
 import { AnthropicKey, ConnectAI, DevProviders, downloadLine, useActiveEditor, useModelStatus } from '../components/connect'
@@ -26,6 +27,8 @@ const REPO_FILE = (f: string): string => `https://github.com/${RELEASES_REPO}/bl
 
 export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i: AppInfo) => void; go?: Go; section?: SettingsSection }) {
   const notify = useNotify()
+  // The nightly reads and writes the stable app's speech model folder (main/paths.ts modelsDir)
+  const sharedModel = channelOf(info.version) === 'nightly'
   const [query, setQuery] = useState('')
   const hits = useMemo(() => findSettings(query), [query])
   const search = useRef<HTMLInputElement>(null)
@@ -248,7 +251,7 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
                   </div>
                 )}
               </SettingRow>
-              <ListeningModel />
+              <ListeningModel shared={sharedModel} />
               <SettingRow
                 id="faster-exports"
                 line="Makes new reels at 30 fps, which is quicker. Leave off to keep the smoother motion of 60 fps video."
@@ -302,7 +305,7 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
             </Section>
 
             <Section id="about">
-              <SettingRow id="version" line={`Reel Studio ${info.version}. No account needed.${info.engine.mode === 'fake' ? ' Test engine in use.' : ''}`} />
+              <SettingRow id="version" line={`${productName(info.version)} ${info.version}. No account needed.${info.engine.mode === 'fake' ? ' Test engine in use.' : ''}`} />
               <SettingRow
                 id="licence"
                 line="Free and open source under the MIT licence. The parts it's built on keep their own licences."
@@ -338,7 +341,7 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
               <Subhead ids={['stock-keys']}>Stock photos and footage</Subhead>
               <StockKeys />
               <Subhead ids={['engine-cache', 'logs', 'first-run']}>Troubleshooting</Subhead>
-              <CacheRow onError={(m) => notify(m, 'error')} />
+              <CacheRow shared={sharedModel} onError={(m) => notify(m, 'error')} />
               <SettingRow
                 id="logs"
                 line="What Reel Studio did and any errors, for when something goes wrong."
@@ -348,7 +351,7 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
                   </button>
                 }
               />
-              <FirstRunRow info={info} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
+              <FirstRunRow info={info} shared={sharedModel} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
             </Section>
 
             {info.dev && !hits && (
@@ -386,9 +389,9 @@ function Section({ id, desc, children }: { id: SectionId; desc?: string; childre
 }
 
 /** The on-device model that writes down what you say. */
-function ListeningModel() {
+function ListeningModel({ shared }: { shared: boolean }) {
   const { s } = useModelStatus()
-  const line = 'Writes down what you say, on this computer, for subtitles and your notes. About 500 MB, once.'
+  const line = `Writes down what you say, on this computer, for subtitles and your notes. ${shared ? 'About 500 MB, shared with Reel Studio on this computer.' : 'About 500 MB, once.'}`
   if (!s) return <SettingRow id="listening-model" line={line} control={<Spinner />} />
   const paused = !s.installed && !s.downloading && s.pct > 0 && s.pct < 100
   return (
@@ -460,7 +463,7 @@ function PathLine({ path, display, testid }: { path: string; display: string; te
 }
 
 /** The engine's cache: its size, where it is, and Clear cache behind a confirm. */
-function CacheRow({ onError }: { onError: (m: string) => void }) {
+function CacheRow({ shared, onError }: { shared: boolean; onError: (m: string) => void }) {
   const [cache, setCache] = useState<EngineCache | null>(null)
   const [asking, setAsking] = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -512,7 +515,7 @@ function CacheRow({ onError }: { onError: (m: string) => void }) {
       {asking && cache && (
         <Confirm
           title="Clear the cache?"
-          body={`This deletes ${sizeLine(cache.bytes)} of saved song analysis and picture lookups. Your reels, Library and settings stay. The next reel may take a little longer.`}
+          body={`This deletes ${sizeLine(cache.bytes)} of saved song analysis and picture lookups. Your reels, Library and settings stay${shared ? ', and so does the listening model you share with Reel Studio' : ''}. The next reel may take a little longer.`}
           yes="Clear cache"
           no="Cancel"
           danger
@@ -525,7 +528,7 @@ function CacheRow({ onError }: { onError: (m: string) => void }) {
 }
 
 /** Reset first run: the welcome and the sample show again the next time the app opens, never in the middle of this run. */
-function FirstRunRow({ info, onInfo, onError }: { info: AppInfo; onInfo: (i: AppInfo) => void; onError: (m: string) => void }) {
+function FirstRunRow({ info, shared, onInfo, onError }: { info: AppInfo; shared: boolean; onInfo: (i: AppInfo) => void; onError: (m: string) => void }) {
   const [asking, setAsking] = useState(false)
   const set = async (on: boolean) => {
     setAsking(false)
@@ -540,7 +543,7 @@ function FirstRunRow({ info, onInfo, onError }: { info: AppInfo; onInfo: (i: App
       id="first-run"
       line={
         <span data-testid="first-run-line">
-          {info.firstRunAgain ? 'The welcome and the sample show the next time Reel Studio opens.' : 'Shows the welcome and the sample again the next time Reel Studio opens. Your reels stay.'}
+          {info.firstRunAgain ? `The welcome and the sample show the next time ${productName(info.version)} opens.` : `Shows the welcome and the sample again the next time ${productName(info.version)} opens. Your reels stay.`}
         </span>
       }
       control={
@@ -558,7 +561,7 @@ function FirstRunRow({ info, onInfo, onError }: { info: AppInfo; onInfo: (i: App
       {asking && (
         <Confirm
           title="Reset the first run?"
-          body="The welcome, the sample and Choose your editor show the next time Reel Studio opens. Your reels, Library and settings stay."
+          body={`The welcome, the sample and Choose your editor show the next time ${productName(info.version)} opens. Your reels, Library and settings stay${shared ? ', and so does the listening model you share with Reel Studio' : ''}.`}
           yes="Reset first run"
           no="Cancel"
           onYes={() => void set(true)}

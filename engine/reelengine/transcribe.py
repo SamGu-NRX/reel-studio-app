@@ -11,6 +11,7 @@ MODEL_MISSING; `python -m reelengine download-model --name X` fetches one with p
 """
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import hashlib
 import http.client
@@ -190,9 +191,44 @@ def _index_files(base: str, repo: str) -> list:
     return files
 
 
+@contextlib.contextmanager
+def _download_lock(dest: Path):
+    """One download into a model folder at a time, across processes: the stable app and the nightly share
+    REELENGINE_MODELS, and two writers appending to the same .part would corrupt it. The operating system
+    drops the lock when its process dies, so a killed download never blocks the next one."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest.parent / f".{dest.name}.download-lock", "a+b") as f:
+        waited = False
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if not waited:
+                    progress("download", 0, "Waiting for the other copy of Reel Studio to finish the download",
+                             force=True)
+                    waited = True
+                time.sleep(0.5)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                import msvcrt
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+
+
 def download_model(name: str) -> dict:
     """Fetch a CTranslate2 whisper model into REELENGINE_MODELS/<name>/. Resumable: each file is
-    downloaded to <file>.part with an HTTP Range request picking up where it stopped.
+    downloaded to <file>.part with an HTTP Range request picking up where it stopped, and only a
+    checked file is renamed into place. A second process asking for the same model waits for the
+    first (_download_lock), then finds it present.
 
     A pinned model (PINNED_MODELS) downloads its exact revision, and every file must match the pinned
     size AND SHA-256 before it is kept. Any other model follows the repo's live index, checked
@@ -202,6 +238,11 @@ def download_model(name: str) -> dict:
         raise EngineError("BAD_MODEL", f"unknown model {name!r}; known: {sorted(MODEL_REPOS)}",
                           "That listening model isn't one Reel Studio knows about.")
     dest = model_dir(name)
+    with _download_lock(dest):
+        return _download_unlocked(name, repo, dest)
+
+
+def _download_unlocked(name: str, repo: str, dest: Path) -> dict:
     if model_present(name):
         progress("download", 100, "The listening model is ready", force=True)
         return {"model": name, "path": str(dest), "downloaded": False}

@@ -52,7 +52,9 @@ fi
 
 # Finder finds the volume by name, so a second volume with the same name would get the layout instead.
 [ ! -e "/Volumes/$VOL" ] || die "A disk called \"$VOL\" is already open. Eject it in Finder, then run this again."
-bash "$HERE/render-background.sh" "$WORK/art"
+# The nightly's window names the nightly (letter-background.py writes both files).
+BG_SVG="$HERE/background.svg"; [ "$APP_NAME" != "Reel Studio (Nightly).app" ] || BG_SVG="$HERE/background-nightly.svg"
+bash "$HERE/render-background.sh" "$WORK/art" "$BG_SVG"
 mkdir "$STAGE/.background"
 cp "$WORK/art/background.tiff" "$STAGE/.background/background.tiff"
 

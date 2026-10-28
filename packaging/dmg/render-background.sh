@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # Render packaging/dmg/background.svg into the disk image window background.
 #
-#   packaging/dmg/render-background.sh OUT_DIR
+#   packaging/dmg/render-background.sh OUT_DIR [SOURCE.svg]     (default background.svg; the nightly passes its own)
 #   -> OUT_DIR/background.png (640x432), background-2x.png (1280x864), background.tiff (both, for Retina)
 #
 # Finder takes ONE background file, so the shipped window uses the TIFF: tiffutil stores the 1x and 2x images
 # together and Finder picks the sharp one on a Retina screen. electron-builder gets the same TIFF.
 set -euo pipefail
-OUT="${1:?usage: render-background.sh OUT_DIR}"
+OUT="${1:?usage: render-background.sh OUT_DIR [SOURCE.svg]}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="${2:-$DIR/background.svg}"
 mkdir -p "$OUT"
 # sips draws an <image> only from a data: URL, not from a file path, so inline each image file the SVG names.
-python3 - "$DIR/background.svg" "$OUT/background.svg" <<'PY'
+python3 - "$SRC" "$OUT/background.svg" <<'PY'
 import base64, re, sys
 from pathlib import Path
 src, dst = Path(sys.argv[1]), Path(sys.argv[2])

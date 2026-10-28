@@ -1,4 +1,5 @@
 import { RELEASES_URL } from '../../../shared/config'
+import { productName, releasesUrl } from '../../../shared/channel'
 import { updateAction } from '../../../shared/update'
 import { updateSummary } from './update-copy'
 import { Icon } from './icons'
@@ -12,7 +13,7 @@ export function UpdateSettingsRow() {
   if (!s) return null
   const action = updateAction(s)
   const disabled = ['disabled', 'checking', 'downloading', 'installing'].includes(s.status)
-  const text = s.status === 'idle' ? `You have Reel Studio ${s.currentVersion}.` : updateSummary(s).replace(/ Click to .*$/, '')
+  const text = s.status === 'idle' ? `You have ${productName(s.currentVersion)} ${s.currentVersion}.` : updateSummary(s).replace(/ Click to .*$/, '')
   const button = action !== 'none' ? (s.status === 'error' ? 'Try again' : action === 'install' ? 'Restart to update' : 'Download')
     : s.status === 'checking' ? 'Checking…' : s.status === 'downloading' ? 'Downloading…' : s.status === 'installing' ? 'Restarting…'
     : s.status === 'up-to-date' ? 'Check again' : s.status === 'error' ? 'Try again' : 'Check now'
@@ -58,7 +59,7 @@ export function WhatsNew() {
       ) : (
         <p className="muted-sm">Every version’s changes are on the releases page.</p>
       )}
-      <a className="ext-link" href={RELEASES_URL} target="_blank" rel="noreferrer" data-testid="update-releases-link">
+      <a className="ext-link" href={s ? releasesUrl(s.currentVersion) : RELEASES_URL} target="_blank" rel="noreferrer" data-testid="update-releases-link">
         Releases page <Icon name="external" size={12} stroke={2} />
       </a>
     </div>

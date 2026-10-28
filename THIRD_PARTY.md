@@ -80,7 +80,10 @@ requirements". Our offer:
    compilation and installation" (`build.sh`, `sources.txt` with every version, URL and SHA-256, `pack.py`, `README.md`).
    FFmpeg is not patched. `README.txt` and `SHA256SUMS.txt` sit beside them. **Whoever publishes a release attaches every
    file in that folder to the release and keeps them there as long as the installers are downloadable.** The release notes
-   say where they are (`docs/RELEASE-NOTES-*.md`).
+   say where they are (`docs/RELEASE-NOTES-*.md`). Nightly prereleases, which come out several times a day from the same
+   pins, instead link from their notes to one release in the same repository that holds that folder, tagged
+   `sources-ffmpeg-<version>-<recipe>-<pins>` (`<pins>` is a hash of `packaging/ffmpeg/` and `mirror_gpl_sources.py`),
+   and that release stays up as long as any nightly linking it does.
 2. **Anyone can rebuild the binaries**: one command on each platform (`bash packaging/ffmpeg/build.sh <workdir>`, in an
    MSYS2 UCRT64 shell on Windows or a normal terminal on Apple silicon; the setup is in `packaging/ffmpeg/README.md`).
    The script downloads each source, refuses any file whose SHA-256 differs from `sources.txt`, and compiles. The only

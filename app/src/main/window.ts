@@ -6,7 +6,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { isStrictlyInsideFolder } from './inside-folder'
 import type { AppCommand, JobEvent } from '../shared/api'
-import { RELEASES_REPO } from '../shared/config'
+import { channelOf, productName, RELEASES_REPOS } from '../shared/channel'
 import { titlebarHeight } from '../shared/chrome'
 
 export const PAPER = '#F1F2EF'
@@ -91,7 +91,7 @@ export function createMainWindow(opts: { preload: string; stateFile: string; tes
     minWidth: MIN.width,
     minHeight: MIN.height,
     show: false,
-    title: 'Reel Studio',
+    title: productName(app.getVersion()),
     backgroundColor: PAPER,
     // macOS: traffic lights inset over the sidebar. Windows: our own paper-coloured bar with the
     // system's window buttons drawn on top, so there is no grey strip and no stray menu bar.
@@ -107,6 +107,8 @@ export function createMainWindow(opts: { preload: string; stateFile: string; tes
       webSecurity: true
     }
   })
+  // The page's <title> says Reel Studio; the window (Windows taskbar, Mission Control) keeps the channel's name.
+  win.on('page-title-updated', (e) => e.preventDefault())
   if (b.maximized && !opts.test) win.maximize()
   if (!opts.test) {
     win.on('close', () => saveBounds(opts.stateFile, win))
@@ -131,7 +133,7 @@ export function installMenu(send: (c: AppCommand) => void, dev: boolean, toggleT
     Menu.setApplicationMenu(null)
     return
   }
-  const name = app.name || 'Reel Studio'
+  const name = productName(app.getVersion())
   const template: MenuItemConstructorOptions[] = [
     {
       label: name,
@@ -193,7 +195,7 @@ export function installMenu(send: (c: AppCommand) => void, dev: boolean, toggleT
     { role: 'windowMenu' },
     {
       role: 'help',
-      submenu: [{ label: 'Reel Studio on GitHub', click: () => void shell.openExternal(`https://github.com/${RELEASES_REPO}`) }]
+      submenu: [{ label: `${name} on GitHub`, click: () => void shell.openExternal(`https://github.com/${RELEASES_REPOS[channelOf(app.getVersion())]}`) }]
     }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))

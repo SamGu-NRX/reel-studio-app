@@ -9,7 +9,7 @@
   <rect x="332" y="192" width="360" height="640" rx="72" fill="#1d1b18"/>
   <!-- play triangle -->
   <path d="M462 424 L462 600 L606 512 Z" fill="#e8603c" stroke="#e8603c" stroke-width="34" stroke-linejoin="round"/>
-  <!-- sparkle, knocked out of the phone with a paper-coloured keyline -->
+  <!-- sparkle, knocked out of the phone with a plate-coloured keyline -->
   <path d="M710,142 Q730.8,225.2 814,246 Q730.8,266.8 710,350 Q689.2,266.8 606,246 Q689.2,225.2 710,142 Z" fill="#e8603c" stroke="#f7f5f1" stroke-width="26" stroke-linejoin="round" paint-order="stroke"/>
   </g>
 </svg>
