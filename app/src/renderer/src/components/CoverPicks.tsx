@@ -17,6 +17,7 @@ export function CoverPicks({
   waiting,
   chosen,
   flipped,
+  yours,
   onPick
 }: {
   /** the engine's answer; the drawer keeps one per opening so switching tabs does not look again */
@@ -27,6 +28,8 @@ export function CoverPicks({
   chosen: number
   /** the stills were taken before Flip the picture changed: show them the way the cover will be */
   flipped: boolean
+  /** when the cover is the person's own frame and none of these: its time in the version ("0:07"), else null */
+  yours: string | null
   onPick: (c: CoverCandidate) => void
 }) {
   const [picks, setPicks] = useState<CoverCandidate[] | null>(null)
@@ -63,6 +66,16 @@ export function CoverPicks({
   }
 
   const said = pointed ?? picks?.find(isChosen) ?? null
+  // when and why for the frame pointed at or chosen; for the person's own frame, that it is theirs
+  const why = said ? (
+    <>
+      <b className="tnum">{clock(said.atSourceTime)}</b> {coverReason(said.reasons)}
+    </>
+  ) : yours ? (
+    <>
+      Your pick at <b className="tnum">{yours}</b>
+    </>
+  ) : null
   return (
     <section className="stack" aria-labelledby="cover-picks-title">
       <div>
@@ -81,9 +94,16 @@ export function CoverPicks({
           </div>
         </div>
       ) : picks.length === 0 ? (
-        <p className="muted-sm" data-testid="cover-picks-none">
-          {problem ?? 'No clear frame of your face was found. Pick any moment below.'}
-        </p>
+        <div>
+          <p className="muted-sm" data-testid="cover-picks-none">
+            {problem ?? 'No clear frame of your face was found. Pick any moment below.'}
+          </p>
+          {why && (
+            <p className="cover-why" data-testid="cover-why">
+              {why}
+            </p>
+          )}
+        </div>
       ) : (
         <div>
           <div
@@ -115,12 +135,8 @@ export function CoverPicks({
               )
             })}
           </div>
-          <p className="cover-why" aria-hidden data-testid="cover-why">
-            {said && (
-              <>
-                <b className="tnum">{clock(said.atSourceTime)}</b> {coverReason(said.reasons)}
-              </>
-            )}
+          <p className="cover-why" data-testid="cover-why">
+            {why}
           </p>
         </div>
       )}

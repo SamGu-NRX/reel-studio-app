@@ -361,7 +361,7 @@ export function ShowMeHow({
         {tab === 'captions' && <SubtitlesTab {...tabProps} />}
         {tab === 'music' && <SoundTab {...tabProps} vclock={vclock} joins={joins} selected={sound} onSelect={(k) => onSound?.(k)} reveal={reveal} />}
         {tab === 'broll' && <PicturesTab {...tabProps} images={images} reloadImages={reloadImages} selected={picture} reveal={pictureReveal} onSelect={(id) => onPicture?.(id)} />}
-        {tab === 'cover' && <CoverTab {...tabProps} loadPicks={loadPicks} />}
+        {tab === 'cover' && <CoverTab {...tabProps} loadPicks={loadPicks} segments={segments} />}
       </div>
       {(busy || ahead > 0) && (
         <p className="edit-wait" role="status" data-testid="edit-wait">
