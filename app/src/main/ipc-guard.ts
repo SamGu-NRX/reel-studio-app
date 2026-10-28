@@ -91,6 +91,7 @@ export function validateIpcArgs(channel: string, args: unknown[]): void {
     case 'library:preview': ok = path(first); break
     case 'cloud:save': ok = path(first) && path(second) && text(third) && third.length > 0; break
     case 'style:answer': ok = text(second) && typeof third === 'boolean'; break
+    case 'ai:vendorStatus': case 'ai:vendorConnect': case 'ai:vendorCancel': case 'ai:vendorSignInAgain': ok = first === 'claude' || first === 'chatgpt'; break
     case 'ai:setStockKey': ok = (first === 'pexels' || first === 'pixabay') && (second === null || text(second)); break
     case 'dev:renderTestAnimation': ok = path(first) && (second === undefined || typeof second === 'boolean') &&
       (third === undefined || text(third)) && (args[3] === undefined || object(args[3])); break

@@ -68,3 +68,13 @@ it('fails if a planning-chat turn that is not text, or a plan link for a path ou
   expect(() => validateIpcArgs('phone:startPlan', ['reel'])).not.toThrow()
   expect(() => validateIpcArgs('phone:startPlan', ['../reel'])).toThrow()
 })
+
+// #90: the Connect cards' four calls name one of the two vendors and nothing else
+it('fails if a Connect call for anything but Claude or ChatGPT gets past the guard', () => {
+  for (const channel of ['ai:vendorStatus', 'ai:vendorConnect', 'ai:vendorCancel', 'ai:vendorSignInAgain']) {
+    expect(() => validateIpcArgs(channel, ['claude'])).not.toThrow()
+    expect(() => validateIpcArgs(channel, ['chatgpt'])).not.toThrow()
+    expect(() => validateIpcArgs(channel, ['codex'])).toThrow()
+    expect(() => validateIpcArgs(channel, [{ vendor: 'claude' }])).toThrow()
+  }
+})
