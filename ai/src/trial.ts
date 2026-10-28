@@ -84,7 +84,7 @@ export async function proposeTry(prompts: Prompts, provider: ModelProvider | nul
       const checked = j ? checkTryProposal(j, req) : { problems: ['reply was not the JSON object'] };
       if ('proposal' in checked) return checked.proposal;
       problems = checked.problems;
-      messages.push({ role: 'assistant', text: res.text, toolCalls: [] });
+      messages.push({ role: 'assistant', text: res.text, toolCalls: [], raw: res.raw });
       messages.push({ role: 'user', content: [{ type: 'text', text: `Problems: ${problems.join('; ')}. Fix them and reply with ONLY the corrected JSON.` }] });
     }
   } finally {

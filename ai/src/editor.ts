@@ -1,7 +1,7 @@
 // High-level editor tasks: firstEdit, applyNote, writeScript, pickTakes, and the no-AI path.
 import { StockSearch } from './stock';
 import * as path from 'node:path';
-import { AgentEvent, AgentResult, AIError, EngineHost, ImagePart, ModelProvider, Phase, PlanTurnInput, PlanTurnResult, ScriptResult, UserFacingError } from './types';
+import { AgentEvent, AgentResult, AIError, CompletionResponse, EngineHost, ImagePart, ModelProvider, Phase, PlanTurnInput, PlanTurnResult, ScriptResult, UserFacingError } from './types';
 import { effectiveTokens, runAgent, RunAgentResult, DEFAULT_TOKEN_BUDGET, waitWords } from './agent';
 import { Harness, loopHarness } from './harness';
 import type { LookupFn } from './safety';
@@ -868,16 +868,17 @@ export async function planTurn(deps: EditorDeps, provider: ModelProvider | null,
       if (signal?.aborted) throw new AIError('cancelled', 'Stopped.');
       onEvent({ type: 'status', message: PLAN_STEP, pct: 10, thinking: true });
       const wait = waitWords(provider, (message, waiting) => onEvent({ type: 'status', message, thinking: true, ...(waiting ? { waiting } : {}) }), PLAN_STEP);
-      let text: string;
+      let res: CompletionResponse;
       try {
-        text = (await provider.complete({ system, messages, tools: [], jsonOnly: true, signal, onWait: wait.onWait })).text;
+        res = await provider.complete({ system, messages, tools: [], jsonOnly: true, signal, onWait: wait.onWait });
       } finally {
         wait.end();
       }
+      const text = res.text;
       if (signal?.aborted) throw new AIError('cancelled', 'Stopped.');
       const r = readPlanTurn(extractJson(text), input.asked);
       if (r) return r;
-      messages.push({ role: 'assistant', text, toolCalls: [] });
+      messages.push({ role: 'assistant', text, toolCalls: [], raw: res.raw });
       messages.push({ role: 'user', content: [{ type: 'text', text: mustPropose
         ? 'No questions are left. Reply with ONLY the plan JSON: {"say": string, "title": string, "hooks": [2 or 3], "beats": [3 to 6], "shots": [2 to 6]}.'
         : 'That could not be read. Reply with ONLY one JSON object: {"question": string}, or {"say": string, "title": string, "hooks": [2 or 3], "beats": [3 to 6], "shots": [2 to 6]}.' }] });

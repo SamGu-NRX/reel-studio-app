@@ -159,7 +159,7 @@ export async function askChecker(provider: ModelProvider, system: string, eviden
       const scores = Object.fromEntries(RUBRIC.map((k) => [k, j.scores[k]])) as RubricScores;
       return { round: { renderId, verdict: j.verdict, fixes, scores, frames: evidence.frames }, problems };
     }
-    messages.push({ role: 'assistant', text: res.text, toolCalls: [] });
+    messages.push({ role: 'assistant', text: res.text, toolCalls: [], raw: res.raw });
     messages.push({ role: 'user', content: [{ type: 'text', text: `Problems: ${problems.join('; ')}. Reply again with ONLY the corrected JSON object.` }] });
   }
   return { round: null, problems };
