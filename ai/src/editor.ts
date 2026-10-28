@@ -904,7 +904,7 @@ export async function writeScript(deps: EditorDeps, provider: ModelProvider | nu
         ...(typeof j.title === 'string' && j.title.trim() ? { title: cleanSummary(j.title).slice(0, 80) } : {}),
       };
     }
-    messages.push({ role: 'assistant', text: res.text, toolCalls: [] });
+    messages.push({ role: 'assistant', text: res.text, toolCalls: [], raw: res.raw });
     messages.push({ role: 'user', content: [{ type: 'text', text: 'That was not valid. Reply with ONLY the JSON object {"title": string, "hook": string, "script": string, "onScreenText": string[]}.' }] });
   }
   throw new AIError('script_failed', 'I could not write the script this time. Try again.');
@@ -948,7 +948,7 @@ export async function pickTakes(transcript: PickTakesInput, provider: ModelProvi
       if (!problems.length && keep.length) return { keep, notes: String(j.notes ?? ''), attempts: attempt };
       lastProblems = problems.length ? problems : ['keep is empty'];
     } else lastProblems = ['reply was not the JSON object'];
-    messages.push({ role: 'assistant', text: res.text, toolCalls: [] });
+    messages.push({ role: 'assistant', text: res.text, toolCalls: [], raw: res.raw });
     messages.push({ role: 'user', content: [{ type: 'text', text: `Problems: ${lastProblems.join('; ')}. Fix them and reply with ONLY the corrected JSON.` }] });
   }
   throw new AIError('pick_failed', 'Could not pick takes.', { detail: lastProblems.join('; ') });
