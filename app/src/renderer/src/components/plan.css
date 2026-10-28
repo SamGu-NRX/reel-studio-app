@@ -64,6 +64,11 @@
 .pl-tick input:checked + span { color: #fff; }
 .pl-tick input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
 .pl-tick:has(input:disabled) { cursor: default; }
+/* Windows high contrast drops the shadow that draws the box: the span draws its edge, fill and number in system colours */
+@media (forced-colors: active) {
+  .pl-tick span { forced-color-adjust: none; border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
+  .pl-tick input:checked + span { border-color: Highlight; background: Highlight; color: HighlightText; }
+}
 
 /* folded above the video: one line that opens the card */
 .plan.folded { padding: 4px 8px 4px 4px; gap: 0; }

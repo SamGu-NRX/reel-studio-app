@@ -456,13 +456,9 @@ input[type="checkbox"]:disabled { cursor: default; opacity: .45; }
 @media (hover: hover) and (pointer: fine) {
   input[type="checkbox"]:not(:checked, :disabled):hover, .pl-tick > input:not(:checked, :disabled):hover + span { box-shadow: inset 0 0 0 1.5px var(--ink-2); }
 }
-/* Windows high contrast drops the shadow that draws the box: a real checkbox goes back to the system's own, and a
-   tick's span draws its edge and fill in system colours */
-@media (forced-colors: active) {
-  input[type="checkbox"] { appearance: auto; }
-  .pl-tick > span { forced-color-adjust: none; border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
-  .pl-tick > input:checked + span { border-color: Highlight; background: Highlight; color: HighlightText; }
-}
+/* Windows high contrast drops the shadow that draws the box: a real checkbox goes back to the system's own (a tick's
+   span draws its own in plan.css, after the colours it overrides) */
+@media (forced-colors: active) { input[type="checkbox"] { appearance: auto; } }
 .toggle { display: flex; gap: 12px; align-items: center; cursor: pointer; font-weight: 600; min-height: 32px; }
 .slider { width: 100%; max-width: 420px; }
 .cover-img { width: 180px; border-radius: 12px; display: block; background: var(--sunk); aspect-ratio: 9/16; object-fit: cover; }
