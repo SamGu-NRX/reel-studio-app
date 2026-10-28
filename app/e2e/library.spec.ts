@@ -1,8 +1,9 @@
 // Library, My style and Insights (ux-foundation-b.md section 6, spec.md section 9): tabs that mirror the Library
 // folder, a drop that lands in its own tab, previews and licences; rules with where they came from, Remove and
-// Undo, and Learn from my past edits saving nothing until you keep it; Insights only once a reel is posted.
+// Undo, and Learn from my past edits saving nothing until you keep it; Insights always in the sidebar, saying what it
+// will show and what it needs.
 import { test, expect, type Page } from '@playwright/test'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { APP_DIR, BASE, launch, makeMedia, passFirstRun, shot } from './helpers'
 
@@ -36,9 +37,12 @@ test('Library, My style and Insights', async () => {
   const { app, page } = await launch({ REELSTUDIO_USER_DATA: join(dir, 'user data'), REELSTUDIO_ROOT: root })
   await passFirstRun(page)
 
-  // ---- Insights: not in the sidebar with nothing posted ----
-  await expect(page.getByTestId('nav-library')).toBeVisible()
-  await expect(page.getByTestId('nav-insights')).toHaveCount(0)
+  // ---- Insights: in the sidebar with nothing posted, saying what it will show and what it needs ----
+  // fails if Insights hides until a post, which nothing in this version can make
+  await page.getByTestId('nav-insights').click()
+  await expect(page.getByTestId('titlebar-title')).toHaveText('Insights')
+  await expect(page.getByTestId('insights-empty')).toContainText('how long people watched')
+  await expect(page.getByTestId('insights-empty')).toContainText('It needs your Instagram account connected')
 
   // ---- Library: tabs, no Finished videos, an empty tab says what goes there ----
   await page.getByTestId('nav-library').click()
@@ -115,14 +119,5 @@ test('Library, My style and Insights', async () => {
   await expect(rule.first()).toContainText('Open with a title on screen in the first few seconds')
   await expect(rule.first()).toContainText('from your Premiere Pro edit talking-head.xml, just now')
 
-  // ---- Insights joins the sidebar once a reel has a posted record ----
-  const reelDir = join(root, 'Projects', 'posted')
-  mkdirSync(reelDir, { recursive: true })
-  const now = new Date().toISOString()
-  writeFileSync(join(reelDir, 'project.json'), JSON.stringify({ schemaVersion: 1, id: 'posted', title: 'Posted', slug: 'posted', createdAt: now, updatedAt: now, version: 0, cut: { keep: [] } }))
-  writeFileSync(join(reelDir, 'app.json'), JSON.stringify({ chat: [], job: null, status: 'ready', lastError: null, posted: [{ version: 1, platform: 'instagram', at: now }] }))
-  await page.getByTestId('nav-library').click()
-  await page.getByTestId('nav-insights').click()
-  await expect(page.getByTestId('insights-empty')).toContainText('Once a reel is posted')
   await app.close()
 })
