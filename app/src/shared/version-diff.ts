@@ -65,3 +65,43 @@ export function versionRows(before: ProjectJson | null, after: ProjectJson, leng
   add('Cover words', before?.cover?.text ? `“${before.cover.text}”` : 'None', after.cover?.text ? `“${after.cover.text}”` : 'None')
   return rows
 }
+
+const SIZE_ORDER = ['Small', 'Medium', 'Big']
+const seconds = (c: string): number => c.split(':').reduce((t, n) => t * 60 + Number(n), 0)
+// The line under a version names at most this many changes; What changed lists them all.
+const FACTS_SHOWN = 3
+
+/**
+ * A version's line in the notes: a short fact made from its before → after rows, such as "Song, 1 sound effect,
+ * 1 picture" or "Bigger yellow subtitles". '' when no row changed.
+ */
+export function versionFact(rows: VersionRow[]): string {
+  const facts: string[] = []
+  // a subtitle's size, look and place read as one change, where its first row was
+  const sub = { at: -1, size: '', look: '', place: '' }
+  for (const r of rows) {
+    if (r.label.startsWith('Subtitle ') && sub.at < 0) sub.at = facts.length
+    if (r.label === 'Length') facts.push(seconds(r.after) < seconds(r.before) ? 'shorter' : 'longer')
+    else if (r.label === 'Subtitles') facts.push(r.after === 'None' ? 'no subtitles' : 'subtitles')
+    else if (r.label === 'Subtitle size') sub.size = SIZE_ORDER.indexOf(r.after) > SIZE_ORDER.indexOf(r.before) ? 'bigger' : 'smaller'
+    else if (r.label === 'Subtitle look') sub.look = r.after === 'Black box' ? 'boxed' : r.after.toLowerCase()
+    else if (r.label === 'Subtitle position') sub.place = r.after === 'Higher' ? 'higher' : 'lower'
+    else if (r.label === 'Words fixed') facts.push(r.after === '1' ? '1 word fixed' : `${r.after} words fixed`)
+    else if (r.label === 'Music') facts.push(r.after === 'None' ? 'no song' : r.before === 'None' ? 'song' : 'new song')
+    else if (r.label === 'Music volume') facts.push(r.after === 'Quiet' ? 'quieter song' : 'louder song')
+    else if (r.label === 'Music fade-in' || r.label === 'Music fade-out') {
+      if (!facts.includes('song fades')) facts.push('song fades')
+    } else if (r.label === 'Sound effects') facts.push(r.after === 'None' ? 'no sound effects' : r.after)
+    else if (r.label === 'Pictures') facts.push(r.after === 'None' ? 'no pictures' : r.after)
+    else if (r.label === 'Zooms') facts.push(r.after === 'None' ? 'no zooms' : r.after)
+    else if (r.label === 'Cover') facts.push(r.before === 'None' ? 'cover' : 'new cover')
+    else if (r.label === 'Cover words') facts.push(r.after === 'None' ? 'no cover words' : 'cover words')
+    // one sound effect's level ("Whoosh volume")
+    else if (!facts.includes('sound effect levels')) facts.push('sound effect levels')
+  }
+  // "bigger yellow subtitles"; a move on its own says where they went
+  const looks = [sub.size, sub.look].filter(Boolean).join(' ')
+  if (sub.at >= 0) facts.splice(sub.at, 0, looks ? `${looks} subtitles` : `${sub.place} subtitles`)
+  const text = facts.length > FACTS_SHOWN + 1 ? `${facts.slice(0, FACTS_SHOWN).join(', ')} and ${facts.length - FACTS_SHOWN} more` : facts.join(', ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}

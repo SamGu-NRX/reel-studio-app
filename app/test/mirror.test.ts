@@ -39,7 +39,7 @@ describe('flip picture', () => {
   it('says what changed in plain words', () => {
     const before = proj([take('s1')])
     expect(describeChange(before, { sources: withMirror(before.sources, true) })).toBe('flipped the picture')
-    expect(describeChange(proj([take('s1', { mirror: true })]), { sources: [take('s1')] })).toBe('picture back the way you filmed it')
+    expect(describeChange(proj([take('s1', { mirror: true })]), { sources: [take('s1')] })).toBe('put the picture back the way you filmed it')
     expect(describeChange(before, { sources: before.sources })).toBe('')
   })
 

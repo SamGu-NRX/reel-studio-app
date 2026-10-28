@@ -66,12 +66,15 @@ test('timeline marks are buttons a screen reader reaches, and no target is under
     await passFirstRun(page)
     await sweep('reels-empty')
     await makeReel(page, media.video)
+    // Version 1 plays as it lands; pause it once it has started, so nothing starts it again after
+    await expect.poll(() => page.getByTestId('player').evaluate((v: HTMLVideoElement) => !v.paused || v.ended)).toBe(true)
     await page.evaluate(() => {
       const v = document.querySelector('[data-testid=player]') as HTMLVideoElement
       v.pause()
       v.currentTime = 1
     })
-    await page.getByTestId('moment-suggest').click()
+    // paused on 0:01, the note box has attached it by itself
+    await expect(page.getByTestId('moment-chip')).toContainText('0:01')
     await page.getByTestId('note-input').fill('bigger subtitles here')
     await page.getByTestId('send').click()
     await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 120_000 })

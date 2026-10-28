@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test'
 import { join } from 'node:path'
 import { BASE, launch, makeMedia, makeReel, openSettings, passFirstRun } from './helpers'
 
-test('fails if a note that did not finish shows twice, or Try again queues a new note instead of running it', async () => {
+test('fails if a note that did not finish shows twice (or as a held note), or Try again queues a new note instead of running it', async () => {
   test.setTimeout(10 * 60_000)
   const media = makeMedia()
   const dirs = { REELSTUDIO_USER_DATA: join(BASE, 'failed-note', 'data'), REELSTUDIO_ROOT: join(BASE, 'failed-note', 'Reel Studio'), REELSTUDIO_MOCK_CLAUDE: 'ready', REELSTUDIO_MOCK_NOTE: '300' }
@@ -26,6 +26,9 @@ test('fails if a note that did not finish shows twice, or Try again queues a new
     await expect(page.getByTestId('log-retry')).toBeVisible({ timeout: 120_000 })
     await expect(page.getByTestId('queue-row')).toHaveCount(0)
     expect((await page.evaluate((s) => window.reel.projects.get(s), slug)).queue).toHaveLength(1)
+    // nor as "1 note held" under the log: the strip is for a different note that waits (10-28 audit, finding 1)
+    expect((await page.evaluate((s) => window.reel.projects.get(s), slug)).queueHeld).toBe(true)
+    await expect(page.getByTestId('queue-held')).toHaveCount(0)
 
     await page.getByTestId('log-retry').click()
     await expect(page.getByTestId('note-progress')).toBeVisible()

@@ -2,10 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import type { ChatAction, QueuedNote, ScriptResult, VersionRow } from '../../../shared/api'
 import { ACTION_LABELS } from '../../../shared/notes'
 import { momentLabel } from '../../../shared/moments'
-import { waitingRows, type LogEntry, type LogResult } from '../../../shared/notes-log'
+import { editorSaid, waitingRows, withoutNumber, type LogEntry, type LogResult } from '../../../shared/notes-log'
+import { versionFact } from '../../../shared/version-diff'
 import { reel, userMessage } from '../api'
 import { Icon } from './icons'
-import { Button } from './ui'
+import { Button, PickFiles } from './ui'
 import { AttachmentThumb } from './NoteAttachments'
 import { Thinking } from './ui'
 
@@ -56,13 +57,15 @@ export type FirstState =
   | { kind: 'making'; heard: string[]; editor: boolean }
   /** `why`: paused without you, and when it goes on (shared/pause.ts); null when the person pressed Stop */
   | { kind: 'paused'; why: string | null }
-  | { kind: 'failed'; why: string; extra?: ReactNode }
+  /** `another`: the file is the cause (or was never copied in), so the way on is another video, not Try again */
+  | { kind: 'failed'; why: string; extra?: ReactNode; another?: 'primary' | 'secondary' }
 
-const BASIC = 'Basic version: pauses and retakes removed, subtitles and a cover'
+const VIDEO_TYPES = 'video/*,.mov,.mp4,.m4v'
 
 /**
  * Notes for your editor: each thing you asked (a light bubble on the right) and what came of it (a line on the left).
- * A version's line plays it; What changed opens its before → after rows (open on the newest only) and Compare.
+ * A version's line plays it and says in a few words what its rows changed; What changed opens the rows (open on the
+ * newest only), with the editor's own words above them when they say more, and Compare.
  * Older entries fold behind one line once the list is taller than its column.
  */
 export function NotesLog({
@@ -89,6 +92,7 @@ export function NotesLog({
   onEditHand,
   onResume,
   onBasic,
+  onAnotherVideo,
   onCopy,
   onError,
   answerError,
@@ -125,6 +129,8 @@ export function NotesLog({
   onEditHand: (id: string) => void
   onResume: () => void
   onBasic: () => void
+  /** Version 1 failed because of its video: another one starts it again */
+  onAnotherVideo: (paths: string[]) => void
   onCopy: (text: string) => void
   onError: (message: string) => void
   /** saving a "Remember this for next time?" answer failed: the question keeps its buttons */
@@ -138,13 +144,14 @@ export function NotesLog({
   const [unfolded, setUnfolded] = useState(false)
   const waiting = waitingRows(queue, entries)
 
-  // The newest version shows what changed until the person folds it.
+  // The newest version shows what changed until the person folds it. Every version line says what its rows changed,
+  // so each one's rows are read once.
   const isOpen = (n: number) => open[n] ?? n === latest
-  const latestOpen = isOpen(latest)
   const { want } = versionRows
+  const versionsShown = entries.flatMap((e) => (e.result?.kind === 'version' ? [e.result.v] : [])).join()
   useEffect(() => {
-    if (latestOpen && latest > 0) want(latest)
-  }, [latestOpen, latest, want])
+    for (const v of versionsShown.split(',')) if (v) want(Number(v))
+  }, [versionsShown, want])
 
   // Older entries fold behind one line while the list is taller than its column; new ones are added at the bottom.
   // It stays at the bottom only while the person is there: scrolling up to read stays put while a job reports.
@@ -167,15 +174,17 @@ export function NotesLog({
     if (el) atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
   }
 
-  const toggle = (n: number) => {
-    const next = !isOpen(n)
-    if (next) versionRows.want(n)
-    setOpen((o) => ({ ...o, [n]: next }))
-  }
+  const toggle = (n: number) => setOpen((o) => ({ ...o, [n]: !isOpen(n) }))
 
   const version = (e: LogEntry, v: number, said: string) => {
     const on = isOpen(v)
-    const text = v === 1 && basic ? BASIC : said
+    const rows = versionRows.rows.get(v)
+    // Version 1 made without an editor says so; the rows say what it did
+    const fact = v === 1 && basic ? 'Basic version' : rows ? versionFact(rows) : ''
+    // What was said about it, when that says something the rows don't (a note's reply, a style rule it used). A change
+    // made by hand is all in its rows. With no rows to show (nothing on the list changed, or an old version's
+    // snapshot is gone) its words are all there is.
+    const words = e.ask.kind === 'hand' || rows === undefined ? null : rows === null || !rows.length ? withoutNumber(said) || null : editorSaid(said)
     return (
       <>
         <div className={`nt-res${shown === v ? ' cur' : ''}${landed === v ? ' enter' : ''}`} data-v={v}>
@@ -188,12 +197,16 @@ export function NotesLog({
           <span className="sep" aria-hidden>
             ·
           </span>
-          <span className="t" title={text}>
-            {text}
-          </span>
-          <span className="sep" aria-hidden>
-            ·
-          </span>
+          {fact && (
+            <>
+              <span className="t fact" data-testid={`version-fact-${v}`}>
+                {fact}
+              </span>
+              <span className="sep" aria-hidden>
+                ·
+              </span>
+            </>
+          )}
           {unwatched === v ? (
             <button className="lk" onClick={() => onPlay(v)} data-testid="log-watch">
               Is ready · Watch
@@ -207,10 +220,7 @@ export function NotesLog({
         </div>
         <div className={`acc${on ? ' open' : ''}`} inert={!on || undefined}>
           <div>
-            <VersionRows
-              rows={versionRows.rows.get(v)}
-              asked={text.length > 60 && <p className="said selectable">{text}</p>}
-            />
+            <VersionRows rows={rows} asked={words && <p className="said selectable">{words}</p>} />
             {v > 1 && (
               <div className="dacts">
                 <button className="lk" onClick={() => onCompare(v)} data-testid={`compare-${v}`}>
@@ -249,7 +259,7 @@ export function NotesLog({
             <Icon name="pause" size={11} stroke={2.4} />
           </span>
           <span className="t wrap full" data-testid="first-paused-why">
-            Paused. {f.why ?? 'Nothing is lost.'}
+            Paused. {f.why ?? 'Resume continues where it stopped.'}
           </span>
           <Button kind="primary" size="small" onClick={onResume} data-testid="resume">
             {f.why ? 'Resume now' : 'Resume'}
@@ -265,12 +275,18 @@ export function NotesLog({
           <span className="t wrap">Didn't finish. {f.why}</span>
         </div>
         <div className="nt-acts">
-          <Button kind="primary" size="small" onClick={onResume} data-testid="retry-first">
-            Try again
-          </Button>
-          <Button size="small" onClick={onBasic} data-testid="basic-first">
-            Make a basic version
-          </Button>
+          {f.another ? (
+            <PickFiles kind={f.another} size="small" label="Choose another video" accept={VIDEO_TYPES} onFiles={onAnotherVideo} testid="another-video" />
+          ) : (
+            <>
+              <Button kind="primary" size="small" onClick={onResume} data-testid="retry-first">
+                Try again
+              </Button>
+              <Button size="small" onClick={onBasic} data-testid="basic-first">
+                Make a basic version
+              </Button>
+            </>
+          )}
         </div>
         {f.extra}
       </>
@@ -300,7 +316,7 @@ export function NotesLog({
         )
       case 'question':
         return (
-          <div className="nt-res quiet reply pl-said" data-testid="plan-question">
+          <div className="nt-res reply asks pl-said" data-testid="plan-question">
             <span className="nk" />
             <span className="t wrap selectable">{r.text}</span>
           </div>
@@ -456,8 +472,10 @@ function Reply({
   error?: string
 }) {
   const shown = actions.filter((a) => a !== 'connect')
+  // a reply that asks something waits on the person: it reads as the editor talking, not as a hint
+  const asks = question || /\?["”’)]?\s*$/.test(text)
   return (
-    <div className="nt-res quiet reply" id={`msg-${id}`} tabIndex={question ? -1 : undefined} data-testid="bubble-editor">
+    <div className={`nt-res reply${asks ? ' asks' : ' quiet'}`} id={`msg-${id}`} tabIndex={question ? -1 : undefined} data-testid="bubble-editor">
       <span className="nk" />
       <span className="t wrap selectable">
         {text}

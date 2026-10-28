@@ -60,10 +60,12 @@ import {
   uniqueSlug,
   updateAppState,
   stamp,
+  summary as reelSummary,
   writeJson,
   writeProject,
   type AppState
 } from './store'
+import { clearFailedCopy, posterFrame } from './first-video'
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { libraryPreview } from './library-preview'
 import { readLesson } from './style-learn'
@@ -518,7 +520,13 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
     // between the two, so it never becomes an edit of the whole video
     const from = (await readAppState(slug)).from
     if (from) await prepareReel(slug, from, () => copyIn(from.about.title, [from.media]), { resumed: !initArgs, signal })
-    else if (initArgs && !existsSync(join(dir, 'project.json'))) await copyIn(initArgs.title, initArgs.files)
+    else if (initArgs && !existsSync(join(dir, 'project.json'))) {
+      await copyIn(initArgs.title, initArgs.files).catch(async (e) => {
+        // refused before a copy exists (no sound, not a video): the card shows the file's first frame instead
+        await posterFrame(ffmpegPath(), initArgs.files[0], dir).catch((err) => log(`[poster] ${slug}: ${String(err).slice(0, 300)}`))
+        throw e
+      })
+    }
     // a reel planned before it had a video: the editor reads its script from project.json (again on a resume,
     // in case the app closed between the copy and this)
     await carryScript(slug)
@@ -982,8 +990,12 @@ function registerIpc(): void {
   handle('projects:leave', async (_e, slug: string) => void (await discardIfUntouched(slug, running)))
   handle('projects:addVideo', async (_e, slug: string, files: string[]) => {
     const st = await readAppState(slug)
-    if (st.status !== 'planned') throw { code: 'HAS_VIDEO', userMessage: 'This reel already has its video. Drop it on Reels to make a new reel.' }
+    // Version 1 failed and made nothing (a file with no sound, one that isn't a video): another video starts it again.
+    // A reel cut from another reel's video can't change its video.
+    const again = !st.from && !jobs.forSlug(slug) && (await reelSummary(slug))?.status === 'failed' && !(await listVersions(projectDir(slug))).length
+    if (st.status !== 'planned' && !again) throw { code: 'HAS_VIDEO', userMessage: 'This reel already has its video. Drop it on Reels to make a new reel.' }
     const { videos, skipped } = await takeVideos(files)
+    if (again) await clearFailedCopy(projectDir(slug))
     const title = st.title && st.title !== PLANNED_TITLE ? st.title : titleFromFile(videos[0])
     await updateAppState(slug, (s) => void (s.title = title))
     // refused while a script is still being written; the reel stays planned until its first edit starts

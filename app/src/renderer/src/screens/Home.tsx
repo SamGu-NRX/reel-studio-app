@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { ProjectSummary } from '../../../shared/api'
 import { STILL_WORKING } from '../../../shared/live'
-import { dayLabel } from '../../../shared/notes-log'
+import { dayLabel, failedByFile } from '../../../shared/notes-log'
 import { pauseLine } from '../../../shared/pause'
 import { reel, userMessage } from '../api'
 import { useNotify } from '../App'
@@ -119,6 +119,12 @@ export function Home({ go }: { go: Go }) {
       () => reel.projects.list().then(setProjects),
       (e) => notify(userMessage(e), 'error')
     )
+  // a reel whose video failed Version 1 takes another one here; the card moves to Making
+  const another = (p: ProjectSummary, files: string[]): Promise<void> =>
+    reel.projects.addVideo(p.slug, files).then(
+      () => reel.projects.list().then(setProjects),
+      (e) => notify(userMessage(e), 'error')
+    )
   const pick = (v: View) => {
     localStorage.setItem(VIEW_KEY, v)
     setView(v)
@@ -131,7 +137,7 @@ export function Home({ go }: { go: Go }) {
   useFlip(page, `${view}|${series}|${found ? [...found].join() : ''}`, list)
 
   const card = (p: ProjectSummary) => (
-    <Card key={p.slug} p={p} live={live[p.slug]} now={now} onOpen={() => open(p)} onAct={() => resume(p)} />
+    <Card key={p.slug} p={p} live={live[p.slug]} now={now} onOpen={() => open(p)} onAct={() => resume(p)} onVideo={(files) => another(p, files)} />
   )
   const grid = (items: ProjectSummary[]) => <div className="grid">{items.map(card)}</div>
   const section = (title: string, items: ProjectSummary[]) =>
@@ -278,9 +284,13 @@ function useFlip(page: React.RefObject<HTMLElement | null>, layoutKey: string, l
 }
 
 /** What a stopped reel's card says and offers: why it stopped, what happens next, and the one action that moves it. */
-function stopped(p: ProjectSummary, now: Date): { why: string; next: string; act: { label: string; testid: string } | null } | null {
+function stopped(p: ProjectSummary, now: Date): { why: string; next: string; act: { label: string; testid: string; pick?: true } | null } | null {
   const state = stateOf(p)
-  if (state === 'failed') return { why: 'Didn’t finish', next: p.failedWhy ?? 'open it to see why', act: { label: 'Try again', testid: 'card-retry' } }
+  if (state === 'failed') {
+    // the file itself (no sound, not a video), or a video never copied in: trying again fails the same way
+    const act = failedByFile(p.failedCode) || !p.take ? { label: 'Choose another video', testid: 'card-another', pick: true as const } : { label: 'Try again', testid: 'card-retry' }
+    return { why: 'Didn’t finish', next: p.failedWhy ?? 'open it to see why', act }
+  }
   if (state !== 'paused') return null
   const line = pauseLine(p.pausedFor, now, IS_MAC ? 'Mac' : 'PC')
   // a pause that continues on its own offers Resume now only where trying early can help: a plan that may have reset
@@ -293,7 +303,21 @@ function stopped(p: ProjectSummary, now: Date): { why: string; next: string; act
  * Only a state that isn't Ready changes the picture. A reel that stopped says why and what happens next, and its one
  * action is a pill under that line; the rest of the card opens the reel.
  */
-function Card({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live; now: Date; onOpen: () => void; onAct: () => Promise<void> }) {
+function Card({
+  p,
+  live,
+  now,
+  onOpen,
+  onAct,
+  onVideo
+}: {
+  p: ProjectSummary
+  live?: Live
+  now: Date
+  onOpen: () => void
+  onAct: () => Promise<void>
+  onVideo: (files: string[]) => Promise<void>
+}) {
   const [busy, setBusy] = useState(false)
   const state = stateOf(p)
   const left = state === 'making' && live ? leftWords(live) : null
@@ -325,9 +349,9 @@ function Card({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live;
     )
     if (fresh) label += `, Version ${p.version} is new`
   }
-  const act = () => {
+  const run = (work: Promise<void>) => {
     setBusy(true)
-    void onAct().finally(() => setBusy(false))
+    void work.finally(() => setBusy(false))
   }
   return (
     <div className={`rcard st-${state}`} data-slug={p.slug}>
@@ -353,11 +377,23 @@ function Card({ p, live, now, onOpen, onAct }: { p: ProjectSummary; live?: Live;
       <div className={`cm${stop ? ' why' : ''}`} data-testid="card-status">
         {meta}
       </div>
-      {stop?.act && (
-        <Button size="small" className="card-act" onClick={act} disabled={busy} aria-label={`${stop.act.label}: ${p.title}`} data-testid={stop.act.testid}>
-          {stop.act.label}
-        </Button>
-      )}
+      {stop?.act &&
+        (stop.act.pick ? (
+          <PickFiles
+            size="small"
+            className="card-act"
+            label={stop.act.label}
+            accept="video/*,.mov,.mp4,.m4v"
+            disabled={busy}
+            aria-label={`${stop.act.label}: ${p.title}`}
+            testid={stop.act.testid}
+            onFiles={(files) => run(onVideo(files))}
+          />
+        ) : (
+          <Button size="small" className="card-act" onClick={() => run(onAct())} disabled={busy} aria-label={`${stop.act.label}: ${p.title}`} data-testid={stop.act.testid}>
+            {stop.act.label}
+          </Button>
+        ))}
     </div>
   )
 }

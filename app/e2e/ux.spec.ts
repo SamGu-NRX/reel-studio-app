@@ -52,7 +52,7 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
 
   // ---- 1. honest: Version 1 says it is a basic version, and nobody says "I" ----
   await expect(page.getByTestId('log-video')).toContainText('Your video')
-  await expect(page.locator('.nt-res[data-v="1"]')).toContainText('Basic version: pauses and retakes removed')
+  await expect(page.locator('.nt-res[data-v="1"]')).toContainText('Basic version')
   // it offers what an AI would add, and never claims to have done it
   await expect(page.getByTestId('chat')).not.toContainText(/Kept your best takes|picked your best takes/i)
   await expect(page.getByTestId('chat')).not.toContainText('Wrote your caption')
@@ -109,9 +109,11 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   const style = projectJson().captions.style
   expect([style.size, style.position, style.color, !!style.box]).toEqual([126, 0.66, '#FFD60A', false])
   // The notes log says what changed (critique 1.8): the version's line, open on the newest.
-  await expect(page.getByTestId('log-hand').last()).toContainText('You changed')
-  await expect(page.locator('.nt-res[data-v="2"]')).toContainText(/bigger yellow subtitles, moved up/i)
+  // one sentence of what the person did, a short fact from the rows on the line, and the rows alone under it
+  await expect(page.getByTestId('log-hand').last().locator('.bubble')).toHaveText('You made the subtitles bigger and yellow, and moved them up.')
+  await expect(page.getByTestId('version-fact-2')).toHaveText('Bigger yellow subtitles')
   await expect(page.locator('.nt-res[data-v="2"] + .acc')).toContainText(/Subtitle/)
+  await expect(page.locator('.nt-res[data-v="2"] + .acc')).not.toContainText('Version 2:')
   // The title bar names the version on screen from its receipts (#60), next to its number. The stand-in engine
   // writes none, so give Version 2 the receipt the real engine writes for this change and reopen the reel.
   await expect(page.getByTestId('version-title')).toHaveCount(0)
@@ -160,6 +162,17 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await expect(page.getByTestId('log-play-3')).toBeVisible({ timeout: 10 * 60_000 })
   // project.json only takes Library-relative paths (secfix): never the picked file's own path.
   expect(projectJson().music.track).toBe('Library/Music/happy song.mp3')
+
+  // Compare shows the reel without Instagram's header, under the switch; Done brings the person's own view back
+  // (10-28 audit, finding 6)
+  const instagram = await page.getByTestId('ig-overlay').isVisible()
+  await page.getByTestId('compare-3').click()
+  await expect(page.getByTestId('compare')).toBeVisible()
+  await expect(page.getByTestId('ig-overlay')).toBeHidden()
+  await expect(page.getByTestId('phone-view-held')).toBeVisible()
+  await shot(page, 'ux-compare-clean')
+  await page.getByTestId('done-compare').click()
+  await expect(page.getByTestId('ig-overlay')).toBeVisible({ visible: instagram })
 
   // ---- 6. pictures: pick a picture, click the word ----
   await answerFilePicker(app, media.picture)

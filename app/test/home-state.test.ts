@@ -19,6 +19,7 @@ const reel = (slug: string, over: Partial<ProjectSummary> = {}): ProjectSummary 
   series: null,
   pausedFor: null,
   failedWhy: null,
+  failedCode: null,
   posted: false,
   ...over
 })

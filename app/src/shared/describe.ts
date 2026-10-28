@@ -1,10 +1,10 @@
-// "Version 3: bigger yellow subtitles, moved up." Says in plain words what an "Edit it myself"
-// change did, so the chat and the version buttons mean something. Keep free of Node and DOM imports.
+// Plain words for what changed: an "Edit it myself" change as things the person did ("added a picture"), and a
+// version's title and summary from its receipt facts. Keep free of Node and DOM imports.
 import type { ChatMessage, DropResult, EditFact, ProjectJson, VersionInfo, Word } from './api'
 import { keptIds } from './cut'
 import { CAPTION_PRESETS, presetOf } from './caption-presets'
 import { isMirrored } from './mirror'
-import { gainOf, levelChange, momentKey, musicFades, secondsText } from './sfx'
+import { gainOf, momentKey, musicFades, secondsText, sfxName } from './sfx'
 
 type Style = Record<string, unknown>
 
@@ -43,31 +43,99 @@ function subtitles(before: ProjectJson['captions'], after: ProjectJson['captions
   return out
 }
 
-/** A short lower-case phrase, or '' if nothing visible changed. `cutDelta` = words brought back (+) or cut (-). */
-export function describeChange(before: ProjectJson, patch: Partial<ProjectJson>, cutDelta = 0): string {
-  const parts: string[] = []
-  if (patch.sources && isMirrored({ sources: patch.sources }) !== isMirrored(before)) {
-    parts.push(isMirrored({ sources: patch.sources }) ? 'flipped the picture' : 'picture back the way you filmed it')
+// The music levels from quietest to loudest (project.json music.level).
+const MUSIC_LEVELS = ['quiet', 'under-voice', 'loud-intro']
+
+/** What an "Edit it myself" change did to the subtitles, as things the person did. */
+function subtitleActs(before: ProjectJson['captions'], after: ProjectJson['captions']): string[] {
+  if (!after) return []
+  if (before?.enabled !== false && after.enabled === false) return ['turned the subtitles off']
+  if (before?.enabled === false && after.enabled !== false) return ['turned the subtitles back on']
+  const a = (before?.style ?? {}) as Style
+  const b = (after.style ?? {}) as Style
+  const out: string[] = []
+  const preset = presetOf(b)
+  if (preset && preset !== presetOf(a)) out.push(`gave the subtitles the ${CAPTION_PRESETS.find((x) => x.key === preset)!.label} look`)
+  else {
+    const made: string[] = []
+    if (size(b) > size(a)) made.push('bigger')
+    if (size(b) < size(a)) made.push('smaller')
+    const lb = look(b)
+    if (lb !== look(a)) made.push(lb === 'box' ? 'boxed' : lb)
+    if (made.length) out.push(`made the subtitles ${made.join(' and ')}`)
   }
-  if (cutDelta > 0) parts.push(cutDelta === 1 ? 'brought back a word' : `brought back ${cutDelta} words`)
-  if (cutDelta < 0) parts.push(cutDelta === -1 ? 'cut a word' : `cut ${-cutDelta} words`)
-  if (patch.captions) parts.push(...subtitles(before.captions, patch.captions))
+  const moved = pos(b) < pos(a) - 0.01 ? 'up' : pos(b) > pos(a) + 0.01 ? 'down' : null
+  if (moved) out.push(out.length ? `moved them ${moved}` : `moved the subtitles ${moved}`)
+  const fixes = (after.corrections ?? []).filter((fix) =>
+    !(before?.corrections ?? []).some((old) =>
+      old.from === fix.from && old.to === fix.to && old.at === fix.at && old.through === fix.through
+    )
+  ).length
+  if (fixes > 0) out.push(fixes === 1 ? 'fixed a word' : `fixed ${fixes} words`)
+  if ((['split', 'join'] as const).some((k) => JSON.stringify(after[k] ?? []) !== JSON.stringify(before?.[k] ?? []))) out.push('changed the subtitle lines')
+  return out
+}
+
+/** "a, b and c"; `serial` puts a comma before the "and", for items with an "and" of their own. */
+function andList(items: string[], serial = false): string {
+  if (items.length <= 1) return items.join('')
+  return `${items.slice(0, -1).join(', ')}${serial ? ',' : ''} and ${items[items.length - 1]}`
+}
+
+// Phrases one after another that start with one of these share it: "added the song, a picture and a sound effect".
+const SHARED_VERBS = new Set(['added', 'removed'])
+
+function joinActs(acts: string[]): string {
+  const groups: { verb: string; objects: string[] }[] = []
+  for (const act of acts) {
+    const space = act.indexOf(' ')
+    const verb = act.slice(0, space)
+    const last = groups[groups.length - 1]
+    if (last?.verb === verb && SHARED_VERBS.has(verb)) last.objects.push(act.slice(space + 1))
+    else groups.push({ verb, objects: [act.slice(space + 1)] })
+  }
+  const phrases = groups.map((g) => `${g.verb} ${andList(g.objects)}`)
+  return andList(phrases, phrases.some((x) => x.includes(' and ')))
+}
+
+/** The verbs an "Edit it myself" summary starts with (describeChange), so its line can say "You …". */
+export const HAND_VERBS: ReadonlySet<string> = new Set([
+  'added', 'removed', 'brought', 'cut', 'flipped', 'put', 'turned', 'gave', 'made', 'moved', 'fixed', 'changed', 'swapped', 'faded', 'picked'
+])
+
+/**
+ * What an "Edit it myself" change did, as past-tense verbs the notes put after "You": "added the song “warm
+ * acoustic loop”, a picture and a sound effect". '' if nothing visible changed. `cutDelta` = words brought back (+)
+ * or cut (-).
+ */
+export function describeChange(before: ProjectJson, patch: Partial<ProjectJson>, cutDelta = 0): string {
+  const acts: string[] = []
+  if (patch.sources && isMirrored({ sources: patch.sources }) !== isMirrored(before)) {
+    acts.push(isMirrored({ sources: patch.sources }) ? 'flipped the picture' : 'put the picture back the way you filmed it')
+  }
+  if (cutDelta > 0) acts.push(cutDelta === 1 ? 'brought back a word' : `brought back ${cutDelta} words`)
+  if (cutDelta < 0) acts.push(cutDelta === -1 ? 'cut a word' : `cut ${-cutDelta} words`)
+  if (patch.captions) acts.push(...subtitleActs(before.captions, patch.captions))
   if (patch.music) {
     const m = patch.music
+    const had = !!before.music?.enabled && !!before.music.track
     if (m.enabled === false || !m.track) {
-      if (before.music?.enabled && before.music.track) parts.push('no music')
-    } else if (m.track !== before.music?.track || before.music?.enabled === false) parts.push(`new song "${name(m.track)}"`)
+      if (had) acts.push('removed the music')
+    } else if (m.track !== before.music?.track || before.music?.enabled === false) acts.push(had ? `changed the song to “${name(m.track)}”` : `added the song “${name(m.track)}”`)
     else {
-      if (m.level && m.level !== before.music?.level) parts.push(m.level === 'quiet' ? 'quieter music' : 'music volume changed')
+      if (m.level && m.level !== before.music?.level) {
+        const [was, now] = [MUSIC_LEVELS.indexOf(String(before.music?.level)), MUSIC_LEVELS.indexOf(m.level)]
+        acts.push(was < 0 || now < 0 ? 'changed the music volume' : now > was ? 'made the music louder' : 'made the music quieter')
+      }
       const [a, b] = [musicFades(before.music), musicFades(m)]
-      if (b.fadeIn !== a.fadeIn) parts.push(b.fadeIn === 0 ? 'music starts at once' : `music fades in over ${secondsText(b.fadeIn)}`)
-      if (b.fadeOut !== a.fadeOut) parts.push(b.fadeOut === 0 ? 'music stops at the end' : `music fades out over ${secondsText(b.fadeOut)}`)
+      if (b.fadeIn !== a.fadeIn) acts.push(b.fadeIn === 0 ? 'started the music at once' : `faded the music in over ${secondsText(b.fadeIn)}`)
+      if (b.fadeOut !== a.fadeOut) acts.push(b.fadeOut === 0 ? 'stopped the music at the end' : `faded the music out over ${secondsText(b.fadeOut)}`)
     }
   }
   if (patch.broll) {
     const n = patch.broll.length - (before.broll?.length ?? 0)
-    if (n > 0) parts.push(n === 1 ? 'added a picture' : `added ${n} pictures`)
-    if (n < 0) parts.push(n === -1 ? 'removed a picture' : `removed ${-n} pictures`)
+    if (n > 0) acts.push(n === 1 ? 'added a picture' : `added ${n} pictures`)
+    if (n < 0) acts.push(n === -1 ? 'removed a picture' : `removed ${-n} pictures`)
   }
   if (patch.sfx) {
     const was = new Map((before.sfx ?? []).map((x) => [momentKey(x.at), x]))
@@ -77,23 +145,26 @@ export function describeChange(before: ProjectJson, patch: Partial<ProjectJson>,
     const kept = patch.sfx.flatMap((x) => (was.has(momentKey(x.at)) ? [[was.get(momentKey(x.at))!, x] as const] : []))
     const swapped = kept.filter(([a, b]) => a.sound !== b.sound).length
     const levelled = kept.filter(([a, b]) => a.sound === b.sound && gainOf(a) !== gainOf(b))
-    if (added) parts.push(added === 1 ? 'added a sound effect' : `added ${added} sound effects`)
-    if (removed) parts.push(removed === 1 ? 'removed a sound effect' : `removed ${removed} sound effects`)
-    if (swapped) parts.push(swapped === 1 ? 'a different sound effect' : `${swapped} different sound effects`)
-    if (levelled.length) parts.push(levelled.length === 1 ? levelChange(...levelled[0]) : `${levelled.length} sound effects louder or quieter`)
+    if (added) acts.push(added === 1 ? 'added a sound effect' : `added ${added} sound effects`)
+    if (removed) acts.push(removed === 1 ? 'removed a sound effect' : `removed ${removed} sound effects`)
+    if (swapped) acts.push(swapped === 1 ? 'swapped a sound effect' : `swapped ${swapped} sound effects`)
+    if (levelled.length === 1) {
+      const [a, b] = levelled[0]
+      acts.push(`made the ${sfxName(b.sound).kind.toLowerCase()} ${gainOf(b) < gainOf(a) ? 'quieter' : 'louder'}`)
+    } else if (levelled.length) acts.push(`changed the level of ${levelled.length} sound effects`)
   }
   if (patch.cover) {
-    if ((patch.cover.text ?? null) !== (before.cover?.text ?? null)) parts.push(patch.cover.text ? 'new words on the cover' : 'no words on the cover')
-    else if (patch.cover.atSourceTime !== before.cover?.atSourceTime) parts.push('new cover')
+    const [was, now] = [before.cover?.text ?? null, patch.cover.text ?? null]
+    if (now !== was) acts.push(!now ? 'removed the words from the cover' : was ? 'changed the words on the cover' : 'added words to the cover')
+    else if (patch.cover.atSourceTime !== before.cover?.atSourceTime) acts.push('picked a new cover')
   }
-  return parts.join(', ')
+  return joinActs(acts)
 }
 
 /** What a receipt's facts changed, by kind: the few words a version title uses, and the summary's words. */
 type Group = 'flip' | 'cut' | 'pauses' | 'subtitles' | 'music' | 'pictures' | 'zooms' | 'cover' | 'post'
 interface Change { group: Group; title: string; said: string }
 
-const MUSIC_LEVELS = ['quiet', 'under-voice', 'loud-intro']
 
 function changes(facts: EditFact[], words: Word[]): Change[] {
   // SAFETY: each fact's before/after is the project.json value at its `kind` (engine net_changes), so

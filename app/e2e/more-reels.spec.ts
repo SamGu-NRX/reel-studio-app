@@ -41,6 +41,24 @@ test('fails if the editor cannot be asked for more reels, the card is wrong, or 
   await page.waitForTimeout(300)
   await shot(page, 'more-reels-2-found')
 
+  // The first pick shows its quote and why (the editor's ranking); the others keep theirs behind a disclosure, so at
+  // the smallest window three rows fit with nothing scrolling inside the card (10-28 audit, finding 14).
+  const why = (i: number) => rows.nth(i).getByTestId('reels-why')
+  await expect(why(0)).toHaveAttribute('aria-expanded', 'true')
+  await expect(why(1)).toHaveAttribute('aria-expanded', 'false')
+  await why(1).click()
+  await expect(rows.nth(1).getByTestId('reels-why-text')).toBeInViewport()
+  await why(1).click()
+  await expect(why(1)).toHaveAttribute('aria-expanded', 'false')
+  await page.setViewportSize({ width: 1100, height: 720 })
+  await expect(rows.nth(2)).toBeInViewport({ ratio: 1 })
+  await expect(card.getByTestId('reels-make')).toBeInViewport({ ratio: 1 })
+  expect(await card.evaluate((el) => [el, ...Array.from(el.querySelectorAll('*'))].filter((n) => n.scrollHeight > n.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(n).overflowY)).length)).toBe(0)
+  // the time readout keeps the reel's length at the smallest window (finding 22)
+  await expect(page.getByTestId('time').locator('span')).toBeVisible()
+  await shot(page, 'more-reels-2b-found-1100')
+  await page.setViewportSize({ width: 1280, height: 820 })
+
   await card.getByRole('checkbox', { name: 'Bake it hot in a closed pot' }).check()
   await expect(card.getByTestId('reels-make')).toHaveText('Make 2 reels')
   await card.getByTestId('reels-make').click()

@@ -26,6 +26,7 @@ import type {
   QueuedNote
 } from '../shared/api'
 import { mediaUrl } from './media-url'
+import { POSTER } from './first-video'
 import type { ReelSeed } from './propose-reels'
 import { replyChat, styleConsent, type ChatLine } from './style-consent'
 import { keptIds } from '../shared/cut'
@@ -693,7 +694,8 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
       createdAt: at,
       updatedAt: st.chat[st.chat.length - 1]?.at ?? at,
       version: 0,
-      thumbnail: null,
+      // Version 1 failed before the video was copied in: the frame first-video.ts kept of the file
+      thumbnail: existsSync(join(dir, POSTER)) ? mediaUrl(join(dir, POSTER)) : null,
       status,
       waiting: (st.queue ?? []).filter((q) => !q.attempt).length,
       noVideo: st.status === 'planned',
@@ -702,6 +704,7 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
       series: null,
       pausedFor: null,
       failedWhy: status === 'failed' ? (st.lastError?.userMessage ?? null) : null,
+      failedCode: status === 'failed' ? (st.lastError?.code ?? null) : null,
       posted: !!st.posted?.length
     }
   }
@@ -735,6 +738,7 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
     series: typeof p.series === 'string' && p.series.trim() ? p.series.trim() : null,
     pausedFor: st.paused ?? null,
     failedWhy: status === 'failed' ? (st.lastError?.userMessage ?? null) : null,
+    failedCode: status === 'failed' ? (st.lastError?.code ?? null) : null,
     posted: !!st.posted?.length
   }
 }

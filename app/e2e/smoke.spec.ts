@@ -91,7 +91,7 @@ test('make a reel end to end', async () => {
   const aiSource = await page.evaluate(() => window.reel.app.info().then((i) => i.ai))
 
   // The notes never claim AI work the no-AI path did not do (grandma test 7 + 12).
-  if (aiSource === 'mock') await expect(page.getByTestId('chat')).toContainText('Basic version: pauses and retakes removed')
+  if (aiSource === 'mock') await expect(page.getByTestId('version-fact-1')).toHaveText('Basic version')
   // The native player's menu (download, speed, picture-in-picture) is gone.
   expect(await page.getByTestId('player').getAttribute('controls')).toBeNull()
   expect(await page.getByTestId('player').getAttribute('disablepictureinpicture')).not.toBeNull()

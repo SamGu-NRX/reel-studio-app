@@ -1,7 +1,8 @@
 // "Reels in this video": the other reels the editor found in a reel's video (main/propose-reels.ts), each with a tick,
 // and one button that makes the ticked ones. It sits below the notes, above the note box, and follows the Plan card:
 // one surface, rows split by hairlines, the same ticks. No score: the editor's order is its ranking, and its sentence
-// says why.
+// says why. That sentence and the quote show on the editor's first pick; the other rows keep theirs behind a
+// disclosure, so three rows fit the column at 1100 × 720 without a scroll inside the log's scroll.
 import { useEffect, useRef, useState } from 'react'
 import type { StoredProposal } from '../../../shared/api'
 import { clock } from '../../../shared/progress'
@@ -42,6 +43,8 @@ export function ReelsFound({
   onError: (message: string) => void
 }) {
   const [picked, setPicked] = useState<string[]>(() => firstOpen(proposal))
+  // rows showing their quote and why: the first pick, and any the person opened
+  const [shown, setShown] = useState<string[]>(() => firstOpen(proposal))
   const [making, setMaking] = useState(false)
   // opened again from its folded line by a click: it enters the way it first did
   const [reopened, setReopened] = useState(false)
@@ -120,6 +123,7 @@ export function ReelsFound({
         {proposal.candidates.map((c) => {
           const made = proposal.made[c.id]
           const id = `rf-${slug}-${c.id}`
+          const open = shown.includes(c.id)
           return (
             <li key={c.id} className={`pl-row rf-row${made ? ' made' : ''}`} data-testid="reels-row">
               {made ? (
@@ -147,11 +151,27 @@ export function ReelsFound({
                   ) : (
                     <span className="rf-len">{clock(c.seconds)}</span>
                   )}
+                  <button
+                    className="rf-more"
+                    aria-expanded={open}
+                    aria-controls={`${id}-why`}
+                    aria-label={`Why this reel: ${c.title}`}
+                    onClick={() => setShown((s) => (open ? s.filter((x) => x !== c.id) : [...s, c.id]))}
+                    data-testid="reels-why"
+                  >
+                    <Icon name="chevron-down" size={14} />
+                  </button>
                 </div>
-                <p className="rf-hook" title={c.hookText}>
-                  “{c.hookText}”
-                </p>
-                <p className="rf-why">{c.why}</p>
+                <div id={`${id}-why`} className={`rf-acc${open ? ' open' : ''}`} inert={!open || undefined}>
+                  <div>
+                    <p className="rf-hook" title={c.hookText}>
+                      “{c.hookText}”
+                    </p>
+                    <p className="rf-why" data-testid="reels-why-text">
+                      {c.why}
+                    </p>
+                  </div>
+                </div>
               </div>
             </li>
           )

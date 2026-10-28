@@ -133,7 +133,8 @@ async function snapshot(page: Page) {
     const range = root.querySelector<HTMLInputElement>('input[aria-label="Position in the reel"]')
     const time = root.querySelector('[data-testid="time"]')
     const readout = parse(time?.textContent)
-    const chips = Array.from(root.querySelectorAll('[data-testid="moment-suggest"]')).filter(visible).map((chip) => parse(chip.textContent))
+    // the offer, and the moment attached by itself, both show the playhead
+    const chips = Array.from(root.querySelectorAll('[data-testid="moment-suggest"], [data-testid="moment-chip"][data-auto]')).filter(visible).map((chip) => parse(chip.textContent))
     const pausedButton = Array.from(root.querySelectorAll('button[aria-label="Play"]')).find(visible)
     if (main && main.readyState >= 2 && !main.seeking) {
       if (range && Math.abs(Number(range.value) - main.currentTime) > 0.25) issues.push({ invariant: 'c', detail: `scrubber=${range.value} video=${main.currentTime.toFixed(3)}` })
