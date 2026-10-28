@@ -50,6 +50,8 @@ test('flip a mirrored take from Edit it myself', async () => {
   await snap('mirror-01-drawer-off')
   await toggle.check()
   await expect(page.getByTestId('make-version')).toBeEnabled()
+  // fails if the cover on the phone stays as filmed: it was made before the flip, so it is drawn mirrored until then
+  await expect(page.getByTestId('cover-preview').locator('img, video').first()).toHaveCSS('transform', 'matrix(-1, 0, 0, 1, 0, 0)')
   await snap('mirror-02-drawer-on')
   await page.getByTestId('make-version').click()
   await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 })
