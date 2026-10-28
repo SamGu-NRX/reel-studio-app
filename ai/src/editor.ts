@@ -312,10 +312,11 @@ async function editNewVideo(deps: EditorDeps, provider: ModelProvider | null, pr
   if (!provider) return deterministicEdit(deps, projectDir, onEvent, signal);
   const ctx = newCtx(deps, projectDir, provider, onEvent, signal, 3);
   const { p } = await load(ctx);
-  if (deps.firstLook !== false && p.sources.length < 2) {
+  // a first look plays the analysis's default cut of the whole video, which a proposed reel's copied analysis still is
+  if (deps.firstLook !== false && p.sources.length < 2 && !isProposedReel(p)) {
     ctx.renderGate = firstLook(deps, ctx, onEvent);
   }
-  const task = `${deps.prompts.render(p.sources.length > 1 ? 'multiClipEdit' : 'firstEdit')}\n\nVideo title: ${p.title}${plannedScript(p)}`;
+  const task = `${deps.prompts.render(p.sources.length > 1 ? 'multiClipEdit' : 'firstEdit')}\n\nVideo title: ${p.title}${plannedScript(p)}${proposedReel(p)}`;
   let run: Pick<RunAgentResult, 'finished' | 'stoppedBy'> = { finished: null, stoppedBy: null };
   try {
     run = await runAgent({ provider, system: await systemPrompt(deps), task, ctx, onEvent, signal, maxSteps: deps.maxSteps ?? 45, tokenBudget: deps.tokenBudget, preload: ['get_project', 'get_transcript'] });
@@ -802,6 +803,28 @@ export function plannedScript(p: object): string {
   return `\n\nThe script they planned before filming. Their takes follow it loosely; use it to tell which lines they meant to say:\n${hook}${s.script.trim()}${filmed}`;
 }
 
+// ---------------------------------------------------------------- one of several reels from one video
+
+/** project.json `proposal`: this reel is one the editor proposed from another reel's video (app propose-reels.ts). */
+interface ProposedReel { title?: unknown; hook?: unknown; why?: unknown }
+const proposalOf = (p: object): ProposedReel | null => {
+  const r = (p as { proposal?: unknown }).proposal;
+  return r && typeof r === 'object' && typeof (r as ProposedReel).title === 'string' ? r as ProposedReel : null;
+};
+/** Made from a proposal, with the proposed words already its cut. */
+const isProposedReel = (p: Project): boolean => !!proposalOf(p) && p.cut.keep.length > 0;
+
+/** What this reel is about, for its first edit, when the editor proposed it from a longer video: its cut is already
+ * the proposed words, and the edit stays inside them. */
+export function proposedReel(p: object): string {
+  const r = proposalOf(p);
+  if (!r) return '';
+  const hook = typeof r.hook === 'string' && r.hook.trim() ? ` It opens on: "${r.hook.trim()}".` : '';
+  const why = typeof r.why === 'string' && r.why.trim() ? ` ${r.why.trim()}` : '';
+  return `\n\nThis reel is one of several from the same video. It is about: ${String(r.title).trim()}.${hook}${why}
+Its cut is already set to those words (CURRENT CUT in get_transcript). Keep inside it: tighten it, take the clean take of any line said twice, drop filler. Do not add words from elsewhere in the video.`;
+}
+
 // ---------------------------------------------------------------- planning chat -> plan
 
 /** Questions the editor may ask in one planning chat (audience, then the one takeaway) before it proposes. */
@@ -962,13 +985,15 @@ export async function deterministicEdit(deps: EditorDeps, projectDir: string, re
   const changed: string[] = [];
   onEvent({ type: 'status', message: 'Cutting out the pauses', pct: 20 });
   let p = await loadProject(projectDir);
+  // autocut would replace a proposed reel's words with a cut of the whole video
+  const proposed = isProposedReel(p);
   if (p.sources.length > 1) {
     if (!p.cut.keep.length) {
       const ctx = newCtx(deps, projectDir, null, onEvent, signal);
       const result = await executeTool(ctx, 'set_clips', { items: p.sources.map((source) => ({ source: source.id, in: 0, out: source.duration })) });
       if (result.isError) throw new Error(result.content);
     }
-  } else await deps.host.runEngine('autocut', engineArgs(projectDir), progress(onEvent), signal);
+  } else if (!proposed) await deps.host.runEngine('autocut', engineArgs(projectDir), progress(onEvent), signal);
   changed.push('cut');
   p = await loadProject(projectDir);
   if (!p.captions.enabled) { p.captions.enabled = true; changed.push('captions'); }
@@ -989,7 +1014,7 @@ export async function deterministicEdit(deps: EditorDeps, projectDir: string, re
   const version = Number(r?.version ?? (await loadProject(projectDir)).version ?? 1);
   onEvent({ type: 'render', version, draft: false, ...(r?.file ? { file: String(r.file) } : {}) });
   const songName = song ? path.basename(song, path.extname(song)) : null;
-  const did = `${p.sources.length > 1 ? 'clips kept in order and any speech subtitled' : 'pauses cut and subtitles added'}${songName ? `, with your song "${songName}" underneath` : ''}.`;
+  const did = `${p.sources.length > 1 ? 'clips kept in order and any speech subtitled' : proposed ? 'the proposed part of the video kept and subtitles added' : 'pauses cut and subtitles added'}${songName ? `, with your song "${songName}" underneath` : ''}.`;
   const summary = why
     ? `${why} So Version ${version} is a basic version: ${did}`
     : `Basic version: ${did} Connect an editor to pick your best takes and add pictures.`;

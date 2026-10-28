@@ -26,6 +26,7 @@ import { detectLocalClaude, DetectOptions, LocalClaude } from './providers/local
 import { detectCodex, CodexDetectOptions, LocalCodex } from './providers/localCodex';
 import * as editor from './editor';
 import { proposeTry, type TryProposal, type TryRequest } from './trial';
+import { proposeReels, type ProposeReelsRequest, type ReelProposal } from './propose';
 import { refuseIfOpen } from './owner';
 
 export * from './types';
@@ -64,6 +65,8 @@ export { pickTakes, formatForPicking, deterministicEdit } from './editor';
 export type { ApplyNoteOptions } from './editor';
 export { checkTryProposal, TRY_VARIABLES } from './trial';
 export type { TryProposal, TryRequest, TryVariable } from './trial';
+export { checkReelProposal, proposeReels } from './propose';
+export type { ProposeReelsRequest, ReelCandidate, ReelProposal } from './propose';
 export { ATTACHMENT_REF, MAX_ATTACHMENTS_PER_NOTE, readAttachment, listAttachments, validateAttachments, placedAssets } from './attachments';
 export type { AttachmentInfo } from './attachments';
 
@@ -744,6 +747,10 @@ export function createAI(opts: CreateAIOptions) {
     /** Try 2 for a trial post: the one thing the editor changes from the reel as it is, and why. */
     async proposeTry(req: TryRequest, signal?: AbortSignal): Promise<TryProposal> {
       return proposeTry(prompts, await modelProvider('editor'), req, signal);
+    },
+    /** More reels from one video: the distinct reels the editor finds in its transcript, best first (propose.ts). */
+    async proposeReels(req: ProposeReelsRequest, signal?: AbortSignal, onEvent?: (e: AgentEvent) => void): Promise<ReelProposal> {
+      return proposeReels(prompts, await modelProvider('editor'), req, signal, onEvent);
     },
     async styleRules() { return style.list(); },
     async removeStyleRule(id: string, options?: { forget?: boolean }) { return style.remove(id, options); },
