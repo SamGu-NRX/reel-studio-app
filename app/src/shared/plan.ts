@@ -72,7 +72,15 @@ export function planAsScript(p: ReelPlan): { hook: string; script: string; shots
   return { hook: pickedHook(p), script: p.beats.map((b) => b.text).join('\n'), shots: p.shots.map((s) => s.text) }
 }
 
-export type PlanTurn = { from: 'you'; text: string } | { from: 'editor'; text: string; kind: 'question' | 'plan' }
+/** The editor's planning reply as its line in the chat (main/index.ts projects:planSay). */
+export function planReply(r: ({ kind: 'question'; text: string } | { kind: 'plan'; say: string }) & { raw?: unknown }): Omit<ChatMessage, 'id' | 'at'> {
+  const raw = r.raw !== undefined ? { planRaw: r.raw } : {}
+  return r.kind === 'question'
+    ? { from: 'editor', text: r.text, plan: true, planTurn: 'question', ...raw }
+    : { from: 'editor', text: r.say, plan: true, planTurn: 'plan', ...raw }
+}
+
+export type PlanTurn = { from: 'you'; text: string } | { from: 'editor'; text: string; kind: 'question' | 'plan'; raw?: unknown }
 
 /** The planning chat for the editor's next turn (ai PlanTurnInput): what the creator said, minus words they stopped or
  * that failed (Send again says them anew), the editor's questions and plans, and how many questions it has asked. */
@@ -81,7 +89,7 @@ export function planTurns(chat: ChatMessage[]): { turns: PlanTurn[]; asked: numb
   for (const m of chat) {
     if (!m.plan) continue
     if (m.from === 'you' && m.outcome !== 'stopped' && m.outcome !== 'failed') turns.push({ from: 'you', text: m.text })
-    else if (m.from === 'editor' && m.planTurn) turns.push({ from: 'editor', text: m.text, kind: m.planTurn })
+    else if (m.from === 'editor' && m.planTurn) turns.push({ from: 'editor', text: m.text, kind: m.planTurn, ...(m.planRaw !== undefined ? { raw: m.planRaw } : {}) })
   }
   return { turns, asked: turns.filter((t) => t.from === 'editor' && t.kind === 'question').length }
 }

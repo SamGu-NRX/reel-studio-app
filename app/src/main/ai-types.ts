@@ -34,7 +34,7 @@ export interface PlanTurnInput {
   plan: { hooks: string[]; hook: number; beats: string[]; shots: string[] } | null
 }
 /** A short question back, or the whole plan: 2-3 hooks, 3-6 beats, 1-6 shots, one line each. */
-export type PlanTurnResult = { kind: 'question'; text: string } | { kind: 'plan'; say: string; title?: string; hooks: string[]; beats: string[]; shots: string[] }
+export type PlanTurnResult = ({ kind: 'question'; text: string } | { kind: 'plan'; say: string; title?: string; hooks: string[]; beats: string[]; shots: string[] }) & { raw?: unknown }
 
 /** What the editor reads to choose Try 2 (ai/src/trial.ts). */
 export interface TryRequest {

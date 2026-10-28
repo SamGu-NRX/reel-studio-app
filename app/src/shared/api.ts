@@ -141,6 +141,9 @@ export interface ChatMessage {
   /** An editor message in the planning chat: a question back, or the line it said with the plan it proposed (the
    * plan itself is app.json `plan`). */
   planTurn?: 'question' | 'plan'
+  /** The editor's planning reply as the provider sent it (Claude's thinking blocks), for its next planning turn.
+   * Main only: store.ts detail() never sends it to the page. */
+  planRaw?: unknown
   /** About more reels from this video: what the editor found, or the reels being made. It belongs to no note. */
   reels?: true
 }

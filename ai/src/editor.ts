@@ -880,10 +880,13 @@ export async function planTurn(deps: EditorDeps, provider: ModelProvider | null,
   for (const t of input.turns) {
     const msg = t.from === 'you'
       ? { role: 'user', content: [{ type: 'text', text: t.text }] }
-      : { role: 'assistant', text: JSON.stringify(t.kind === 'question' ? { question: t.text } : { say: t.text }), toolCalls: [] };
+      : { role: 'assistant', text: JSON.stringify(t.kind === 'question' ? { question: t.text } : { say: t.text }), toolCalls: [], ...(t.raw !== undefined ? { raw: t.raw } : {}) };
     const prev = messages[messages.length - 1];
     if (prev?.role === 'user' && msg.role === 'user') prev.content[0].text += `\n\n${t.text}`;
-    else if (prev?.role === 'assistant' && msg.role === 'assistant') prev.text = (msg as { text: string }).text;
+    else if (prev?.role === 'assistant' && msg.role === 'assistant') {
+      prev.text = (msg as { text: string }).text;
+      prev.raw = (msg as { raw?: unknown }).raw;
+    }
     else if (messages.length || msg.role === 'user') messages.push(msg);
   }
   try {
@@ -900,7 +903,7 @@ export async function planTurn(deps: EditorDeps, provider: ModelProvider | null,
       const text = res.text;
       if (signal?.aborted) throw new AIError('cancelled', 'Stopped.');
       const r = readPlanTurn(extractJson(text), input.asked);
-      if (r) return r;
+      if (r) return res.raw !== undefined ? { ...r, raw: res.raw } : r;
       messages.push({ role: 'assistant', text, toolCalls: [], raw: res.raw });
       messages.push({ role: 'user', content: [{ type: 'text', text: mustPropose
         ? 'No questions are left. Reply with ONLY the plan JSON: {"say": string, "title": string, "hooks": [2 or 3], "beats": [3 to 6], "shots": [2 to 6]}.'

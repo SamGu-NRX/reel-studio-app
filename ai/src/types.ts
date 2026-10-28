@@ -33,14 +33,19 @@ export interface ScriptResult { hook: string; script: string; onScreenText: stri
  * message; an editor turn says whether it was a question or the plan it proposed. `asked`: questions the editor has
  * asked so far. `plan`: the plan as it stands, with the creator's own edits; null before the first one. */
 export interface PlanTurnInput {
-  turns: ({ from: 'you'; text: string } | { from: 'editor'; text: string; kind: 'question' | 'plan' })[];
+  /** `raw`: the provider's own reply as planTurn returned it (Claude's thinking blocks), sent back unchanged. */
+  turns: ({ from: 'you'; text: string } | { from: 'editor'; text: string; kind: 'question' | 'plan'; raw?: unknown })[];
   asked: number;
   plan: { hooks: string[]; hook: number; beats: string[]; shots: string[] } | null;
 }
 /** A question back (at most PLAN_QUESTIONS in a chat), or the whole plan: 2-3 hooks, 3-6 beats, 1-6 shots, one line each. */
-export type PlanTurnResult =
+export type PlanTurnResult = (
   | { kind: 'question'; text: string }
-  | { kind: 'plan'; say: string; title?: string; hooks: string[]; beats: string[]; shots: string[] };
+  | { kind: 'plan'; say: string; title?: string; hooks: string[]; beats: string[]; shots: string[] }
+) & {
+  /** The provider's reply as it came (Claude's thinking blocks). Keep it with the turn and pass it back next time. */
+  raw?: unknown;
+};
 
 export interface EngineProgress { stage: string; pct: number; message: string }
 export interface EngineHost {

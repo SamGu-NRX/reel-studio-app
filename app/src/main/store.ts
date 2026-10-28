@@ -847,7 +847,8 @@ export async function detail(slug: string): Promise<ProjectDetail> {
     checklist: checklist(project, words, kept, versions, !!st.aiEdited, songTitle(ledger, track)),
     versionsMade: st.versionsMade ?? [],
     // a note's attached files get a URL for their still here (never stored: the root folder can move)
-    chat: st.chat.map((m) => (m.attachments?.length ? { ...m, attachments: m.attachments.map(thumb) } : m)),
+    // a planning reply's raw provider content stays in main (shared/plan.ts planTurns)
+    chat: st.chat.map(({ planRaw: _raw, ...m }) => (m.attachments?.length ? { ...m, attachments: m.attachments.map(thumb) } : m)),
     lastError: st.lastError,
     queue: (st.queue ?? []).map((q) => ({ ...q, attachments: q.attachments.map(thumb) })),
     queueHeld: !!st.queueHeld,

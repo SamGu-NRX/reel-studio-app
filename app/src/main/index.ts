@@ -72,7 +72,7 @@ import { createPauser, pauseFor, quitQuestion } from './pause'
 import { createNoteQueue, noteOutcome, type NoteToRun, type StartHand } from './note-queue'
 import { handEditJob, HAND_MESSAGE } from './hand-edit'
 import { parseHandEdit } from '../shared/hand-edit'
-import { checkPlan, planFromEditor, planTurns, titleFromTopic } from '../shared/plan'
+import { checkPlan, planFromEditor, planReply, planTurns, titleFromTopic } from '../shared/plan'
 import type { SoundEffect } from '../shared/sfx'
 import { mediaUrl } from './media-url'
 import { withRenderSlot } from './render-slot'
@@ -994,14 +994,14 @@ function registerIpc(): void {
         const { turns, asked } = planTurns(st.chat)
         const plan = st.plan ? { hooks: st.plan.hooks, hook: st.plan.hook, beats: st.plan.beats.map((b) => b.text), shots: st.plan.shots.map((x) => x.text) } : null
         const r = await ai.planTurn({ turns, asked, plan }, emit, signal)
-        if (r.kind === 'question') return { summary: r.text, chat: [{ from: 'editor', text: r.text, plan: true, planTurn: 'question' }] }
+        if (r.kind === 'question') return { summary: r.text, chat: [planReply(r)] }
         const next = planFromEditor(st.plan?.topic || turns.find((t) => t.from === 'you')?.text || words, r)
         const title = r.title?.trim().slice(0, 80)
         await updateAppState(slug, (s) => {
           s.plan = next
           if (title && s.title === PLANNED_TITLE) s.title = title
         })
-        return { summary: r.say, chat: [{ from: 'editor', text: r.say, plan: true, planTurn: 'plan' }] }
+        return { summary: r.say, chat: [planReply(r)] }
       },
       { record: (s) => void s.chat.push(stamp({ from: 'you', text: words, plan: true, jobId })) }
     )
