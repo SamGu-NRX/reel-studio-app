@@ -19,7 +19,7 @@ import {
   type SpawnFn
 } from '../src/main/vendor-setup'
 import { MOVED_NOTE, createVendorConnect, type CliStatus, type VendorDeps } from '../src/main/vendor-connect'
-import { parseRegPath } from '../src/main/user-path'
+import { parseUserPath } from '../src/main/user-path'
 import type { VendorInfo } from '../src/shared/api'
 
 // ---- fakes -------------------------------------------------------------------------------------------------------
@@ -216,10 +216,15 @@ describe('environments', () => {
     expect(testVendorLoginEnv({ REELSTUDIO_TEST_VENDOR_HOME: '/tmp/t', HOME: '/Users/me' }, 'darwin')).toMatchObject({ HOME: '/Users/me', CLAUDE_CONFIG_DIR: '/tmp/t/.claude', CODEX_HOME: '/tmp/t/.codex' })
   })
 
-  it('reads the user PATH and its type from reg query', () => {
-    const out = '\r\nHKEY_CURRENT_USER\\Environment\r\n    Path    REG_EXPAND_SZ    C:\\Users\\me\\.local\\bin;%USERPROFILE%\\x\r\n\r\n'
-    expect(parseRegPath(out)).toEqual({ type: 'REG_EXPAND_SZ', value: 'C:\\Users\\me\\.local\\bin;%USERPROFILE%\\x' })
-    expect(parseRegPath('ERROR: The system was unable to find the specified registry key or value.')).toBeNull()
+  it('reads the user PATH and its type from the registry read (kind + base64 of UTF-8), and tells "none" from "unreadable"', () => {
+    const value = 'C:\\Users\\Zoë\\.local\\bin;%USERPROFILE%\\x'
+    const b64 = Buffer.from(value, 'utf8').toString('base64')
+    expect(parseUserPath(`ExpandString ${b64}\r\n`)).toEqual({ type: 'REG_EXPAND_SZ', value })
+    expect(parseUserPath(`String ${b64}`)).toEqual({ type: 'REG_SZ', value })
+    expect(parseUserPath('String\r\n')).toEqual({ type: 'REG_SZ', value: '' })
+    expect(parseUserPath('none\r\n')).toBe('none')
+    expect(parseUserPath('DWord NQ==')).toBeNull()
+    expect(parseUserPath('')).toBeNull()
   })
 })
 
