@@ -1,4 +1,4 @@
-"""Measure named zooms on a generated box, including the legacy render paths."""
+"""Measure named zoom framing and subpixel motion on generated media."""
 import subprocess
 
 import numpy as np
@@ -19,15 +19,17 @@ def context(tmp_path, project, fps=FPS):
                      word_out_end={"w0": 0.8, "w1": 3.7}.__getitem__)
 
 
-def encode(ctx, take, spans, name, t_shift=0, dur=4):
+def encode(ctx, take, spans, name, t_shift=0, dur=4, full=False):
     graph, out = ctx.work / f"{name}.txt", ctx.work / f"{name}.mp4"
     cmd = render.build_video_cmd(ctx, ctx.out_timeline,
                                 {"s1": {"width": W, "height": H, "fps": FPS}}, {"s1": take}, {},
                                 W, H, [], spans, None, take, t_shift, dur, t_shift, "libx264", out, graph,
                                 use_hw=False)
     subprocess.run(cmd, cwd=ctx.work, capture_output=True, check=True)
-    raw = subprocess.run([fx.FFMPEG, "-v", "error", "-i", str(out), "-vf", f"crop={W}:2:0:{H//2}",
+    raw = subprocess.run([fx.FFMPEG, "-v", "error", "-i", str(out), "-vf", "format=gray" if full else f"crop={W}:2:0:{H//2}",
                           "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True, check=True).stdout
+    if full:
+        return np.frombuffer(raw, np.uint8).reshape(-1, H, W)
     return np.frombuffer(raw, np.uint8).reshape(-1, 2, W)[:, 0].astype(float)
 
 
@@ -43,6 +45,63 @@ def take(tmp_path_factory):
     return path
 
 
+@pytest.fixture(scope="module")
+def feature_take(tmp_path_factory):
+    from PIL import Image
+
+    path = tmp_path_factory.mktemp("zoom feature") / "feature.png"
+    yy, xx = np.mgrid[:H, :W]
+    image = 32 + 48 * ((xx // 6 + yy // 6) % 2)
+    # An isolated Gaussian has a measurable subpixel centroid. Texture elsewhere
+    # exercises the real encoder without contaminating that known feature.
+    image[450:580, 235:345] = 32
+    image[60:200, 15:125] = 32
+    for x, y in ((280, 500), (80, 140)):
+        image = image + 190 * np.exp(-((xx - x) ** 2 + (yy - y) ** 2) / (2 * 5 ** 2))
+    Image.fromarray(np.clip(image, 0, 255).astype(np.uint8)).save(path)
+    take = path.with_suffix(".mp4")
+    subprocess.run([fx.FFMPEG, "-y", "-v", "error", "-loop", "1", "-framerate", str(FPS), "-i", str(path),
+                    "-f", "lavfi", "-i", "sine=f=220:d=6:sample_rate=48000", "-t", "6",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "8", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", str(take)], check=True)
+    return take
+
+
+@pytest.mark.parametrize("kind", ["drift", "ramps", "snap"])
+def test_zoom_features_never_reverse(tmp_path, feature_take, kind):
+    ctx = context(tmp_path, {})
+    ctx.out_timeline = [Segment("s1", 0, 6, 0)]
+    if kind == "drift":
+        spans = [ZoomSpan(0, 6, 1.15, W / 2, H / 2, ramp_in=6 * FPS - 1)]
+    elif kind == "ramps":
+        spans = [ZoomSpan(.5, 2.5, 1.15, W / 2, H / 2, ramp_in=15, ramp_out=15),
+                 ZoomSpan(3, 5.5, 1.2, W / 2, H / 2, ramp_in=15, ramp_out=15)]
+    else:
+        spans = [ZoomSpan(.5, 5.5, 1.15, W / 2, H / 2, ramp_in=7, ramp_out=9, blur=True)]
+    frames = encode(ctx, feature_take, spans, "feature", dur=6, full=True)
+    assert len(frames) == 6 * FPS
+    # Each fixed ROI contains one feature's entire journey. Subtracting above
+    # the background removes codec ringing; it does not predict the motion.
+    for sign, (x0, y0, x1, y1) in ((1, (260, 480, 320, 555)), (-1, (40, 85, 100, 165))):
+        weights = np.maximum(frames[:, y0:y1, x0:x1].astype(float) - 50, 0)
+        yy, xx = np.mgrid[y0:y1, x0:x1]
+        mass = weights.sum(axis=(1, 2))
+        assert np.all(mass > 1000), "tracking feature disappeared"
+        positions = np.column_stack(((weights * xx).sum(axis=(1, 2)) / mass,
+                                     (weights * yy).sum(axis=(1, 2)) / mass))
+        for span in spans:
+            a, b = round(span.t0 * FPS), round(span.t1 * FPS)
+            held = min(a + span.ramp_in, b - 1)
+            assert np.all(sign * (positions[held] - positions[a]) > [5, 10]), "zoom stopped moving"
+            phases = [sign * np.diff(positions[a:held + 1], axis=0)]
+            if span.ramp_out:
+                # Include both handoffs between a moving ramp and the hold.
+                release = b - span.ramp_out
+                phases += [-sign * np.diff(positions[release - 1:b], axis=0)]
+            backward = np.maximum(0, -np.concatenate(phases)).max(axis=0)
+            assert np.all(backward <= 0.1), f"{kind}, feature {sign}, backward x/y: {backward} px"
+
+
 def widths(rows):
     return np.array([np.count_nonzero(row > (row[:30].mean() + row[160:200].mean()) / 2) for row in rows])
 
@@ -55,6 +114,7 @@ def test_named_kinds_render(tmp_path, take, kind):
     rows = encode(ctx, take, spans, "named")
     if kind == "drift":
         sizes = widths(rows)[round(spans[0].t0 * FPS):round(spans[0].t1 * FPS)]
+        assert sizes[-1] - sizes[0] > 30, "drift rendered static instead of moving toward its target"
         assert sizes[0] == pytest.approx(144, abs=2)
         assert sizes[-1] == pytest.approx(144 * 1.3, abs=2)
         assert np.all(np.diff(sizes) >= -1), sizes
@@ -94,6 +154,9 @@ def test_multiple_ramps_keep_their_own_crop(tmp_path, take):
     for i, span in enumerate(spans):
         alone = widths(encode(ctx, take, [span], f"alone{i}"))
         a, b = round(span.t0 * FPS), round(span.t1 * FPS)
+        # Once the entrance ends, the zoom must hold instead of running its curve backward.
+        held = combined[a + span.ramp_in:b]
+        assert np.all(np.abs(held - 144 * span.scale) <= 2), held
         assert np.max(np.abs(combined[a:b] - alone[a:b])) <= 1
 
 
