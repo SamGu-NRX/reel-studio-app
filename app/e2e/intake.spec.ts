@@ -99,11 +99,12 @@ test('fails if a video dropped on a reel with no video yet starts another reel i
     await passFirstRun(page)
     await page.getByTestId('new-reel').click()
     await expect(page.getByTestId('planned-stage')).toBeVisible()
+    // with no editor the new reel shows its plan form, not the note box (ui-plan-chat): the video goes on the stage
     const overlay = page.getByTestId('drop-overlay')
-    await dropFiles(page, 'composer-wrap', [media.video], false)
+    await dropFiles(page, 'planned-stage', [media.video], false)
     await expect(overlay).toHaveAttribute('data-intent', 'this-reel')
     await expect(overlay).toContainText('Use it for this reel')
-    await dropFiles(page, 'composer-wrap', [media.video])
+    await dropFiles(page, 'planned-stage', [media.video])
     await expect(page.getByTestId('note-progress')).toContainText('Making Version 1')
     expect((await page.evaluate(() => window.reel.projects.list())).length).toBe(1)
   } finally {
