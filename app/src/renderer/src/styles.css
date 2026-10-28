@@ -106,7 +106,7 @@ a { color: inherit; }
 
 /* The sidebar's update row (UpdateButton.tsx): a row like the nav, not a box. */
 .update-pill {
-  display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; text-align: left;
+  display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 6px 8px; overflow: hidden; text-align: left;
   border: 0; border-radius: var(--r-md); background: transparent; color: var(--ink);
   font: inherit; cursor: pointer; transition: background-color 120ms ease, transform 120ms var(--ease-out);
 }
@@ -116,8 +116,10 @@ a { color: inherit; }
 .update-pill:active { transform: scale(.98); }
 .update-pill[aria-disabled] { cursor: default; }
 .update-pill[aria-disabled]:active { transform: none; }
-.update-pill-text { display: flex; flex-direction: column; min-width: 0; }
-.update-pill-label { font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.update-pill-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.update-pill-label { font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* folded to the rail: the icon alone, the size of a nav row (shell.css) */
+.rail .update-pill { width: 40px; padding: 5px; }
 .update-pill-sub { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .update-icon { position: relative; width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 50%; color: var(--ink); }
@@ -134,11 +136,11 @@ a { color: inherit; }
 }
 
 .update-pop {
-  position: fixed; z-index: 35; width: 300px; max-height: min(420px, calc(100vh - 80px)); overflow-y: auto;
+  position: fixed; z-index: 35; width: 300px; max-height: min(420px, calc(100vh - 80px)); overflow-y: auto; overscroll-behavior: contain;
   background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--e3);
-  padding: 16px 18px 12px; display: flex; flex-direction: column; gap: 12px;
-  transform-origin: left bottom; opacity: 0; transform: translateX(-4px) scale(.97); visibility: hidden; pointer-events: none;
-  transition: opacity .125s var(--ease-out), transform .125s var(--ease-out), visibility 0s linear .125s;
+  padding: 14px 16px 10px; display: flex; flex-direction: column; gap: 12px;
+  transform-origin: left bottom; opacity: 0; transform: translateY(4px) scale(.97); visibility: hidden; pointer-events: none;
+  transition: opacity .15s var(--ease-out), transform .15s var(--ease-out), visibility 0s linear .15s;
 }
 .update-pop[data-open] {
   opacity: 1; transform: none; visibility: visible; pointer-events: auto;
@@ -151,11 +153,11 @@ a { color: inherit; }
 .update-pop-notes h3 { font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 620; color: var(--ink-2); }
 .update-pop-notes ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink); user-select: text; }
 .update-pop-link {
-  align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; padding: 4px 0; min-height: 28px;
-  font: inherit; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+  flex: none; display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; padding: 4px 0; min-height: 28px;
+  font: inherit; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; cursor: pointer;
 }
 .update-pop-link:hover { color: var(--ink); }
-.update-pop-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.update-pop-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 6px; }
 
 .update-row { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .update-row-line { display: flex; align-items: center; gap: 14px; }

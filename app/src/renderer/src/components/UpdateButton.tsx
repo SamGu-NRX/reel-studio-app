@@ -10,6 +10,28 @@ const R = 12
 const RING = 2 * Math.PI * R
 const OPEN_DELAY_MS = 200
 const CLOSE_DELAY_MS = 150
+const GAP = 8
+/** In the folded sidebar there is no column to fit, so the popover takes this width and reaches over the page. */
+const RAIL_POP_W = 280
+
+type PopPos = { left: number; bottom: number; width: number; maxHeight: number }
+
+/**
+ * Above the item, as wide as it (the sidebar's column), so it never covers the screen's own actions; in the folded
+ * rail it reaches right instead. Clamped to the window: it never starts under the title row or past the right edge.
+ */
+function placeAbove(btn: HTMLElement): PopPos {
+  const r = btn.getBoundingClientRect()
+  const side = btn.closest('.side')?.getBoundingClientRect()
+  const rail = !!side && side.width < 120
+  const width = Math.min(rail ? RAIL_POP_W : Math.max(r.width, 200), window.innerWidth - r.left - GAP)
+  const titlebar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--titlebar')) || 0
+  // below the nav when there is room for it, so the rows you came from stay readable
+  const nav = btn.closest('.side')?.querySelector('nav')?.getBoundingClientRect().bottom ?? 0
+  const room = r.top - GAP - Math.max(titlebar, nav) - GAP
+  const maxHeight = room >= 200 ? room : r.top - GAP - titlebar - GAP
+  return { left: r.left, bottom: window.innerHeight - r.top + GAP, width, maxHeight }
+}
 
 function StatusIcon({ s }: { s: UpdateState }) {
   const kind = updateIcon(s)
@@ -40,7 +62,7 @@ export function UpdateButton() {
   const { act, pending, dialog } = useUpdateActions()
   const [open, setOpen] = useState(false)
   const [instant, setInstant] = useState(false)
-  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null)
+  const [pos, setPos] = useState<PopPos | null>(null)
   const btn = useRef<HTMLButtonElement>(null)
   const pop = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -83,16 +105,23 @@ export function UpdateButton() {
         btn.current?.focus()
       }
     }
+    // the window or the sidebar changed size under it: follow the item
+    const follow = (): void => {
+      if (btn.current) setPos(placeAbove(btn.current))
+    }
     window.addEventListener('keydown', key, true)
-    return () => window.removeEventListener('keydown', key, true)
+    window.addEventListener('resize', follow)
+    return () => {
+      window.removeEventListener('keydown', key, true)
+      window.removeEventListener('resize', follow)
+    }
   }, [open])
 
   if (!s || !visible) return dialog ? <>{dialog}</> : null
 
   const openNow = (fromKeyboard: boolean): void => {
     clearTimer()
-    const r = btn.current?.getBoundingClientRect()
-    if (r) setPos({ left: r.right + 10, bottom: window.innerHeight - r.bottom })
+    if (btn.current) setPos(placeAbove(btn.current))
     setInstant(fromKeyboard)
     setOpen(true)
   }
@@ -155,11 +184,13 @@ export function UpdateButton() {
         onPointerEnter={(e) => enter(e, true)}
         onPointerLeave={leave}
         aria-disabled={busy || undefined}
+        aria-label={`${updateButtonLabel(s)}: Reel Studio ${version ?? s.currentVersion}`}
         aria-describedby={summaryId}
+        title={s.status === 'downloading' ? undefined : updateSummary(s)}
         data-testid="update-button"
       >
         <StatusIcon s={s} />
-        <span className="update-pill-text">
+        <span className="update-pill-text lbl">
           <span className="update-pill-label">{updateButtonLabel(s)}</span>
           <span className="update-pill-sub">{updateSubline(s)}</span>
         </span>
@@ -173,7 +204,7 @@ export function UpdateButton() {
         className="update-pop"
         data-open={open || undefined}
         data-instant={instant || undefined}
-        style={pos ? { left: pos.left, bottom: pos.bottom } : undefined}
+        style={pos ?? undefined}
         role="region"
         aria-label={`What's new in Reel Studio ${s.downloadedVersion ?? s.availableVersion ?? ''}`}
         aria-hidden={!open}
@@ -183,7 +214,7 @@ export function UpdateButton() {
       >
         <div className="update-pop-head">
           <div className="update-pop-title">{updateHeadline(s)}</div>
-          <div className="update-pop-sub">{s.status === 'error' ? updateSummary(s) : `Reel Studio ${s.downloadedVersion ?? s.availableVersion}`}</div>
+          <div className="update-pop-sub selectable">{s.status === 'error' ? updateSummary(s) : `Reel Studio ${version}`}</div>
         </div>
         {/* every release newer than this copy, newest first (main/update-machine.ts) */}
         {notes.map((n) => (
@@ -197,8 +228,8 @@ export function UpdateButton() {
           </section>
         ))}
         <div className="update-pop-foot">
-          <button className="update-pop-link" tabIndex={open ? 0 : -1} onClick={() => openReleasePage(notify)} data-testid="update-release-link">
-            {notes[0] ? releaseLinkLabel(notes[0]) : 'Read the release notes on GitHub'}
+          <button className="update-pop-link" tabIndex={open ? 0 : -1} onClick={() => openReleasePage(notify)} title="Opens on GitHub in your browser" data-testid="update-release-link">
+            {releaseLinkLabel(notes[0])}
             <Icon name="external" size={12} stroke={2} />
           </button>
           {s.status !== 'downloading' && (
