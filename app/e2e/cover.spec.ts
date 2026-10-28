@@ -4,7 +4,7 @@
 // npx playwright test e2e/cover.spec.ts
 import { test, expect } from '@playwright/test'
 import { mkdtempSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { sourceAt } from '../src/shared/moments'
 import { clock } from '../src/shared/progress'
 import { BASE, launch, makeMedia, makeReel, newProjectFolder, passFirstRun, projectFolders } from './helpers'
@@ -55,7 +55,7 @@ test('cover suggestions say when and why, mark the chosen frame, and save it as 
   await expect(timeline).toHaveAttribute('aria-valuenow', '3')
   await page.getByRole('button', { name: 'Use the frame at 0:03' }).click()
   await expect(page.getByTestId('cover-why')).toHaveText('Your pick at 0:03')
-  const slug = readdirSync(join(ROOT, 'Projects'))[0]
+  const slug = basename(dir) // this spec's own project (fix-e2e-own-project)
   const segments = await page.evaluate((s) => window.reel.projects.timeline(s, 2).then((t) => t?.segments ?? []), slug)
   const frame = sourceAt(segments, 3)!
   await page.getByTestId('make-version').click()
