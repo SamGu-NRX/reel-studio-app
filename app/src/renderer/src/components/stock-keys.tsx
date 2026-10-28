@@ -1,6 +1,7 @@
-// Settings › Editor › Advanced: free API keys that let the AI editor search Pexels and Pixabay for stock photos
-// and footage (stock-search). The AI package keeps each key in safe storage; the page only sends it once.
-// Openverse image search needs no key. Drawn like the Anthropic key row beside it.
+// Settings › Advanced, under "Stock photos and footage": free API keys that let the AI editor search Pexels and
+// Pixabay (stock-search). The AI package keeps each key in safe storage; the page only sends it once. Openverse image
+// search needs no key, so it has no row. Drawn like the Anthropic key row above them; each row says only what the
+// subhead doesn't.
 import { useEffect, useState } from 'react'
 import { reel, userMessage } from '../api'
 import { Icon } from './icons'
@@ -71,10 +72,10 @@ function StockKey({ provider, saved, ready, loadError, onSaved }: {
     <ProviderRow
       id={provider.id}
       setting="stock-keys"
-      name={`${provider.name} stock photos and footage`}
+      name={provider.name}
       mark={<Icon name="key" size={20} />}
       tone={problem ? 'error' : saved ? 'ok' : 'plain'}
-      status={problem ?? (saved ? 'Key saved. Your editor can search it.' : 'No key, so your editor skips it. Openverse pictures need none.')}
+      status={problem ?? (saved ? 'Key saved. Your editor can search it.' : 'No key, so your editor skips it.')}
       action={
         !ready || open ? null : saved ? (
           <button className="btn small ghost" disabled={busy} onClick={() => void save(null)} data-testid={`stock-remove-${provider.id}`}>

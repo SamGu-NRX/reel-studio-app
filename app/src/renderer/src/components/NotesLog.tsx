@@ -35,7 +35,7 @@ export function VersionRows({ rows, asked }: { rows: VersionRow[] | null | undef
       {rows?.map((r) => (
         <div className="drow" key={r.label}>
           <span>{r.label}</span>
-          <span className="ba">
+          <span className="ba" title={r.title}>
             {r.before && (
               <>
                 <s>{r.before}</s>

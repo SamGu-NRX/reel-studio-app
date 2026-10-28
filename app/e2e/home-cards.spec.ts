@@ -107,6 +107,9 @@ test('a video with no sound says so where the video would be, and another video 
     await page.locator('.rrow').getByTestId('file-input').setInputFiles([media.video])
     await expect(card(page)).toHaveAttribute('data-state', 'making')
     await expect(card(page)).toHaveCount(1)
+    // fails if the reel keeps the silent file's title: nobody named it, so it takes the new file's
+    await expect(card(page)).not.toHaveAttribute('aria-label', /Screen recording/)
+    if (!process.env.REELSTUDIO_E2E_VIDEO) await expect(card(page)).toHaveAttribute('aria-label', /^My first take, /)
     await card(page).click()
     await expect(page.locator('.reel-page')).toHaveAttribute('data-slug', slug!)
     await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 240_000 })

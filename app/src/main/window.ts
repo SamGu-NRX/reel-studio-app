@@ -185,6 +185,8 @@ export function installMenu(send: (c: AppCommand) => void, dev: boolean, toggleT
         { type: 'separator' },
         // checked until the saved setting says otherwise (showTimelineInMenu)
         { id: TIMELINE_ITEM, label: 'Show Timeline', type: 'checkbox', checked: true, accelerator: 'Shift+Cmd+T', click: (i) => toggleTimeline(i.checked) },
+        // the same chord the page handles (Sidebar.tsx), so the menu shows it; the menu sees it first on a Mac
+        { id: 'resize-sidebar', label: 'Resize Sidebar', accelerator: 'Shift+Cmd+\\', click: () => send({ type: 'resize-sidebar' }) },
         { role: 'togglefullscreen' }
       ]
     },

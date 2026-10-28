@@ -21,7 +21,7 @@ export type { CoverCandidate } from './cover'
 
 export type LegalDoc = 'license' | 'notices'
 
-export type AppCommand = { type: 'new-video' | 'settings' | 'export' | 'library' } | { type: 'open-reel'; slug: string } | { type: 'timeline'; shown: boolean }
+export type AppCommand = { type: 'new-video' | 'settings' | 'export' | 'library' | 'resize-sidebar' } | { type: 'open-reel'; slug: string } | { type: 'timeline'; shown: boolean }
 
 /** planned: a reel with no video yet (New reel); its notes column is for planning and scripts. */
 export type ScreenStatus = 'planned' | 'new' | 'working' | 'ready' | 'interrupted' | 'failed'

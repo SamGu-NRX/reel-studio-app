@@ -60,3 +60,34 @@ describe('versionFact', () => {
     expect(versionFact([])).toBe('')
   })
 })
+
+describe('what a later version changed that its counts hide', () => {
+  const picture = (asset: string) => ({ id: asset, anchor: { from: 'w1', to: 'w2' }, treatment: 'full', asset }) as NonNullable<ProjectJson['broll']>[number]
+  const whoosh = (gainDb?: number) => ({ sound: 'whoosh-soft', at: { word: 'w3' }, ...(gainDb === undefined ? {} : { gainDb }) })
+
+  // fails if a sound's level reads in decibels instead of the Sound tab's Quiet / Normal / Loud, or a change inside
+  // one word (−6 dB to −9 dB, both Quiet) reads as no change
+  it('names a sound effect’s level in the Sound tab’s words, with the exact level as the tooltip', () => {
+    const rows = (a: number | undefined, b: number) => versionRows(base({ sfx: [whoosh(a)] }), base({ sfx: [whoosh(b)] }), { before: 20, after: 20 })
+    expect(rows(undefined, -9)).toEqual([{ label: 'Whoosh volume', before: 'Normal', after: 'Quiet', title: '0 dB → −9 dB' }])
+    expect(rows(-6, -9)).toEqual([{ label: 'Whoosh volume', before: 'Quiet', after: 'A bit quieter', title: '−6 dB → −9 dB' }])
+    expect(rows(-9, -6)[0].after).toBe('A bit louder')
+    expect(rows(-9, -9)).toEqual([])
+  })
+
+  // fails if a version that swapped one picture for another, or wrote a new post caption, gets no line
+  it('says a picture was swapped when the count stays the same, and a new post caption', () => {
+    const swap = versionRows(base({ broll: [picture('a.jpg'), picture('b.jpg')] }), base({ broll: [picture('a.jpg'), picture('c.jpg')] }), { before: 20, after: 20 })
+    expect(swap).toEqual([{ label: 'Pictures swapped', before: '', after: '1' }])
+    expect(versionFact(swap)).toBe('1 picture swapped')
+
+    const post = (caption: string) => ({ caption, hashtags: [], keywords: [] })
+    const long = 'Three things I wish someone told me before my first marathon, in order'
+    const rewritten = versionRows(base({ post: post('Old words') }), base({ post: post(long) }), { before: 20, after: 20 })
+    expect(rewritten).toEqual([{ label: 'Post caption', before: '', after: '“Three things I wish someone told me…”' }])
+    expect(versionFact(rewritten)).toBe('New post caption')
+    expect(versionFact(versionRows(base(), base({ post: post('Hi') }), { before: 20, after: 20 }))).toBe('Post caption')
+    // Version 1 always writes one
+    expect(versionRows(null, base({ post: post('Hi') }), { before: 20, after: 20 }).map((r) => r.label)).not.toContain('Post caption')
+  })
+})

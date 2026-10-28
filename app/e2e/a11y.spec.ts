@@ -192,6 +192,15 @@ test('Tab goes from the sidebar toggle down the sidebar, then to the title row; 
     await page.keyboard.press('Escape')
     await expect(toggle).toBeFocused()
 
+    // fails if the chord can only be found through the edge's accessibility label: on a Mac, View › Resize Sidebar
+    // shows it and does the same
+    if (process.platform === 'darwin') {
+      await app.evaluate(({ Menu, BrowserWindow }) => Menu.getApplicationMenu()!.getMenuItemById('resize-sidebar')!.click({}, BrowserWindow.getAllWindows()[0], undefined))
+      await expect(edge).toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(toggle).toBeFocused()
+    }
+
     // folding the sidebar while the edge has focus hands focus to the toggle instead of hiding it
     await page.keyboard.press(`${mod}+Shift+Backslash`)
     await expect(edge).toBeFocused()

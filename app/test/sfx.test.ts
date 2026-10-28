@@ -208,7 +208,7 @@ describe('a sound and fade edit, counted and described', () => {
     expect(versionRows(before, after, { before: 30, after: 30 })).toEqual([
       { label: 'Music fade-in', before: '0.6 s', after: '1.2 s' },
       { label: 'Music fade-out', before: '1.5 s', after: '0.5 s' },
-      { label: 'Whoosh volume', before: '0 dB', after: '−6 dB' }
+      { label: 'Whoosh volume', before: 'Normal', after: 'Quiet', title: '0 dB → −6 dB' }
     ])
   })
 })
