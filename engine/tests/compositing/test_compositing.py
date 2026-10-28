@@ -346,7 +346,7 @@ def test_build_audio_automation_lowers_music(tmp_path, media):
 
 def _bed(tmp_path, media, monkeypatch, **mcfg):
     """The music as mixed under the voice, before the loudness pass (mix minus voice)."""
-    monkeypatch.setattr(music, "normalize", lambda ctx, x, work, tag="mix": (x, {}))
+    monkeypatch.setattr(music, "normalize", lambda ctx, x, work, tag="mix", expected_silence=False: (x, {}))
     ctx = _ctx(tmp_path, media["video"])
     fx.set_project(ctx, music={"enabled": True, "track": str(media["song"]), "startAt": 1.0, "level": "under-voice",
                                "automation": [], **mcfg})
