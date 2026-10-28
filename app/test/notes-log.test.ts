@@ -149,3 +149,21 @@ describe('a note tried again', () => {
     expect(waitingRows([{ id: chat[1].id }], entries)).toEqual([])
   })
 })
+
+describe('a "Remember this for next time?" question', () => {
+  // the question keeps its Yes and No: it is never taken as what came of the note
+  it('fails if a note that changed nothing shows its question as its result, without the buttons', () => {
+    const question = msg('editor', 'Remember this for next time? "always use big subtitles"', {
+      jobId: 'j1', actions: ['remember-yes', 'remember-no'], suggestion: 'always use big subtitles'
+    })
+    const chat = [
+      msg('editor', 'Your video is ready.', { version: 1 }),
+      msg('you', 'always use big subtitles', { jobId: 'j1', outcome: 'failed' }),
+      msg('editor', 'They are already big.', { jobId: 'j1', version: 1 }),
+      question
+    ]
+    const note = notesLog({ chat, made: [], versions: [v(1)], running: null, source: null, now })[1]
+    expect(note.result).not.toMatchObject({ text: question.text })
+    expect(note.extra.map((m) => [m.text, m.actions])).toContainEqual([question.text, ['remember-yes', 'remember-no']])
+  })
+})

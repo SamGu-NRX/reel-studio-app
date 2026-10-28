@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { JobEvent, NoteAttachment, NoteMoment, QueuedNote } from '../shared/api'
 import type { JobManager } from './jobs'
+import type { AgentResult } from './ai-types'
 import { toUserError } from './engine'
 import { dropStaged, pruneStaging } from './attachments'
 import type { ChatLine } from './style-consent'
@@ -331,3 +332,13 @@ export function createNoteQueue(deps: { jobs: JobManager; startNote: StartNote; 
 }
 
 export type NoteQueue = ReturnType<typeof createNoteQueue>
+
+/**
+ * Whether a note did what it was asked. One that changed nothing failed (Try again), unless it asked to remember a
+ * rule: then "Remember this for next time?" is its answer. A note that changed only the caption keeps its version
+ * number (docs/versions.md), so `changed` decides that case.
+ */
+export function noteOutcome(before: number, r: Pick<AgentResult, 'version' | 'changed' | 'styleSuggestions' | 'styleProposal'>): 'done' | 'failed' {
+  const changedIt = (r.version ?? 0) > before || r.changed.length > 0
+  return changedIt || !!r.styleSuggestions?.length || !!r.styleProposal ? 'done' : 'failed'
+}

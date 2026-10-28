@@ -69,7 +69,7 @@ import { libraryPreview } from './library-preview'
 import { readLesson } from './style-learn'
 import { createJobManager } from './jobs'
 import { createPauser, pauseFor, quitQuestion } from './pause'
-import { createNoteQueue, type NoteToRun, type StartHand } from './note-queue'
+import { createNoteQueue, noteOutcome, type NoteToRun, type StartHand } from './note-queue'
 import { handEditJob, HAND_MESSAGE } from './hand-edit'
 import { parseHandEdit } from '../shared/hand-edit'
 import { checkPlan, planFromEditor, planTurns, titleFromTopic } from '../shared/plan'
@@ -338,9 +338,7 @@ async function startNote(slug: string, { id: noteId, text, attachments, moment, 
       }
       const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
       const reply = await replyAskingAboutStyle(r, r.summary + extra)
-      // a note that changed only the caption keeps its version number (docs/versions.md), so `changed` decides
-      const changedIt = (r.version ?? 0) > before || r.changed.length > 0
-      return { ...reply, outcome: changedIt ? 'done' : 'failed', made: { by: 'note', summary: text } }
+      return { ...reply, outcome: noteOutcome(before, r), made: { by: 'note', summary: text } }
     },
     { note: text || attachments.map((f) => f.name).join(', '), record, pause: (e) => pauseFor(e, pauseCtx('note', startedAt, editor)) }
   )

@@ -123,7 +123,8 @@ export function notesLog(input: {
     if (m.from === 'editor' && m.jobId !== undefined) {
       const owner = entries.find((e) => e.ask.kind === 'note' && e.jobId === m.jobId)
       if (owner) {
-        if (owner.result) owner.extra.push(m)
+        // "Remember this for next time?" keeps its Yes and No under the note; it is never what came of it
+        if (owner.result || m.suggestion || m.proposal) owner.extra.push(m)
         else if (m.version === undefined) owner.result = owner.outcome === 'failed' ? { kind: 'failed', text: m.text } : { kind: 'reply', text: m.text, actions: m.actions ?? [], messageId: m.id }
         else if (owner.outcome !== 'stopped' && owner.outcome !== 'failed' && owner.outcome !== 'paused') owner.result = { kind: 'version', v: m.version, text: m.text }
         else owner.extra.push(m)
@@ -144,7 +145,7 @@ export function notesLog(input: {
     }
     const last = entries[entries.length - 1]
     if (!last) continue
-    if (open && open.ask.kind === 'note' && !open.result) {
+    if (open && open.ask.kind === 'note' && !open.result && !m.suggestion && !m.proposal) {
       open.result = open.outcome === 'failed' ? { kind: 'failed', text: m.text } : { kind: 'reply', text: m.text, actions: m.actions ?? [], messageId: m.id }
     } else last.extra.push(m)
   }
