@@ -1,10 +1,10 @@
 // The cover picker: frames picked from the video, each with its time and why, the chosen one marked, and
 // a pick saved as that exact frame. Run after a build: npx playwright test e2e/cover.spec.ts
 import { test, expect } from '@playwright/test'
-import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { clock } from '../src/shared/progress'
-import { BASE, launch, makeMedia, makeReel, passFirstRun } from './helpers'
+import { BASE, launch, makeMedia, makeReel, newProjectFolder, passFirstRun, projectFolders } from './helpers'
 
 const MINE = mkdtempSync(join(BASE, 'cover-'))
 const ROOT = join(MINE, 'Documents', 'Reel Studio')
@@ -14,7 +14,9 @@ test('cover suggestions say when and why, mark the chosen frame, and save it as 
   const media = makeMedia()
   const { app, page } = await launch({ REELSTUDIO_ROOT: ROOT, REELSTUDIO_USER_DATA: join(MINE, 'user data') })
   await passFirstRun(page)
+  const before = projectFolders(ROOT)
   await makeReel(page, media.video, 10 * 60_000)
+  const dir = newProjectFolder(ROOT, before)
 
   await page.getByTestId('edit-myself').click()
   await page.getByTestId('tab-cover').click()
@@ -34,7 +36,6 @@ test('cover suggestions say when and why, mark the chosen frame, and save it as 
   await page.getByTestId('make-version').click()
   await expect(page.getByTestId('drawer')).toHaveCount(0)
   await expect(page.getByTestId('log-play-2')).toBeVisible({ timeout: 10 * 60_000 }) // saved with its version
-  const dir = join(ROOT, 'Projects', readdirSync(join(ROOT, 'Projects'))[0])
   const cover = JSON.parse(readFileSync(join(dir, 'project.json'), 'utf8')).cover
   expect(cover.manual).toBe(true) // the engine renders this frame, no search around it
   expect(label.startsWith(`${clock(cover.atSourceTime)},`)).toBe(true)

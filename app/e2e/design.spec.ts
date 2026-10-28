@@ -4,9 +4,9 @@
 //
 // Run: npx playwright test e2e/design.spec.ts (after npm run build). Same env as smoke.spec.ts.
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, dropFiles, launch, makeMedia, passFirstRun, shot, openSettings } from './helpers'
+import { BASE, dropFiles, launch, makeMedia, newProjectFolder, passFirstRun, projectFolders, shot, openSettings } from './helpers'
 
 const MINE = mkdtempSync(join(BASE, 'design-'))
 const ROOT = join(MINE, 'Documents', 'Reel Studio')
@@ -42,17 +42,13 @@ async function stubConnected(app: ElectronApplication): Promise<void> {
   })
 }
 
-function projectDir(): string {
-  const dir = join(ROOT, 'Projects')
-  return join(dir, readdirSync(dir)[0])
-}
-
 test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, connected states', async () => {
   test.setTimeout(15 * 60_000)
   const media = makeMedia()
   // a slow stand-in transcribe keeps the Working screen up long enough to look at it (the default 3 s raced the toast)
   const { app, page } = await launch({ REELSTUDIO_ROOT: ROOT, REELSTUDIO_USER_DATA: join(MINE, 'user data'), FAKE_ENGINE_SLOW: '15' })
   await passFirstRun(page)
+  const projectsBefore = projectFolders(ROOT)
 
   // ---- the whole window is a drop target ----
   await dropOnWindow(page, [media.video], false)
@@ -83,6 +79,7 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
 
   // ---- Reel: Version 1 lands and plays, with sound ----
   await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 10 * 60_000 })
+  const projectDir = newProjectFolder(ROOT, projectsBefore)
   await expect.poll(() => page.evaluate(() => (document.querySelector('[data-testid=player]') as HTMLVideoElement).muted)).toBe(false)
   const fb = await app.evaluate(() => (globalThis as any).__reelFeedback)
   expect(fb.progress[fb.progress.length - 1]).toBe(-1) // taskbar progress cleared when done
@@ -155,12 +152,12 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('share-pop')).toBeHidden()
     // The caption typed in Share is saved with the reel.
-    await expect.poll(() => JSON.parse(readFileSync(join(projectDir(), 'project.json'), 'utf8')).post.caption).toBe('Three things I wish I knew')
+    await expect.poll(() => JSON.parse(readFileSync(join(projectDir, 'project.json'), 'utf8')).post.caption).toBe('Three things I wish I knew')
   }
 
   // ---- connected states (AI stubbed as signed in; nothing runs) ----
   await stubConnected(app)
-  const appJson = join(projectDir(), 'app.json')
+  const appJson = join(projectDir, 'app.json')
   const st = JSON.parse(readFileSync(appJson, 'utf8'))
   st.aiEdited = true
   writeFileSync(appJson, JSON.stringify(st, null, 2))
