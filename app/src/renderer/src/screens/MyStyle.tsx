@@ -2,10 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 're
 import type { StyleLesson, StyleRule } from '../../../shared/api'
 import { classifyKind, KIND_NAME, newestFirst, shortLine, sourceDetail, sourceLine, type MemoryKind } from '../../../shared/memory'
 import { reel, userMessage } from '../api'
-import { Spinner } from '../components/ui'
+import { IS_MAC, Spinner } from '../components/ui'
 import { Icon, type IconName } from '../components/icons'
 import { byKeyboard, reducedMotion } from '../components/motion'
 import { TitleBarSlot } from '../components/titlebar'
+import { styleEmptyLine } from './style-words'
 import '../components/library.css'
 
 const KIND_ICON: Record<MemoryKind, IconName> = { captions: 'type', pacing: 'timer', music: 'music', cuts: 'scissors', look: 'aperture' }
@@ -313,10 +314,7 @@ export function MyStyle() {
       {rules && !rules.length && !forgot && adding === null && (
         <div className="style-empty" data-testid="style-empty">
           <h2>Nothing learned yet</h2>
-          <p>
-            Start a note with “always”, like “always use big subtitles”, and say Yes when you’re asked to remember it. Or learn from
-            edits you made in Final Cut Pro or Premiere Pro.
-          </p>
+          <p>{styleEmptyLine(IS_MAC)}</p>
         </div>
       )}
 
