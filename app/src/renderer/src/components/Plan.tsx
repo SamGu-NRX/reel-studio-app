@@ -11,7 +11,7 @@ import { NOTE_DROP_DONE } from '../App'
 import { BrandMark } from './brand'
 import { Icon } from './icons'
 import { byKeyboard, reducedMotion } from './motion'
-import { planAnswerer } from './plan-who'
+import { planAnswerer, type AnswererMark } from './plan-who'
 import { Qr } from './SendToPhone'
 import { Button, PickFiles, Spinner, useFileDrop } from './ui'
 import './plan.css'
@@ -386,33 +386,33 @@ export function PlanChip({ plan }: { plan: ReelPlan }) {
   )
 }
 
-/** The editor's first line in an empty plan chat: what to say, and what comes back. */
-export function PlanHello() {
-  return (
-    <article className="nt">
-      <div className="nt-res reply asks pl-said pl-hello" data-testid="plan-empty">
-        <span className="nk" />
-        <span className="t wrap">Tell me what this reel is about, in a line. I’ll ask a question or two, then give you hooks to pick from, the beats and the shots.</span>
-      </div>
-    </article>
-  )
-}
-
 /**
- * No editor connected: what planning does, in one line, and the one step that starts it, where the note box will be.
- * The step opens Choose your editor (screens/Connect.tsx), which comes back here once an editor is connected.
+ * An empty plan chat: what planning does, in the middle of the chat area, the way a chat app greets you. Connected, the
+ * note box waits at the bottom. With no editor there is nothing to type into yet: the greeting's one button opens
+ * Choose your editor (screens/Connect.tsx), which comes back here with the note box focused.
  */
-export function PlanConnect({ hasPlan, onConnect }: { hasPlan: boolean; onConnect: () => void }) {
+export function PlanEmpty({ provider, hasPlan, onConnect }: { provider: ProviderInfo | null; hasPlan: boolean; onConnect?: () => void }) {
+  // with no editor, the two it can be; connected, the one that answers
+  const marks: AnswererMark[] = onConnect ? ['claude', 'openai'] : [planAnswerer(provider, 'auto')?.mark].filter((m): m is AnswererMark => !!m)
+  const line = onConnect
+    ? hasPlan
+      ? 'Connect your editor to change the plan in a chat.'
+      : 'Your editor plans it with you: a question or two, then hooks to pick from, the beats and the shots.'
+    : 'Say what it’s about. Your editor asks a question or two, then gives you hooks to pick from, the beats and the shots.'
   return (
-    <div className="pl-connect" data-testid="plan-connect-step">
-      {hasPlan ? (
-        <p>Connect your editor to change the plan together.</p>
-      ) : (
-        <p data-testid="plan-empty">Your editor plans it with you: a question or two, then hooks to pick from, the beats and the shots.</p>
+    <div className="pl-empty" data-testid={onConnect ? 'plan-connect-step' : 'plan-greeting'}>
+      {marks.length > 0 && (
+        <span className="pl-empty-marks" aria-hidden>
+          {marks.map((m) => (m === 'server' ? <Icon key={m} name="server" size={20} /> : <BrandMark key={m} name={m} size={20} />))}
+        </span>
       )}
-      <Button onClick={onConnect} data-testid="plan-connect">
-        Connect your editor
-      </Button>
+      <h3>{hasPlan ? 'Change the plan together' : 'Plan it before you film'}</h3>
+      <p {...(!hasPlan && { 'data-testid': 'plan-empty' })}>{line}</p>
+      {onConnect && (
+        <Button onClick={onConnect} data-testid="plan-connect">
+          Connect your editor
+        </Button>
+      )}
     </div>
   )
 }

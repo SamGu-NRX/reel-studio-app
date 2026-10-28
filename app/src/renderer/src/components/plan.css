@@ -186,12 +186,13 @@
 .pl-chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) { .pl-chip:hover { box-shadow: inset 0 0 0 1px var(--ink-3); } }
 
-/* no editor: one line and the one step, where the note box will be once it is connected */
-.pl-connect {
-  margin-top: auto; display: grid; gap: 12px; justify-items: start; padding: 14px; border-radius: var(--r-lg);
-  background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong);
-}
-.pl-connect p { font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-2); text-wrap: pretty; }
+/* an empty plan chat: what planning does, in the middle of the chat area. It fills the column (no editor) or the log
+   above the note box (connected), and centres itself in that space. */
+.pl-empty { flex: 1 0 auto; min-height: 0; display: grid; align-content: center; justify-items: center; gap: 8px; padding: 24px 16px; text-align: center; }
+.pl-empty-marks { display: flex; gap: 10px; margin-bottom: 4px; color: var(--ink-3); }
+.pl-empty h3 { font-size: var(--fs-subhead); line-height: var(--lh-subhead); font-weight: 650; text-wrap: balance; }
+.pl-empty p { max-width: 34ch; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-2); text-wrap: pretty; }
+.pl-empty .btn { margin-top: 10px; }
 
 /* What the keyboard opens or ticks just appears. */
 html.kb :is(.plan, .pl-phone, .pl-fold .icon, .nt-res.pl-said, .pd-drop, .pl-chip) { transition: none !important; }

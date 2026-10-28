@@ -35,7 +35,7 @@ import { Outs } from '../components/Outs'
 import { PopMenu } from '../components/PopMenu'
 import { TitleBarSlot } from '../components/titlebar'
 import { ConnectAI, ModelDownload } from '../components/connect'
-import { PlanCard, PlanChip, PlanConnect, PlanHello, PlannedStage, PlanWho, columnVideoDrop, markPlanConnect, usePlanAfterConnect } from '../components/Plan'
+import { PlanCard, PlanChip, PlanEmpty, PlannedStage, PlanWho, columnVideoDrop, markPlanConnect, usePlanAfterConnect } from '../components/Plan'
 import { ReelsFound } from '../components/ReelsFound'
 import { byKeyboard, reducedMotion } from '../components/motion'
 import '../components/reel.css'
@@ -1005,7 +1005,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                 {planned && !aiOff && <PlanWho provider={provider} />}
               </div>
               {planned && !providerChecked ? null : planned && aiOff ? (
-                <PlanConnect
+                <PlanEmpty
+                  provider={null}
                   hasPlan={!!d.plan}
                   onConnect={() => {
                     markPlanConnect(slug)
@@ -1027,7 +1028,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   basic={!d.aiEdited}
                   landed={landed}
                   unwatched={unwatched}
-                  empty={planned && <PlanHello />}
+                  empty={planned && <PlanEmpty provider={provider} hasPlan={false} />}
                   plan={planned ? d.plan && <PlanChip plan={d.plan} /> : planCard}
                   versionRows={versionRows}
                   onPlay={watch}
