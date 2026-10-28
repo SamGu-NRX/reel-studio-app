@@ -40,7 +40,7 @@ test('Edit changes a rule\'s words, and Pause keeps it listed but off until Resu
     await passFirstRun(page)
     await page.getByTestId('nav-style').click()
     const rule = page.getByTestId('style-rule')
-    await expect(rule).toContainText('Keep music quieter under talking.')
+    await expect(rule).toContainText('Keep music quieter under talking')
 
     // Edit sits under the rule's line, beside the full sentence. Escape leaves the words as they were and puts
     // focus back on Edit
@@ -55,7 +55,7 @@ test('Edit changes a rule\'s words, and Pause keeps it listed but off until Resu
     await page.getByTestId('style-edit-input').fill('keep music much quieter under talking')
     await shot(page, 'style-editing')
     await page.keyboard.press('Enter')
-    await expect(rule).toContainText('Keep music much quieter under talking.')
+    await expect(rule).toContainText('Keep music much quieter under talking')
     expect(saved()).toEqual([expect.objectContaining({ id: 'r1', text: 'Keep music much quieter under talking.' })])
 
     await page.getByRole('button', { name: 'Pause "Keep music much quieter under talking"' }).click()
