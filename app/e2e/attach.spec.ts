@@ -32,16 +32,22 @@ test('note attachments: paste, drop, paperclip, chips, send', async () => {
   await makeReel(page, media.video)
   expect(projects()).toHaveLength(1)
   const slug = projects()[0]
-  // the reel autoplays on arrival: hold it at 0:00, so the moment and its words are the same every run
+  // the reel autoplays on arrival: hold it at 0:00 once it has started, so the moment and its words are the same
+  // every run
+  await expect.poll(() => page.getByTestId('player').evaluate((v: HTMLVideoElement) => !v.paused || v.ended)).toBe(true)
   await page.evaluate(() => {
     const v = document.querySelector('[data-testid=player]') as HTMLVideoElement
     v.pause()
     v.currentTime = 0
   })
-  // the moment chip shows the playhead; one click attaches it
+  // pausing on a moment attaches it by itself; its × leaves the offer, which attaches it again in one click
+  await expect(page.getByTestId('moment-chip')).toHaveAttribute('data-auto', 'true')
+  await expect(page.getByTestId('moment-chip')).toContainText('0:00')
+  await page.getByTestId('moment-remove').click()
   await expect(page.getByTestId('moment-suggest')).toContainText('0:00')
   await page.getByTestId('moment-suggest').click()
   await expect(page.getByTestId('moment-chip')).toContainText('0:00')
+  await expect(page.getByTestId('moment-chip')).not.toHaveAttribute('data-auto')
 
   // ---- a plain text paste is left to the box ----
   const handledText = await page.evaluate(() => {
@@ -119,8 +125,31 @@ test('note attachments: paste, drop, paperclip, chips, send', async () => {
   await expect(bubble.locator('.q-att img')).toHaveCount(3)
   await expect(page.getByTestId('note-progress')).toHaveCount(0, { timeout: 60_000 })
   // the next note starts empty
-  await page.getByTestId('moment-suggest').click()
   await expect(page.getByTestId('note-attachment')).toHaveCount(0)
   await shot(page, 'attach-02-sent')
+
+  // ---- the moment goes with the note when the person stopped on it, or when the note says "here" ----
+  // fails if a note sent after pausing, or one that says "this part", goes out with no moment (10-28 audit, finding 3)
+  const player = page.getByTestId('player')
+  const holdAtStart = async () => {
+    await expect.poll(() => player.evaluate((v: HTMLVideoElement) => !v.paused || v.ended)).toBe(true)
+    await player.evaluate((v: HTMLVideoElement) => {
+      v.pause()
+      v.currentTime = 0
+    })
+  }
+  await holdAtStart()
+  await expect(page.getByTestId('moment-chip')).toHaveAttribute('data-auto', 'true')
+  await page.getByTestId('note-input').fill('make the subtitles bigger')
+  await page.getByTestId('send').click()
+  await expect(page.getByTestId('log-note').last().locator('.bubble')).toHaveText(/^0:00make the subtitles bigger$/)
+  await expect(page.getByTestId('note-progress')).toHaveCount(0, { timeout: 60_000 })
+  await holdAtStart()
+  await page.getByTestId('moment-remove').click()
+  await expect(page.getByTestId('moment-suggest')).toContainText('0:00')
+  await page.getByTestId('note-input').fill('cut this part')
+  await page.getByTestId('send').click()
+  await expect(page.getByTestId('log-note').last().locator('.bubble')).toHaveText(/^0:00cut this part$/)
+  await expect(page.getByTestId('note-progress')).toHaveCount(0, { timeout: 60_000 })
   await app.close()
 })

@@ -79,7 +79,11 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   // Time left shows once there is enough to go on (the stand-in engine can finish before that).
   const left = page.getByTestId('note-time-left').filter({ hasText: /left|Almost done|longer/ })
   await expect(left.or(page.getByTestId('log-play-1'))).toBeVisible({ timeout: 10 * 60_000 })
-  if (await left.isVisible()) await shot(page, 'd-03-making-time-left')
+  if (await left.isVisible()) {
+    // the time left is never the part cut short (10-28 audit, finding 5)
+    expect(await left.evaluate((el) => el.scrollWidth <= el.clientWidth && el.getBoundingClientRect().right <= el.closest('.strip')!.getBoundingClientRect().right)).toBe(true)
+    await shot(page, 'd-03-making-time-left')
+  }
 
   // ---- Reel: Version 1 lands and plays, with sound ----
   await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 10 * 60_000 })
@@ -116,6 +120,17 @@ test('design: drop anywhere, working, reel tools, shortcuts, confirm dialogs, co
   await expect(page.getByTestId('original-video')).toHaveClass(/on/)
   await page.keyboard.up('o')
   await expect(page.getByTestId('original-video')).not.toHaveClass(/on/)
+
+  // The drag grip beside the phone is no Tab stop (it was the screen's first): Share › Show in Finder does the same
+  // from the keyboard (10-28 audit, finding 7)
+  await expect(page.getByTestId('drag-handle')).toBeAttached()
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  const stops: (string | null)[] = []
+  for (let i = 0; i < 30; i++) {
+    await page.keyboard.press('Tab')
+    stops.push(await page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? null))
+  }
+  expect(stops).not.toContain('drag-handle')
 
   // ---- drawer: Esc closes, Ctrl/Cmd+Z undoes ----
   await page.getByTestId('edit-myself').click()

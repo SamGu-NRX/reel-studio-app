@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, VersionInfo } from '../src/shared/api'
-import { notesLog, waitingRows } from '../src/shared/notes-log'
+import { editorSaid, handLine, notesLog, waitingRows, withoutNumber } from '../src/shared/notes-log'
 
 const now = new Date('2026-10-22T15:00:00')
 const at = (h: number, day = 22) => new Date(2026, 9, day, h).toISOString()
@@ -39,7 +39,7 @@ describe('notesLog', () => {
     ]
     const log = notesLog({
       chat,
-      made: [{ version: 3, by: 'hand', summary: 'the subtitles', at: at(10) }],
+      made: [{ version: 3, by: 'hand', summary: 'made the subtitles bigger', at: at(10) }],
       versions: [v(1, 21), v(2), v(3)],
       running: { id: 'j4', kind: 'note' },
       // fails if the line names the copy Reel Studio made (media/take01.mov) instead of the file the person brought in
@@ -51,7 +51,7 @@ describe('notesLog', () => {
       ['Today', 'note', 'cut the part about my cat', { kind: 'version', v: 2, text: 'Cut 0:12 to 0:15.' }],
       [null, 'note', 'make it brighter', { kind: 'failed', text: 'Your AI editor stopped answering.' }],
       [null, 'note', 'add music', { kind: 'stopped', kept: 3 }],
-      [null, 'hand', 'You changed the subtitles', { kind: 'version', v: 3, text: 'Version 3: bigger subtitles.' }],
+      [null, 'hand', 'You made the subtitles bigger.', { kind: 'version', v: 3, text: 'Version 3: bigger subtitles.' }],
       [null, 'note', 'zoom in on me', { kind: 'making', v: 4 }]
     ])
     expect(log[1].ask).toMatchObject({ moment: { at: 12 } })
@@ -182,5 +182,28 @@ describe('a "Remember this for next time?" question', () => {
     const note = notesLog({ chat, made: [], versions: [v(1)], running: null, source: null, now })[1]
     expect(note.result).not.toMatchObject({ text: question.text })
     expect(note.extra.map((m) => [m.text, m.actions])).toContainEqual([question.text, ['remember-yes', 'remember-no']])
+  })
+})
+
+describe('a hand edit\'s line', () => {
+  // fails if the line reads "You changed new song …", the broken sentence of the 10-28 audit
+  it('is one sentence of what the person did, and an old summary keeps its words', () => {
+    expect(handLine('added the song “warm acoustic loop”, a picture and a sound effect')).toBe('You added the song “warm acoustic loop”, a picture and a sound effect.')
+    expect(handLine('new song "warm acoustic loop", added a picture')).toBe('Your changes: new song "warm acoustic loop", added a picture')
+    expect(handLine(undefined)).toBe('You changed it yourself')
+  })
+})
+
+describe('the editor\'s words under What changed', () => {
+  // fails if What changed repeats a sentence that only says the version number or echoes the note
+  it('keeps what the editor said beyond the version number', () => {
+    expect(editorSaid('Done: "make the subtitles bigger here". It is Version 3.')).toBeNull()
+    expect(editorSaid('I made your change. It is Version 4.')).toBeNull()
+    expect(editorSaid('That change was saved before you pressed Stop. It is Version 5.')).toBe('That change was saved before you pressed Stop.')
+    expect(editorSaid('I made the subtitles bigger and moved them above Instagram’s buttons.')).toBe('I made the subtitles bigger and moved them above Instagram’s buttons.')
+    expect(editorSaid('Basic version: pauses cut and subtitles added. Subtitles are lowercase, from My style.')).toBe('Subtitles are lowercase, from My style.')
+    expect(editorSaid('Basic version: pauses cut and subtitles added.')).toBeNull()
+    // with no rows to say what changed, the words are all there is, less the number its line already says
+    expect(withoutNumber('Done: "make the subtitles bigger here". It is Version 3.')).toBe('Done: "make the subtitles bigger here".')
   })
 })

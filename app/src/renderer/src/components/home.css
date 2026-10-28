@@ -99,6 +99,8 @@ html.kb .rcard .hit:focus-visible { outline: 2px solid var(--ink); outline-offse
 .rcard .cm .red { color: var(--pencil); }
 .rcard .cm .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin: 0 6px 1px 0; vertical-align: middle; }
 .rcard .card-act { position: relative; z-index: 4; margin-top: 8px; }
+/* "Choose another video" is as wide as the narrowest card: it keeps to the card, and wraps there rather than clip */
+.rcard .card-act { max-width: 100%; padding: 6px 9px; white-space: normal; text-align: center; height: auto; min-height: 28px; line-height: 16px; }
 
 html.kb .rcard .im { transition: none; }
 @media (prefers-reduced-motion: reduce) {

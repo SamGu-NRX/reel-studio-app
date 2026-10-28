@@ -4,7 +4,8 @@ import { versionTitle } from '../../../shared/describe'
 import { clock } from '../../../shared/progress'
 import { EMPTY_LIVE, liveFromDetail, reduceLive, type LiveState } from '../../../shared/live'
 import { NO_TIMELINE, noSpeech, noteMarks, noteMoment, sourceAt, wordsAt, wordsBetween, type RenderSegment } from '../../../shared/moments'
-import { notesLog, type LogEntry } from '../../../shared/notes-log'
+import { failedByFile, notesLog, waitingRows, type LogEntry } from '../../../shared/notes-log'
+import { momentToSend, notePlaceholder } from '../../../shared/composer'
 import { pausedSentence, pausedWords } from '../../../shared/pause'
 import type { Step } from '../../../shared/steps'
 import { droppedPaths, reel, userMessage } from '../api'
@@ -61,6 +62,8 @@ const typing = (t: EventTarget | null): boolean => {
 const LANDED_MS = 1500
 // The landing crossfade (reel.css, 200 ms) stays armed until the new version is on screen, plus the fade.
 const FADE_DONE_MS = 300
+// Within this many seconds of the end, a pause is the video ending, not the person stopping on a moment.
+const END_SLACK = 0.3
 
 /** A spot someone pointed at on the picture, kept on this computer with its note. */
 interface Pin {
@@ -132,7 +135,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   })
   const [playhead] = useState(createPlayhead)
   const [transport] = useState(createTransport)
-  const { duration } = useTransport(transport)
+  const { duration, playing } = useTransport(transport)
   const player = useMemo(
     () => ({
       playhead,
@@ -145,6 +148,34 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     }),
     [playhead, transport, stage]
   )
+  // The person stopped on a moment (paused, scrubbed or pressed C) and hasn't played on or sent a note since: while
+  // the video stays paused there, the note box attaches that moment by itself (Sam, D21 T20:14 #7).
+  const [stoppedOn, setStoppedOn] = useState(false)
+  // A pause anywhere but the very end, or the playhead moving while paused (a scrub, an arrow key, a click on the
+  // timeline), counts as stopping on a moment; playing on leaves it, so a video that later ends by itself attaches
+  // nothing.
+  useEffect(() => {
+    let was = transport.get().playing
+    let at = playhead.get()
+    const offT = transport.subscribe(() => {
+      const now = transport.get()
+      if (was && !now.playing && playhead.get() < now.duration - END_SLACK) setStoppedOn(true)
+      else if (!was && now.playing) setStoppedOn(false)
+      if (!now.playing) at = playhead.get()
+      was = now.playing
+    })
+    // the playhead moves every frame while playing: only a move while paused is looked at
+    const offP = playhead.subscribe(() => {
+      if (was) return
+      const t = playhead.get()
+      if (Math.abs(t - at) > 0.05) setStoppedOn(true)
+      at = t
+    })
+    return () => {
+      offT()
+      offP()
+    }
+  }, [transport, playhead])
   const [shownSrc, setShownSrc] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [chip, setChip] = useState<Chip>(null)
@@ -336,7 +367,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target) || document.querySelector('.modal-backdrop')) return
       const k = e.key.toLowerCase()
       if (k === 'o' && !e.repeat) setHolding(true)
-      else if (k === 'c' && !e.repeat && canPoint) setPointing((p) => !p)
+      else if (k === 'c' && !e.repeat && canPoint) (setStoppedOn(true), setPointing((p) => !p))
       else if (e.key === 'Escape' && pointing) (setPointing(false), keyboardBackToTimeline())
       else if (e.key === 'Escape' && compare) (setCompare(null), keyboardBackToTimeline())
       else return
@@ -394,6 +425,14 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     return lanesOf(v.project, { placed: v.words, segments: v.segments, words: d.words, kept, duration: v.duration, layers: new Map(v.layers.map((l) => [l.id!, l])) }, pack, why)
   }, [timeline, shownVideo, shownN, d?.versions, d?.project.notes, d?.words, pack]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // a planning turn holds the send button; whatever the box said while it ran is stale once the editor answers
+  const planAnswering = d?.status === 'planned' && !!job
+  const wasAnswering = useRef(false)
+  useEffect(() => {
+    if (wasAnswering.current && !planAnswering) setAlert(null)
+    wasAnswering.current = planAnswering
+  }, [planAnswering])
+
   if (!d)
     return (
       <div className="page">
@@ -416,9 +455,18 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       : d.job?.kind === 'first-edit' || d.status === 'new'
         ? { kind: 'making', heard: firstSteps?.some((s) => s.id === 'listen' && s.state === 'done') ? heard : [], editor: !aiOff }
         : d.status === 'failed'
-          ? { kind: 'failed', why: d.lastError?.userMessage ?? 'This version could not be made.', extra: d.lastError?.code === 'MODEL_MISSING' ? <ModelDownload secondary /> : undefined }
+          ? {
+              kind: 'failed',
+              why: d.lastError?.userMessage ?? 'This version could not be made.',
+              extra: d.lastError?.code === 'MODEL_MISSING' ? <ModelDownload secondary /> : undefined,
+              // the file itself, or a video that was never copied in: trying again fails the same way. With no copy the
+              // stage says so with the primary button, and the log's is secondary.
+              another: failedByFile(d.lastError?.code) || !d.sourceVideo ? (d.sourceVideo ? 'primary' : 'secondary') : undefined
+            }
           : { kind: 'paused', why: pausedWhy }
   const firstLook = first?.kind === 'making' ? (job?.preview?.video ?? null) : null
+  // the moment attached by itself: the person stopped on it, and the video is still there
+  const autoMoment = stoppedOn && !playing && hasVersions && !chip
 
   const note = async (text: string, files: string[] | undefined, moment: NoteMoment | undefined) => {
     const r = await reel.projects.note(slug, text, files, moment, version?.n)
@@ -453,11 +501,14 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
       }
       return
     }
+    // the moment set by hand, the one attached by itself, or the playhead for a note that says "here"
     let moment: NoteMoment | undefined
-    if (chip) {
-      const m = await momentFor(chip)
-      if (typeof m === 'string') return setAlert(m)
-      moment = m
+    const pointed = momentToSend(chip, { auto: autoMoment, text, at: playhead.get() })
+    if (pointed) {
+      const m = await momentFor(pointed)
+      // a moment the person can see in the box is checked; "here" with no words playing goes about the whole reel
+      if (typeof m === 'string' && (chip || autoMoment)) return setAlert(m)
+      if (typeof m !== 'string') moment = m
     }
     const spot = chip?.spot
     // the editor reads where the spot is in words; the note says it the way a person would
@@ -465,6 +516,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     const words = where ? `${(text || 'Change this').replace(/[.!?]+$/, '')}, ${where}.` : text
     setDraft('')
     setChip(null)
+    setStoppedOn(false)
     att.clear()
     try {
       await note(words || 'Put this here', files.length ? files.map((f) => f.asset) : undefined, moment)
@@ -518,6 +570,8 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const addVideo = async (paths: string[]) => {
     try {
       const r = await reel.projects.addVideo(slug, paths)
+      // a video chosen after Version 1 failed starts over: nothing heard from the last one stays
+      setHeard([])
       setJob({ ...EMPTY_LIVE, jobId: r.jobId, message: 'Copying your video' })
       await load()
     } catch (e) {
@@ -614,17 +668,19 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
   const jobPreview = compare || drawer ? null : changePreview
   const src = planned ? null : hasVersions ? (jobPreview ?? version?.video ?? null) : (firstLook ?? d.sourceVideo)
   const tag = jobPreview ? 'Quick preview' : !hasVersions && !planned && src ? (firstLook ? 'First look' : 'Original') : null
-  const waiting = d.queue.filter((q) => !q.attempt).length
+  // the strip counts only notes still waiting: one that stopped or failed is its own line in the log, with Send again
+  const held = d.queueHeld ? waitingRows(d.queue, entries).length : 0
   const nextSpot = Math.max(0, ...pins.map((p) => p.n)) + 1
-  const placeholder = planned
-    ? d.plan
-      ? 'Ask your editor for a change…'
-      : "What's this reel about?"
-    : !hasVersions
-      ? 'Notes you send now wait for Version 1…'
-      : job
-        ? 'Your next note waits for this one…'
-        : 'Tell your editor what to change…'
+  const lastResult = entries[entries.length - 1]?.result?.kind
+  const placeholder = notePlaceholder({
+    planned,
+    hasPlan: !!d.plan,
+    answering: planAnswering,
+    asking: lastResult === 'question',
+    hasVersions,
+    making: making !== null,
+    busy: !!job
+  })
   const showComposer = (planned && !aiOff) || hasVersions || first?.kind === 'making'
   const planCard = d.plan && (
     <PlanCard
@@ -787,7 +843,19 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     </div>
   )
 
-  const viewSwitch = <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
+  // Comparing shows the reel without Instagram's header and buttons: the switch sits on the top edge of the picture,
+  // and at 1100 × 720 the full-height phone leaves no room above it. The person's own view comes back on Done.
+  const shownView = compare ? 'clean' : phoneView
+  const viewSwitch = compare ? (
+    <span className="view-held" data-testid="phone-view-held">
+      <span inert>
+        <PhoneViewSwitch value={shownView} onChange={() => undefined} />
+      </span>
+      <span className="sr-only">Comparing shows the reel without Instagram. Your view comes back on Done comparing.</span>
+    </span>
+  ) : (
+    <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
+  )
 
   return (
     <div className="reel-page" data-slug={slug}>
@@ -809,7 +877,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   subtitle={drawer && preview ? preview : null}
                   still={drawer && preview && d.sourceVideo ? `${d.sourceVideo}#t=${preview.at.toFixed(2)}` : null}
                   stillMirrored={d.project.sources?.[0]?.mirror === true}
-                  view={phoneView}
+                  view={shownView}
                   caption={d.project.post?.caption}
                   original={hasVersions ? d.sourceVideo : null}
                   originalAt={originalAt}
@@ -834,9 +902,13 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   }}
                   over={over}
                 >
-                  <div className="phone-empty" data-testid="copying">
-                    <Spinner /> Copying your video
-                  </div>
+                  {first?.kind === 'failed' ? (
+                    <FailedStage why={first.why} onFiles={(p) => void addVideo(p)} />
+                  ) : (
+                    <div className="phone-empty" data-testid="copying">
+                      <Spinner /> Copying your video
+                    </div>
+                  )}
                 </PhonePlayer>
               </FullStage>
               {src && (
@@ -953,6 +1025,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   onEditHand={(id) => openDrawer('cut', id)}
                   onResume={() => void resume()}
                   onBasic={() => void resume(true)}
+                  onAnotherVideo={(p) => void addVideo(p)}
                   onCopy={(t) => void reel.app.copyText(t).then(() => notify('Copied.'))}
                   onError={(m) => notify(m, 'error')}
                   answerError={answerError}
@@ -1017,11 +1090,14 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                     onDraft={setDraft}
                     chip={chip}
                     onChip={setChip}
+                    auto={autoMoment}
+                    onDropAuto={() => setStoppedOn(false)}
                     onPoint={() => canPoint && setPointing(true)}
                     plain={!hasVersions}
                     playhead={playhead}
                     att={heldN ? { ...att, busy: att.busy + heldN } : att}
                     checking={!providerChecked}
+                    waitToSend={planAnswering}
                     placeholder={placeholder}
                     job={shareWork ? null : job}
                     making={making}
@@ -1048,7 +1124,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                         </p>
                       )
                     }
-                    held={d.queueHeld ? waiting : 0}
+                    held={held}
                     heldWhy={heldWhy}
                     alert={alert}
                     connect={
@@ -1170,6 +1246,18 @@ function Pointer({ playhead, onDrop, onCancel }: { playhead: Playhead; onDrop: (
           <span className="rt">{clock(second)}</span>
         </span>
       )}
+    </div>
+  )
+}
+
+/** Version 1 didn't finish before its video was copied in: in place of the video, why, and the one way on. */
+function FailedStage({ why, onFiles }: { why: string; onFiles: (paths: string[]) => void }) {
+  // the button says what to do, so the reason's first sentence is enough ("This video has no sound.")
+  const reason = why.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? why
+  return (
+    <div className="phone-failed" data-testid="stage-failed">
+      <p>{reason}</p>
+      <PickFiles kind="primary" label="Choose another video" accept="video/*,.mov,.mp4,.m4v" onFiles={onFiles} testid="stage-another-video" />
     </div>
   )
 }

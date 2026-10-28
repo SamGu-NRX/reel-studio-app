@@ -24,20 +24,24 @@ export function region(x: number, y: number): string {
 export const chipLabel = (c: NonNullable<Chip>): string => `${momentLabel(c)}${c.spot ? ` · ${region(c.spot.x, c.spot.y)}` : ''}`
 
 /**
- * The note box. While a version is being made its top edge is the progress strip (Making Version N, the step, time
- * left, Steps, Stop) and Steps opens the list upward; after Stop it says the notes are held. The moment chip shows
- * the playhead and attaches it in one click; its menu points at a spot on the picture.
+ * The note box. While a version is being made its top edge is the progress strip (the time left, the step, Steps,
+ * Stop) and Steps opens the list upward; after Stop it says the notes are held. The moment chip shows the
+ * playhead and attaches it in one click; it is attached already once the person stopped on a moment (`auto`), and its
+ * menu points at a spot on the picture.
  */
 export function Composer({
   draft,
   onDraft,
   chip,
   onChip,
+  auto,
+  onDropAuto,
   onPoint,
   plain,
   playhead,
   att,
   checking,
+  waitToSend,
   placeholder,
   job,
   making,
@@ -61,12 +65,18 @@ export function Composer({
   onDraft: (t: string) => void
   chip: Chip
   onChip: (c: Chip) => void
+  /** the playhead is attached as the moment: the person paused, scrubbed or pressed C since their last note */
+  auto: boolean
+  /** × on the moment attached by itself */
+  onDropAuto: () => void
   onPoint: () => void
   /** words only: no moment chip and no paperclip (planning, or before Version 1 exists to point at) */
   plain: boolean
   playhead: Playhead
   att: ReturnType<typeof useNoteAttachments>
   checking: boolean
+  /** the editor is answering a planning turn: the words can be written, and sent once it has answered */
+  waitToSend: boolean
   placeholder: string
   job: LiveState | null
   /** the version the running job will make */
@@ -103,7 +113,7 @@ export function Composer({
   const caret = useRef<HTMLButtonElement>(null)
   const strip = job ? 'job' : held ? 'held' : null
   const { mounted: stripShown } = usePresence(!!strip, 200)
-  const canSend = (!!draft.trim() || att.chips.length > 0) && !att.busy && !checking
+  const canSend = (!!draft.trim() || att.chips.length > 0) && !att.busy && !checking && !waitToSend
   // Steps opens per job: Version 1 starts open, a note starts closed
   const stepsOpen = job ? (stepsToggled === job.jobId ? !stepsOpenFirst : stepsOpenFirst) : false
   const now = firstSteps?.find((s) => s.state === 'now')
@@ -145,12 +155,31 @@ export function Composer({
                   <i style={{ transform: `scaleX(${pct})` }} />
                 </span>
                 {job.thinking ? <Thinking /> : <span className="spin light" aria-hidden />}
-                <b aria-hidden>{making ? `Making Version ${making}` : job.message}</b>
-                <span className="m" data-testid="note-time-left">
-                  {left ? ` · ${left}` : ''}
-                  {/* the open list above names the step; the strip says it only when the list is shut, or when it is a wait */}
-                  {making && current && (!stepsOpen || job.waiting) ? ` · ${current}` : ''}
-                </span>
+                {/* The time left is the one number a waiting person wants, so it leads and is never cut short. The line
+                    above the box already says "Making Version N", which needs no repeating here: the column has no room
+                    for both beside Steps and Stop. Before there is an estimate, the version leads. */}
+                {/* the version is in the status above for screen readers; the time left is only here */}
+                {making ? (
+                  left ? (
+                    <b className="time" data-testid="note-time-left">
+                      {left}
+                    </b>
+                  ) : (
+                    <b aria-hidden>Version {making}</b>
+                  )
+                ) : (
+                  <>
+                    <b aria-hidden>{job.message}</b>
+                    {left && (
+                      <span className="time" data-testid="note-time-left">
+                        · {left}
+                      </span>
+                    )}
+                  </>
+                )}
+                {/* the open list above names the step; the strip says it only when the list is shut, or when it is a wait,
+                    and only before the time left leads: beside it there is room for a stub of the words, not the words */}
+                {making && current && !left && (!stepsOpen || job.waiting) && <span className="m">· {current}</span>}
                 <span className="sp" />
                 {!noSteps && (
                   <button className="sbtn" aria-expanded={stepsOpen} onClick={() => setStepsToggled((t) => (t === job.jobId ? null : job.jobId))} data-testid="steps">
@@ -191,17 +220,19 @@ export function Composer({
               <Icon name="paperclip" size={17} />
             </button>}
             <div className="cfield">
-              {plain ? null : chip ? (
-                <span className="tchip" data-testid="moment-chip">
-                  {chip.spot && <span className="spot-n">{chip.spot.n}</span>}
-                  {chipLabel(chip)}
+              {plain ? null : chip || auto ? (
+                <span className="tchip" data-auto={chip ? undefined : true} data-testid="moment-chip">
+                  {chip?.spot && <span className="spot-n">{chip.spot.n}</span>}
+                  {chip ? chipLabel(chip) : clock(second)}
                   <button
                     className="x"
                     aria-label="Remove the moment"
                     onClick={() => {
-                      onChip(null)
+                      if (chip) onChip(null)
+                      else onDropAuto()
                       inputRef.current?.focus()
                     }}
+                    data-testid="moment-remove"
                   >
                     <Icon name="x" size={12} stroke={2} />
                   </button>

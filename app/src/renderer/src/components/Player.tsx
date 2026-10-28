@@ -649,6 +649,8 @@ export function PhonePlayer({
       {dragFile && (
         <button
           className="draghandle"
+          // no Tab stop: Share › Show in Finder does this from the keyboard
+          tabIndex={-1}
           draggable
           aria-label={`Drag the reel out, or press to show it in ${FOLDER_APP}`}
           // dragging needs a pointer: from the keyboard (or a click) the file is shown in Finder, to take from there

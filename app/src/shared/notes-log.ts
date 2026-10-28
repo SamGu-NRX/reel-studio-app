@@ -2,6 +2,7 @@
 // (your video, a note, or a change you made yourself) and what came of it. Built from app.json's chat and
 // version records only. Keep free of Node and DOM imports.
 import type { ChatAction, ChatMessage, NoteAttachment, NoteMoment, ReelPlan, ScriptResult, VersionInfo, VersionMade } from './api'
+import { HAND_VERBS } from './describe'
 
 export type LogAsk =
   | { kind: 'video'; text: string }
@@ -45,6 +46,31 @@ const DONE_FAIL = "That didn't work, and nothing changed."
 export function waitingRows<Q extends { id: string; attempt?: unknown }>(queue: Q[], entries: Pick<LogEntry, 'key' | 'result'>[]): Q[] {
   return queue.filter((q) => !q.attempt && !entries.some((e) => e.key === q.id && (e.result?.kind === 'failed' || e.result?.kind === 'stopped')))
 }
+
+/** Version 1 failed because of the file itself: trying it again fails the same way, and a basic version needs the
+ * same sound and picture. Codes from the engine (music.py, probe.py, init.py, placement.py) and the stand-in engine. */
+const FILE_FAILURES: ReadonlySet<string> = new Set(['NO_AUDIO', 'SILENT', 'NOT_FOUND', 'UNREADABLE', 'NO_VIDEO', 'NOT_VIDEO', 'TOO_SHORT'])
+export const failedByFile = (code: string | null | undefined): boolean => !!code && FILE_FAILURES.has(code)
+
+/** A change made in Edit it myself, as its line in the notes: "You added a picture and a sound effect." A summary
+ * saved before these were verbs ("new song …") keeps its words after "Your changes:". */
+export function handLine(summary: string | undefined): string {
+  const s = summary?.trim()
+  if (!s) return 'You changed it yourself'
+  return HAND_VERBS.has(s.split(' ')[0]) ? `You ${s}.` : `Your changes: ${s}`
+}
+
+/** What was said about a version, for What changed, or null when it says nothing the rows don't: "It is Version 3.",
+ * an echo of the note ("Done: …") and a basic version's first sentence (its line says "Basic version", its rows what
+ * it did) add nothing. What follows them, such as "Subtitles are lowercase, from My style.", stays. */
+export function editorSaid(text: string): string | null {
+  const s = withoutNumber(text).replace(/^Basic version: [^.]*\.\s*/, '')
+  if (!s || /^Done: ".*"\.?$/.test(s) || /^I made your change\.?$/.test(s)) return null
+  return s
+}
+
+/** The words said about a version without "It is Version 3.", which its line already says. */
+export const withoutNumber = (text: string): string => text.replace(/\s*It is Version \d+\.?/g, '').trim()
 
 export function dayLabel(iso: string, now: Date): string {
   const d = new Date(iso)
@@ -143,7 +169,7 @@ export function notesLog(input: {
       else {
         const record = made.find((r) => r.version === m.version && r.by === 'hand')
         const what = record?.summary.trim()
-        open = { key: m.id, day: null, at: m.at, ask: { kind: 'hand', text: what ? `You changed ${what}` : 'You changed it yourself' }, result: { kind: 'version', v: m.version, text: m.text }, extra: [] }
+        open = { key: m.id, day: null, at: m.at, ask: { kind: 'hand', text: handLine(what) }, result: { kind: 'version', v: m.version, text: m.text }, extra: [] }
         entries.push(open)
       }
       continue

@@ -4,6 +4,7 @@
 //
 // Run: npm run build && npx playwright test e2e/home-cards.spec.ts
 import { test, expect, type Page } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { BASE, launch, makeMedia, passFirstRun, startReel } from './helpers'
@@ -68,6 +69,48 @@ test("a reel that didn't finish says why, and Try again starts it again", async 
     await app.evaluate(() => void delete process.env.FAKE_ENGINE_FAIL)
     await page.getByRole('button', { name: /^Try again:/ }).click()
     await expect(card(page)).toHaveAttribute('data-state', 'making')
+  } finally {
+    await app.close()
+  }
+})
+
+// fails if a video with no sound sits on "Copying your video", offers Try again or a basic version (both fail the same
+// way), or leaves its card without a picture; or if Choose another video doesn't start that same reel again
+// (10-28 audit, finding 2)
+test('a video with no sound says so where the video would be, and another video starts the reel again', async () => {
+  test.setTimeout(8 * 60_000)
+  const media = makeMedia()
+  const silent = join(mkdtempSync(join(BASE, 'silent-')), 'screen recording.mp4')
+  execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=540x960:rate=30:duration=6', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-an', silent])
+  const { app, page } = await launch(profile('silent'))
+  try {
+    await passFirstRun(page)
+    await startReel(page, silent)
+    const stage = page.getByTestId('stage-failed')
+    await expect(stage).toHaveText(/^This video has no sound\.Choose another video$/, { timeout: 60_000 })
+    await expect(page.getByTestId('copying')).toHaveCount(0)
+    await expect(stage.getByTestId('stage-another-video')).toHaveClass(/primary/)
+    await expect(page.getByTestId('first-failed')).toContainText('This video has no sound')
+    await expect(page.getByTestId('another-video')).toBeVisible()
+    await expect(page.getByTestId('retry-first')).toHaveCount(0)
+    await expect(page.getByTestId('basic-first')).toHaveCount(0)
+    await expect(page.locator('.btn.primary:visible')).toHaveCount(1)
+    const slug = await page.locator('.reel-page').getAttribute('data-slug')
+
+    await page.getByTestId('nav-home').click()
+    await expect(card(page)).toHaveAttribute('data-state', 'failed')
+    // the card shows the file's first frame, not a blank gradient
+    await expect(page.locator('.rcard .im img')).toHaveJSProperty('naturalWidth', 320)
+    await expect(page.getByRole('button', { name: /^Try again:/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^Choose another video:/ })).toBeVisible()
+    // its pill takes another video into the same reel, which starts again
+    await page.locator('.rcard').getByTestId('file-input').setInputFiles([media.video])
+    await expect(card(page)).toHaveAttribute('data-state', 'making')
+    await expect(card(page)).toHaveCount(1)
+    await card(page).click()
+    await expect(page.locator('.reel-page')).toHaveAttribute('data-slug', slug!)
+    await expect(page.getByTestId('log-play-1')).toBeVisible({ timeout: 240_000 })
+    await expect(page.getByTestId('chat')).toContainText('Your video, my first take.mp4')
   } finally {
     await app.close()
   }

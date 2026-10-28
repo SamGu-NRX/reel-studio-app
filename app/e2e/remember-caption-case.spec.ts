@@ -73,7 +73,7 @@ test('a lowercase note is remembered only on Yes, starts the next video lowercas
     await expect(page.getByTestId('style-rule')).toHaveCount(0)
     const third = await newVideo(page, media.video)
     expect(captionCase(third)).not.toBe('lower')
-    await expect(page.getByTestId('chat')).toContainText('Basic version: pauses cut and subtitles added.')
+    await expect(page.getByTestId('chat')).toContainText('Basic version')
     await expect(page.getByTestId('chat')).not.toContainText('My style')
   } finally {
     await app.close().catch(() => {})

@@ -24,14 +24,17 @@
 .stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 4px var(--gutter) 14px; }
 .stage-v { flex: 1; min-height: 0; display: flex; position: relative; }
 
-/* Drag the file out from here, not from anywhere on the video: a quiet grip in the gutter beside the frame. */
+/* Drag the file out from here, not from anywhere on the video: a quiet grip in the gutter beside the frame. It shows
+   only while the pointer is over the stage, so at rest nothing beside the phone reads as a splitter, and it is no Tab
+   stop (Player.tsx): Share › Show in Finder does the same from the keyboard. */
 .draghandle {
   position: absolute; left: calc(100% + 4px); top: 50%; translate: 0 -50%; z-index: 12; width: 24px; height: 64px; border: 0; border-radius: 12px;
-  padding: 0; background: transparent; color: var(--ink-3); display: grid; place-items: center; cursor: grab;
-  transition: background-color 150ms ease, color 150ms ease, scale 150ms var(--ease-out);
+  padding: 0; background: transparent; color: var(--ink-3); display: grid; place-items: center; cursor: grab; opacity: 0;
+  transition: opacity 150ms var(--ease-out), background-color 150ms ease, color 150ms ease, scale 150ms var(--ease-out);
 }
-.draghandle:active { cursor: grabbing; scale: .96; background: var(--sunk); color: var(--ink); }
-.draghandle:focus-visible { background: var(--sunk); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .stage:hover .draghandle { opacity: 1; } }
+@media (hover: none) { .draghandle { opacity: 1; } }
+.draghandle:active { cursor: grabbing; scale: .96; background: var(--sunk); color: var(--ink); opacity: 1; }
 .draghandle-tip {
   position: absolute; left: 30px; top: 50%; translate: 0 -50%; white-space: nowrap; background: var(--ink); color: #fff; font-size: var(--fs-sm); font-weight: 600;
   padding: 5px 9px; border-radius: 7px; opacity: 0; pointer-events: none; transition: opacity 150ms ease;
@@ -40,7 +43,6 @@
   .draghandle:hover { background: var(--sunk); color: var(--ink); }
   .draghandle:hover .draghandle-tip { opacity: 1; transition-delay: 300ms; }
 }
-.draghandle:focus-visible .draghandle-tip { opacity: 1; }
 
 /* A version landing: the new video crosses over the old in 200 ms, with a 2 px blur bridging the two (B section 9). */
 .phone.landing .phone-screen > video.layer { transition: opacity 200ms cubic-bezier(.2, .8, .2, 1), filter 200ms cubic-bezier(.2, .8, .2, 1); }
@@ -69,6 +71,9 @@
   transition: transform 120ms var(--ease-out);
 }
 .cmp-done:active { transform: scale(.97); }
+/* while comparing, the preview is Clean and the Instagram switch waits for Done */
+.view-held, .view-held > [inert] { display: contents; }
+.view-held .segmented { opacity: .5; }
 
 .spot {
   position: absolute; width: 24px; height: 24px; margin: -24px 0 0 -2px; border-radius: 50% 50% 50% 2px; background: var(--marker); color: var(--marker-ink);
@@ -204,6 +209,12 @@ html.kb .tl-sound:focus-visible { outline: 2px solid var(--ink); outline-offset:
 }
 .transport .speed.on { background: var(--ink); color: #fff; box-shadow: none; }
 
+/* Version 1 failed before its video was copied in: why, and Choose another video, where the video would be. */
+.phone-failed {
+  position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 16px; padding: 28px;
+  text-align: center; color: #fff; font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 560; text-wrap: balance;
+}
+
 /* A reel with no video yet: its title set large where the video will be, and Choose video. */
 .planned { flex: 1; min-height: 0; display: flex; justify-content: center; padding-bottom: 10px; }
 .planned-frame {
@@ -267,6 +278,8 @@ html.kb .tl-sound:focus-visible { outline: 2px solid var(--ink); outline-offset:
 .nt-res .t { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-width: 0; flex: 0 1 auto; }
 .nt-res .sep { color: var(--ink-4); flex: none; margin: 0 -2px; }
 .nt-res .t.wrap { white-space: normal; overflow-wrap: anywhere; }
+/* a version's few words from its rows: short by design, so never cut; at the narrowest column they wrap */
+.nt-res .t.fact { display: block; -webkit-line-clamp: unset; overflow: visible; text-wrap: pretty; }
 /* a pause says why and when it goes on: all of it, on as many lines as it needs, with its button under it */
 .nt-res.paused { flex-wrap: wrap; }
 .nt-res .t.full { display: block; -webkit-line-clamp: unset; flex: 1 1 200px; }
@@ -278,6 +291,8 @@ html.kb .tl-sound:focus-visible { outline: 2px solid var(--ink); outline-offset:
 .nt-res .lk:disabled { opacity: .5; cursor: default; }
 .nt-res .onscreen { margin-left: auto; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); white-space: nowrap; }
 .nt-res.quiet { color: var(--ink-3); }
+/* the editor asking something waits on the person, so it reads in ink like a bubble, not as a hint */
+.nt-res.asks { color: var(--ink); }
 .nt-res.paused .t { color: var(--amber); font-weight: 600; }
 .nt-res .spin { width: 12px; height: 12px; border-width: 1.75px; }
 .nt-res .btn.small { flex: none; }
@@ -325,7 +340,11 @@ html.kb .tl-sound:focus-visible { outline: 2px solid var(--ink); outline-offset:
 .cbox.bare .steps.on + .strip { border-radius: 0 0 var(--r-lg) var(--r-lg); }
 .strip .bar { position: absolute; left: 12px; right: 12px; top: 0; height: 2px; border-radius: 2px; background: rgba(255, 255, 255, .22); overflow: hidden; }
 .strip .bar i { position: absolute; inset: 0; background: #fff; transform-origin: left; transition: transform .6s linear; }
-.strip b { font-weight: 650; white-space: nowrap; flex: none; }
+/* A job's own words give way before Steps and Stop do; the time left never does (Composer.tsx): only the step words
+   after it are cut short. */
+.strip b { font-weight: 650; white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.strip :is(b, span).time { flex: none; }
+.strip span.time { color: rgba(255, 255, 255, .78); white-space: nowrap; }
 .strip .m { color: rgba(255, 255, 255, .78); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .strip .sp { flex: 1; }
 .strip .sbtn { height: 28px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: rgba(255, 255, 255, .92); font: inherit; font-size: var(--fs-base); font-weight: 600; display: inline-flex; flex: none; white-space: nowrap; align-items: center; gap: 4px; cursor: pointer; }
@@ -351,7 +370,9 @@ html.kb .tl-sound:focus-visible { outline: 2px solid var(--ink); outline-offset:
 .steps li .sl { min-width: 0; text-wrap: pretty; }
 .steps li > :is(.ok, .todo, .spin) { margin-top: 2.5px; }
 .steps li .sr { margin-left: auto; padding-left: 10px; flex: none; white-space: nowrap; color: rgba(255, 255, 255, .6); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
-.steps li .sr.amber { color: var(--amber-tint); }
+/* spec section 7: a step skipped for lack of an editor says so in amber. --amber itself is 3:1 on ink, so the list
+   mixes it with the marker yellow: about 6:1, and still amber. */
+.steps li .sr.amber { color: color-mix(in srgb, var(--amber) 55%, var(--marker)); }
 .steps li.st-now { color: #fff; font-weight: 600; }
 .steps li.st-todo, .steps li.st-skipped, .steps li.st-stopped { color: rgba(255, 255, 255, .55); }
 .steps .tm { height: 18px; padding: 0 5px; font-size: var(--fs-sm); margin-right: 0; vertical-align: 0; }

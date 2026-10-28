@@ -296,7 +296,8 @@ export function ShowMeHow({
   const make = async () => {
     const patch: Partial<ProjectJson> = {}
     for (const k of PARTS) if (JSON.stringify(now.p[k]) !== JSON.stringify(base.p[k])) Object.assign(patch, { [k]: now.p[k] ?? [] })
-    const summary = describeChange(base.p, patch, now.kept.size - base.kept.size) || 'your changes'
+    // said after "You" in the notes (shared/notes-log.ts handLine)
+    const summary = describeChange(base.p, patch, now.kept.size - base.kept.size) || 'made a change'
     setMaking(true)
     try {
       await reel.projects.handEdit(d.slug, s.edit, summary, s.changes, s.queued?.id).catch((e) => {

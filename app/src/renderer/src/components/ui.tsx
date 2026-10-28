@@ -351,11 +351,34 @@ export function useFileDrop(onFiles: (paths: string[]) => void) {
 }
 
 /** Hidden file picker behind a normal button. */
-export function PickFiles({ label, accept, onFiles, kind, icon }: { label: string; accept?: string; onFiles: (p: string[]) => void; kind?: 'primary' | 'secondary'; icon?: ReactNode }) {
+export function PickFiles({
+  label,
+  accept,
+  onFiles,
+  kind,
+  size,
+  icon,
+  testid,
+  className,
+  disabled,
+  'aria-label': ariaLabel
+}: {
+  label: string
+  accept?: string
+  onFiles: (p: string[]) => void
+  kind?: 'primary' | 'secondary'
+  size?: 'small'
+  icon?: ReactNode
+  /** the button's test id */
+  testid?: string
+  className?: string
+  disabled?: boolean
+  'aria-label'?: string
+}) {
   const ref = useRef<HTMLInputElement>(null)
   return (
     <>
-      <Button kind={kind} onClick={() => ref.current?.click()}>
+      <Button kind={kind} size={size} className={className} disabled={disabled} aria-label={ariaLabel} onClick={() => ref.current?.click()} data-testid={testid}>
         {icon}
         {label}
       </Button>
