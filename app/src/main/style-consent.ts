@@ -55,6 +55,24 @@ export function replyChat(c: StyleConsent, version?: number, proposal?: StylePro
   ]
 }
 
+/**
+ * The editor's reply into the chat, then one "Remember this for next time?" per My style rule the AI proposed or saved.
+ * A sentence the AI saved on its own is taken out again until the person says Yes; a typed rule was saved with their
+ * Yes and stays. Taking one back is not the person refusing it, so learning may still suggest it (learning-loop).
+ */
+export async function askAboutStyle(
+  d: { styleRules(): Promise<StyleRule[]>; removeStyleRule(id: string, options?: { forget?: boolean }): Promise<unknown> },
+  r: { summary: string; version?: number; styleRulesAdded?: string[]; styleSuggestions?: string[]; styleProposal?: StyleProposal },
+  summary: string
+): Promise<{ summary: string; version?: number; chat: ChatLine[] }> {
+  const c = styleConsent(summary, r.styleRulesAdded, r.styleSuggestions, r.styleProposal)
+  if (c.undo.length) {
+    const rules = await d.styleRules().catch((): StyleRule[] => [])
+    for (const rule of rules) if (c.undo.includes(rule.text) && !rule.payload) await d.removeStyleRule(rule.id, { forget: false }).catch(() => undefined)
+  }
+  return { summary: c.summary, version: r.version, chat: replyChat(c, r.version, r.styleProposal) }
+}
+
 export interface AnswerDeps {
   chat(slug: string): Promise<ChatMessage[]>
   addStyleRule?(text: string, from?: Pick<StyleRule, 'source'>): Promise<unknown>

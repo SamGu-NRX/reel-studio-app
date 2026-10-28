@@ -79,7 +79,7 @@ import { withRenderSlot } from './render-slot'
 import { titleVersion } from './version-title'
 import { createFootageIndexer } from './footage-index'
 import { createLiveVideos } from './live-video'
-import { replyChat, styleConsent, type ChatLine, answerStyleQuestion, rememberQuestion } from './style-consent'
+import { askAboutStyle, type ChatLine, answerStyleQuestion, rememberQuestion } from './style-consent'
 import type { AgentResult } from './ai-types'
 import { loadAI } from './ai'
 import type { AI, EngineHost } from './ai-types'
@@ -554,17 +554,9 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
   }, { pause })
 }
 
-/** The editor's reply into the chat, then one "Remember this for next time?" per My style rule the AI
- * proposed or saved (a saved one is taken out again until the user says Yes): main/style-consent.ts. */
-async function replyAskingAboutStyle(r: AgentResult, summary: string): Promise<{ summary: string; version?: number; chat: ChatLine[] }> {
-  const c = styleConsent(summary, r.styleRulesAdded, r.styleSuggestions, r.styleProposal)
-  if (c.undo.length) {
-    const rules = await ai.styleRules().catch(() => [])
-    // a typed rule was saved with the person's Yes; only sentences the AI saved on its own are undone, and taking
-    // one back is not the person refusing it, so learning may still suggest it (learning-loop)
-    for (const rule of rules) if (c.undo.includes(rule.text) && !rule.payload) await ai.removeStyleRule(rule.id, { forget: false }).catch(() => undefined)
-  }
-  return { summary: c.summary, version: r.version, chat: replyChat(c, r.version, r.styleProposal) }
+/** The editor's reply into the chat, then one "Remember this for next time?" per My style rule (style-consent.ts). */
+function replyAskingAboutStyle(r: AgentResult, summary: string): Promise<{ summary: string; version?: number; chat: ChatLine[] }> {
+  return askAboutStyle({ styleRules: () => ai.styleRules(), removeStyleRule: (id, o) => ai.removeStyleRule(id, o) }, r, summary)
 }
 
 const EDITABLE: (keyof ProjectJson)[] = ['title', 'cut', 'captions', 'music', 'broll', 'zooms', 'cover', 'post']

@@ -1995,6 +1995,13 @@ const tools: ToolDef[] = [
       // A note that asks again for a paused rule goes on as a new ask (PR #83: otherwise the app says "Saved" for a
       // rule it skips). Saving it turns the rule back on (StyleStore.add).
       if (existing && !(existing.paused && noteAsksToRemember(ctx.userNote))) return { content: { ok: true, alreadySaved: existing.text } };
+      if (existing && ctx.note) {
+        // A paused rule is still the person's: it is asked about like a suggestion, never listed as saved (the app
+        // takes a saved rule out of My style until the person says Yes). Yes turns this same rule back on
+        // (StyleStore.add); No leaves it paused.
+        if (!ctx.state.styleSuggestions.includes(existing.text)) ctx.state.styleSuggestions.push(existing.text);
+        return { content: { ok: true, proposed: existing.text, note: 'It is paused in My style. The app will ask the user "Remember this for next time?". Do not say you saved it or turned it back on.' } };
+      }
       if (noteAsksToRemember(ctx.userNote) && ctx.note) {
         // saved to My style with the note itself, never before (editor.ts applyNote)
         if (!ctx.state.styleRulesAdded.includes(text)) ctx.state.styleRulesAdded.push(text);

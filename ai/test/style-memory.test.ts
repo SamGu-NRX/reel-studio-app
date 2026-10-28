@@ -64,8 +64,10 @@ describe('asking again for a paused rule', () => {
     };
     const r = await executeTool(ctx, 'add_style_rule', { rule: 'Keep music quieter under talking.' });
     expect(r.content).not.toMatch(/alreadySaved/);
-    // the app asks "Remember this for next time?"; Yes saves through add(), which turns the rule back on
-    expect(ctx.state.styleRulesAdded).toEqual(['Keep music quieter under talking.']);
+    // asked as a suggestion, never listed as saved: the app takes a saved rule out of My style until the person says
+    // Yes (app test style-consent-handoff). Yes saves through add(), which turns the same rule back on
+    expect(ctx.state.styleSuggestions).toEqual(['Keep music quieter under talking.']);
+    expect(ctx.state.styleRulesAdded).toEqual([]);
     expect(ctx.state.styleRuleIds).toEqual([]);
   });
 
