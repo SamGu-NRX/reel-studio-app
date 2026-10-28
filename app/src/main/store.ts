@@ -100,6 +100,9 @@ export function titleFromFile(file: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1)
 }
 
+/** Names Windows keeps for devices, with or without an extension: a folder by one of them can't be made there. */
+const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/
+
 export function slugify(title: string): string {
   const s = title
     .normalize('NFKD')
@@ -109,14 +112,23 @@ export function slugify(title: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 48)
     .replace(/-+$/g, '')
-  return s || 'video'
+  return !s ? 'video' : WINDOWS_DEVICE.test(s) ? `${s}-reel` : s
 }
 
+/** A slug for `title`, and its folder, made here: the folder is created exclusively, so two reels made at the same
+ * moment with the same title never share one. */
 export async function uniqueSlug(title: string): Promise<string> {
   const base = slugify(title)
-  let slug = base
-  for (let i = 2; existsSync(join(projectsDir(), slug)); i++) slug = `${base}-${i}`
-  return slug
+  await fs.mkdir(projectsDir(), { recursive: true })
+  for (let i = 1; ; i++) {
+    const slug = i === 1 ? base : `${base}-${i}`
+    try {
+      await fs.mkdir(join(projectsDir(), slug))
+      return slug
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+    }
+  }
 }
 
 // ---- json helpers -----------------------------------------------------------------------------

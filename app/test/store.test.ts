@@ -125,12 +125,23 @@ describe('titles and slugs', () => {
     expect(slugify('Café Crème: Take 2!')).toBe('cafe-creme-take-2')
     expect(slugify('文档 视频')).toBe('文档-视频')
     expect(slugify('***')).toBe('video')
+    // fails if a reel titled after a Windows device name gets a folder Windows can't make
+    for (const name of ['CON', 'prn', 'Aux', 'NUL', 'com1', 'LPT9']) expect(slugify(name)).toBe(`${name.toLowerCase()}-reel`)
+    expect(slugify('Con artists')).toBe('con-artists')
+    expect(slugify('COM10')).toBe('com10')
   })
   it('never reuses a slug', async () => {
     setupPaths()
     await ensureRoot()
     fakeProject('my-video')
     expect(await uniqueSlug('My video')).toBe('my-video-2')
+  })
+  // fails if two reels made at the same moment with one title get the same folder
+  it('gives two reels made at once with the same title a folder each', async () => {
+    setupPaths()
+    const slugs = await Promise.all([uniqueSlug('Same title'), uniqueSlug('Same title'), uniqueSlug('Same title')])
+    expect(slugs.sort()).toEqual(['same-title', 'same-title-2', 'same-title-3'])
+    for (const slug of slugs) expect(existsSync(join(projectsDir(), slug))).toBe(true)
   })
 })
 
