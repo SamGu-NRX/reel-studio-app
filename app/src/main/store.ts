@@ -26,6 +26,7 @@ import type {
   QueuedNote
 } from '../shared/api'
 import { mediaUrl } from './media-url'
+import type { ReelSeed } from './propose-reels'
 import { replyChat, styleConsent, type ChatLine } from './style-consent'
 import { keptIds } from '../shared/cut'
 import { readCaptionLines } from '../shared/subtitle-lines'
@@ -60,8 +61,8 @@ export interface AppState {
   plan?: ReelPlan
   /** The reels the editor last found in this reel's video (main/propose-reels.ts). */
   proposal?: StoredProposal
-  /** This reel was made from another reel's proposal: that reel, and which of its candidates. */
-  from?: { slug: string; candidate: string }
+  /** This reel was made from another reel's proposal: what it is seeded from, kept so a resume can seed it again. */
+  from?: ReelSeed
 }
 
 const EMPTY_STATE: AppState = { chat: [], job: null, status: 'new', lastError: null }

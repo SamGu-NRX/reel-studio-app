@@ -110,7 +110,7 @@ import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMom
 import { parsePlatformExportRequest, sameVideo, secondTryPlatforms, type Platform, type PlatformTry, type TryVariable } from '../shared/platforms'
 import { exportPlatforms, sweepExportStaging, type ExportTry } from './platform-export'
 import { proposeTry } from './try-proposal'
-import { foldProposal, makeReels, seedReel, startProposal, type ReelSeed, type ReelsDeps } from './propose-reels'
+import { foldProposal, makeReels, prepareReel, startProposal, type ReelsDeps } from './propose-reels'
 import { versionMessage } from '../shared/describe'
 import { mergeSourcesPatch } from '../shared/mirror'
 import { assertWordCutEditable } from '../shared/cut'
@@ -496,26 +496,30 @@ function owned(args: string[], owner: string | null): string[] {
   return owner ? [...args, '--owner', owner] : args
 }
 
-/** `basic`: the version is made without the editor (a failed Version 1's "Make a basic version"). `initArgs.from`: a reel
- * made from another reel's proposal, which starts from that reel's listening results and the proposed words. */
-function startFirstEdit(slug: string, initArgs: { title: string; files: string[]; from?: ReelSeed } | null, basic = false): string {
+/** `basic`: the version is made without the editor (a failed Version 1's "Make a basic version"). `initArgs` null: a
+ * resume. A reel made from another reel's proposal starts from its app.json `from` (main/propose-reels.ts). */
+function startFirstEdit(slug: string, initArgs: { title: string; files: string[] } | null, basic = false): string {
   const dir = projectDir(slug)
   const startedAt = Date.now()
   let editor: string | null = null
   // a plan at its limit, no internet or sleep pauses Version 1 to continue by itself (main/pause.ts)
   const pause = (e: unknown) => (basic ? null : pauseFor(e, pauseCtx('first-edit', startedAt, editor)))
   return jobs.start(slug, 'first-edit', async (emit, signal, { owner }) => {
-    if (initArgs && !existsSync(join(dir, 'project.json'))) {
+    const copyIn = async (title: string, files: string[]) => {
       const { fasterExports } = await loadSettings()
       emit({ type: 'status', message: 'Copying your video', pct: 0 })
       await runEngine(
         'init',
-        owned(['--project', dir, '--title', initArgs.title, '--slug', slug, ...(fasterExports ? ['--faster-exports'] : [])], owner).concat(initArgs.files),
+        owned(['--project', dir, '--title', title, '--slug', slug, ...(fasterExports ? ['--faster-exports'] : [])], owner).concat(files),
         (p) => emit({ type: 'status', message: 'Copying your video', pct: Math.round(p.pct * 0.01) }),
         signal
       )
-      if (initArgs.from) await seedReel(slug, initArgs.from)
     }
+    // a reel made from another reel's proposal is copied in and seeded from it, on a resume too if the app closed
+    // between the two, so it never becomes an edit of the whole video
+    const from = (await readAppState(slug)).from
+    if (from) await prepareReel(slug, from, () => copyIn(from.about.title, [from.media]), { resumed: !initArgs, signal })
+    else if (initArgs && !existsSync(join(dir, 'project.json'))) await copyIn(initArgs.title, initArgs.files)
     // a reel planned before it had a video: the editor reads its script from project.json (again on a resume,
     // in case the app closed between the copy and this)
     await carryScript(slug)

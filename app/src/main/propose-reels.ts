@@ -2,16 +2,22 @@
 // the other reels in it; the proposal lives in that reel's app.json. A pick makes each chosen one a new reel that
 // starts from the first reel's listening results and the proposed words, and the two share a series.
 import { createHash } from 'node:crypto'
-import { promises as fs } from 'node:fs'
+import { existsSync, promises as fs } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import type { ReelCandidateView, Word } from '../shared/api'
 import type { AI } from './ai-types'
+import { toUserError } from './engine'
 import type { JobManager } from './jobs'
 import { projectDir, readAppState, readJson, readProject, serialized, stamp, uniqueSlug, updateAppState, writeJson, writeProject } from './store'
 
-/** What the new reel starts from: the reel it came from, the proposed words, and the brief its first edit reads. */
+/** What a new reel starts from, kept in its app.json `from` so a resume can seed it again: the reel it came from and
+ * that reel's video, the words the pick was made from, the proposed words, and the brief its first edit reads. */
 export interface ReelSeed {
   slug: string
+  /** the first reel's video file: the new reel's copy is a hard link to it where the disk allows */
+  media: string
+  /** sha256 of the first reel's work/transcript.json when it was picked from (StoredProposal.transcriptHash) */
+  transcriptHash: string
   keep: { from: string; to: string }[]
   /** the series both reels are in: the first reel's title when the first pick was made */
   series: string
@@ -22,14 +28,16 @@ export interface ReelSeed {
 export interface ReelsDeps {
   jobs: Pick<JobManager, 'start' | 'hold'>
   ai: Pick<AI, 'active' | 'proposeReels'>
-  /** index.ts startFirstEdit: copies the video in, calls seedReel, then makes Version 1 */
-  startFirstEdit: (slug: string, init: { title: string; files: string[]; from: ReelSeed }) => string
+  /** index.ts startFirstEdit: prepareReel with the seed in the new reel's app.json, then Version 1 */
+  startFirstEdit: (slug: string, init: { title: string; files: string[] }) => string
 }
 
 const FINDING = 'Finding the reels in your video'
-/** Copied from the first reel so the new one never listens again: its words (same ids), retakes, face track and
- * loudness. Only the words must be there; a reel heard before the others existed has none to copy. */
-const HEARD = ['transcript.json', 'analysis.json', 'analyze.json', 'face.json', 'envelope.json']
+/** Copied from the first reel with its words, so the new one never listens again: retakes, face track and loudness.
+ * A reel heard before one of these existed has none to copy. */
+const ALSO_HEARD = ['analysis.json', 'analyze.json', 'face.json', 'envelope.json']
+const FIRST_REEL_GONE = { code: 'FIRST_REEL_GONE', userMessage: 'The reel it comes from was deleted.' }
+const FIRST_REEL_CHANGED = { code: 'FIRST_REEL_CHANGED', userMessage: 'Your editor listened to the video again since the pick. Find the reels again.' }
 
 const sha256 = (b: Buffer): string => createHash('sha256').update(b).digest('hex')
 const isRange = (a: unknown): a is { from: string; to: string } =>
@@ -134,25 +142,22 @@ export async function makeReels(deps: ReelsDeps, slug: string, ids: string[]): P
     try {
       for (const c of picks) {
         const child = await uniqueSlug(c.title)
-        await fs.mkdir(projectDir(child), { recursive: true })
+        const from: ReelSeed = { slug, media, transcriptHash: hash, keep: c.keep, series, about: { candidate: c.id, title: c.title, hook: c.hookText, why: c.why } }
         await updateAppState(child, (s) => {
           s.status = 'working'
           s.title = c.title
           s.createdAt = new Date().toISOString()
-          s.from = { slug, candidate: c.id }
+          s.from = from
         })
+        // recorded before its job starts, so a reel that fails at once is never recorded after its row was given back
+        await updateAppState(slug, (s) => void (s.proposal && (s.proposal.made[c.id] = child)))
         try {
-          deps.startFirstEdit(child, {
-            title: c.title,
-            files: [media],
-            from: { slug, keep: c.keep, series, about: { candidate: c.id, title: c.title, hook: c.hookText, why: c.why } }
-          })
+          deps.startFirstEdit(child, { title: c.title, files: [media] })
         } catch (e) {
           // a reel whose Version 1 never started would wait on Home for ever
-          await fs.rm(projectDir(child), { recursive: true, force: true })
+          await dropReel(child, from, null)
           throw e
         }
-        await updateAppState(slug, (s) => void (s.proposal && (s.proposal.made[c.id] = child)))
         made.push({ id: c.id, slug: child })
       }
     } finally {
@@ -174,17 +179,58 @@ export async function foldProposal(slug: string, folded: boolean): Promise<void>
 }
 
 /**
- * The new reel after `engine init` made its project.json: the first reel's listening results, so its first edit never
- * listens again and its word ids match, then the proposed words as its cut, the series, and what it is about.
+ * A new reel's first step, run by its first-edit job (index.ts startFirstEdit): its copy of the video (`copyIn`,
+ * engine init), then seedReel, as one step. A seeded reel skips it, so a reel the app closed on between the two is
+ * seeded on its resume. When a pick's reel can't be made, it goes, and its row on the first reel's card is offered
+ * again with a line that says why. A resumed one is refused with the reason instead, and stays for the person to
+ * delete. Stop keeps it, to be resumed.
  */
-export async function seedReel(slug: string, from: ReelSeed): Promise<void> {
+export async function prepareReel(slug: string, from: ReelSeed, copyIn: () => Promise<unknown>, how: { resumed: boolean; signal?: AbortSignal }): Promise<void> {
+  const file = join(projectDir(slug), 'project.json')
+  if (existsSync(file) && (await readProject(slug)).proposal) return
+  try {
+    if (!existsSync(file)) await copyIn()
+    await seedReel(slug, from)
+  } catch (e) {
+    if (how.signal?.aborted) throw e
+    const why = toUserError(e)
+    if (how.resumed) throw { code: why.code, userMessage: `This reel can't be made any more. ${why.userMessage}` }
+    await dropReel(slug, from, why.userMessage)
+    throw e
+  }
+}
+
+/** A pick's reel that can't be made: its folder goes, and its row on the first reel's card is offered again, with
+ * `why` in that reel's log. Nothing is left to clear when the first reel was deleted. */
+async function dropReel(slug: string, from: ReelSeed, why: string | null): Promise<void> {
+  await fs.rm(projectDir(slug), { recursive: true, force: true })
+  if (!existsSync(join(projectDir(from.slug), 'app.json'))) return
+  await updateAppState(from.slug, (s) => {
+    if (s.proposal?.made[from.about.candidate] === slug) delete s.proposal.made[from.about.candidate]
+    if (why) s.chat.push(stamp({ from: 'editor', text: `${from.about.title} wasn't made. ${why}`, reels: true }))
+  })
+}
+
+/**
+ * The new reel after `engine init` made its project.json: the first reel's listening results, so its first edit never
+ * listens again and its word ids match, then the proposed words as its cut, the series, and what it is about. Refused
+ * when the first reel or its words are gone or have changed since the pick: the words copied are the bytes checked.
+ */
+async function seedReel(slug: string, from: ReelSeed): Promise<void> {
   const src = join(projectDir(from.slug), 'work')
   const dst = join(projectDir(slug), 'work')
+  const heard = await fs.readFile(join(src, 'transcript.json')).catch((e: NodeJS.ErrnoException) => {
+    if (e.code === 'ENOENT') return null
+    throw e
+  })
+  if (!heard) throw FIRST_REEL_GONE
+  if (sha256(heard) !== from.transcriptHash) throw FIRST_REEL_CHANGED
   await fs.mkdir(dst, { recursive: true })
+  await fs.writeFile(join(dst, 'transcript.json'), heard)
   const p = await readProject(slug)
-  for (const name of [...HEARD, ...(p.sources ?? []).map((s) => `face-${s.id}.json`)]) {
+  for (const name of [...ALSO_HEARD, ...(p.sources ?? []).map((s) => `face-${s.id}.json`)]) {
     await fs.copyFile(join(src, name), join(dst, name)).catch((e: NodeJS.ErrnoException) => {
-      if (e.code !== 'ENOENT' || name === 'transcript.json') throw e
+      if (e.code !== 'ENOENT') throw e
     })
   }
   p.cut = { ...p.cut, keep: from.keep }
