@@ -3,7 +3,7 @@ import type { PlacedWord, ProjectJson, Word } from '../src/shared/api'
 import { describeChange } from '../src/shared/describe'
 import { countChanges, diffProject } from '../src/shared/hand-edit'
 import { placeWords, type RenderSegment } from '../src/shared/moments'
-import { cutsHint, gainOf, joinsOf, momentAt, momentKey, momentWhy, musicFades, newToTheEar, soundRows, soundTime, soundTitle, takenMoments, type Sfx, type VersionClock } from '../src/shared/sfx'
+import { cutsHint, gainOf, joinsOf, levelDb, levelOf, momentAt, momentKey, momentWhy, musicFades, newToTheEar, noMomentHint, soundRows, soundTime, soundTitle, takenMoments, type Sfx, type VersionClock } from '../src/shared/sfx'
 import { versionRows } from '../src/shared/version-diff'
 
 // w0..w9 said one every 0.5 s. The cut keeps w0-w3 and w6-w9; the render also trims the pause inside w0-w3.
@@ -76,10 +76,32 @@ describe('sound moments', () => {
     expect(momentWhy({ broll: 'b1' }, said)).toBe('as a picture comes in')
   })
 
-  it('fails if the slider shows a level the engine would not play (it caps at +6 dB)', () => {
+  it('fails if a level the engine would not play is shown as the level (it caps at +6 dB)', () => {
     expect(gainOf({ at: { word: 'w1' }, sound: 'pop-soft', gainDb: 12 })).toBe(6)
     expect(gainOf({ at: { word: 'w1' }, sound: 'pop-soft', gainDb: -30 })).toBe(-24)
     expect(gainOf({ at: { word: 'w1' }, sound: 'pop-soft' })).toBe(0)
+  })
+
+  it("fails if Quiet, Normal and Loud don't write −9, 0 and +4 dB, or a level reads back as another word", () => {
+    expect([levelDb('quiet'), levelDb('normal'), levelDb('loud')]).toEqual([-9, 0, 4])
+    expect([levelOf(-9), levelOf(0), levelOf(4)]).toEqual(['quiet', 'normal', 'loud'])
+    // a level the editor picked off the three reads as the nearest word: its exact value is in the tooltip
+    expect([levelOf(-24), levelOf(-6), levelOf(-4), levelOf(1), levelOf(3), levelOf(6)]).toEqual(['quiet', 'quiet', 'normal', 'normal', 'loud', 'loud'])
+  })
+
+  it('fails if the Sound tab says every word ahead has a sound when no word is ahead of the playhead', () => {
+    const c = clockOf()
+    const all = 'Every word from here to the end has a sound effect already.'
+    const move = 'Move the playhead to a word to add a sound effect there.'
+    // past the last word, with no sounds at all: the line the Sound tab used to show at the end of every reel
+    expect(momentAt(4, c, joinsOf(c), takenMoments([], c, kept))).toBeNull()
+    expect(noMomentHint(4, c, kept)).toBe(move)
+    // w9 is still to come and has a sound
+    const rows = soundRows([{ at: { word: 'w9' }, sound: 'pop-soft' }], c, joinsOf(c), [], kept, () => undefined)
+    expect(momentAt(3.2, c, joinsOf(c), takenMoments(rows, c, kept))).toBeNull()
+    expect(noMomentHint(3.2, c, kept)).toBe(all)
+    // the words still to come are all cut by this edit: none of them has a sound
+    expect(noMomentHint(3.2, c, new Set([...kept].filter((id) => id !== 'w9')))).toBe(move)
   })
 })
 

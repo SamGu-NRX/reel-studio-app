@@ -81,7 +81,9 @@ html.kb .picture-row { transition: none; }
 @media (hover: hover) and (pointer: fine) { .sfx-name:hover .edit-row-title { text-decoration: underline; text-decoration-color: var(--ink-4); text-underline-offset: 3px; } }
 .sfx-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .sfx-controls select.input { height: 28px; width: auto; max-width: 100%; font-size: var(--fs-sm); padding: 0 30px 0 10px; background-position: right 8px center; }
-.sfx-row .edit-slider { grid-template-columns: 64px minmax(0, 1fr) 52px; margin-top: 4px; }
+/* its level in words, like the song's, beside the label the fade sliders use */
+.sfx-level { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.sfx-level .edit-slider-label { width: 64px; flex: none; }
 
 /* Add a sound: grows from its button, in the list's flow, so nothing covers the sounds above it. */
 .sfx-picker {
@@ -91,24 +93,34 @@ html.kb .picture-row { transition: none; }
 @starting-style { .sfx-picker { opacity: 0; transform: translateY(-4px) scale(.98); } }
 html.kb .sfx-picker { transition: none; }
 .sfx-picker-h { color: var(--ink-2); font-size: var(--fs-sm); line-height: var(--lh-sm); }
-.sfx-jobs { display: flex; flex-direction: column; gap: 8px; }
-.sfx-job { display: grid; gap: 4px; }
-.sfx-job-h { color: var(--ink-3); font-size: var(--fs-sm); line-height: var(--lh-sm); }
-.sfx-job-h b { color: var(--ink); font-weight: 620; margin-right: 2px; }
-.sfx-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.sfx-chip {
-  height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong);
-  font: inherit; font-size: var(--fs-sm); font-weight: 520; color: var(--ink-2); cursor: pointer;
-  transition: background-color 150ms cubic-bezier(.2, .8, .2, 1), color 150ms cubic-bezier(.2, .8, .2, 1), transform 150ms cubic-bezier(.2, .8, .2, 1);
-  /* the arrow keys move focus along the chips: the sticky footer never covers the focused one */
+/* One row per kind, hairlines between; the picked kind has the soft wash a selected row has everywhere, and its
+   other sounds open inside that wash, the chosen one on the segmented control's lifted thumb. */
+.sfx-kinds { display: flex; flex-direction: column; margin: 0 -6px; }
+.sfx-kind { border-radius: var(--r-sm); padding: 0 2px 0 8px; transition: background-color 150ms ease; }
+.sfx-kind + .sfx-kind { box-shadow: inset 0 1px 0 var(--line); }
+.sfx-kind.on, .sfx-kind.on + .sfx-kind { box-shadow: none; }
+.sfx-kind.on { background: var(--wash); }
+.sfx-kind-h { display: flex; align-items: center; gap: 4px; min-height: 36px; }
+.sfx-kind-name {
+  flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: baseline; gap: 6px; border: 0; background: none; padding: 9px 0; margin: 0;
+  font: inherit; text-align: left; color: var(--ink); cursor: pointer; border-radius: 4px;
+  /* the arrow keys move focus along the rows: the sticky footer never covers the focused one */
   scroll-margin-bottom: 64px;
 }
-.sfx-chip.on { background: var(--ink); color: #fff; box-shadow: none; }
-.sfx-chip:active { transform: scale(.97); }
-@media (hover: hover) and (pointer: fine) { .sfx-chip:not(.on):hover { background: var(--wash); color: var(--ink); } }
-html.kb .sfx-chip { transition: none; }
-html.kb .sfx-chip:active { transform: none; }
-html.kb :is(.sfx-chip, .sfx-name):focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.sfx-kind-name b { font-weight: 620; flex: none; }
+.sfx-kind-name span { color: var(--ink-3); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sfx-others .icon { transition: transform 150ms cubic-bezier(.2, .8, .2, 1); }
+.sfx-others .icon.open { transform: rotate(180deg); }
+.sfx-variants { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 0 8px; margin-left: -10px; }
+.sfx-variant {
+  height: 28px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; font: inherit; font-size: var(--fs-sm); font-weight: 520;
+  color: var(--ink-2); cursor: pointer; scroll-margin-bottom: 64px;
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+.sfx-variant.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(22, 30, 26, .12), 0 0 0 .5px rgba(22, 30, 26, .08); }
+@media (hover: hover) and (pointer: fine) { .sfx-variant:not(.on):hover { color: var(--ink); } }
+html.kb :is(.sfx-kind, .sfx-variant, .sfx-others .icon) { transition: none; }
+html.kb :is(.sfx-kind-name, .sfx-variant, .sfx-name):focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 /* Add stays in reach while the person listens down the list: the footer sticks to the panel's bottom edge. */
 .sfx-picker-f {
   position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 6px;
@@ -155,7 +167,7 @@ html.kb .library-pick:active { transform: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .sfx-picker { transition: opacity 150ms cubic-bezier(.2, .8, .2, 1); }
-  .sfx-chip, .sfx-chip:active { transition-property: background-color, color; transform: none; }
+  .sfx-others .icon { transition: none; }
   @starting-style { .sfx-picker { transform: none; } }
   .edit-during { transition: none; }
   .library-pick, .library-pick:active { transition: none; transform: none; }
