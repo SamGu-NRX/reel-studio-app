@@ -22,14 +22,15 @@ export function parseRegPath(out: string): { type: 'REG_SZ' | 'REG_EXPAND_SZ'; v
   return m ? { type: m[1] as 'REG_SZ' | 'REG_EXPAND_SZ', value: m[2] } : null
 }
 
-export async function withUserPathKept<T>(fn: () => Promise<T>, log: (s: string) => void): Promise<T> {
-  const before = parseRegPath((await run(['query', 'HKCU\\Environment', '/v', 'Path'])).out)
+/** `key`: the HKCU subkey holding Path; only tests change it, so they never touch the real user PATH. */
+export async function withUserPathKept<T>(fn: () => Promise<T>, log: (s: string) => void, key = 'Environment'): Promise<T> {
+  const before = parseRegPath((await run(['query', `HKCU\\${key}`, '/v', 'Path'])).out)
   try {
     return await fn()
   } finally {
     const r = before
-      ? await run(['add', 'HKCU\\Environment', '/v', 'Path', '/t', before.type, '/d', before.value, '/f'])
-      : await run(['delete', 'HKCU\\Environment', '/v', 'Path', '/f'])
+      ? await run(['add', `HKCU\\${key}`, '/v', 'Path', '/t', before.type, '/d', before.value, '/f'])
+      : await run(['delete', `HKCU\\${key}`, '/v', 'Path', '/f'])
     log(`[vendor] test switch: user PATH put back (${before ? before.type : 'none'}), reg exit ${r.code}`)
   }
 }
