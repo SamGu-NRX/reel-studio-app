@@ -5,7 +5,7 @@ import type { Screen } from './nav'
 import { IS_MAC, Toast } from './components/ui'
 import { draggingOut } from './components/Player'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { Sidebar, useRail } from './components/Sidebar'
+import { RESIZE_SIDEBAR_EVENT, Sidebar, useRail } from './components/Sidebar'
 import { TitleBar, TitleBarMain, TitleBarProvider } from './components/titlebar'
 import { useInputMode } from './components/motion'
 import { Home } from './screens/Home'
@@ -78,6 +78,7 @@ export function App() {
         else if (c.type === 'library') go({ name: 'library' })
         else if (c.type === 'export') window.dispatchEvent(new Event(EXPORT_EVENT))
         else if (c.type === 'open-reel') go({ name: 'reel', slug: c.slug })
+        else if (c.type === 'resize-sidebar') window.dispatchEvent(new Event(RESIZE_SIDEBAR_EVENT))
       }),
     [go, notify]
   )

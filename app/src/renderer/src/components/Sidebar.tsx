@@ -19,6 +19,8 @@ const sidebarToggle = (): HTMLElement | null => document.querySelector<HTMLEleme
 /** Shift+\: matched by the character it types, or by the key's place when a layout types something else there. */
 const isResizeChord = (e: KeyboardEvent): boolean =>
   (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === '\\' || e.key === '|' || e.code === 'Backslash')
+/** View › Resize Sidebar (macOS menu, App.tsx): the same as the chord, which the menu takes before the page sees it. */
+export const RESIZE_SIDEBAR_EVENT = 'reel:resize-sidebar'
 
 // Insights is always here, so analytics have one place to live before any reel is posted (spec.md section 9).
 const NAV: { key: 'home' | 'library' | 'style' | 'insights'; label: string; icon: IconName }[] = [
@@ -98,8 +100,7 @@ function SideResizer() {
   const edge = useRef<HTMLDivElement>(null)
   const back = useRef<HTMLElement | null>(null)
   useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (!isResizeChord(e)) return
+    const reach = (e: Event) => {
       const el = edge.current
       // folded to the rail, the edge is hidden: there is no width to set
       if (!el || el.offsetParent === null) return
@@ -111,8 +112,15 @@ function SideResizer() {
       document.documentElement.classList.add('kb')
       el.focus()
     }
+    const key = (e: KeyboardEvent) => {
+      if (isResizeChord(e)) reach(e)
+    }
     window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
+    window.addEventListener(RESIZE_SIDEBAR_EVENT, reach)
+    return () => {
+      window.removeEventListener('keydown', key)
+      window.removeEventListener(RESIZE_SIDEBAR_EVENT, reach)
+    }
   }, [])
   useEffect(() => applyWidth(width), [width])
   const commit = (w: number) => {
