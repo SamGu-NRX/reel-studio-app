@@ -62,6 +62,8 @@ test('plan a reel with the editor, edit a beat, then film it', async () => {
   const card = page.getByTestId('plan-card')
   await expect(page.getByTestId('planned-stage').getByTestId('plan-card')).toBeVisible()
   await expect(page.getByTestId('plan-chip')).toHaveAccessibleName('Show the plan 5 beats, 3 shots')
+  // the planning chat names itself for screen readers, not as the notes it becomes once the video is in
+  await expect(page.getByRole('log', { name: 'Plan with your editor' })).toBeVisible()
   await page.getByTestId('plan-chip').click()
   await expect(card.locator('[data-plan-head]')).toBeFocused()
   await expect(page.getByTestId('plan-said')).toHaveCount(1)
@@ -127,6 +129,7 @@ test('plan a reel with the editor, edit a beat, then film it', async () => {
 
   // the plan folds into one line above the video, and opens read-only
   await expect(page.getByRole('heading', { name: 'Notes for your editor' })).toBeVisible()
+  await expect(page.getByRole('log', { name: 'Notes for your editor' })).toBeVisible()
   await expect(card).toHaveAttribute('data-folded')
   await expect(page.getByTestId('plan-question')).toHaveCount(0)
   await card.getByTestId('plan-unfold').click()

@@ -1031,6 +1031,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
                   landed={landed}
                   unwatched={unwatched}
                   empty={planned && <PlanEmpty provider={provider} hasPlan={false} />}
+                  label={planned ? 'Plan with your editor' : undefined}
                   plan={planned ? d.plan && <PlanChip plan={d.plan} /> : planCard}
                   versionRows={versionRows}
                   onPlay={watch}

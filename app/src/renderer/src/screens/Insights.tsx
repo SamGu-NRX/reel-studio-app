@@ -7,7 +7,7 @@ import '../components/library.css'
  */
 export function Insights() {
   return (
-    <div className="page">
+    <div className="page insights-page">
       <TitleBarSlot title="Insights" />
       <div className="insights-empty" data-testid="insights-empty">
         <h2>No post results yet</h2>

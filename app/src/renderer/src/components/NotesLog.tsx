@@ -96,7 +96,8 @@ export function NotesLog({
   onCopy,
   onError,
   answerError,
-  pausedWhy
+  pausedWhy,
+  label = 'Notes for your editor'
 }: {
   slug: string
   entries: LogEntry[]
@@ -137,6 +138,8 @@ export function NotesLog({
   answerError: { id: string; text: string } | null
   /** a note paused without you (a plan at its limit): why, and when it goes on */
   pausedWhy: string | null
+  /** The log's accessible name: planning a reel reuses this log as its chat. */
+  label?: string
 }) {
   const box = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<Record<number, boolean>>({})
@@ -378,7 +381,7 @@ export function NotesLog({
   const foldedVersions = entries.slice(0, folded).filter((e) => e.result?.kind === 'version').length
   const shownEntries = unfolded ? entries : entries.slice(folded)
   return (
-    <div className="log" ref={box} onScroll={onScroll} role="log" aria-label="Notes for your editor" data-testid="chat">
+    <div className="log" ref={box} onScroll={onScroll} role="log" aria-label={label} data-testid="chat">
       {!unfolded && folded > 0 && (
         <button className="fold" aria-expanded={false} onClick={() => setUnfolded(true)} data-testid="log-unfold">
           <Icon name="chevron-down" size={14} />

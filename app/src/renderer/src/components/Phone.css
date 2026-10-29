@@ -111,9 +111,10 @@
 .igc-cap em { flex: none; font-style: normal; color: rgba(255, 255, 255, .7); }
 .igc-audio { display: flex; align-items: center; gap: calc(6 * var(--pt)); font-size: calc(13 * var(--pt)); }
 .igc-audio .icon { width: calc(12 * var(--pt)); height: calc(12 * var(--pt)); }
-.igc-tick { overflow: hidden; width: calc(170 * var(--pt)); mask-image: linear-gradient(90deg, #000 85%, transparent); }
+/* Both edges fade, playing or paused: a pause freezes the ticker mid-scroll, and a hard left edge then reads as
+   clipped text ("inal audio"). */
+.igc-tick { overflow: hidden; width: calc(170 * var(--pt)); mask-image: linear-gradient(90deg, transparent, #000 8%, #000 85%, transparent); }
 /* moving, the words leave on the left as they come in on the right: both edges fade, so none is cut mid-letter */
-.igc[data-playing] .igc-tick { mask-image: linear-gradient(90deg, transparent, #000 8%, #000 85%, transparent); }
 .igc-tick > div { display: flex; width: max-content; animation: igc-tick 9s linear infinite paused; }
 .igc-tick span { padding-right: calc(28 * var(--pt)); white-space: nowrap; }
 .igc[data-playing]:not(.off) .igc-tick > div { animation-play-state: running; }

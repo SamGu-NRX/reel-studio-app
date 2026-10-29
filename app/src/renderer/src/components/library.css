@@ -78,7 +78,12 @@
 .style-t > span { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); overflow-wrap: anywhere; }
 .style-form { display: flex; align-items: center; gap: 8px; padding: 10px 0; box-shadow: inset 0 1px 0 var(--line); }
 .style-form .input { flex: 1; min-width: 0; }
-.insights-empty { display: grid; justify-items: center; align-content: center; gap: 6px; min-height: 320px; text-align: center; }
+/* Like My style's empty page: the column is at least as tall as the window, so the empty state centres in it */
+.page.insights-page { min-height: 100%; display: flex; flex-direction: column; }
+.insights-empty {
+  flex: 1; display: grid; justify-items: center; align-content: center; gap: 6px; min-height: 320px;
+  padding-bottom: calc(var(--space-l) + var(--space-s)); text-align: center;
+}
 .insights-empty h2 { font-size: var(--fs-subhead); line-height: var(--lh-subhead); font-weight: 620; }
 .insights-empty p { max-width: 44ch; color: var(--ink-2); }
 /* Empty My style fills the column's height and sits a little above its middle, where the eye expects a centre */
