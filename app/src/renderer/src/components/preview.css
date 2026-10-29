@@ -21,8 +21,9 @@ html.kb :is(.tpill, .transport .speed, .stage-dock .pp, .stage-dock .speed):acti
 /* A narrow stage (the smallest window with the sidebar open, about 417 px of row) keeps the shape's icon, its name in
    its label, and the reel's length after the time, the number a creator watches most. To make the room, the speed
    pill drops its ring, the icon buttons take the spec's 28 px, and Instagram | Clean its side padding. Only a stage
-   narrower than the smallest window leaves gives up the length. */
-@container transport (max-width: 500px) {
+   narrower than the smallest window leaves gives up the length. The full row needs about 575 px: under the phone
+   (reel.css), a 530 px phone at 1920x1080 cut "Whole reel" to "W…" at the old 500 px. */
+@container transport (max-width: 580px) {
   .shape-pick { width: 28px; padding: 0; justify-content: center; }
   .shape-pick .lbl { display: none; }
   .transport .speed:not(.on) { box-shadow: none; min-width: 28px; padding: 0 4px; }
@@ -83,9 +84,9 @@ html.kb .stage-backdrop { transition: none; }
 .stage-dock .pp:active { transform: scale(.94); }
 .stage-dock .tc { font-size: var(--fs-base); font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .stage-dock .tc span { color: rgba(255, 255, 255, .6); font-weight: 500; }
-/* 16 px to grab, the bar drawn 4 px tall on its track */
-.stage-scrub { align-self: stretch; display: flex; height: 16px; align-items: center; }
-.stage-scrub input[type=range] { flex: 1; height: 16px; margin: 0; -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+/* 24 px to grab (the house minimum for a target; it was 16), the bar drawn 4 px tall on its track */
+.stage-scrub { align-self: stretch; display: flex; height: 24px; align-items: center; }
+.stage-scrub input[type=range] { flex: 1; height: 24px; margin: 0; -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
 .stage-scrub input[type=range]::-webkit-slider-runnable-track {
   height: 4px; border-radius: 4px; background: linear-gradient(90deg, #fff var(--pct, 0%), rgba(255, 255, 255, .3) var(--pct, 0%));
 }

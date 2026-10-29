@@ -284,6 +284,12 @@ export function detectLayout(opts: DetectOptions): { findings: RawFinding[]; all
    */
   const unreachableCut = (el: Element, r0: R): { by: Element | 'window'; axis: 'x' | 'y'; amount: number } | null => {
     let r = r0
+    // text that truncates itself with an ellipsis is drawn no wider than its own box (More reels' hook line)
+    const own = css(el)
+    if (own.textOverflow === 'ellipsis' && clipsAxis(own, 'x')) {
+      const p = paddingBox(el)
+      r = { ...r, left: Math.max(r.left, p.left), right: Math.min(r.right, p.right) }
+    }
     let reachX = false
     let reachY = false
     for (const a of clippingAncestors(el)) {
@@ -299,8 +305,12 @@ export function detectLayout(opts: DetectOptions): { findings: RawFinding[]; all
           continue
         }
         if ((axis === 'x' && reachX) || (axis === 'y' && reachY)) continue
-        // truncated on purpose with an ellipsis: the text-overflow check asks for its full text instead
-        if (axis === 'x' && s.textOverflow === 'ellipsis') continue
+        // truncated on purpose with an ellipsis: the text-overflow check asks for its full text instead. What is drawn
+        // ends at this box, so an outer clip only cuts what reaches past it (a path in a card was reported cut by the page)
+        if (axis === 'x' && s.textOverflow === 'ellipsis') {
+          r = { ...r, left: Math.max(r.left, p.left), right: Math.min(r.right, p.right) }
+          continue
+        }
         const over = axis === 'x' ? Math.max(p.left - r.left, r.right - p.right) : Math.max(p.top - r.top, r.bottom - p.bottom)
         if (over > 2) return { by: a, axis, amount: Math.round(over) }
       }

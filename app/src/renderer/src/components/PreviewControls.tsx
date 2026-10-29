@@ -15,6 +15,18 @@ type Side = 'left' | 'right'
 const above = (side: Side, width: number | string): { style: CSSProperties; origin: string } =>
   side === 'left' ? { style: { right: 0, bottom: 'calc(100% + 6px)', width }, origin: 'bottom right' } : { style: { left: 0, bottom: 'calc(100% + 6px)', width }, origin: 'bottom left' }
 
+/** The preferred side, unless the menu would run past the edge of the column it opens in (the main column, or the
+ * window in the full-screen stage): then the other side. At 1100x720 the 300 px shape menu ran 73 px past the
+ * page's left edge. */
+function roomFor(pill: HTMLElement | null, side: Side, width: number): Side {
+  if (!pill) return side
+  const r = pill.getBoundingClientRect()
+  const col = pill.closest('.main')?.getBoundingClientRect() ?? { left: 0, right: window.innerWidth }
+  if (side === 'left' && r.right - width < col.left + 8 && r.left + width <= col.right - 8) return 'right'
+  if (side === 'right' && r.left + width > col.right - 8 && r.right - width >= col.left + 8) return 'left'
+  return side
+}
+
 export function SpeedMenu({ transport, side = 'left' }: { transport: Transport; side?: Side }) {
   const { rate } = useTransport(transport)
   const [open, setOpen] = useState(false)
@@ -52,9 +64,12 @@ export function SpeedMenu({ transport, side = 'left' }: { transport: Transport; 
   )
 }
 
+const SHAPE_MENU_W = 300
+
 export function ShapeMenu({ side = 'left' }: { side?: Side }) {
   const [shape, setShape] = usePhoneShape()
   const [open, setOpen] = useState(false)
+  const [opensTo, setOpensTo] = useState<Side>(side)
   const pill = useRef<HTMLButtonElement>(null)
   return (
     <span className="tmenu shape">
@@ -66,13 +81,16 @@ export function ShapeMenu({ side = 'left' }: { side?: Side }) {
         aria-expanded={open}
         aria-label={`Phone shape, ${shape.label}`}
         title={`${shape.label}. ${fitWords(shape)}`}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (!open) setOpensTo(roomFor(pill.current, side, SHAPE_MENU_W))
+          setOpen((o) => !o)
+        }}
         data-testid="shape"
       >
         <Icon name="phone" size={16} stroke={1.75} />
         <span className="lbl">{shape.label}</span>
       </button>
-      <PopMenu open={open} onClose={() => setOpen(false)} anchor={pill} label="Phone shape" {...above(side, 300)} testid="shape-menu">
+      <PopMenu open={open} onClose={() => setOpen(false)} anchor={pill} label="Phone shape" {...above(opensTo, SHAPE_MENU_W)} testid="shape-menu">
         {SHAPES.map((s) => (
           <button
             key={s.id}

@@ -10,6 +10,10 @@ const cells = [
   // text-overflow: spills out of its box / truncated with an ellipsis and a title
   `<div id="spill" style="width:80px;white-space:nowrap">a line that is far too long for its box</div>`,
   `<div id="ellipsis" title="a line that is far too long for its box" style="width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">a line that is far too long for its box</div>`,
+  // clipped near miss: a start-truncated path (Settings' PathLine) inside a box that clips, wider than the window
+  `<div style="width:200px;overflow:hidden"><span id="path" title="/a/very/long/folder/path/that/goes/on/and/on/and/on/and/on/and/on/and/on/and/on/and/on/and/on/and/on/to/Reel Studio" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left"><bdi dir="ltr">/a/very/long/folder/path/that/goes/on/and/on/and/on/and/on/and/on/and/on/and/on/and/on/and/on/and/on/to/Reel Studio</bdi></span></div>`,
+  // and a line that truncates itself, as wide as the box that clips it (More reels' hook)
+  `<div style="width:200px;overflow:hidden;display:grid"><p id="hook" title="a quote from the video that is far too long for one line" style="margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">a quote from the video that is far too long for one line</p></div>`,
   // clipped: cut by an overflow-hidden box / the same inside a scroll area
   `<div style="height:40px;overflow:hidden"><button id="cut" style="margin-top:28px;height:30px;width:80px">Go</button></div>`,
   `<div style="height:40px;overflow:auto"><button id="reachable" style="margin-top:28px;height:30px;width:80px">Go</button></div>`,

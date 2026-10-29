@@ -55,19 +55,32 @@ export function updateHeadline(s: UpdateState): string {
   return s.mode === 'page' ? 'Update available' : 'Update ready to download'
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** A version short enough for the sidebar: a nightly (`0.1.3-nightly.20261028.9`, shared/channel.ts) by its date
+ * and build, anything else as it is. The full string stays in the item's tooltip and accessible name. */
+export function shortVersion(v: string): string {
+  const m = /^\d+\.\d+\.\d+-nightly\.(\d{4})(\d{2})(\d{2})\.(\d+)$/.exec(v)
+  const month = m ? MONTHS[Number(m[2]) - 1] : undefined
+  if (!m || !month) return `Reel Studio ${v}`
+  return `Nightly ${month} ${Number(m[3])}, build ${m[4]}`
+}
+
+/** The sidebar item's second line, which truncates: keep it short and put the long form in updateSummary. */
 export function updateSubline(s: UpdateState): string {
-  if (s.status === 'error') return s.message ?? updateSummary(s)
-  if (opensPage(s)) return `Reel Studio ${offered(s)}. Its download page opens in your browser.`
-  return `Reel Studio ${offered(s)}`
+  if (s.status === 'error' && !opensPage(s)) return s.message ?? updateSummary(s)
+  const v = offered(s)
+  return v ? shortVersion(v) : updateSummary(s)
 }
 
 export function notesHeading(n: ReleaseNotes, count: number): string {
   return count === 1 ? "What's new" : `What's new in ${n.version}`
 }
 
-export function releaseLinkLabel(n: ReleaseNotes): string {
-  const more = Math.max(0, n.totalItems - n.items.length)
-  return more === 0 ? 'View release on GitHub' : `${more} more ${more === 1 ? 'change' : 'changes'} on GitHub`
+// Short enough to sit on one line beside "Not now" in the sidebar-wide popover (UpdateButton.tsx).
+export function releaseLinkLabel(n: ReleaseNotes | undefined): string {
+  const more = n ? Math.max(0, n.totalItems - n.items.length) : 0
+  return more === 0 ? 'Release notes' : `${more} more ${more === 1 ? 'change' : 'changes'}`
 }
 
 export function aboutStatus(s: UpdateState): string {

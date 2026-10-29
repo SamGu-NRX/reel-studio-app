@@ -12,4 +12,13 @@ export interface Allow {
   reason: string
 }
 
-export const ALLOW: Allow[] = []
+export const ALLOW: Allow[] = [
+  {
+    states: ['reel-notes-timeline', 'reel-moment-chip', 'reel-speed-menu', 'reel-shape-menu', 'reel-compare', 'reel-full-stage', 'share-open', 'share-try-two', 'more-reels'],
+    detector: 'overlap',
+    selector: '[data-testid="timeline-mark"]',
+    with: '[data-testid="timeline"]',
+    reason:
+      "A note's mark sits on the rail at its moment, as chapter marks do (Timeline.tsx). It is a button, so it can't be inside the track's role=slider; it is layered over it. A click on it plays its version, and the track seeks everywhere beside it and from the keyboard."
+  }
+]

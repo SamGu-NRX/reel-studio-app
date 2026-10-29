@@ -114,7 +114,7 @@ import type { AppInfo, DropResult, EngineCache, ExportResult, JobEvent, ProjectJ
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { coverScanOwner, createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
-import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment, forPerson } from '../shared/moments'
+import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment, forPerson, personText } from '../shared/moments'
 import type { LayerItem } from '../shared/lanes'
 import { parsePlatformExportRequest, sameVideo, secondTryPlatforms, type Platform, type PlatformTry, type TryVariable } from '../shared/platforms'
 import { exportPlatforms, sweepExportStaging, type ExportTry } from './platform-export'
@@ -352,7 +352,8 @@ async function startNote(slug: string, { id: noteId, text, attachments, moment, 
         )
       }
       const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
-      const reply = await replyAskingAboutStyle(r, r.summary + extra)
+      // the editor's summary may echo aiText, moment and word ids included
+      const reply = await replyAskingAboutStyle(r, personText(r.summary, aiText, text) + extra)
       return { ...reply, outcome: noteOutcome(before, r), made: { by: 'note', summary: text } }
     },
     { note: text || attachments.map((f) => f.name).join(', '), record, pause: (e) => pauseFor(e, pauseCtx('note', startedAt, editor)) }
@@ -380,6 +381,9 @@ const coverScans = createCoverScans(runEngine)
 // Test runs never touch the network, except the update e2e, which points a dev build at a local server
 // (REELSTUDIO_UPDATE_FEED, honoured only in an unpackaged test run: app/e2e/update.spec.ts).
 const TEST_FEED = TEST && !app.isPackaged ? process.env.REELSTUDIO_UPDATE_FEED : undefined
+// The update e2e can run the updater as another build (REELSTUDIO_UPDATE_AS, e.g. a Mac nightly), so the nightly's
+// page mode and its long version strings are reachable from a dev build. Ignored outside that run.
+const UPDATE_VERSION = (TEST_FEED && process.env.REELSTUDIO_UPDATE_AS) || app.getVersion()
 let exportsWriting = 0
 const updateBusy = () => ({ exporting: exportsWriting > 0, working: jobs.runningCount() })
 
@@ -399,7 +403,7 @@ function readUpdateFeed(): string | null {
 const updateFeed = app.isPackaged || TEST_FEED ? readUpdateFeed() : null
 const updateEnv = {
   platform: process.platform,
-  channel: CHANNEL,
+  channel: channelOf(UPDATE_VERSION),
   isPackaged: app.isPackaged || !!TEST_FEED,
   test: (TEST && !TEST_FEED) || SELF_TEST.selfTest,
   hasFeed: updateFeed !== null,
@@ -410,7 +414,7 @@ const githubFetch: FetchLike = (url, init) => fetch(url, init)
 const updateOff = disabledReason(updateEnv)
 const updateHow = updateMode(updateEnv)
 const updates = createUpdater({
-  version: app.getVersion(),
+  version: UPDATE_VERSION,
   mode: updateHow,
   disabledReason: updateOff,
   backend: updateOff
@@ -427,7 +431,7 @@ const updates = createUpdater({
           onError: (e) => updates.installFailed(e),
           install: process.platform === 'win32' ? windowsInstaller : macBundleCheck(app.getVersion())
         })
-      : releasePageBackend(githubFetch, app.getVersion()),
+      : releasePageBackend(githubFetch, UPDATE_VERSION, TEST_FEED ? `${TEST_FEED}/releases` : undefined),
   load: loadSettings,
   save: saveSettings,
   busy: updateBusy,

@@ -99,6 +99,12 @@ describe('timeline lanes', () => {
     // Version 1 on screen: Version 2's note is not why it is there yet
     expect(pictureWhy('b2', versions, notes, 1)).toBeNull()
   })
+
+  it("fails if a picture's reason shows the word ids project.json saved with its note", () => {
+    const versions = [{ n: 2, facts: [{ kind: 'broll', id: 'b2', before: null, after: {} }] }]
+    const notes = [{ version: 2, text: 'At 0:06 (around "the drive", words w10, w11): show the route map here' }]
+    expect(pictureWhy('b2', versions, notes, 2)).toBe('Added for “show the route map here”, Version 2')
+  })
 })
 
 describe('lane layout', () => {

@@ -3,6 +3,7 @@
 // version records only. Keep free of Node and DOM imports.
 import type { ChatAction, ChatMessage, NoteAttachment, NoteMoment, ReelPlan, ScriptResult, VersionInfo, VersionMade } from './api'
 import { HAND_VERBS } from './describe'
+import { withoutWordIds } from './moments'
 
 export type LogAsk =
   | { kind: 'video'; text: string }
@@ -95,7 +96,9 @@ export function notesLog(input: {
   source: { path: string; originalName?: string } | null
   now: Date
 }): LogEntry[] {
-  const { chat, made, versions, running, now } = input
+  const { made, versions, running, now } = input
+  // the guard: a transcript word id ("words w10, w11") is for the AI only, whatever an editor or an old build saved
+  const chat = input.chat.map((m) => (typeof m.text === 'string' && withoutWordIds(m.text) !== m.text ? { ...m, text: withoutWordIds(m.text) } : m))
   const latest = versions[versions.length - 1]?.n ?? 0
   const first: LogEntry & { at: string } = {
     key: 'video',

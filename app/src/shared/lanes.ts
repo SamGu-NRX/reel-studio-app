@@ -5,7 +5,7 @@
 // The parts are worked out once per version or per change in Edit it myself; laneLayout turns them into pixels for
 // one width.
 import type { EditFact, PlacedWord, ProjectJson, Word } from './api'
-import type { RenderSegment } from './moments'
+import { withoutWordIds, type RenderSegment } from './moments'
 import { clock } from './progress'
 import { joinsOf, musicFades, sfxName, soundRows, type Join, type SoundEffect, type SoundRow, type VersionClock } from './sfx'
 
@@ -247,7 +247,9 @@ export function pictureWhy(
     .pop()
   if (!added) return null
   if (added.n === 1) return 'Added when Version 1 was made'
-  const note = notes.find((x) => x.version === added.n)?.text.trim()
+  // project.json keeps the note as the AI read it, moment and word ids included
+  const raw = notes.find((x) => x.version === added.n)?.text
+  const note = raw === undefined ? undefined : withoutWordIds(raw).trim()
   const short = note && note.length > 60 ? `${note.slice(0, 58).trimEnd()}…` : note
   return short ? `Added for “${short}”, Version ${added.n}` : `Added in Version ${added.n}`
 }
