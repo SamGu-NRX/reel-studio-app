@@ -79,3 +79,37 @@ test('fails if a word in Cut, the cover slider or a link in Settings is under 24
     await app.close()
   }
 })
+
+// BRIEF layout rule 5 and the audit's new-reel-toast state: "That isn't a video" sat at the window's bottom centre,
+// over Choose video.
+test("fails if a toast covers the screen's main action or is not centred on the page", async () => {
+  const media = makeMedia()
+  const { app, page } = await launch({}, { realViewport: true })
+  try {
+    await passFirstRun(page)
+    await page.getByTestId('new-reel').click()
+    const stage = page.getByTestId('planned-stage')
+    for (const folded of [false, true]) {
+      if (folded) await page.keyboard.press('Meta+Backslash')
+      for (const size of SIZES) {
+        await setSize(app, page, size)
+        await stage.getByTestId('file-input').setInputFiles([media.doc])
+        const toast = page.getByTestId('toast')
+        await expect(toast).toBeVisible()
+        await page.waitForTimeout(250)
+        const at = `${size[0]}x${size[1]}${folded ? ' folded' : ''}`
+        const t = await box(page, '[data-testid="toast"]')
+        const main = await box(page, 'main.main')
+        const choose = await box(page, '[data-testid="planned-stage"] .btn.primary')
+        const meets = t.left < choose.right && choose.left < t.right && t.top < choose.bottom && choose.top < t.bottom
+        expect(meets, at).toBe(false)
+        expect(Math.abs((t.left + t.right) / 2 - (main.left + main.right) / 2), at).toBeLessThan(2)
+        expect(t.left, at).toBeGreaterThanOrEqual(main.left)
+        await page.getByTestId('nav-home').click()
+        await page.getByTestId('new-reel').click()
+      }
+    }
+  } finally {
+    await app.close()
+  }
+})

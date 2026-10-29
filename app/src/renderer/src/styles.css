@@ -537,10 +537,15 @@ input[type="checkbox"]:disabled { cursor: default; opacity: .45; }
 .modal.wide { width: min(580px, 92vw); }
 /* opened from the keyboard, a dialog is just there (keyboard actions never animate) */
 html.kb .modal-backdrop, html.kb .modal { animation: none; }
-.toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); z-index: 50; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 12px; box-shadow: var(--e3); display: flex; gap: 10px; align-items: center; max-width: min(640px, 80vw); animation: toast-in .2s var(--ease-out); }
+/* At the top of the page's column, under the title row: the bottom of a screen is where its main action sits (Choose
+   video, the note box's Send, Make version), and a toast there covered it. Centred on the page, not the window, when
+   the sidebar is there (the shell is the toast's sibling in App.tsx). */
+.toast { position: fixed; top: calc(var(--titlebar) + 8px); left: 50%; transform: translateX(-50%); z-index: 50; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 12px; box-shadow: var(--e3); display: flex; gap: 10px; align-items: center; max-width: min(640px, 80vw); animation: toast-in .2s var(--ease-out); }
+.shell ~ .toast { left: calc(var(--side-open) + (100% - var(--side-open)) / 2); max-width: min(640px, calc(100% - var(--side-open) - 48px)); }
+.shell.rail ~ .toast { left: calc(64px + (100% - 64px) / 2); max-width: min(640px, calc(100% - 112px)); }
 .toast:not(.error) { pointer-events: none; } /* nothing to press on it; a click goes to the button it covers */
 .toast.error { background: #7d2618; padding-right: 8px; }
-@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 /* ---- your own AI server (components/Connections.tsx) ---- */
 .conn-kinds { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
