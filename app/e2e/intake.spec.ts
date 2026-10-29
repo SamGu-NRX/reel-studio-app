@@ -112,6 +112,24 @@ test('fails if a video dropped on a reel with no video yet starts another reel i
   }
 })
 
+// fails if a video dropped on a New reel's plan column (outside the note box) starts another reel: the window took it
+test('fails if a video dropped on the plan column of a reel with no video yet starts another reel instead of this one', async () => {
+  const { app, page } = await launch(profile())
+  try {
+    await passFirstRun(page)
+    await page.getByTestId('new-reel').click()
+    await expect(page.getByTestId('plan-connect-step')).toBeVisible()
+    const overlay = page.getByTestId('drop-overlay')
+    await dropFiles(page, 'plan-connect-step', [media.video], false)
+    await expect(overlay).toHaveAttribute('data-intent', 'this-reel')
+    await dropFiles(page, 'plan-connect-step', [media.video])
+    await expect(page.getByTestId('note-progress')).toContainText('Making Version 1')
+    expect((await page.evaluate(() => window.reel.projects.list())).length).toBe(1)
+  } finally {
+    await app.close()
+  }
+})
+
 declare global {
   var __reelClipboard: { items: Electron.ClipboardItem[] }
 }

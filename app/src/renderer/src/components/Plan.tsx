@@ -1,12 +1,19 @@
-// The reel's Plan card (a hook to pick, the beats, the shots: a checklist to film from) and the plain form that makes
-// one when no editor is connected. Both save through projects.setPlan; shared/plan.ts checks the shape in main.
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import type { PhoneShare, PlanLine, ReelPlan } from '../../../shared/api'
+// Planning a reel before it has a video (a New reel). The stage holds the drop zone and, once there is one, the Plan card
+// (a hook to pick, the beats, the shots: a checklist to film from). The notes column is a chat with the editor that
+// makes the plan; with no editor it asks to connect one first. The card saves through projects.setPlan; shared/plan.ts
+// checks the shape in main, and the plan becomes the first edit's script when the video arrives (main store.ts
+// carryScript).
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import type { PhoneShare, PlanLine, ProviderInfo, ReelPlan } from '../../../shared/api'
 import { PLAN_MAX, pickedHook, planCounts, planText } from '../../../shared/plan'
-import { reel, userMessage } from '../api'
+import { droppedPaths, reel, userMessage } from '../api'
+import { NOTE_DROP_DONE } from '../App'
+import { BrandMark } from './brand'
 import { Icon } from './icons'
+import { byKeyboard, reducedMotion } from './motion'
+import { planAnswerer, type AnswererMark } from './plan-who'
 import { Qr } from './SendToPhone'
-import { Spinner } from './ui'
+import { Button, PickFiles, Spinner, useFileDrop } from './ui'
 import './plan.css'
 
 type Kind = 'beats' | 'shots'
@@ -142,7 +149,10 @@ export function PlanCard({
   return (
     <div className="plan" data-testid="plan-card" aria-busy={busy || undefined}>
       <div className="pl-head">
-        <h3>Plan</h3>
+        {/* the plan chip in the chat brings focus here */}
+        <h3 tabIndex={-1} data-plan-head>
+          Plan
+        </h3>
         {actions}
       </div>
       <div className="pl-body">{body}</div>
@@ -294,150 +304,164 @@ function PlanPhone({ slug, onDone }: { slug: string; onDone: () => void }) {
   )
 }
 
+const VIDEO_TYPES = 'video/*,.mov,.mp4,.m4v'
+
 /**
- * No editor connected: the plan typed by hand, in the same shape the editor would give (a hook and the beats). Enter
- * moves to the next line; only the button saves.
+ * The plan column of a reel with no video yet takes a dropped video for this reel, as the stage does. Without it the
+ * window took the drop and started another reel. The note box inside handles its own drops first (Reel.tsx .cwrap).
  */
-export function PlanForm({ onSave, onConnect }: { onSave: (plan: ReelPlan) => Promise<void>; onConnect: () => void }) {
-  const [topic, setTopic] = useState('')
-  const [hook, setHook] = useState('')
-  const [beats, setBeats] = useState(['', '', ''])
-  const [saving, setSaving] = useState(false)
-  const fields = useRef<(HTMLInputElement | null)[]>([])
-  const focusSoon = useRef<number | null>(null)
-  useEffect(() => {
-    if (focusSoon.current === null) return
-    fields.current[focusSoon.current]?.focus()
-    focusSoon.current = null
-  })
-  const [missing, setMissing] = useState<'topic' | 'hook' | 'beat' | null>(null)
-  const filled = beats.map((b) => b.trim()).filter(Boolean)
-  const lacking = !topic.trim() ? 'topic' : !hook.trim() ? 'hook' : !filled.length ? 'beat' : null
-  // field 0 is the topic, 1 the hook, 2.. the beats
-  const next = (at: number) => (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter') return
-    e.preventDefault()
-    const beat = at - 2
-    if (beat === beats.length - 1 && beats.length < PLAN_MAX.beats && beats[beat].trim()) {
-      focusSoon.current = at + 1
-      setBeats((b) => [...b, ''])
-    } else fields.current[at + 1]?.focus()
-  }
-  const submit = async () => {
-    if (saving) return
-    setMissing(lacking)
-    if (lacking) return fields.current[lacking === 'topic' ? 0 : lacking === 'hook' ? 1 : 2]?.focus()
-    setSaving(true)
-    try {
-      await onSave({ topic: topic.trim(), hooks: [hook.trim()], hook: 0, beats: filled.map((text) => ({ text })), shots: [] })
-    } finally {
-      setSaving(false)
+export function columnVideoDrop(onFiles: (paths: string[]) => void) {
+  const files = (e: DragEvent): boolean => Array.from(e.dataTransfer.types).includes('Files')
+  return {
+    'data-video-drop': true,
+    onDragOver: (e: DragEvent) => {
+      if (!files(e)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    },
+    onDrop: (e: DragEvent) => {
+      if (!files(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      window.dispatchEvent(new Event(NOTE_DROP_DONE))
+      const paths = droppedPaths(e)
+      if (paths.length) onFiles(paths)
     }
   }
-  // what is still missing, said once Save is pressed; it clears as the field is filled in
-  const shown = missing && lacking === missing ? missing : null
-  const why = { topic: "Say what it's about first.", hook: 'Add the hook: the first thing you say.', beat: 'Add at least one beat.' }
+}
+
+/**
+ * The stage of a reel with no video yet. The drop zone is what it is for; once there is a plan, the Plan card stands
+ * beside it (above it on a narrow stage), so the person films from what they see. The whole stage takes a dropped
+ * video, and so does the window (App.tsx, `data-video-drop`).
+ */
+export function PlannedStage({ plan, onFiles }: { plan: ReactNode; onFiles: (paths: string[]) => void }) {
+  const drop = useFileDrop((paths) => {
+    window.dispatchEvent(new Event(NOTE_DROP_DONE))
+    onFiles(paths)
+  })
   return (
-    <form
-      className="plan-form"
-      data-testid="plan-form"
-      onSubmit={(e) => {
-        e.preventDefault()
-        void submit()
-      }}
-    >
-      <p className="pf-lead" data-testid="plan-empty">
-        Haven't filmed it yet? Plan it here: the first thing you say, then the beats in order. Film from the plan.
-      </p>
-      <label className="pf-f">
-        <span>What it's about</span>
-        <input
-          ref={(el) => void (fields.current[0] = el)}
-          className="input"
-          type="text"
-          name="topic"
-          autoComplete="off"
-          value={topic}
-          maxLength={PLAN_MAX.topic}
-          placeholder="How I make sourdough without a mixer"
-          aria-invalid={shown === 'topic' || undefined}
-          aria-describedby={shown === 'topic' ? 'plan-missing' : undefined}
-          onChange={(e) => setTopic(e.target.value)}
-          onKeyDown={next(0)}
-        />
-      </label>
-      <label className="pf-f">
-        <span>Hook</span>
-        <input
-          ref={(el) => void (fields.current[1] = el)}
-          className="input"
-          type="text"
-          name="hook"
-          autoComplete="off"
-          value={hook}
-          maxLength={PLAN_MAX.line}
-          placeholder="The first line, the one that makes them stay"
-          aria-invalid={shown === 'hook' || undefined}
-          aria-describedby={shown === 'hook' ? 'plan-missing' : undefined}
-          onChange={(e) => setHook(e.target.value)}
-          onKeyDown={next(1)}
-        />
-      </label>
-      <fieldset className="pf-f">
-        <legend>Beats</legend>
-        <ol className="pf-beats">
-          {beats.map((b, i) => (
-            <li key={i}>
-              <span className="pf-n" aria-hidden>
-                {i + 1}
-              </span>
-              <input
-                ref={(el) => void (fields.current[i + 2] = el)}
-                className="input"
-                type="text"
-                name={`beat-${i + 1}`}
-                autoComplete="off"
-                value={b}
-                maxLength={PLAN_MAX.line}
-                aria-label={`Beat ${i + 1}`}
-                aria-invalid={(shown === 'beat' && i === 0) || undefined}
-                aria-describedby={shown === 'beat' && i === 0 ? 'plan-missing' : undefined}
-                placeholder={i === 0 ? 'What you say next, in a line' : undefined}
-                onChange={(e) => setBeats((all) => all.map((x, k) => (k === i ? e.target.value : x)))}
-                onKeyDown={next(i + 2)}
-              />
-            </li>
-          ))}
-        </ol>
-        {beats.length < PLAN_MAX.beats && (
-          <button
-            type="button"
-            className="lk pf-add"
-            onClick={() => {
-              focusSoon.current = beats.length + 2
-              setBeats((b) => [...b, ''])
-            }}
-          >
-            <Icon name="plus" size={14} /> Add a beat
-          </button>
+    <div className={`planned${drop.over ? ' over' : ''}${plan ? ' with-plan' : ''}`} {...drop.props} data-video-drop data-testid="planned-stage">
+      <div className="pd">
+        {plan && (
+          <div className="pd-plan" data-plan-main>
+            {plan}
+            <span className="pd-ring" aria-hidden />
+          </div>
         )}
-      </fieldset>
-      <div className="pf-save">
-        <button type="submit" className="btn" disabled={saving} data-testid="plan-save">
-          Save the plan
-        </button>
-        {shown && (
-          <span className="pf-missing" id="plan-missing" role="alert">
-            {why[shown]}
-          </span>
-        )}
+        {/* remounts when the plan comes or goes, so the zone fades in at its new place instead of jumping there */}
+        <div key={plan ? 'beside' : 'alone'} className="pd-drop" data-testid="drop-zone">
+          <Icon name="video" size={22} />
+          <div className="pd-words">
+            <h2>Drop the video you filmed</h2>
+            <p>A few takes are fine. Retakes and pauses come out.</p>
+          </div>
+          <PickFiles kind="primary" label="Choose video" accept={VIDEO_TYPES} onFiles={onFiles} />
+        </div>
       </div>
-      <p className="pf-editor muted-sm">
-        An editor can plan it with you: a question or two, then hooks to pick from, the beats and the shots.{' '}
-        <button type="button" className="lk" onClick={onConnect} data-testid="plan-connect">
-          Connect an editor
-        </button>
-      </p>
-    </form>
+    </div>
   )
+}
+
+/**
+ * In the chat, under the editor's newest plan: the way to the card on the stage, and the plan's size. Pressing it
+ * scrolls the card into view and moves focus to it; with a pointer, a ring around the card says which one.
+ */
+export function PlanChip({ plan }: { plan: ReelPlan }) {
+  const show = () => {
+    const at = document.querySelector<HTMLElement>('[data-plan-main]')
+    if (!at) return
+    // from the keyboard the card is just there, focused: nothing moves
+    const still = byKeyboard()
+    at.scrollIntoView({ block: 'nearest', behavior: still || reducedMotion() ? 'auto' : 'smooth' })
+    at.querySelector<HTMLElement>('[data-plan-head]')?.focus({ preventScroll: true })
+    // the ring holds long enough to be seen, then fades in 200 ms
+    if (!still) at.querySelector('.pd-ring')?.animate([{ opacity: 1 }, { opacity: 1, offset: 0.64 }, { opacity: 0 }], { duration: 560, easing: 'ease-out' })
+  }
+  return (
+    <button className="pl-chip" onClick={show} data-testid="plan-chip">
+      <b>Show the plan</b>{' '}
+      <span className="pl-chip-n">{planCounts(plan)}</span>
+    </button>
+  )
+}
+
+/**
+ * An empty plan chat: what planning does, in the middle of the chat area, the way a chat app greets you. Connected, the
+ * note box waits at the bottom. With no editor there is nothing to type into yet: the greeting's one button opens
+ * Choose your editor (screens/Connect.tsx), which comes back here with the note box focused.
+ */
+export function PlanEmpty({ provider, hasPlan, onConnect }: { provider: ProviderInfo | null; hasPlan: boolean; onConnect?: () => void }) {
+  // with no editor, the two it can be; connected, the one that answers
+  const marks: AnswererMark[] = onConnect ? ['claude', 'openai'] : [planAnswerer(provider, 'auto')?.mark].filter((m): m is AnswererMark => !!m)
+  const line = onConnect
+    ? hasPlan
+      ? 'Connect your editor to change the plan in a chat.'
+      : 'Your editor plans it with you: a question or two, then hooks to pick from, the beats and the shots.'
+    : 'Say what it’s about. Your editor asks a question or two, then gives you hooks to pick from, the beats and the shots.'
+  return (
+    <div className="pl-empty" data-testid={onConnect ? 'plan-connect-step' : 'plan-greeting'}>
+      {marks.length > 0 && (
+        <span className="pl-empty-marks" aria-hidden>
+          {marks.map((m) => (m === 'server' ? <Icon key={m} name="server" size={20} /> : <BrandMark key={m} name={m} size={20} />))}
+        </span>
+      )}
+      <h3>{hasPlan ? 'Change the plan together' : 'Plan it before you film'}</h3>
+      <p {...(!hasPlan && { 'data-testid': 'plan-empty' })}>{line}</p>
+      {onConnect && (
+        <Button onClick={onConnect} data-testid="plan-connect">
+          Connect your editor
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Who answers in the plan chat, in the column's title row: the editor and, where the app knows it, the model it plans
+ * with (plan-who.ts). The whole line is in the tooltip when it is cut short.
+ */
+export function PlanWho({ provider }: { provider: ProviderInfo | null }) {
+  const [writer, setWriter] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    reel.app
+      .info()
+      .then((i) => live && setWriter(i.models.writer))
+      .catch(() => live && setWriter('auto'))
+    return () => {
+      live = false
+    }
+  }, [provider])
+  const who = writer === null ? null : planAnswerer(provider, writer)
+  if (!who) return null
+  return (
+    <span className="pl-who" title={who.full} data-testid="plan-who">
+      <span className="sr-only">Answering: {who.full}</span>
+      <span className="pl-who-mark" aria-hidden>
+        {who.mark === 'server' ? <Icon name="server" size={14} /> : who.mark ? <BrandMark name={who.mark} size={14} /> : null}
+      </span>
+      <span className="pl-who-t" aria-hidden>
+        {who.name}
+        {who.model && <span className="pl-who-m"> · {who.model}</span>}
+      </span>
+    </span>
+  )
+}
+
+const AFTER_CONNECT = 'rs.plan-after-connect'
+
+/** Connect your editor was pressed on this reel: once it comes back connected, the chat is ready to type in. */
+export const markPlanConnect = (slug: string): void => sessionStorage.setItem(AFTER_CONNECT, slug)
+
+/**
+ * Back from Choose your editor with an editor connected, the plan chat starts without another click: focus goes to its
+ * note box. `checked`: the editor check has answered; `ready`: the chat is showing.
+ */
+export function usePlanAfterConnect(slug: string, checked: boolean, ready: boolean, input: RefObject<HTMLTextAreaElement | null>): void {
+  useEffect(() => {
+    if (!checked || sessionStorage.getItem(AFTER_CONNECT) !== slug) return
+    sessionStorage.removeItem(AFTER_CONNECT)
+    if (ready) input.current?.focus()
+  }, [slug, checked, ready, input])
 }
