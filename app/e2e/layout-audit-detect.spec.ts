@@ -34,6 +34,9 @@ const cells = [
   `<button id="tiny" style="width:16px;height:16px;padding:0">x</button><button id="big" style="width:24px;height:24px;padding:0;margin-left:40px">x</button><p>Read <a href="#" id="inline-link">this</a> first.</p>`,
   // popover-placement: a menu running out of the window, opened from a button far from it
   `<button id="trigger" aria-expanded="true" aria-controls="far-menu" style="height:30px;width:90px">Open</button><div role="menu" id="far-menu" style="position:fixed;right:-40px;bottom:10px;width:120px;height:60px;background:#eee"></div>`,
+  // overlap near miss: a line that ends in its own ellipsis beside a button (the first run's footer); its laid-out
+  // text runs on under the button, but nothing is drawn past the line's own box
+  `<div style="display:flex;align-items:center;gap:12px;width:300px"><div style="min-width:0;display:grid;grid-template-columns:minmax(0,1fr)"><span id="own-ellipsis" title="A few seconds left. It writes down what you say, on this Mac." style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">A few seconds left. It writes down what you say, on this Mac.</span></div><span style="flex:1"></span><button id="beside" style="flex:none;height:30px;width:90px">Not now</button></div>`,
   // imbalance: the focal object sits at the left of its column
   `<div id="column" style="width:300px;height:100px"><div id="focal" style="width:60px;height:40px;background:#ccc"></div></div>`
 ]

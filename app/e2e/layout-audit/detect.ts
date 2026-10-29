@@ -369,7 +369,20 @@ export function detectLayout(opts: DetectOptions): { findings: RawFinding[]; all
       .filter((r) => r.width > 0.5 && r.height > 0.5)
       .map((r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom }))
     if (!rects.length) continue
-    const visible = rects.map((r) => visiblePart(owner, r)).filter((r) => !empty(r) && seen(owner, r))
+    // the text's own box clips it too (a line ending in its ellipsis): clippingAncestors starts above the owner, so
+    // without this the hidden rest of the line counted as drawn, over whatever sits beside the box
+    const own = css(owner)
+    const ownBox = clipsAxis(own, 'x') || clipsAxis(own, 'y') ? paddingBox(owner) : null
+    const inOwn = (r: R): R =>
+      ownBox
+        ? {
+            left: clipsAxis(own, 'x') ? Math.max(r.left, ownBox.left) : r.left,
+            right: clipsAxis(own, 'x') ? Math.min(r.right, ownBox.right) : r.right,
+            top: clipsAxis(own, 'y') ? Math.max(r.top, ownBox.top) : r.top,
+            bottom: clipsAxis(own, 'y') ? Math.min(r.bottom, ownBox.bottom) : r.bottom
+          }
+        : r
+    const visible = rects.map((r) => visiblePart(owner, inOwn(r))).filter((r) => !empty(r) && seen(owner, r))
     // drawn under something opaque everywhere it would show: not on screen
     if (!visible.length && rects.some((r) => !empty(visiblePart(owner, r)))) continue
     runs.push({ node: n, owner, block: blockOf(owner), rects, visible })
