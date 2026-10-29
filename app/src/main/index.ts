@@ -105,10 +105,11 @@ import { createPidRegistry } from './orphans'
 import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { claudeCheckWords, createVendorConnect, type CliStatus, type VendorConnect } from './vendor-connect'
-import { runInstall, runLogin, testVendorEnv, testVendorLoginEnv, type Vendor } from './vendor-setup'
-import { withUserPathKept } from './user-path'
+import { runLogin, testVendorEnv, testVendorLoginEnv, type Vendor } from './vendor-setup'
+import { detectHub, type HubDetection } from './vendor-hub'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
 import type { AppInfo, DropResult, EngineCache, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlatformExportResult, VersionInfo, VersionTimeline, LearnedRule, MergeRequest, StyleRule } from '../shared/api'
+import { MODEL_ROLES, type ModelChoice, type ModelRole } from '../shared/api'
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { coverScanOwner, createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
@@ -712,8 +713,8 @@ function registerIpc(): void {
   handle('app:setModels', async (_e, m: unknown) => {
     const ok = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length <= 200 && !v.includes('\0')
     const x = (m ?? {}) as Record<string, unknown>
-    if (!ok(x.editor) || !ok(x.checker) || !ok(x.writer)) throw { code: 'BAD_INPUT', userMessage: 'Choose a model for each part.' }
-    await saveSettings({ models: { editor: x.editor as string, checker: x.checker as string, writer: x.writer as string } })
+    if (!MODEL_ROLES.every((r) => ok(x[r]))) throw { code: 'BAD_INPUT', userMessage: 'Choose a model for each stage.' }
+    await saveSettings({ models: Object.fromEntries(MODEL_ROLES.map((r) => [r, x[r] as string])) as ModelChoice })
     return appInfo()
   })
   handle('app:setSharing', async (_e, v: unknown) => {
@@ -954,6 +955,37 @@ function registerIpc(): void {
   handle('ai:vendorSignInAgain', (_e, v) => void vendors.signInAgain(vendorOf(v)))
   handle('ai:vendorSignInWithCode', (_e, v) => vendors.signInWithCode(vendorOf(v)))
   handle('ai:vendorSignIn', (_e, v) => vendors.signIn(vendorOf(v)))
+  // CLIProxyAPI on this computer (vendor-hub.ts). The key found in its config stays here until Use it; the page gets
+  // the address, the model count and which file the key came from. Under test only REELSTUDIO_TEST_HUB_CONFIG is read,
+  // so a test never talks to a real CLIProxyAPI on the developer's computer.
+  let hubFound: HubDetection = { state: 'none' }
+  const noHub = !ai.saveHub || (TEST && !process.env.REELSTUDIO_TEST_HUB_CONFIG)
+  handle('ai:hubStatus', async () => {
+    if (noHub) return { state: 'none' }
+    hubFound = await detectHub({ env: process.env, platform: process.platform, fetch: (u, i) => fetch(u, i) })
+    const { key: _key, ...found } = hubFound
+    return found
+  })
+  changesAI('ai:hubUse', async (_e, typed: unknown) => {
+    if (noHub || !hubFound.origin) throw { code: 'NOT_FOUND', userMessage: 'CLIProxyAPI isn’t answering on this computer any more. Look again.' }
+    const key = typeof typed === 'string' && typed.trim() ? typed.trim() : hubFound.key
+    if (!key) throw { code: 'BAD_INPUT', userMessage: 'Paste a key from api-keys in your CLIProxyAPI config.' }
+    const keySource = typeof typed === 'string' && typed.trim() ? 'typed' : (hubFound.keySource ?? 'typed')
+    const r = await ai.saveHub!({ origin: hubFound.origin, key, keySource })
+    if (!r.error) log(`[ai] connected CLIProxyAPI at ${hubFound.origin} (key from ${keySource === 'typed' ? 'the person' : 'its config'})`)
+    return r
+  })
+  handle('ai:setHubManagementKey', async (_e, key: unknown) => {
+    if (!ai.setHubManagementKey) throw connectionsNotReady
+    return ai.setHubManagementKey(typeof key === 'string' ? key : null)
+  })
+  handle('ai:editorModels', async () => (await ai.editorModels?.()) ?? [])
+  handle('ai:editorAccounts', async () => (await ai.editorAccounts?.()) ?? { accounts: [] })
+  handle('ai:test', async (_e, role: unknown) => {
+    if (!ai.testConnection) throw { code: 'NOT_READY', userMessage: 'Testing the editor needs the AI package.' }
+    const r = await ai.testConnection(undefined, (MODEL_ROLES as readonly unknown[]).includes(role) ? (role as ModelRole) : 'editor')
+    return { reply: r.reply, ms: r.ms, ...(r.model ? { model: r.model } : {}), ...(r.limits ? { limits: r.limits } : {}) }
+  })
 
   handle('projects:list', () => listProjects())
   handle('projects:search', (_e, query: string) => searchProjects(query))
@@ -1395,13 +1427,6 @@ function createVendors(): VendorConnect {
   const mock = aiSource === 'mock' ? ai.mockVendor : undefined
   return createVendorConnect({
     status,
-    install: (v, signal) => {
-      if (mock) return mock.install(v, signal)
-      const run = (): Promise<void> =>
-        runInstall({ vendor: v, platform: process.platform, dir: join(settingsDir(), 'vendor-setup'), env: cliBaseEnv(), fetch: (u, i) => net.fetch(u, i), signal, systemRoot: process.env.SystemRoot, log })
-      // Test switch only: OpenAI's Windows installer rewrites the user PATH; put it back exactly as it was.
-      return TEST_VENDOR_ENV && process.platform === 'win32' && v === 'chatgpt' ? withUserPathKept(run, log) : run()
-    },
     login: (v, bin, signal, onDeviceCode) =>
       mock
         ? mock.login(v, signal, onDeviceCode)

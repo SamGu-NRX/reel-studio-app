@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { ProviderInfo, VendorId, VendorInfo } from '../../../shared/api'
+import type { HubFound, ProviderInfo, VendorId, VendorInfo } from '../../../shared/api'
 import { CLAUDE_PLANS_URL, VENDOR_INSTALL_PAGES } from '../../../shared/config'
 import { reel, userMessage } from '../api'
 import { Button, IS_MAC, Spinner } from './ui'
@@ -8,62 +8,202 @@ import { BrandMark } from './brand'
 import { ConnectedMark, ProviderRow, type Tone } from './provider-row'
 
 /**
- * "Connect Claude" / "Connect ChatGPT" as rows of the editor picker (connect.tsx). One click installs the person's own
- * AI app if it is missing (Anthropic's Claude Code app, OpenAI's Codex app), opens that vendor's own sign-in page in the
- * browser, and makes it the AI editor once the app says it is signed in. Reel Studio never sees the sign-in: it happens
- * on the vendor's page and in the vendor's app (main/vendor-connect.ts). The steps of a connect open under its row.
+ * The editor picker's rows (connect.tsx): CLIProxyAPI when it runs on this computer, then the person's own Claude Code
+ * app and Codex app. Reel Studio installs none of them. CLIProxyAPI is found by reading its config (main/vendor-hub.ts)
+ * and connects with one click. A signed-in app shows its plan and connects with one click; a signed-out one starts its
+ * own sign-in on its maker's page; a missing one says so and links to its install page.
  */
 
-export const USE_CLAUDE_CODE = 'Use Claude (your Claude Code app)'
-export const USE_CODEX = 'Use ChatGPT (your Codex app)'
+export const USE_CLAUDE_CODE = 'Use Claude Code'
+export const USE_CODEX = 'Use the Codex app'
 export const USING_CLAUDE_CODE = 'Using Claude through your Claude Code app.'
 export const USING_CODEX = 'Using ChatGPT through your Codex app.'
+export const USING_HUB = 'Using CLIProxyAPI on this computer.'
 
-const NAME: Record<VendorId, string> = { claude: 'Claude', chatgpt: 'ChatGPT' }
+const APP: Record<VendorId, string> = { claude: 'Claude Code', chatgpt: 'Codex app' }
 const MAKER: Record<VendorId, string> = { claude: 'Anthropic', chatgpt: 'OpenAI' }
-const APP: Record<VendorId, string> = { claude: "Anthropic’s Claude Code app", chatgpt: "OpenAI’s Codex app" }
 const PROVIDER: Record<VendorId, ProviderInfo['id']> = { claude: 'claude-cli', chatgpt: 'codex-cli' }
 const MARK: Record<VendorId, 'claude' | 'openai'> = { claude: 'claude', chatgpt: 'openai' }
-const PLAN_LINE: Record<VendorId, string> = {
-  claude: 'It uses your own Claude plan and its usage limits.',
-  chatgpt: 'It uses your own ChatGPT plan and its usage limits.'
-}
-const PITCH: Record<VendorId, string> = {
-  claude: "Needs Claude Pro or Max. Installs Anthropic’s Claude Code app if you don’t have it.",
-  chatgpt: "Works with your ChatGPT plan, free ones too. Installs OpenAI’s Codex app if you don’t have it."
-}
+const PLAN_OF: Record<VendorId, string> = { claude: 'Claude', chatgpt: 'ChatGPT' }
 const HERE = IS_MAC ? 'this Mac' : 'this PC'
+const PLAN_NAMES: Record<string, string> = { max: 'Max', max5x: 'Max 5x', max20x: 'Max 20x', pro: 'Pro', team: 'Team', enterprise: 'Enterprise', free: 'Free', plus: 'Plus', go: 'Go', business: 'Business', edu: 'Edu' }
+/** "max" → "Max"; a plan name the app already wrote ("Pro 5x") stays as it is. */
+export const planName = (p: string | undefined): string | undefined => (p ? (PLAN_NAMES[p.toLowerCase()] ?? p) : undefined)
 
 // OpenAI's docs: "Enable device code login in your ChatGPT security settings (personal account) or ChatGPT workspace
 // permissions (workspace admin)." Until then OpenAI's page refuses the code, and Codex just keeps waiting.
 const DEVICE_CODE_HINT = "Turn on device code login in ChatGPT’s security settings first (work accounts: your workspace admin)."
 
-const running = (i: VendorInfo | null): boolean => !!i && ['installing', 'signing_in', 'checking'].includes(i.step)
+const running = (i: VendorInfo | null): boolean => !!i && ['signing_in', 'checking'].includes(i.step)
 
-/** The "connected" line for the person's own apps, else "Connected to <label>". */
+/** The "connected" line for each editor. */
 export const usingLine = (p: ProviderInfo): string =>
-  p.id === 'claude-cli' ? USING_CLAUDE_CODE : p.id === 'codex-cli' ? USING_CODEX : `Connected to ${p.label}${p.detail ? ` (${p.detail})` : ''}.`
+  p.id === 'claude-cli' ? USING_CLAUDE_CODE : p.id === 'codex-cli' ? USING_CODEX : p.label === 'CLIProxyAPI' ? USING_HUB : `Connected to ${p.label}${p.detail ? ` (${p.detail})` : ''}.`
+
+/** CLIProxyAPI on this computer, looked for when the picker opens and when the window comes back. */
+export function useHub(): [HubFound | null, () => Promise<void>] {
+  const [hub, setHub] = useState<HubFound | null>(null)
+  const look = useCallback(async () => {
+    try {
+      setHub(await reel.ai.hubStatus())
+    } catch {
+      setHub({ state: 'none' })
+    }
+  }, [])
+  useEffect(() => {
+    void look()
+    const onFocus = (): void => void look()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [look])
+  return [hub, look]
+}
 
 /**
- * Both vendors' rows, in order: what the person already has first, otherwise Claude. `lead`: nothing is connected, so
- * the first row's pill is the screen's one filled button. Every row is there before the first answer, so the page
- * never jumps when one arrives.
+ * CLIProxyAPI's row: found with a key that works (one Use it), or answering without one (a key box). `primary`: it is
+ * the recommended choice and nothing is connected, so its pill is the screen's one filled button.
+ */
+export function HubRow({ hub, on, primary, onConnected, onDisconnect, children }: { hub: HubFound; on: boolean; primary: boolean; onConnected: (p: ProviderInfo) => void; onDisconnect: () => void; children?: ReactNode }) {
+  const [busy, setBusy] = useState(false)
+  const [key, setKey] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const host = hub.origin?.replace(/^https?:\/\//, '') ?? ''
+
+  const use = async (typed?: string) => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await reel.ai.hubUse(typed)
+      if (r.error) setError(r.error.userMessage)
+      else {
+        setKey('')
+        onConnected(r.status)
+      }
+    } catch (e) {
+      setError(userMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  let status: ReactNode
+  let tone: Tone = 'plain'
+  let action: ReactNode = null
+  let more: ReactNode = null
+  if (on) {
+    status = <ConnectedMark testid="ai-connected" />
+    tone = 'ok'
+    action = (
+      <Button size="small" kind="tertiary" onClick={onDisconnect} data-testid="use-no-ai">
+        Disconnect
+      </Button>
+    )
+  } else if (hub.state === 'ready') {
+    status = (
+      <span className="pv-line" title={`Key from ${hub.keySource}`}>
+        {hub.models} {hub.models === 1 ? 'model' : 'models'} · key from <bdi className="pv-path">{hub.keySource}</bdi>
+      </span>
+    )
+    tone = error ? 'error' : 'plain'
+    action = (
+      <Button size="small" kind={primary ? 'primary' : 'secondary'} onClick={() => void use()} disabled={busy} aria-label="Use CLIProxyAPI" data-testid="hub-use">
+        {busy ? <Spinner /> : null}
+        Use it
+      </Button>
+    )
+    if (error)
+      more = (
+        <p className="pv-more pv-note error" role="alert" data-testid="hub-error">
+          {error}
+        </p>
+      )
+  } else {
+    status = (
+      <span className="pv-line" title={hub.keySource ? `Config: ${hub.keySource}` : undefined}>
+        {hub.keyRefused ? 'It refused the keys in its config.' : hub.keySource ? 'No key in its config.' : `Answers at ${host}. It needs a key.`}
+      </span>
+    )
+    more = (
+      <form
+        className="pv-more hub-key"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (key.trim()) void use(key.trim())
+        }}
+      >
+        <div className="hub-key-row">
+          <input
+            className="input"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Paste a key from api-keys"
+            aria-label="CLIProxyAPI key"
+            aria-invalid={!!error}
+            aria-describedby="hub-key-help"
+            value={key}
+            onChange={(e) => {
+              setKey(e.target.value)
+              setError(null)
+            }}
+            data-testid="hub-key"
+          />
+          <Button type="submit" size="small" kind={primary ? 'primary' : 'secondary'} disabled={!key.trim() || busy} data-testid="hub-use-key">
+            {busy ? <Spinner /> : null}
+            Use it
+          </Button>
+        </div>
+        <p id="hub-key-help" className={`vsteps-hint${error ? ' error' : ''}`} role={error ? 'alert' : undefined}>
+          {error ?? 'Kept encrypted on this computer and never shown again.'}
+        </p>
+      </form>
+    )
+  }
+
+  return (
+    <div data-testid="hub-row" data-state={on ? 'connected' : hub.state}>
+      <ProviderRow
+        id="cliproxy"
+        mark={<Icon name="server" size={20} />}
+        name={
+          <>
+            <span className="pv-name">CLIProxyAPI on {HERE}</span>
+            {!on && <span className="pv-tag">Recommended</span>}
+          </>
+        }
+        status={status}
+        tone={tone}
+        action={action}
+      >
+        {more}
+        {children}
+      </ProviderRow>
+    </div>
+  )
+}
+
+/**
+ * Claude Code's and the Codex app's rows, in order: what the person already has first, otherwise Claude Code. `lead`:
+ * nothing is connected and no CLIProxyAPI leads, so the first row's pill is the screen's one filled button. Every row
+ * is there before the first answer, so the page never jumps when one arrives.
  */
 export function VendorRows({
   active,
   lead,
   onConnected,
-  onDisconnect
+  onDisconnect,
+  details
 }: {
   active: ProviderInfo | null
   lead: boolean
   onConnected: (p: ProviderInfo) => void
   onDisconnect: () => void
+  /** shown under the row of the editor in use */
+  details?: ReactNode
 }) {
   const [info, setInfo] = useState<Record<VendorId, VendorInfo | null>>({ claude: null, chatgpt: null })
-  // This connect went through an install, so the install line stays, ticked, while the sign-in runs.
-  const [installed, setInstalled] = useState<Record<VendorId, boolean>>({ claude: false, chatgpt: false })
-  // The click before main's first step: "Use Claude" checks Claude with one short message, which shows no step.
+  // The click before main's first step: "Use Claude Code" checks Claude with one short message, which shows no step.
   const [asked, setAsked] = useState<VendorId | null>(null)
   const [error, setError] = useState<{ v: VendorId; text: string } | null>(null)
   // the first look at a vendor's app failed, so there is no answer to show yet
@@ -89,15 +229,11 @@ export function VendorRows({
     void refresh('chatgpt')
     return reel.ai.onVendor((i) => {
       setInfo((s) => ({ ...s, [i.vendor]: i }))
-      if (i.step === 'installing') setInstalled((s) => ({ ...s, [i.vendor]: true }))
-      if (i.step === 'done') {
-        setInstalled((s) => ({ ...s, [i.vendor]: false }))
-        void reel.ai.active().then((p) => announce.current(p), () => undefined)
-      }
+      if (i.step === 'done') void reel.ai.active().then((p) => announce.current(p), () => undefined)
     })
   }, [refresh])
 
-  // Back to the window (after "Install it myself", or signing in some other way): look again, unless a connect runs.
+  // Back to the window (after installing an app, or signing in some other way): look again, unless a connect runs.
   useEffect(() => {
     const onFocus = (): void => {
       for (const v of ['claude', 'chatgpt'] as VendorId[]) if (!running(infoRef.current[v])) void refresh(v)
@@ -106,32 +242,10 @@ export function VendorRows({
     return () => window.removeEventListener('focus', onFocus)
   }, [refresh])
 
-  const connect = (v: VendorId): void => {
+  const start = (v: VendorId, how: (v: VendorId) => Promise<VendorInfo>, ask = true): void => {
     setError(null)
-    setAsked(v)
-    setInstalled((s) => ({ ...s, [v]: false }))
-    reel.ai
-      .vendorConnect(v)
-      .then((i) => setInfo((s) => ({ ...s, [v]: i })))
-      .catch((e) => setError({ v, text: userMessage(e) }))
-      .finally(() => setAsked((a) => (a === v ? null : a)))
-  }
-
-  // ChatGPT only, and only on the person's click after its browser sign-in could not open its port: never on its own
-  const signInWithCode = (v: VendorId): void => {
-    setError(null)
-    reel.ai
-      .vendorSignInWithCode(v)
-      .then((i) => setInfo((s) => ({ ...s, [v]: i })))
-      .catch((e) => setError({ v, text: userMessage(e) }))
-  }
-
-  // Status unknown: Sign in is the person's own choice (Codex clears what it has when a sign-in starts)
-  const signIn = (v: VendorId): void => {
-    setError(null)
-    setAsked(v)
-    reel.ai
-      .vendorSignIn(v)
+    if (ask) setAsked(v)
+    how(v)
       .then((i) => setInfo((s) => ({ ...s, [v]: i })))
       .catch((e) => setError({ v, text: userMessage(e) }))
       .finally(() => setAsked((a) => (a === v ? null : a)))
@@ -146,26 +260,29 @@ export function VendorRows({
   const leadIdle = lead && !order.some(needs)
   return (
     <>
-      {order.map((v, k) => (
-        <VendorRow
-          key={v}
-          vendor={v}
-          info={info[v]}
-          on={!!active?.connected && active.id === PROVIDER[v]}
-          primary={leadIdle && k === 0}
-          installed={installed[v]}
-          asked={asked === v}
-          error={error?.v === v ? error.text : null}
-          lookFailed={lookFailed[v]}
-          onLook={() => void refresh(v)}
-          onConnect={() => connect(v)}
-          onCode={() => signInWithCode(v)}
-          onCheck={() => refresh(v)}
-          onSignIn={() => signIn(v)}
-          onOther={() => connect(order[1 - k])}
-          onDisconnect={onDisconnect}
-        />
-      ))}
+      {order.map((v, k) => {
+        const on = !!active?.connected && active.id === PROVIDER[v]
+        return (
+          <VendorRow
+            key={v}
+            vendor={v}
+            info={info[v]}
+            on={on}
+            primary={leadIdle && k === 0 && info[v]?.state !== 'missing'}
+            asked={asked === v}
+            error={error?.v === v ? error.text : null}
+            lookFailed={lookFailed[v]}
+            onLook={() => void refresh(v)}
+            onConnect={() => start(v, reel.ai.vendorConnect)}
+            onCode={() => start(v, reel.ai.vendorSignInWithCode, false)}
+            onCheck={() => refresh(v)}
+            onSignIn={() => start(v, reel.ai.vendorSignIn)}
+            onDisconnect={onDisconnect}
+          >
+            {on ? details : null}
+          </VendorRow>
+        )
+      })}
     </>
   )
 }
@@ -175,7 +292,6 @@ function VendorRow({
   info,
   on,
   primary,
-  installed,
   asked,
   error,
   lookFailed,
@@ -184,8 +300,8 @@ function VendorRow({
   onCode,
   onCheck,
   onSignIn,
-  onOther,
-  onDisconnect
+  onDisconnect,
+  children
 }: {
   vendor: VendorId
   info: VendorInfo | null
@@ -193,7 +309,6 @@ function VendorRow({
   onLook: () => void
   on: boolean
   primary: boolean
-  installed: boolean
   asked: boolean
   error: string | null
   onConnect: () => void
@@ -201,13 +316,14 @@ function VendorRow({
   /** asks the app's status again, nothing else */
   onCheck: () => Promise<void>
   onSignIn: () => void
-  onOther: () => void
   onDisconnect: () => void
+  children?: ReactNode
 }) {
   const [fallbackError, setFallbackError] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
   const row = useRef<HTMLDivElement>(null)
   const step = info?.step ?? 'loading'
+  const plan = planName(info?.plan)
   const attrs = { 'data-testid': `vendor-${v}`, 'data-step': step, 'data-state': info?.state ?? 'loading', ...(info?.problem ? { 'data-problem': info.problem } : {}), ...(info?.signIn ? { 'data-sign-in': info.signIn } : {}) }
 
   // The pill pressed gives way to Cancel, and Cancel to the row's next pill. React keeps the same button when it can;
@@ -256,10 +372,16 @@ function VendorRow({
         Disconnect
       </Button>
     )
+  } else if (info.state === 'missing' || info.state === 'broken') {
+    status = <span className="pv-line">{info.state === 'missing' ? `Not on ${HERE}.` : `On ${HERE}, but it doesn’t start.`}</span>
+    action = (
+      <a className="btn small" href={VENDOR_INSTALL_PAGES[v]} target="_blank" rel="noreferrer" aria-label={`Get ${APP[v]} from ${MAKER[v]} (opens your browser)`} data-testid={`vendor-install-page-${v}`}>
+        Get it <Icon name="external" size={12} stroke={2} />
+      </a>
+    )
   } else if (info.problem === 'status_unknown' && !running(info) && !asked && !error) {
     // The app could not tell whether ChatGPT is signed in. Nothing starts on its own: Check again only asks again,
     // and Sign in is the person's choice, because a sign-in makes Codex forget the one it has.
-    tone = 'plain'
     status = <span data-testid={`vendor-message-${v}`}>{info.message}</span>
     action = (
       <Button
@@ -288,7 +410,7 @@ function VendorRow({
   } else if (running(info) && info.signIn === 'code') {
     const dc = info.deviceCode
     tone = 'busy'
-    status = 'Connecting…'
+    status = 'Signing in…'
     action = (
       <Button size="small" kind="tertiary" onClick={cancel} data-testid={`vendor-cancel-${v}`}>
         Cancel
@@ -313,11 +435,10 @@ function VendorRow({
       </div>
     )
   } else if (running(info)) {
-    const installing = step === 'installing'
     const signing = step === 'signing_in'
-    // the steps below carry the detail and the one spinner; the row's line only says a connect is running
+    // the steps below carry the detail and the one spinner; the row's line only says a sign-in is running
     tone = 'busy'
-    status = 'Connecting…'
+    status = 'Signing in…'
     action = (
       <Button size="small" kind="tertiary" onClick={cancel} data-testid={`vendor-cancel-${v}`}>
         Cancel
@@ -326,65 +447,46 @@ function VendorRow({
     more = (
       <div className="pv-more vendor-steps">
         <ol className="vsteps">
-          {(installing || installed) && (
-            <Step state={installing ? 'now' : 'done'}>
-              {installing ? (
-                <>
-                  <b>Installing {APP[v]}</b>
-                  <span>Takes a minute or two.</span>
-                </>
-              ) : (
-                <b>{APP[v]} installed</b>
-              )}
-            </Step>
-          )}
-          <Step state={installing ? 'later' : 'now'}>
+          <Step state="now">
             {signing ? (
               <>
                 <b>Finish signing in on {MAKER[v]}’s page.</b>
                 <span>Come back here when it says you’re signed in.</span>
               </>
-            ) : step === 'checking' ? (
-              <b>Checking that it worked…</b>
             ) : (
-              <b>Sign in on {MAKER[v]}’s page</b>
+              <b>Checking that it worked…</b>
             )}
           </Step>
         </ol>
         {signing && (
           <div className="row wrap vsteps-acts">
             <Button size="small" onClick={() => void reel.ai.vendorSignInAgain(v)} data-testid={`vendor-again-${v}`}>
-              Open the sign-in page again
+              Open the page again
             </Button>
             {v === 'claude' && (
               <button className="link inline" onClick={windowFallback} data-testid="claude-window-fallback">
-                Page shows a code? Use a sign-in window instead
+                Page shows a code? Use a sign-in window
               </button>
             )}
           </div>
         )}
         {signing && v === 'claude' && (
           <p className="vsteps-hint" data-testid="claude-free-hint">
-            Does {MAKER[v]}’s page say you need Claude Pro or Max? The free Claude plan can’t be used here.{' '}
+            The free Claude plan can’t be used here.{' '}
             <a href={CLAUDE_PLANS_URL} target="_blank" rel="noreferrer">
               See Claude plans
-            </a>{' '}
-            or{' '}
-            <button className="link inline" onClick={onOther} data-testid="claude-free-switch">
-              connect ChatGPT
-            </button>
-            , whose free plan works.
+            </a>
           </p>
         )}
         {fallbackError && <p className="pv-note error">{fallbackError}</p>}
       </div>
     )
   } else if (asked) {
-    // main has not sent a step yet: on beta that is Claude's short check before it becomes the editor
+    // main has not sent a step yet: Claude Code's short check before it becomes the editor
     tone = 'busy'
     status = (
       <>
-        <Spinner /> {v === 'claude' ? 'Checking Claude…' : `Connecting ${NAME[v]}…`}
+        <Spinner /> {v === 'claude' ? 'Checking Claude Code…' : 'Connecting…'}
       </>
     )
     action = (
@@ -394,11 +496,9 @@ function VendorRow({
     )
   } else if (step === 'failed' || error) {
     const free = info.problem === 'free_plan'
-    const installProblem = info.problem === 'install_failed' || info.problem === 'not_found_after_install'
     // ChatGPT's port held (in use, or reserved by Windows), or its code sign-in turned off: a code is the way through
     const offerCode = v === 'chatgpt' && !error && (info.problem === 'port_busy' || info.problem === 'device_code_off')
     // Reserved by Windows, Try again fails every time until the port is freed, so the code is the row's filled pill.
-    // Only in use, the other program may let go: Try again stays the pill and the code waits under the row.
     const codeFirst = offerCode && info.portReserved === true
     tone = free ? 'plain' : 'error'
     status = <span data-testid={`vendor-message-${v}`}>{error ?? info.message}</span>
@@ -409,7 +509,7 @@ function VendorRow({
     )
     const code = (kind: 'primary' | 'secondary') => (
       <Button size="small" kind={kind} onClick={onCode} data-testid={`vendor-code-start-${v}`}>
-        Sign in with a code instead
+        Sign in with a code
       </Button>
     )
     action = codeFirst ? code('primary') : retry(offerCode ? 'primary' : 'secondary')
@@ -420,39 +520,26 @@ function VendorRow({
           {codeFirst && <p className="vsteps-hint">Trying again won’t help until Windows lets go of the port, usually after a restart.</p>}
         </div>
       )
-    else if (installProblem || free)
+    else if (free)
       more = (
         <div className="pv-more vendor-steps">
-          <div className="row wrap vsteps-acts">
-            {installProblem && (
-              <a className="btn small" href={VENDOR_INSTALL_PAGES[v]} target="_blank" rel="noreferrer" data-testid={`vendor-install-page-${v}`}>
-                <Icon name="external" size={14} /> Install it myself
-              </a>
-            )}
-            {free && (
-              <a className="btn small" href={CLAUDE_PLANS_URL} target="_blank" rel="noreferrer">
-                <Icon name="external" size={14} /> See Claude plans
-              </a>
-            )}
-          </div>
-          {installProblem && (
-            <p className="vsteps-hint">“Install it myself” opens {MAKER[v]}’s install page. Come back here and it checks again by itself.</p>
-          )}
-          {free && <p className="vsteps-hint">Or connect ChatGPT. Its free plan works, with limits.</p>}
+          <a className="btn small" href={CLAUDE_PLANS_URL} target="_blank" rel="noreferrer">
+            See Claude plans <Icon name="external" size={12} stroke={2} />
+          </a>
         </div>
       )
   } else {
     const ready = info.state === 'ready'
-    status = ready ? PLAN_LINE[v] : PITCH[v]
+    status = <span className="pv-line">{ready ? `Signed in. It uses your ${PLAN_OF[v]} plan’s limits.` : 'Not signed in.'}</span>
     action = (
       <Button
         size="small"
         kind={primary ? 'primary' : 'secondary'}
         onClick={onConnect}
-        aria-label={ready ? (v === 'claude' ? USE_CLAUDE_CODE : USE_CODEX) : `Connect ${NAME[v]}`}
+        aria-label={ready ? (v === 'claude' ? USE_CLAUDE_CODE : USE_CODEX) : `Sign in to ${APP[v]}`}
         data-testid={ready ? (v === 'claude' ? 'use-claude-code' : 'use-codex') : `connect-${v}`}
       >
-        {ready ? `Use ${NAME[v]}` : 'Connect'}
+        {ready ? 'Use it' : 'Sign in'}
       </Button>
     )
     if (info.message)
@@ -469,7 +556,6 @@ function VendorRow({
       ? info.deviceCode
         ? `Your sign-in code is ${info.deviceCode.code.split('').join(' ')}. Enter it on ${MAKER[v]}’s page.`
         : 'Getting a sign-in code.'
-    : step === 'installing' ? `Installing ${APP[v]}. Takes a minute or two.`
     : step === 'signing_in' ? `Finish signing in on ${MAKER[v]}’s page.`
     : 'Checking that it worked.'
   return (
@@ -485,14 +571,27 @@ function VendorRow({
       <p className="sr-only" role="status">
         {said}
       </p>
-      <ProviderRow id={PROVIDER[v]} mark={<BrandMark name={MARK[v]} size={20} />} name={NAME[v]} status={status} tone={tone} action={action}>
+      <ProviderRow
+        id={PROVIDER[v]}
+        mark={<BrandMark name={MARK[v]} size={20} />}
+        name={
+          <>
+            <span className="pv-name">{APP[v]}</span>
+            {plan && info?.state === 'ready' && <span className="pv-plan" data-testid={`vendor-plan-${v}`}>{plan}</span>}
+          </>
+        }
+        status={status}
+        tone={tone}
+        action={action}
+      >
         {more}
+        {children}
       </ProviderRow>
     </div>
   )
 }
 
-/** One line of a connect: running now, done (a tick) or still to come. */
+/** One line of a sign-in: running now, done (a tick) or still to come. */
 function Step({ state, children }: { state: 'now' | 'done' | 'later'; children: ReactNode }) {
   return (
     <li className={`vstep ${state}`}>

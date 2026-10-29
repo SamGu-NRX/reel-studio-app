@@ -197,10 +197,11 @@ describe('the Claude Code choice in the provider list', () => {
     expect(list.find((p) => p.id === 'claude-cli')!.label).toBe('Claude (your Claude Code app)');
   });
 
-  it('no e-mail or organization in any ProviderStatus (detail is the version at most)', async () => {
+  it('no e-mail or organization in any ProviderStatus (detail is the plan kind at most)', async () => {
     const ai = createAI({ ...noProvider(), localClaude: { bin: answers(), run: signedIn } });
     const st = (await ai.providers()).find((p) => p.id === 'claude-cli')!;
-    expect(st.detail).toBe('2.1.304');
+    // the row reads "Claude Code · Max"
+    expect(st.detail).toBe('Max');
     await ai.setActive('claude-cli');
     const all = JSON.stringify([await ai.providers(), await ai.active(), await ai.claudeCodeStatus()]);
     for (const secret of [EMAIL, ORG_ID, ORG_NAME]) expect(all).not.toContain(secret);

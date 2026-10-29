@@ -33,7 +33,7 @@ export function ProviderRow({
 }: {
   id?: string
   setting?: SettingId
-  name?: string
+  name?: ReactNode
   mark: ReactNode
   status: ReactNode
   tone?: Tone

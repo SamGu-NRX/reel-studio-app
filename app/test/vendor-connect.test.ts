@@ -1,20 +1,13 @@
-// "Connect Claude" / "Connect ChatGPT": the installer and sign-in runners (vendor-setup.ts) and the flow that strings
-// them together (vendor-connect.ts). No real CLI, installer or network: spawn and fetch are fakes.
+// "Use Claude Code" / "Use the Codex app": the sign-in runner (vendor-setup.ts) and the flow around it
+// (vendor-connect.ts). No real CLI or network: spawn is a fake.
 import { describe, expect, it } from 'vitest'
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, posix } from 'node:path'
 import type { ChildProcess } from 'node:child_process'
 import {
   LOGIN_ARGS,
-  VendorError,
-  assertRunsAFile,
-  installPlan,
   loginPortBlocked,
   loginPortReserved,
   parseDeviceCode,
-  runInstall,
   runLogin,
   testVendorEnv,
   testVendorLoginEnv,
@@ -22,7 +15,6 @@ import {
   type SpawnFn
 } from '../src/main/vendor-setup'
 import { MOVED_NOTE, createVendorConnect, VENDOR_MESSAGES, type CliStatus, type VendorDeps } from '../src/main/vendor-connect'
-import { parseUserPath } from '../src/main/user-path'
 import type { VendorInfo } from '../src/shared/api'
 
 // ---- fakes -------------------------------------------------------------------------------------------------------
@@ -60,115 +52,7 @@ function fakeSpawn(onSpawn?: (c: FakeChild, cmd: string, args: string[], opts: a
   return { spawn, calls }
 }
 
-const script = (body = '#!/bin/sh\n' + 'echo installing\n'.repeat(30)) => async () => ({
-  ok: true,
-  status: 200,
-  arrayBuffer: async () => new TextEncoder().encode(body).buffer as ArrayBuffer
-})
-
 const ENV = { PATH: '/usr/bin', Path: 'C:\\Windows', OPENAI_API_KEY: 'k1', ANTHROPIC_API_KEY: 'k2', HOME: '/Users/p' }
-const tmp = () => mkdtempSync(join(tmpdir(), 'rs-vendor-'))
-
-// ---- the installer ------------------------------------------------------------------------------------------------
-
-describe('installing the vendor app: the vendor\'s own script, as a FILE', () => {
-  it('Windows: absolute powershell.exe, -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <the file>', () => {
-    const p = installPlan('claude', 'win32', 'C:\\Users\\Pat Q\\AppData\\Roaming\\Reel Studio\\vendor-setup', 'C:\\Windows')
-    expect(p.url).toBe('https://claude.ai/install.ps1')
-    expect(p.cmd).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
-    expect(p.args).toEqual(['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\Users\\Pat Q\\AppData\\Roaming\\Reel Studio\\vendor-setup\\claude-install.ps1'])
-    expect(installPlan('chatgpt', 'win32', 'C:\\d').url).toBe('https://chatgpt.com/codex/install.ps1')
-  })
-
-  it('macOS: Anthropic\'s script under bash, OpenAI\'s under sh, each from its file', () => {
-    expect(installPlan('claude', 'darwin', '/x')).toMatchObject({ url: 'https://claude.ai/install.sh', cmd: '/bin/bash', args: ['/x/claude-install.sh'] })
-    expect(installPlan('chatgpt', 'darwin', '/x')).toMatchObject({ url: 'https://chatgpt.com/codex/install.sh', cmd: '/bin/sh', args: ['/x/chatgpt-install.sh'] })
-    expect(() => installPlan('claude', 'linux', '/x')).toThrow(VendorError)
-  })
-
-  it('never a download piped into a shell (Defender blocks `irm … | iex` as a trojan): the guard refuses one', () => {
-    expect(() => assertRunsAFile({ cmd: 'powershell.exe', args: ['-Command', 'irm https://claude.ai/install.ps1 | iex'] })).toThrow(/refusing/)
-    expect(() => assertRunsAFile({ cmd: '/bin/bash', args: ['-c', 'curl -fsSL https://claude.ai/install.sh | bash'] })).toThrow(/refusing/)
-    for (const v of ['claude', 'chatgpt'] as const) {
-      for (const os of ['win32', 'darwin'] as const) expect(() => assertRunsAFile(installPlan(v, os, os === 'win32' ? 'C:\\Users\\Irma\\x' : '/Users/irma/x'))).not.toThrow()
-    }
-  })
-
-  it('writes the exact downloaded bytes, runs the file hidden, no API key in its environment; Codex gets CODEX_NON_INTERACTIVE', async () => {
-    for (const vendor of ['claude', 'chatgpt'] as const) {
-      const dir = tmp()
-      const body = '#!/bin/sh\n# héllo\n' + 'echo ok\n'.repeat(40)
-      const { spawn, calls } = fakeSpawn((c) => setTimeout(() => c.finish(0), 5))
-      await runInstall({ vendor, platform: 'darwin', dir, env: ENV, fetch: script(body), spawn })
-      // runInstall writes and runs the script where this computer puts it (the plan's own path joins with /)
-      const file = join(dir, `${vendor}-install.sh`)
-      expect(readFileSync(file, 'utf8')).toBe(body)
-      if (process.platform !== 'win32') expect(statSync(file).mode & 0o111).not.toBe(0)
-      expect(calls).toHaveLength(1)
-      expect(calls[0].args).toEqual([file])
-      expect(calls[0].opts.windowsHide).toBe(true)
-      expect(calls[0].opts.env.OPENAI_API_KEY).toBeUndefined()
-      expect(calls[0].opts.env.ANTHROPIC_API_KEY).toBeUndefined()
-      expect(calls[0].opts.env.HOME).toBe('/Users/p')
-      expect(calls[0].opts.env.CODEX_NON_INTERACTIVE).toBe(vendor === 'chatgpt' ? '1' : undefined)
-    }
-  })
-
-  // Run on a Mac, win32.join turned a POSIX temp folder into one file name with backslashes, written under the
-  // current folder: every run left scripts named after this computer's temp path in app/.
-  it('fails if a Windows install run on another computer writes its script anywhere but its own folder', async () => {
-    const before = readdirSync(process.cwd()).sort()
-    for (const vendor of ['claude', 'chatgpt'] as const) {
-      const dir = tmp()
-      const { spawn, calls } = fakeSpawn((c) => setTimeout(() => c.finish(0), 5))
-      await runInstall({ vendor, platform: 'win32', dir, env: ENV, fetch: script(), spawn, systemRoot: 'C:\\Windows' })
-      const file = join(dir, `${vendor}-install.ps1`)
-      expect(readdirSync(dir)).toEqual([`${vendor}-install.ps1`])
-      expect(calls[0].args.slice(-2)).toEqual(['-File', file])
-    }
-    expect(readdirSync(process.cwd()).sort()).toEqual(before)
-  })
-
-  it('a failed installer, a captive-portal page, no internet: plain words, and the page never runs', async () => {
-    const { spawn, calls } = fakeSpawn((c) => setTimeout(() => c.finish(1, 'boom'), 5))
-    await expect(runInstall({ vendor: 'claude', platform: 'darwin', dir: tmp(), env: ENV, fetch: script(), spawn })).rejects.toMatchObject({
-      code: 'install_failed',
-      userMessage: expect.stringContaining("Anthropic’s Claude Code app didn’t install")
-    })
-    const html = fakeSpawn()
-    await expect(runInstall({ vendor: 'chatgpt', platform: 'darwin', dir: tmp(), env: ENV, fetch: script('<!doctype html><html>' + 'x'.repeat(400)), spawn: html.spawn }))
-      .rejects.toMatchObject({ userMessage: expect.stringContaining("couldn’t reach OpenAI") })
-    expect(html.calls).toHaveLength(0)
-    const offline = async () => { throw new Error('getaddrinfo ENOTFOUND') }
-    await expect(runInstall({ vendor: 'claude', platform: 'win32', dir: tmp(), env: ENV, fetch: offline, spawn })).rejects.toMatchObject({ userMessage: expect.stringContaining("couldn’t reach Anthropic") })
-    expect(calls).toHaveLength(1)
-  })
-
-  it('too slow: the whole process tree is ended by OUR pid (taskkill /PID n /T /F), never by name', async () => {
-    const { spawn, calls } = fakeSpawn((c, cmd) => {
-      if (/taskkill/i.test(cmd)) setTimeout(() => calls[0].child.finish(null), 1)
-    })
-    await expect(runInstall({ vendor: 'claude', platform: 'win32', dir: tmp(), env: ENV, fetch: script(), spawn, timeoutMs: 20, systemRoot: 'C:\\Windows' }))
-      .rejects.toMatchObject({ userMessage: expect.stringContaining('took too long') })
-    expect(calls[1].cmd).toBe('C:\\Windows\\System32\\taskkill.exe')
-    expect(calls[1].args).toEqual(['/PID', String(calls[0].child.pid), '/T', '/F'])
-    expect(calls[1].args.join(' ')).not.toMatch(/\/IM/i)
-  })
-
-  it('Cancel ends it too', async () => {
-    const ctrl = new AbortController()
-    const { spawn, calls } = fakeSpawn((c, cmd) => {
-      if (/taskkill/i.test(cmd)) setTimeout(() => calls[0].child.finish(null), 1)
-    })
-    const p = runInstall({ vendor: 'chatgpt', platform: 'win32', dir: tmp(), env: ENV, fetch: script(), spawn, signal: ctrl.signal })
-    await new Promise((r) => setTimeout(r, 20))
-    ctrl.abort()
-    await expect(p).rejects.toMatchObject({ name: 'AbortError' })
-    expect(calls[1].args).toContain(String(calls[0].child.pid))
-  })
-})
-
-// ---- the sign-in ----------------------------------------------------------------------------------------------------
 
 describe('the vendor app\'s own sign-in', () => {
   it('claude auth login --claudeai / codex login, hidden, stdin closed (no code can be pasted through Reel Studio), no API keys', async () => {
@@ -314,24 +198,12 @@ describe('environments', () => {
     expect(w.OPENAI_API_KEY).toBeUndefined()
     expect(testVendorLoginEnv({ REELSTUDIO_TEST_VENDOR_HOME: '/tmp/t', HOME: '/Users/me' }, 'darwin')).toMatchObject({ HOME: '/Users/me', CLAUDE_CONFIG_DIR: '/tmp/t/.claude', CODEX_HOME: '/tmp/t/.codex' })
   })
-
-  it('reads the user PATH and its type from the registry read (kind + base64 of UTF-8), and tells "none" from "unreadable"', () => {
-    const value = 'C:\\Users\\Zoë\\.local\\bin;%USERPROFILE%\\x'
-    const b64 = Buffer.from(value, 'utf8').toString('base64')
-    expect(parseUserPath(`ExpandString ${b64}\r\n`)).toEqual({ type: 'REG_EXPAND_SZ', value })
-    expect(parseUserPath(`String ${b64}`)).toEqual({ type: 'REG_SZ', value })
-    expect(parseUserPath('String\r\n')).toEqual({ type: 'REG_SZ', value: '' })
-    expect(parseUserPath('none\r\n')).toBe('none')
-    expect(parseUserPath('DWord NQ==')).toBeNull()
-    expect(parseUserPath('')).toBeNull()
-  })
 })
 
 // ---- the flow ---------------------------------------------------------------------------------------------------------
 
 function flow(o: {
   states: CliStatus[]
-  install?: (signal: AbortSignal) => Promise<void>
   login?: (signal: AbortSignal, n: number, onDeviceCode?: (d: { url: string; code: string }) => void) => Promise<{ code: number | null; portBusy?: boolean; aborted?: boolean; deviceCodeOff?: boolean }>
   loginTimeoutMs?: number
 }) {
@@ -339,19 +211,14 @@ function flow(o: {
   const selected: string[] = []
   const states = [...o.states]
   let logins = 0
-  let installs = 0
   const deps: VendorDeps = {
     status: async () => (states.length > 1 ? states.shift()! : states[0]),
-    install: async (_v, signal) => {
-      installs++
-      await (o.install ?? (async () => undefined))(signal)
-    },
     login: async (_v, _bin, signal, onDeviceCode) => (o.login ?? (async () => ({ code: 0 })))(signal, ++logins, onDeviceCode),
     select: async (v) => void selected.push(v),
     emit: (i) => void seen.push(i),
     loginTimeoutMs: o.loginTimeoutMs
   }
-  return { vc: createVendorConnect(deps), seen, selected, steps: () => seen.map((i) => i.step), counts: () => ({ logins, installs }) }
+  return { vc: createVendorConnect(deps), seen, selected, steps: () => seen.map((i) => i.step), counts: () => ({ logins }) }
 }
 const BIN = '/Users/p/.local/bin/claude'
 const missing: CliStatus = { state: 'missing' }
@@ -361,39 +228,34 @@ const PORT_LINE = (): string => VENDOR_MESSAGES.port_busy('chatgpt')
 const DEVICE_CODE_OFF_LINE = (): string => (VENDOR_MESSAGES as Record<string, (v: 'chatgpt') => string>).device_code_off('chatgpt')
 const hang = (signal: AbortSignal) => new Promise<{ code: null; aborted: true }>((r) => signal.addEventListener('abort', () => r({ code: null, aborted: true })))
 
-describe('Connect: install if missing, sign in, check, choose', () => {
-  it('fresh computer: installing, signing in, checking, done, and only then it becomes the AI editor', async () => {
-    const f = flow({ states: [missing, out, ready] })
+describe('Use: sign in if needed, check, choose; never install', () => {
+  it('signed out: signing in, checking, done, and only then it becomes the AI editor', async () => {
+    const f = flow({ states: [out, ready] })
     const end = await f.vc.connect('claude')
-    expect(f.steps()).toEqual(['installing', 'signing_in', 'checking', 'done'])
+    expect(f.steps()).toEqual(['signing_in', 'checking', 'done'])
     expect(end).toMatchObject({ vendor: 'claude', state: 'ready', step: 'done', version: '2.1.310', plan: 'max' })
     expect(f.selected).toEqual(['claude'])
+  })
+
+  it('not on this computer: nothing runs and nothing is chosen (the row links to the install page)', async () => {
+    const f = flow({ states: [missing] })
+    expect(await f.vc.connect('claude')).toMatchObject({ vendor: 'claude', state: 'missing', step: 'idle' })
+    expect(f.counts()).toEqual({ logins: 0 })
+    expect(f.selected).toEqual([])
   })
 
   it('already signed in: no install, no browser, chosen at once', async () => {
     const f = flow({ states: [ready] })
     await f.vc.connect('chatgpt')
     expect(f.steps()).toEqual(['done'])
-    expect(f.counts()).toEqual({ logins: 0, installs: 0 })
+    expect(f.counts()).toEqual({ logins: 0 })
     expect(f.selected).toEqual(['chatgpt'])
   })
 
   it('the page never learns where the app is', async () => {
-    const f = flow({ states: [missing, out, ready] })
+    const f = flow({ states: [out, ready] })
     await f.vc.connect('claude')
     expect(JSON.stringify([...f.seen, await f.vc.status('claude')])).not.toContain(BIN)
-  })
-
-  it('install failed: its plain words, no sign-in, nothing chosen', async () => {
-    const f = flow({ states: [missing], install: async () => { throw new VendorError('install_failed', 'It did not install.') } })
-    expect(await f.vc.connect('claude')).toMatchObject({ step: 'failed', problem: 'install_failed', message: 'It did not install.' })
-    expect(f.counts().logins).toBe(0)
-    expect(f.selected).toEqual([])
-  })
-
-  it('installed but still not found', async () => {
-    const f = flow({ states: [missing, missing] })
-    expect(await f.vc.connect('chatgpt')).toMatchObject({ step: 'failed', problem: 'not_found_after_install' })
   })
 
   it('sign-in ended without signing in, port busy, or nobody came back in time', async () => {
@@ -443,7 +305,6 @@ describe('Connect: install if missing, sign in, check, choose', () => {
     const seen: VendorInfo[] = []
     const vc = createVendorConnect({
       status: async (v) => (v === 'claude' ? out : ready),
-      install: async () => undefined,
       login: async (_v, _b, signal) => hang(signal),
       select: async () => undefined,
       emit: (i) => void seen.push(i)
@@ -469,19 +330,17 @@ describe('Connect: install if missing, sign in, check, choose', () => {
     const seen: VendorInfo[] = []
     const vc = createVendorConnect({
       status: async () => ready,
-      install: async () => undefined,
       login: async () => ({ code: 0 }),
-      select: async () => { throw { code: 'cli_limited', userMessage: 'Your Claude plan is at its limit. Try again after it resets.' } },
+      select: async () => { throw { code: 'CHECK_FAILED', userMessage: 'Your Claude Code account has hit its weekly limit. It resets tomorrow at 9:00 AM (in 14 h).' } },
       emit: (i) => void seen.push(i)
     })
-    expect(await vc.connect('claude')).toMatchObject({ step: 'failed', problem: 'sign_in_failed', message: 'Your Claude plan is at its limit. Try again after it resets.' })
+    expect(await vc.connect('claude')).toMatchObject({ step: 'failed', problem: 'sign_in_failed', message: 'Your Claude Code account has hit its weekly limit. It resets tomorrow at 9:00 AM (in 14 h).' })
   })
 
   it('fails if Cancel during that first message leaves it running or reads as a failure', async () => {
     let stopped = false
     const vc = createVendorConnect({
       status: async () => ready,
-      install: async () => undefined,
       login: async () => ({ code: 0 }),
       select: (_v, signal) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => { stopped = true; reject({ code: 'cancelled' }) })),
       emit: () => undefined
@@ -546,17 +405,11 @@ describe('Connect: install if missing, sign in, check, choose', () => {
   // start one on its own: only the person's "Sign in" does.
   const unknown = { state: 'signed_out', bin: '/x/codex', version: '0.165.0', unknown: true } as CliStatus
 
-  it("ChatGPT’s status unknown: Connect says so and starts no sign-in (and no install)", async () => {
+  it("ChatGPT’s status unknown: Connect says so and starts no sign-in", async () => {
     const f = flow({ states: [unknown] })
     expect(await f.vc.connect('chatgpt')).toMatchObject({ step: 'failed', problem: 'status_unknown', message: "Couldn’t tell whether ChatGPT is signed in." })
-    expect(f.counts()).toEqual({ logins: 0, installs: 0 })
+    expect(f.counts()).toEqual({ logins: 0 })
     expect(f.selected).toEqual([])
-  })
-
-  it('unknown right after an install: no sign-in either', async () => {
-    const f = flow({ states: [missing, unknown] })
-    expect(await f.vc.connect('chatgpt')).toMatchObject({ step: 'failed', problem: 'status_unknown' })
-    expect(f.counts()).toEqual({ logins: 0, installs: 1 })
   })
 
   it('the card shows it before any click; Sign in is the person\'s explicit choice and does start the sign-in', async () => {

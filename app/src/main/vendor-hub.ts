@@ -1,0 +1,160 @@
+// Finds CLIProxyAPI on this computer, so connecting an editor is one click for anyone who runs it. Reads its config
+// where it is usually kept (and wherever a running copy says with --config), takes the address and a client key from
+// it, and asks the server for its models with that key. Nothing is saved here: the key stays in this process until
+// the person clicks Use it, and then goes to the AI package's encrypted connection store. The page only ever learns
+// the address, how many models answered and which file the key came from, never the key.
+import { execFile } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { posix, win32 } from 'node:path'
+import { load } from 'js-yaml'
+import type { HubFound } from '../shared/api'
+
+export interface HubConfig {
+  file: string
+  origin: string
+  /** the client keys listed in it (api-keys, or access.api-keys in CLIProxyAPI's newer layout) */
+  keys: string[]
+}
+
+export interface HubDetection extends HubFound {
+  /** the key that worked; main keeps it until Use it, the page never gets it */
+  key?: string
+}
+
+/** CLIProxyAPI's own default port (config.example.yaml); tried when no config is found. */
+export const DEFAULT_HUB_PORT = 8317
+
+/**
+ * Where CLIProxyAPI's config usually is. It reads `--config <path>`, else config.yaml in its working folder
+ * (cmd/server/main.go). Homebrew's service passes etc/cliproxyapi.conf; the auth folder ~/.cli-proxy-api is a common
+ * home for it too. `REELSTUDIO_TEST_HUB_CONFIG` (tests) replaces the whole list with one folder.
+ */
+export function hubConfigCandidates(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, home = homedir()): string[] {
+  const P = platform === 'win32' ? win32 : posix
+  if (env.REELSTUDIO_TEST_HUB_CONFIG) return [P.join(env.REELSTUDIO_TEST_HUB_CONFIG, 'config.yaml'), P.join(env.REELSTUDIO_TEST_HUB_CONFIG, 'cliproxyapi.conf')]
+  const inHome = (...p: string[]) => P.join(home, ...p)
+  const common = [inHome('.cli-proxy-api', 'config.yaml'), inHome('CLIProxyAPI', 'config.yaml'), inHome('cliproxyapi', 'config.yaml')]
+  if (platform === 'darwin') return ['/opt/homebrew/etc/cliproxyapi.conf', '/usr/local/etc/cliproxyapi.conf', ...common]
+  if (platform === 'win32') {
+    const local = env.LOCALAPPDATA || inHome('AppData', 'Local')
+    return [...common, P.join(local, 'CLIProxyAPI', 'config.yaml'), inHome('scoop', 'apps', 'cliproxyapi', 'current', 'config.yaml')]
+  }
+  return ['/home/linuxbrew/.linuxbrew/etc/cliproxyapi.conf', inHome('.linuxbrew', 'etc', 'cliproxyapi.conf'), '/etc/cliproxyapi/config.yaml', inHome('.config', 'cliproxyapi', 'config.yaml'), ...common]
+}
+
+/** The --config paths of CLIProxyAPI processes running now (macOS and Linux; `ps` lists every process's command line). */
+export function configsOfRunning(psOutput: string): string[] {
+  const out: string[] = []
+  for (const line of psOutput.split('\n')) {
+    const words = line.trim().split(/\s+/)
+    if (!words[0] || !/(^|\/)(cliproxyapi|cli-proxy-api)[\w.-]*$/i.test(words[0])) continue
+    for (let i = 1; i < words.length; i++) {
+      const w = words[i]
+      const eq = /^--?config=(.+)$/.exec(w)
+      if (eq) out.push(eq[1])
+      else if ((w === '--config' || w === '-config') && words[i + 1]) out.push(words[i + 1])
+    }
+  }
+  return out.filter((p) => posix.isAbsolute(p))
+}
+
+function runningConfigs(platform: NodeJS.Platform): Promise<string[]> {
+  if (platform === 'win32') return Promise.resolve([])
+  return new Promise((resolve) => {
+    execFile('/bin/ps', ['-axo', 'command'], { timeout: 3000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => resolve(err ? [] : configsOfRunning(String(stdout))))
+  })
+}
+
+const keyOf = (k: unknown): string | null => {
+  if (typeof k === 'string') return k.trim() || null
+  if (k && typeof k === 'object') {
+    const v = (k as Record<string, unknown>).key ?? (k as Record<string, unknown>)['api-key'] ?? (k as Record<string, unknown>).value
+    return typeof v === 'string' && v.trim() ? v.trim() : null
+  }
+  return null
+}
+
+/**
+ * The address and client keys in one config file. The older layout has top-level host, port, tls and an api-keys
+ * list; the v8 layout moves them under server: and access: (internal/config/config_v8.go), where a top-level api-keys
+ * map holds upstream provider keys instead and is not used. A listen-on-everything host means this computer.
+ */
+export function parseHubConfig(text: string, file: string): HubConfig | null {
+  let doc: unknown
+  try {
+    doc = load(text)
+  } catch {
+    return null
+  }
+  if (!doc || typeof doc !== 'object') return null
+  const d = doc as Record<string, any>
+  const server = d.server && typeof d.server === 'object' ? d.server : {}
+  const port = Number(server.port ?? d.port ?? DEFAULT_HUB_PORT)
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return null
+  const tls = (server.tls ?? d.tls)?.enable === true
+  let host = String(server.host ?? d.host ?? '').trim()
+  if (!host || host === '0.0.0.0' || host === '::' || host === '[::]' || host === 'localhost') host = '127.0.0.1'
+  const list = Array.isArray(d['api-keys']) ? d['api-keys'] : Array.isArray(d.access?.['api-keys']) ? d.access['api-keys'] : []
+  const keys = [...new Set(list.map(keyOf).filter((k: string | null): k is string => !!k))] as string[]
+  const hostPart = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+  return { file, origin: `${tls ? 'https' : 'http'}://${hostPart}:${port}`, keys }
+}
+
+/** How a path is said in the row: the home folder as ~. */
+export function shownPath(file: string, home = homedir()): string {
+  return home && file.startsWith(home) ? `~${file.slice(home.length)}` : file
+}
+
+type Fetch = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<{ status: number; json(): Promise<any> }>
+
+/** GET /v1/models: how many models a key gets, 'refused' for 401/403, null when nothing like CLIProxyAPI answers. */
+async function probe(f: Fetch, origin: string, key: string | null): Promise<number | 'refused' | null> {
+  try {
+    const res = await f(`${origin}/v1/models`, { headers: key ? { authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(2500) })
+    if (res.status === 401 || res.status === 403) return 'refused'
+    if (res.status !== 200) return null
+    const j = await res.json().catch(() => null)
+    return Array.isArray(j?.data) ? j.data.length : null
+  } catch {
+    return null
+  }
+}
+
+export interface DetectDeps {
+  env: NodeJS.ProcessEnv
+  platform: NodeJS.Platform
+  fetch: Fetch
+  readFile?: (p: string) => Promise<string>
+  running?: () => Promise<string[]>
+  home?: string
+}
+
+/**
+ * CLIProxyAPI on this computer, best first: a running copy's config, then the usual places, then the default port with
+ * no config. `ready`: a key from a config was accepted; `needs-key`: the server answers but no readable key works.
+ */
+export async function detectHub(d: DetectDeps): Promise<HubDetection> {
+  const read = d.readFile ?? ((p: string) => readFile(p, 'utf8'))
+  const test = !!d.env.REELSTUDIO_TEST_HUB_CONFIG
+  const files = [...new Set([...(test ? [] : await (d.running ?? (() => runningConfigs(d.platform)))()), ...hubConfigCandidates(d.env, d.platform, d.home)])]
+  let answered: { origin: string; file: string; refused: boolean } | null = null
+  for (const file of files) {
+    const text = await read(file).catch(() => null)
+    if (text === null) continue
+    const cfg = parseHubConfig(text, file)
+    if (!cfg) continue
+    for (const key of cfg.keys) {
+      const n = await probe(d.fetch, cfg.origin, key)
+      if (typeof n === 'number') return { state: 'ready', origin: cfg.origin, models: n, keySource: shownPath(file, d.home), key }
+      if (n === 'refused') answered ??= { origin: cfg.origin, file, refused: true }
+    }
+    if (!answered && (await probe(d.fetch, cfg.origin, null)) !== null) answered = { origin: cfg.origin, file, refused: cfg.keys.length > 0 }
+  }
+  if (answered) return { state: 'needs-key', origin: answered.origin, keySource: shownPath(answered.file, d.home), ...(answered.refused ? { keyRefused: true } : {}) }
+  if (!test) {
+    const origin = `http://127.0.0.1:${DEFAULT_HUB_PORT}`
+    if ((await probe(d.fetch, origin, null)) !== null) return { state: 'needs-key', origin }
+  }
+  return { state: 'none' }
+}

@@ -99,6 +99,12 @@ const api: ReelApi = {
     removeConnection: (id) => call('ai:removeConnection', id),
     setConnectionImages: (id, on) => call('ai:setConnectionImages', id, on),
     connectionModels: (q) => call('ai:connectionModels', q),
+    hubStatus: () => call('ai:hubStatus'),
+    hubUse: (key) => call('ai:hubUse', key),
+    setHubManagementKey: (key) => call('ai:setHubManagementKey', key),
+    editorModels: () => call('ai:editorModels'),
+    editorAccounts: () => call('ai:editorAccounts'),
+    test: (role) => call('ai:test', role),
     onChange: (cb) => on<ProviderInfo>('ai:change', cb)
   },
   projects: {

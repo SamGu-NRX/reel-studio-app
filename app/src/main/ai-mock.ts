@@ -6,7 +6,6 @@ import { basename, join, extname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { serialized, writeJson } from './store'
 import type { AgentEvent, AgentResult, AI, ClaudeCodeStatus, CreateAI, PlanTurnResult, ProviderStatus } from './ai-types'
-import { VendorError } from './vendor-setup'
 import type { Phase, StyleProposal, StyleRule } from '../shared/api'
 
 const MUSIC_EXT = new Set(['.mp3', '.m4a', '.wav', '.aac', '.flac', '.ogg'])
@@ -15,33 +14,32 @@ const NOT_CONNECTED: ProviderStatus = { id: 'none', connected: true, label: 'No 
 
 // The person's own Claude Code app and Codex app, as tests want them (REELSTUDIO_MOCK_CLAUDE / REELSTUDIO_MOCK_CODEX).
 // Default: not on this computer. Modes:
-//   missing        Connect installs it (0.8 s), then the browser sign-in "finishes" (1.2 s): the happy path
-//   installing     the install never ends (until Cancel)       install_failed  the install fails
+//   missing        not on this computer (the row links to the maker's install page; nothing installs)
 //   broken         found, but it does not start                signed_out      found, signed out (the sign-in finishes)
 //   browser        signed out; the browser sign-in never comes back (until Cancel / Open again)
 //   signs_in       signed out; the terminal window's sign-in finishes 1.5 s after it "opens" (no terminal opens)
 //   free           the sign-in finishes on a plan the app reports as "free"
-//   ready          installed and signed in
+//   ready          installed and signed in (Claude Code on the Max plan)
 //   status_unknown installed, but its status cannot be told (slow, unclear) until a sign-in finishes
 //   port_reserved  signed out; the browser sign-in cannot open its port (Windows reserved it); the sign-in with a code
 //                  shows MOCK-26CODE after 0.4 s and finishes 4 s later (the person typed it on OpenAI's page)
 //   code_off       as port_reserved, but sign-in with a code is turned off for the account
 //   port_in_use    as port_reserved, but the port is only in use by another program (Try again stays first)
-type MockMode = 'missing' | 'installing' | 'install_failed' | 'broken' | 'signed_out' | 'browser' | 'signs_in' | 'free' | 'ready' | 'port_reserved' | 'code_off' | 'port_in_use' | 'status_unknown'
-const MODES: MockMode[] = ['missing', 'installing', 'install_failed', 'broken', 'signed_out', 'browser', 'signs_in', 'free', 'ready', 'port_reserved', 'code_off', 'port_in_use', 'status_unknown']
+type MockMode = 'missing' | 'broken' | 'signed_out' | 'browser' | 'signs_in' | 'free' | 'ready' | 'port_reserved' | 'code_off' | 'port_in_use' | 'status_unknown'
+const MODES: MockMode[] = ['missing', 'broken', 'signed_out', 'browser', 'signs_in', 'free', 'ready', 'port_reserved', 'code_off', 'port_in_use', 'status_unknown']
 export const MOCK_DEVICE_CODE = { url: 'https://auth.openai.com/codex/device', code: 'MOCK-26CODE' }
 const CLAUDE_LABEL = 'Claude (your Claude Code app)'
 const CODEX_LABEL = 'ChatGPT (your Codex app)'
 const REASONS: Record<'claude' | 'chatgpt', Record<ClaudeCodeStatus['state'], string | undefined>> = {
   claude: {
     missing: 'We could not find the Claude Code app on this computer.',
-    broken: 'We found the Claude Code app, but it did not start. Try installing it again.',
+    broken: 'We found the Claude Code app, but it did not start. Install it again from Anthropic’s page.',
     signed_out: 'Your Claude Code app is not signed in yet.',
     ready: undefined
   },
   chatgpt: {
     missing: 'We could not find the Codex app on this computer.',
-    broken: 'We found the Codex app, but it did not start. Try installing it again.',
+    broken: 'We found the Codex app, but it did not start. Install it again from OpenAI’s page.',
     signed_out: 'Your Codex app is not signed in yet.',
     ready: undefined
   }
@@ -198,7 +196,7 @@ export const createMockAI: CreateAI = ({ host }) => {
   const startState = (m: MockMode): ClaudeCodeStatus['state'] =>
     m === 'ready' ? 'ready' : m === 'broken' ? 'broken' : ['signed_out', 'browser', 'signs_in', 'free', 'port_reserved', 'code_off', 'port_in_use', 'status_unknown'].includes(m) ? 'signed_out' : 'missing'
   const state = { claude: startState(mode.claude), chatgpt: startState(mode.chatgpt) }
-  const plan: { claude?: string; chatgpt?: string } = {}
+  const plan: { claude?: string; chatgpt?: string } = mode.claude === 'ready' ? { claude: 'max' } : {}
   let chosen: 'claude-cli' | 'codex-cli' | null = null
   let checking: AbortController | null = null
   const cliStatus = (v: 'claude' | 'chatgpt'): ClaudeCodeStatus => ({
@@ -239,7 +237,7 @@ export const createMockAI: CreateAI = ({ host }) => {
           // The real package checks Claude with one short call here (about 4-5 s). REELSTUDIO_MOCK_CLAUDE_CHECK:
           // a number waits that many ms; `limited` and `no-answer` fail the check the way the real one does.
           const check = process.env.REELSTUDIO_MOCK_CLAUDE_CHECK ?? ''
-          if (check === 'limited') throw { code: 'cli_limited', userMessage: 'The AI hit its usage limit. Try again later.' }
+          if (check === 'limited') throw { code: 'cli_limited', userMessage: 'Your Claude Code account has hit its weekly limit. It resets tomorrow at 9:00 AM (in 14 h).' }
           if (check === 'no-answer') throw { code: 'cli_error', userMessage: 'The AI did not answer.' }
           if (Number(check) > 0) {
             const stop = (checking = new AbortController())
@@ -270,21 +268,6 @@ export const createMockAI: CreateAI = ({ host }) => {
     async stockProviders() { return [{ id: 'pexels', connected: false }, { id: 'pixabay', connected: false }, { id: 'openverse', connected: true }] },
     async setStockKey() { throw { code: 'NOT_READY', userMessage: 'Stock API keys need the AI package. Reinstall Reel Studio and try again.' } },
     mockVendor: {
-      async install(v, signal) {
-        if (mode[v] === 'installing') await until(signal, Infinity)
-        if (signal.aborted) throw Object.assign(new Error('cancelled'), { name: 'AbortError' })
-        if (mode[v] === 'install_failed') {
-          await until(signal, 300)
-          throw new VendorError(
-            'install_failed',
-            v === 'claude'
-              ? "Anthropic’s Claude Code app didn’t install: this computer couldn’t reach Anthropic. Check your internet, then try again."
-              : "OpenAI’s Codex app didn’t install: this computer couldn’t reach OpenAI. Check your internet, then try again.",
-            'mock'
-          )
-        }
-        if (await until(signal, 800)) state[v] = 'signed_out'
-      },
       async login(v, signal, onDeviceCode) {
         if (mode[v] === 'port_reserved' || mode[v] === 'code_off' || mode[v] === 'port_in_use') {
           const held = mode[v] === 'port_in_use' ? { portBusy: true } : { portBusy: true, portReserved: true }

@@ -37,10 +37,12 @@ describe('Settings search', () => {
 })
 
 describe('Settings sections', () => {
-  it("fails if the sections leave spec section 8's order, or Advanced loses a row it holds", () => {
+  it("fails if the sections leave spec section 8's order, or Editor or Advanced loses a row it holds", () => {
     expect(Object.keys(SECTIONS)).toEqual(['editor', 'privacy', 'reels', 'posting', 'about', 'advanced'])
+    // the editor component holds the models for each stage, your own server and an API key (r12: one component)
+    expect(SETTING_IDS.filter((id) => SETTINGS[id].section === 'editor')).toEqual(['editor', 'check-edits', 'models', 'own-server', 'api-key'])
     const advanced = SETTING_IDS.filter((id) => SETTINGS[id].section === 'advanced')
-    expect(advanced).toEqual(['model-edits', 'model-checks', 'model-titles', 'own-server', 'api-key', 'stock-keys', 'engine-cache', 'logs', 'first-run'])
+    expect(advanced).toEqual(['stock-keys', 'engine-cache', 'logs', 'first-run'])
   })
 
   it('fails if the Advanced rows are missed by the words people use for them', () => {
@@ -69,6 +71,6 @@ describe('Settings search highlight', () => {
     expect(matchedSynonym('faster-exports', '30fps')).toBe('30fps')
     expect(matchedSynonym('engine-cache', 'clear')).toBe('clear cache')
     expect(matchedSynonym('engine-cache', 'cache')).toBeNull()
-    expect(matchedSynonym('model-edits', 'advanced')).toBeNull()
+    expect(matchedSynonym('own-server', 'editor')).toBeNull()
   })
 })
