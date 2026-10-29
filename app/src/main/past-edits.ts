@@ -128,6 +128,10 @@ const realFs: NonNullable<FindDeps['fs']> = {
       const buf = Buffer.alloc(bytes)
       const { bytesRead } = await fh.read(buf, 0, bytes, 0)
       return buf.subarray(0, bytesRead).toString('utf8')
+    } catch {
+      // opens but can't be read, like a OneDrive file kept only in the cloud on Windows (UNKNOWN): left out, as a
+      // file that won't open is, instead of failing the whole look
+      return null
     } finally {
       await fh.close()
     }
