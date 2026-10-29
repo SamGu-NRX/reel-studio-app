@@ -26,7 +26,7 @@ import type {
   QueuedNote
 } from '../shared/api'
 import { mediaUrl } from './media-url'
-import { POSTER } from './first-video'
+import { COPY_GONE, POSTER, canCopyAgain } from './first-video'
 import type { ReelSeed } from './propose-reels'
 import { replyChat, styleConsent, type ChatLine } from './style-consent'
 import { keptIds } from '../shared/cut'
@@ -68,6 +68,9 @@ export interface AppState {
   proposal?: StoredProposal
   /** This reel was made from another reel's proposal: what it is seeded from, kept so a resume can seed it again. */
   from?: ReelSeed
+  /** The files Version 1 copies its video from, kept until the copy is in (project.json written): a first edit stopped
+   * during the copy copies them again (main/index.ts startFirstEdit). */
+  copyFrom?: string[]
 }
 
 const EMPTY_STATE: AppState = { chat: [], job: null, status: 'new', lastError: null }
@@ -432,12 +435,15 @@ export async function listVersions(dir: string): Promise<VersionInfo[]> {
     const receipts = await readJson<{ renderId: string; facts: EditFact[] }[] | null>(join(d, 'receipts.json'), null)
     // a rewording describes the receipts up to the one it names; a later receipt in this folder makes it stale
     const titled = await readJson<{ renderId: string; title: string; summary: string } | null>(join(d, 'title.json'), null)
+    // which model made it (main/index.ts recordMadeWith), for its line in the notes
+    const made = await readJson<{ model?: unknown } | null>(join(d, 'made-with.json'), null)
     // an engine that records receipts gives every render an id (render_identity.py)
     const manifest = receipts || n === 0 ? null : await readJson<{ renderId?: unknown } | null>(join(d, 'render.json'), null)
     out.push({
       ...(receipts ? { facts: receipts.flatMap((r) => r.facts) } : {}),
       ...(n > 0 && !receipts && typeof manifest?.renderId !== 'string' ? { beforeReceipts: true as const } : {}),
       ...(titled && titled.renderId === receipts?.at(-1)?.renderId ? { wording: { title: titled.title, summary: titled.summary } } : {}),
+      ...(typeof made?.model === 'string' && made.model ? { madeWith: made.model.slice(0, 80) } : {}),
       n,
       parent,
       ...(parents ? { parents } : {}),
@@ -679,6 +685,15 @@ export function niceName(path: string): string {
   return n.replace(/^(19|20)\d{2} ?\d{2} ?\d{2}\s+(?=\S)/, '') || n
 }
 
+/**
+ * Version 1 was stopped during its copy (there is no project.json) and nothing can copy it again: the files it copied
+ * from can't be opened any more. It reads as failed with COPY_GONE, never as a pause that Resume would continue. A reel
+ * seeded from another reel's proposal copies from that reel's video instead (`from`, main/propose-reels.ts).
+ */
+async function copyGone(st: AppState): Promise<boolean> {
+  return st.status === 'interrupted' && !st.job && !st.from && !(await canCopyAgain(st.copyFrom))
+}
+
 export async function summary(slug: string): Promise<ProjectSummary | null> {
   const dir = projectDir(slug)
   let p: ProjectJson
@@ -689,8 +704,9 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
     const st = await readAppState(slug).catch(() => null)
     if (!st || !existsSync(join(dir, 'app.json'))) return null
     const at = st.createdAt ?? new Date().toISOString()
+    const gone = await copyGone(st)
     // a script being written keeps a reel with no video planned
-    const status: ScreenStatus = st.job && st.job.kind !== 'script' ? 'working' : st.status === 'ready' ? 'failed' : st.status
+    const status: ScreenStatus = gone ? 'failed' : st.job && st.job.kind !== 'script' ? 'working' : st.status === 'ready' ? 'failed' : st.status
     return {
       slug,
       dir,
@@ -707,8 +723,8 @@ export async function summary(slug: string): Promise<ProjectSummary | null> {
       versionAt: null,
       series: null,
       pausedFor: null,
-      failedWhy: status === 'failed' ? (st.lastError?.userMessage ?? null) : null,
-      failedCode: status === 'failed' ? (st.lastError?.code ?? null) : null,
+      failedWhy: gone ? COPY_GONE.userMessage : status === 'failed' ? (st.lastError?.userMessage ?? null) : null,
+      failedCode: gone ? COPY_GONE.code : status === 'failed' ? (st.lastError?.code ?? null) : null,
       posted: !!st.posted?.length
     }
   }
@@ -857,7 +873,8 @@ export async function detail(slug: string): Promise<ProjectDetail> {
     // a note's attached files get a URL for their still here (never stored: the root folder can move)
     // a planning reply's raw provider content stays in main (shared/plan.ts planTurns)
     chat: st.chat.map(({ planRaw: _raw, ...m }) => (m.attachments?.length ? { ...m, attachments: m.attachments.map(thumb) } : m)),
-    lastError: st.lastError,
+    // a copy that can't be made again says why where the video would be, as its card does
+    lastError: s.failedCode === COPY_GONE.code ? COPY_GONE : st.lastError,
     queue: (st.queue ?? []).map((q) => ({ ...q, attachments: q.attachments.map(thumb) })),
     queueHeld: !!st.queueHeld,
     job: st.job ? { id: st.job.id, kind: st.job.kind, message: 'Working on it', pct: 0, overall: 0, secondsLeft: null, overdue: false, thinking: false, waiting: false, waitingForRender: false } : null,

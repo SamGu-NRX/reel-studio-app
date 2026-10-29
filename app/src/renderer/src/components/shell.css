@@ -64,9 +64,10 @@ html.side-resizing, html.side-resizing * { cursor: col-resize !important; user-s
 .nav .new-reel { margin-bottom: 8px; color: var(--ink); }
 .nav .new-reel .icon { color: var(--ink-2); }
 
-.side-foot { margin-top: auto; position: relative; display: grid; gap: 4px; }
+/* minmax(0, 1fr): an auto track grows to its widest unwrapped line, which pushed the update item's text across the page */
+.side-foot { margin-top: auto; position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.side-update { min-width: 0; }
 .side-update:empty { display: none; }
-.rail .side-update { display: none; }
 
 /* Account row: who you are and whether an AI editor is on; it opens Settings. */
 .acct {

@@ -49,6 +49,8 @@ test('add your own AI server from Settings', async () => {
   try {
     await passFirstRun(page)
     await openSettings(page)
+    // your own server sits in the editor's Advanced, closed until opened
+    await page.getByTestId('ai-advanced').click()
     await page.getByTestId('own-server-toggle').click()
     const dialog = page.getByTestId('connection-dialog')
     await expect(page.getByTestId('connection-kind-openai')).toBeFocused()
@@ -87,8 +89,7 @@ test('add your own AI server from Settings', async () => {
 
     const card = page.getByTestId('connection-card')
     await expect(card).toContainText('Connected')
-    await card.getByTestId('more').click()
-    await page.getByTestId('connection-edit').click()
+    await card.getByTestId('connection-edit').click()
     await expect(page.getByTestId('connection-key')).toHaveValue('')
     await expect(page.getByTestId('connection-key')).toHaveAttribute('placeholder', 'Stored key. Enter a new one to replace it.')
     await page.getByTestId('connection-cancel').click()

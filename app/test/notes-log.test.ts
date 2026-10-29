@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, VersionInfo } from '../src/shared/api'
-import { editorSaid, handLine, notesLog, waitingRows, withoutNumber } from '../src/shared/notes-log'
+import { editorSaid, handLine, noteToRetry, notesLog, waitingRows, withoutNumber } from '../src/shared/notes-log'
 
 const now = new Date('2026-10-22T15:00:00')
 const at = (h: number, day = 22) => new Date(2026, 9, day, h).toISOString()
@@ -9,6 +9,48 @@ let id = 0
 const msg = (from: ChatMessage['from'], text: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({ id: `m${++id}`, from, text, at: at(10), ...extra })
 
 describe('notesLog', () => {
+  // Review finding r12: the guard ran over the person's notes too, so "Use w12 for the lower third" showed, and was
+  // sent again, as "Use for the lower third".
+  it("fails if the person's note, or an editor line quoting it, loses an id-like word", () => {
+    const chat = [
+      msg('editor', 'Your video is ready.', { version: 1 }),
+      msg('you', 'Use w12 for the lower third', { jobId: 'j1', outcome: 'failed' }),
+      msg('editor', 'I could not find "w12" in your Library.', { jobId: 'j1' })
+    ]
+    const log = notesLog({ chat, made: [], versions: [v(1)], running: null, source: null, now })
+    expect(log[1]).toMatchObject({ ask: { text: 'Use w12 for the lower third' }, result: { kind: 'failed', text: 'I could not find "w12" in your Library.' } })
+    expect(noteToRetry(chat, log[1].key)).toBe('Use w12 for the lower third')
+  })
+
+  it('fails if Try again sends something other than the stored note, or sends anything for an entry with none', () => {
+    const chat = [msg('you', 'Use w12 for the lower third', { jobId: 'j1', outcome: 'failed' })]
+    expect(noteToRetry(chat, chat[0].id)).toBe('Use w12 for the lower third')
+    expect(() => noteToRetry(chat, 'video')).toThrow(/no note of yours/)
+  })
+
+  // the tour's Version 2 line (notes/design/r11/tour-1028/04-reel-notes-timeline.png), as a build before the fix saved it
+  it('fails if a reply, or a note an old build saved, shows a transcript word id', () => {
+    const leaked = 'Done: "At 0:06 (around "engine will write what you actually", words w10, w11, w12, w13, w14, w15): make the subtitles bigger here". It is Version 2.'
+    const log = notesLog({
+      chat: [
+        msg('editor', 'Your video is ready.', { version: 1 }),
+        msg('you', 'zoom in', { jobId: 'j1', outcome: 'done' }),
+        msg('editor', leaked, { version: 2 }),
+        msg('you', 'louder here', { jobId: 'j2', outcome: 'done' }),
+        msg('editor', 'Raised the music at words w30 to w33 (around "the drive").', { jobId: 'j2' })
+      ],
+      made: [],
+      versions: [v(1), v(2)],
+      running: null,
+      source: null,
+      now
+    })
+    const shown = JSON.stringify(log.map((e) => [e.ask.text, e.result && 'text' in e.result ? e.result.text : null]))
+    expect(shown).not.toMatch(/\bw\d+\b|\(around /)
+    expect(log[1]).toMatchObject({ ask: { text: 'zoom in' }, result: { kind: 'version', v: 2, text: 'Done: "make the subtitles bigger here". It is Version 2.' } })
+    expect(log[2]).toMatchObject({ result: { kind: 'reply', text: 'Raised the music.' } })
+  })
+
   // fails if what the editor found in the video is hidden because the last note was stopped and has no reply
   it('shows a line about more reels from the video after a stopped note', () => {
     const log = notesLog({

@@ -11,6 +11,8 @@ Extra test hooks (env):
   FAKE_ENGINE_OFFLINE=1        download-model stops at 30% with the real engine's "no internet" error
   FAKE_ENGINE_SPEECH_CHECK=<seconds>   how long speech-check takes (default 1)
   FAKE_ENGINE_SLOW_RENDER=<seconds>   a full-quality render waits this long first, in small steps (Stop tests)
+  FAKE_ENGINE_SLOW_COPY=<seconds>   init waits this long after copying a file, before project.json is written: a Stop
+                                    then leaves a partial copy, as a real copy of a large video does (Stop tests)
 """
 from __future__ import annotations
 
@@ -169,6 +171,9 @@ def cmd_init(args: list[str]) -> dict:
         progress("init", 100 * (i - 1) / len(files), "Copying your video")
         dest = proj / "media" / f"take{i:02d}{Path(f).suffix.lower()}"
         shutil.copy2(f, dest)
+        slow = float(os.environ.get("FAKE_ENGINE_SLOW_COPY", "0") or 0)
+        for _ in range(int(slow * 10)):
+            time.sleep(0.1)
         sources.append({"id": f"s{i}", "path": f"media/{dest.name}", "originalName": Path(f).name, "duration": info["duration"],
                         "fps": info.get("fps", 30), "width": info.get("width"), "height": info.get("height"),
                         "rotation": info.get("rotation", 0)})
@@ -473,6 +478,17 @@ def _item(kind: str, name: str, start: float, dur: float, media: dict) -> dict:
             "trackRange": {"start": {"value": start * 100, "rate": 100}, "duration": {"value": dur * 100, "rate": 100}}}
 
 
+def _fcpx_projects(root) -> list:
+    """The projects the real engine reads (reference_import._Fcpx.projects): the first event's in a library, the
+    first top-level event's, or the first top-level project."""
+    if root.find("library") is not None:
+        event = root.find("library/event")
+        return [] if event is None else event.findall("project")
+    if root.find("event") is not None:
+        return root.find("event").findall("project")
+    return root.findall("project")[:1]
+
+
 def cmd_import_reference(args: list[str]) -> dict:
     """The real command's record shape (reelengine/reference_import.py) for simple exports, without OpenTimelineIO:
     Final Cut's spine and connected clips, Premiere's tracks of clip, generator and transition items."""
@@ -486,7 +502,7 @@ def cmd_import_reference(args: list[str]) -> dict:
     if root.tag == "fcpxml":
         adapter = "fcpx_xml"
         assets = {a.get("id"): a for a in root.iter("asset")}
-        for project in root.iter("project"):
+        for project in _fcpx_projects(root):
             lanes: dict[str, list] = {}
             spine = project.find("./sequence/spine")
             for clip in list(spine if spine is not None else []):
@@ -544,6 +560,29 @@ def cmd_import_reference(args: list[str]) -> dict:
     return {"source": {"path": str(path), "adapter": adapter}, "mediaRefs": [], "timelines": timelines, "losses": [], "rawMetadata": []}
 
 
+def cmd_reference_scan(args: list[str]) -> dict:
+    """The real command's shape (reference_import.scan): each export's timeline count, or why it can't be read."""
+    import xml.etree.ElementTree as ET
+    files = []
+    for arg in args:
+        path = Path(arg)
+        try:
+            root = ET.parse(path / "Info.fcpxml" if path.is_dir() else path).getroot()
+        except (OSError, ET.ParseError):
+            files.append({"path": arg, "error": {"code": "BAD_XML", "message": "This file isn't a readable edit export. "
+                                                 "Export it again from your editor and try once more."}})
+            continue
+        if root.tag == "fcpxml":
+            n = len(_fcpx_projects(root))
+        else:
+            # the real engine keeps the first sequence seen with each id (reference_import.count_timelines)
+            ids = [seq.get("id") for seq in root.findall("sequence") + root.findall(".//children/sequence")]
+            n = sum(1 for i, key in enumerate(ids) if key is None or key not in ids[:i])
+        files.append({"path": arg, "timelines": n} if n else {"path": arg, "error": {"code": "NO_TIMELINE", "message":
+                      "This export has no timeline in it. In your editor, export the project or sequence itself, not just its clips, and try again."}})
+    return {"files": files}
+
+
 def cmd_doctor(_args: list[str]) -> dict:
     return {"engine": "fake", "ffmpeg": shutil.which(FFMPEG) or FFMPEG, "ok": True}
 
@@ -554,6 +593,7 @@ COMMANDS = {
     "download-model": cmd_download_model, "speech-check": cmd_speech_check, "attach": cmd_attach,
     "cover-candidates": cmd_cover_candidates, "export-cover": cmd_export_cover, "export-probe": cmd_export_probe,
     "export-media": cmd_export_media, "import-reference": cmd_import_reference,
+    "reference-scan": cmd_reference_scan,
 }
 
 

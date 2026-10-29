@@ -85,3 +85,11 @@ it('fails if a model rewording that claims a change the receipts lack, or the wr
   writeFileSync(receipts, JSON.stringify([{ jobId: 'j', renderId: 'r', version: 2, facts }, { jobId: 'k', renderId: 'r2', version: 2, facts: [{ kind: 'post.caption', before: '', after: 'Bread' }] }]))
   expect((await listVersions(dir))[0].wording).toBeUndefined()
 })
+
+it('fails if the model that made a version is not read back for its line in the notes, or a version without one gets one', async () => {
+  setupPaths()
+  const dir = versionTwo('loaf')
+  expect((await listVersions(dir))[0].madeWith).toBeUndefined()
+  writeFileSync(join(dir, 'versions', 'v2', 'made-with.json'), JSON.stringify({ model: 'Claude Opus 5.5 · High' }))
+  expect((await listVersions(dir))[0].madeWith).toBe('Claude Opus 5.5 · High')
+})

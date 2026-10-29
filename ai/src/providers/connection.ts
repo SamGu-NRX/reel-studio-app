@@ -1,6 +1,7 @@
 // The person's own AI server ("custom" provider), Anthropic-compatible (Messages) or OpenAI-compatible (Chat
 // Completions): address checks, plain-words errors and the model list both kinds share.
 import { AIError } from '../types';
+import { serverLimit, serverLimitWords } from './limits';
 
 export type ConnectionKind = 'anthropic' | 'openai';
 
@@ -32,11 +33,13 @@ export function noRedirectFetch(base: typeof fetch = fetch): typeof fetch {
   return ((input: any, init?: RequestInit) => base(input, { ...init, redirect: 'error' })) as typeof fetch;
 }
 
-/** The same error with every copy of `secret` in its diagnostic text replaced: a server that echoes the key in an
- * error ("Incorrect API key provided: ...") must not put it in the app's log. */
+/** The same error with every copy of `secret` replaced, in its diagnostic text and in its words for the person: a
+ * server that echoes the key in an error ("Incorrect API key provided: ...") or in a field the words quote (a limit's
+ * model name) must not put it in the app's log or on screen. */
 export function withoutSecret(e: AIError, secret: string | null | undefined): AIError {
-  if (!secret || !e.message.includes(secret)) return e;
-  return new AIError(e.code, e.userMessage, { detail: e.message.split(secret).join('[key]'), link: e.link, retryable: e.retryable, status: e.status, requestId: e.requestId });
+  if (!secret || (!e.message.includes(secret) && !e.userMessage.includes(secret))) return e;
+  const out = (t: string) => t.split(secret).join('[key]');
+  return new AIError(e.code, out(e.userMessage), { detail: out(e.message), link: e.link, retryable: e.retryable, status: e.status, requestId: e.requestId, resetsAt: e.resetsAt, limits: e.limits });
 }
 
 export function unreachable(detail?: string): AIError {
@@ -76,6 +79,11 @@ export function mapConnectionError(status: number | undefined, body: unknown, ct
   }
   if (status === 404 || status === 405) return wrongAddress(ctx, info.detail, status);
   if (status === 429) {
+    // a limit the server names (which accounts, when they reset) is said as such; a bare 429 stays "busy"
+    const limit = serverLimit(body);
+    // a pause of a minute or less (one account resting) is worth another try; a later reset is not
+    const soon = !!limit?.resetsAt && Date.parse(limit.resetsAt) - Date.now() <= 60_000;
+    if (limit) return new AIError('connection_limited', serverLimitWords(limit, ctx.model), { ...info, retryable: soon, ...(limit.resetsAt ? { resetsAt: limit.resetsAt } : {}) });
     return new AIError('connection_busy', 'The server is busy, or this key has used up its limit. Wait a minute, then try again.', { ...info, retryable: true });
   }
   if (status && status >= 500) {

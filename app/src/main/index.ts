@@ -68,10 +68,12 @@ import {
   writeProject,
   type AppState
 } from './store'
-import { clearFailedCopy, posterFrame, titleWithAnotherVideo } from './first-video'
+import { COPY_GONE, canCopyAgain, clearFailedCopy, posterFrame, titleWithAnotherVideo } from './first-video'
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { libraryPreview } from './library-preview'
 import { readLesson } from './style-learn'
+import { countsOf, findPastEdits, mdfind, type FindDeps, type Found } from './past-edits'
+import { appIcons, regDefault, type IconDeps } from './app-icons'
 import { createJobManager } from './jobs'
 import { createPauser, pauseFor, quitQuestion } from './pause'
 import { createNoteQueue, noteOutcome, type NoteToRun, type StartHand } from './note-queue'
@@ -105,14 +107,15 @@ import { createPidRegistry } from './orphans'
 import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { claudeCheckWords, createVendorConnect, type CliStatus, type VendorConnect } from './vendor-connect'
-import { runInstall, runLogin, testVendorEnv, testVendorLoginEnv, type Vendor } from './vendor-setup'
-import { withUserPathKept } from './user-path'
+import { runLogin, testVendorEnv, testVendorLoginEnv, type Vendor } from './vendor-setup'
+import { confirmHub, detectHub, type HubDetection } from './vendor-hub'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
 import type { AppInfo, DropResult, EngineCache, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlatformExportResult, VersionInfo, VersionTimeline, LearnedRule, MergeRequest, StyleRule } from '../shared/api'
+import { MODEL_ROLES, type ModelChoice, type ModelRole } from '../shared/api'
 import { COVER_SUGGESTIONS } from '../shared/cover'
 import { coverScanOwner, createCoverScans, parseCoverCandidates } from './cover-scan'
 import { noAiReply } from '../shared/notes'
-import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment, forPerson } from '../shared/moments'
+import { aiNoteText, checkMoment, momentRoute, parseMoment, placeWords, typedMoment, type RenderSegment, forPerson, personText } from '../shared/moments'
 import type { LayerItem } from '../shared/lanes'
 import { parsePlatformExportRequest, sameVideo, secondTryPlatforms, type Platform, type PlatformTry, type TryVariable } from '../shared/platforms'
 import { exportPlatforms, sweepExportStaging, type ExportTry } from './platform-export'
@@ -287,11 +290,12 @@ async function continuePaused(slug: string): Promise<void> {
     await updateAppState(slug, (s) => void delete s.paused)
     return noteQueue.resume(slug)
   }
-  if (!existsSync(join(dir, 'project.json'))) {
+  // paused during the copy: it copies the video again (startFirstEdit), unless the file it copied from is gone
+  if (!existsSync(join(dir, 'project.json')) && !st.from && !(await canCopyAgain(st.copyFrom))) {
     await updateAppState(slug, (s) => {
       delete s.paused
       s.status = 'failed'
-      s.lastError = { code: 'CANNOT_RESUME', userMessage: 'This reel’s video never finished copying. Delete the reel and drop the video in again.' }
+      s.lastError = COPY_GONE
     })
     return
   }
@@ -304,6 +308,7 @@ const jobs = createJobManager(
     feedback.onJobEvent(e)
     noteQueue.onJobEvent(e)
     if (e.type === 'paused' && e.slug) pauser.schedule(e.slug, e.paused)
+    if (e.type === 'done' && e.slug) pauser.settled(e.slug)
   },
   log,
   {
@@ -344,13 +349,15 @@ async function startNote(slug: string, { id: noteId, text, attachments, moment, 
       // what it says back while it works reaches the progress card in the person's own words
       const aiText = aiNoteText(text, moment)
       const r: AgentResult = await ai.applyNote(dir, aiText, forPerson(emit, aiText, text), signal, opts)
+      await recordMadeWith(dir, r)
       if (r.changed.length && r.version !== undefined && ai.rewordVersion) {
         void titleVersion(slug, r.version, ai.rewordVersion.bind(ai), AbortSignal.timeout(60_000)).catch((e) =>
           log(`[ai] version title: ${String(e?.message ?? e)}`)
         )
       }
       const extra = r.notice?.userMessage ? ` ${r.notice.userMessage}` : ''
-      const reply = await replyAskingAboutStyle(r, r.summary + extra)
+      // the editor's summary may echo aiText, moment and word ids included
+      const reply = await replyAskingAboutStyle(r, personText(r.summary, aiText, text) + extra)
       return { ...reply, outcome: noteOutcome(before, r), made: { by: 'note', summary: text } }
     },
     { note: text || attachments.map((f) => f.name).join(', '), record, pause: (e) => pauseFor(e, pauseCtx('note', startedAt, editor)) }
@@ -378,6 +385,9 @@ const coverScans = createCoverScans(runEngine)
 // Test runs never touch the network, except the update e2e, which points a dev build at a local server
 // (REELSTUDIO_UPDATE_FEED, honoured only in an unpackaged test run: app/e2e/update.spec.ts).
 const TEST_FEED = TEST && !app.isPackaged ? process.env.REELSTUDIO_UPDATE_FEED : undefined
+// The update e2e can run the updater as another build (REELSTUDIO_UPDATE_AS, e.g. a Mac nightly), so the nightly's
+// page mode and its long version strings are reachable from a dev build. Ignored outside that run.
+const UPDATE_VERSION = (TEST_FEED && process.env.REELSTUDIO_UPDATE_AS) || app.getVersion()
 let exportsWriting = 0
 const updateBusy = () => ({ exporting: exportsWriting > 0, working: jobs.runningCount() })
 
@@ -397,7 +407,7 @@ function readUpdateFeed(): string | null {
 const updateFeed = app.isPackaged || TEST_FEED ? readUpdateFeed() : null
 const updateEnv = {
   platform: process.platform,
-  channel: CHANNEL,
+  channel: channelOf(UPDATE_VERSION),
   isPackaged: app.isPackaged || !!TEST_FEED,
   test: (TEST && !TEST_FEED) || SELF_TEST.selfTest,
   hasFeed: updateFeed !== null,
@@ -408,7 +418,7 @@ const githubFetch: FetchLike = (url, init) => fetch(url, init)
 const updateOff = disabledReason(updateEnv)
 const updateHow = updateMode(updateEnv)
 const updates = createUpdater({
-  version: app.getVersion(),
+  version: UPDATE_VERSION,
   mode: updateHow,
   disabledReason: updateOff,
   backend: updateOff
@@ -425,7 +435,7 @@ const updates = createUpdater({
           onError: (e) => updates.installFailed(e),
           install: process.platform === 'win32' ? windowsInstaller : macBundleCheck(app.getVersion())
         })
-      : releasePageBackend(githubFetch, app.getVersion()),
+      : releasePageBackend(githubFetch, UPDATE_VERSION, TEST_FEED ? `${TEST_FEED}/releases` : undefined),
   load: loadSettings,
   save: saveSettings,
   busy: updateBusy,
@@ -509,13 +519,20 @@ function owned(args: string[], owner: string | null): string[] {
 }
 
 /** `basic`: the version is made without the editor (a failed Version 1's "Make a basic version"). `initArgs` null: a
- * resume. A reel made from another reel's proposal starts from its app.json `from` (main/propose-reels.ts). */
-function startFirstEdit(slug: string, initArgs: { title: string; files: string[] } | null, basic = false): string {
+ * resume: one stopped during its copy copies the video again from app.json `copyFrom`. A reel made from another reel's
+ * proposal starts from its app.json `from` (main/propose-reels.ts). `record`: changes to app.json written with the
+ * job's start, so a start that is refused leaves none of them behind. */
+function startFirstEdit(slug: string, initArgs: { title: string; files: string[] } | null, basic = false, record?: (s: AppState) => void): string {
   const dir = projectDir(slug)
   const startedAt = Date.now()
   let editor: string | null = null
   // a plan at its limit, no internet or sleep pauses Version 1 to continue by itself (main/pause.ts)
   const pause = (e: unknown) => (basic ? null : pauseFor(e, pauseCtx('first-edit', startedAt, editor)))
+  // with the job's start: what the copy is made from, until it is in, so a Stop during the copy can copy it again
+  const started = (s: AppState): void => {
+    if (initArgs) s.copyFrom = initArgs.files
+    record?.(s)
+  }
   return jobs.start(slug, 'first-edit', async (emit, signal, { owner }) => {
     const copyIn = async (title: string, files: string[]) => {
       const { fasterExports } = await loadSettings()
@@ -529,14 +546,23 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
     }
     // a reel made from another reel's proposal is copied in and seeded from it, on a resume too if the app closed
     // between the two, so it never becomes an edit of the whole video
-    const from = (await readAppState(slug)).from
+    const st = await readAppState(slug)
+    const from = st.from
     if (from) await prepareReel(slug, from, () => copyIn(from.about.title, [from.media]), { resumed: !initArgs, signal })
-    else if (initArgs && !existsSync(join(dir, 'project.json'))) {
-      await copyIn(initArgs.title, initArgs.files).catch(async (e) => {
+    else if (!existsSync(join(dir, 'project.json'))) {
+      // No project.json: the copy is not in. A resume (Stop, a quit or a pause during the copy) copies again from the
+      // files the person dropped, after clearing what was half copied, so a partial copy is never taken for the video.
+      const files = initArgs?.files ?? st.copyFrom ?? []
+      if (!initArgs) {
+        if (!(await canCopyAgain(files))) throw COPY_GONE
+        await clearFailedCopy(dir)
+      }
+      await copyIn(initArgs?.title ?? st.title ?? titleFromFile(files[0]), files).catch(async (e) => {
         // refused before a copy exists (no sound, not a video): the card shows the file's first frame instead
-        await posterFrame(ffmpegPath(), initArgs.files[0], dir).catch((err) => log(`[poster] ${slug}: ${String(err).slice(0, 300)}`))
+        await posterFrame(ffmpegPath(), files[0], dir).catch((err) => log(`[poster] ${slug}: ${String(err).slice(0, 300)}`))
         throw e
       })
+      await updateAppState(slug, (s) => void delete s.copyFrom)
     }
     // a reel planned before it had a video: the editor reads its script from project.json (again on a resume,
     // in case the app closed between the copy and this)
@@ -565,12 +591,20 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
     // Honest "What I did": only an AI that ran to the end picked the takes and wrote the caption.
     // A notice means it stopped and (usually) the simple edit stepped in, so claim nothing.
     const aiEdited = !!provider && provider.connected && provider.id !== 'none' && !r.notice
+    if (aiEdited) await recordMadeWith(dir, { ...r, version: r.version ?? 1 })
     await updateAppState(slug, (s) => {
       s.aiEdited = aiEdited
     })
     if (r.notice?.userMessage) await addChat(slug, 'editor', r.notice.userMessage)
     return replyAskingAboutStyle(r, r.summary)
-  }, { pause })
+  }, { pause, record: started })
+}
+
+/** Which model made a version, beside it (`versions/vN/made-with.json`, as title.json is): its line in the notes names
+ * it. A version a basic edit made has no model, and no file. */
+async function recordMadeWith(dir: string, r: AgentResult): Promise<void> {
+  if (!r.model || r.version === undefined) return
+  await writeJson(join(dir, 'versions', `v${r.version}`, 'made-with.json'), { model: r.model }).catch((e) => log(`[ai] made-with: ${String(e)}`))
 }
 
 /** The editor's reply into the chat, then one "Remember this for next time?" per My style rule (style-consent.ts). */
@@ -712,8 +746,8 @@ function registerIpc(): void {
   handle('app:setModels', async (_e, m: unknown) => {
     const ok = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length <= 200 && !v.includes('\0')
     const x = (m ?? {}) as Record<string, unknown>
-    if (!ok(x.editor) || !ok(x.checker) || !ok(x.writer)) throw { code: 'BAD_INPUT', userMessage: 'Choose a model for each part.' }
-    await saveSettings({ models: { editor: x.editor as string, checker: x.checker as string, writer: x.writer as string } })
+    if (!MODEL_ROLES.every((r) => ok(x[r]))) throw { code: 'BAD_INPUT', userMessage: 'Choose a model for each stage.' }
+    await saveSettings({ models: Object.fromEntries(MODEL_ROLES.map((r) => [r, x[r] as string])) as ModelChoice })
     return appInfo()
   })
   handle('app:setSharing', async (_e, v: unknown) => {
@@ -954,6 +988,38 @@ function registerIpc(): void {
   handle('ai:vendorSignInAgain', (_e, v) => void vendors.signInAgain(vendorOf(v)))
   handle('ai:vendorSignInWithCode', (_e, v) => vendors.signInWithCode(vendorOf(v)))
   handle('ai:vendorSignIn', (_e, v) => vendors.signIn(vendorOf(v)))
+  // CLIProxyAPI on this computer (vendor-hub.ts). The key found in its config stays here until Use it; the page gets
+  // the address, the model count and which file the key came from. Under test only REELSTUDIO_TEST_HUB_CONFIG is read,
+  // so a test never talks to a real CLIProxyAPI on the developer's computer.
+  let hubFound: HubDetection = { state: 'none' }
+  const noHub = !ai.saveHub || (TEST && !process.env.REELSTUDIO_TEST_HUB_CONFIG)
+  const hubDeps = { env: process.env, platform: process.platform, fetch: (u: string, i?: { headers?: Record<string, string>; signal?: AbortSignal; redirect?: 'error' }) => fetch(u, i) }
+  handle('ai:hubStatus', async () => {
+    if (noHub) return { state: 'none' }
+    hubFound = await detectHub(hubDeps)
+    const { key: _key, file: _file, ...found } = hubFound
+    return found
+  })
+  changesAI('ai:hubUse', async (_e, typed: unknown) => {
+    if (noHub) throw { code: 'NOT_FOUND', userMessage: 'CLIProxyAPI isn’t answering on this computer any more. Look again.' }
+    // the config is read and checked again right here: the address the key goes to is this computer's, now
+    const use = await confirmHub(hubDeps, hubFound, typeof typed === 'string' && typed.trim() ? typed.trim() : undefined)
+    const r = await ai.saveHub!(use)
+    if (!r.error) log(`[ai] connected CLIProxyAPI at ${use.origin} (key from ${use.keySource === 'typed' ? 'the person' : 'its config'})`)
+    return r
+  })
+  handle('ai:setHubManagementKey', async (_e, key: unknown) => {
+    if (!ai.setHubManagementKey) throw connectionsNotReady
+    return ai.setHubManagementKey(typeof key === 'string' ? key : null)
+  })
+  handle('ai:editorModels', async () => (await ai.editorModels?.()) ?? [])
+  handle('ai:autoModels', async () => (await ai.autoModels?.()) ?? {})
+  handle('ai:editorAccounts', async () => (await ai.editorAccounts?.()) ?? { accounts: [] })
+  handle('ai:test', async (_e, role: unknown) => {
+    if (!ai.testConnection) throw { code: 'NOT_READY', userMessage: 'Testing the editor needs the AI package.' }
+    const r = await ai.testConnection(undefined, (MODEL_ROLES as readonly unknown[]).includes(role) ? (role as ModelRole) : 'editor')
+    return { reply: r.reply, ms: r.ms, ...(r.model ? { model: r.model } : {}), ...(r.limits ? { limits: r.limits } : {}), ...(r.note ? { note: r.note } : {}) }
+  })
 
   handle('projects:list', () => listProjects())
   handle('projects:search', (_e, query: string) => searchProjects(query))
@@ -1011,6 +1077,9 @@ function registerIpc(): void {
     // A reel cut from another reel's video can't change its video.
     const again = !st.from && !jobs.forSlug(slug) && (await reelSummary(slug))?.status === 'failed' && !(await listVersions(projectDir(slug))).length
     if (st.status !== 'planned' && !again) throw { code: 'HAS_VIDEO', userMessage: 'This reel already has its video. Drop it on Reels to make a new reel.' }
+    // refused before anything is written or moved: not the title, and not the other files into the Library
+    if (jobs.forSlug(slug)?.kind === 'script') throw { code: 'BUSY', userMessage: 'Your editor is still answering. Drop the video again in a moment, or press Stop.' }
+    jobs.refuseIfBusy(slug)
     const { videos, skipped } = await takeVideos(files)
     const fromFile = titleFromFile(videos[0])
     let title: string
@@ -1020,12 +1089,12 @@ function registerIpc(): void {
       title = titleWithAnotherVideo(current, st.fileTitle, fromFile)
       await clearFailedCopy(projectDir(slug))
     } else title = st.title && st.title !== PLANNED_TITLE ? st.title : fromFile
-    await updateAppState(slug, (s) => {
+    // the title is written with the first edit's start, so a start refused in the meantime leaves the reel as it was
+    const named = (s: AppState): void => {
       s.title = title
       if (title === fromFile) s.fileTitle = title
-    })
-    // refused while a script is still being written; the reel stays planned until its first edit starts
-    return { jobId: startFirstEdit(slug, { title, files: videos }), skipped }
+    }
+    return { jobId: startFirstEdit(slug, { title, files: videos }, false, named), skipped }
   })
   // A turn of a planned reel's planning chat: the editor asks a short question or proposes the whole plan, which
   // becomes the reel's plan (shared/plan.ts). The plan's title names the reel, unless the person named it.
@@ -1070,9 +1139,10 @@ function registerIpc(): void {
   })
   handle('projects:resume', async (_e, slug: string, basic?: boolean) => {
     const dir = projectDir(slug)
-    if (!existsSync(join(dir, 'project.json'))) {
-      throw { code: 'CANNOT_RESUME', userMessage: 'This reel’s video never finished copying. Delete the reel and drop the video in again.' }
-    }
+    // stopped during the copy: Resume copies the video again from the file the person dropped, if it still opens
+    // (startFirstEdit). The card never offers Resume otherwise (store.ts copyGone); this is for a file gone since.
+    const st = await readAppState(slug)
+    if (!existsSync(join(dir, 'project.json')) && !st.from && !(await canCopyAgain(st.copyFrom))) throw COPY_GONE
     // the person's Resume: nothing waits to continue it on its own any more
     pauser.cancel(slug)
     return { jobId: startFirstEdit(slug, null, basic === true) }
@@ -1307,17 +1377,74 @@ function registerIpc(): void {
     await ai.restoreStyleRule(gone.rule, gone.index)
     removedRules.delete(id)
   })
-  handle('style:learn', async () => {
-    const mac = process.platform === 'darwin'
-    const picker = learnPicker(mac)
-    const r = await showOpenDialog({
-      title: picker.title,
-      // a .fcpxmld is a folder unless Final Cut Pro is installed to make it a package
-      properties: mac ? ['openFile', 'openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'],
-      filters: [{ name: picker.filter, extensions: ['fcpxml', 'fcpxmld', 'xml'] }]
-    })
-    if (r.canceled || !r.filePaths.length) return null
-    return readLesson(r.filePaths, (file) => runEngine('import-reference', [file]))
+  // What style:find last found, with the paths the page never sees
+  let pastEdits: Found[] = []
+  const findDeps = (): FindDeps =>
+    TEST
+      ? // tests never look at the machine's own files: a folder of fixtures stands in for the home folder
+        {
+          platform: process.platform,
+          home: process.env.REELSTUDIO_TEST_PAST_EDITS_HOME ?? join(app.getPath('userData'), 'no-home'),
+          spotlight: null,
+          // smaller limits, so a test can reach one (JSON, e.g. {"walk":3})
+          limits: process.env.REELSTUDIO_TEST_PAST_EDITS_LIMITS ? JSON.parse(process.env.REELSTUDIO_TEST_PAST_EDITS_LIMITS) : undefined
+        }
+      : { platform: process.platform, home: app.getPath('home'), spotlight: process.platform === 'darwin' ? mdfind : null }
+  const foundEdit = (id: string): Found => {
+    const f = pastEdits.find((x) => x.id === id)
+    if (!f) throw { code: 'NOT_FOUND', userMessage: 'That edit is no longer where it was found. Close this and look again.' }
+    return f
+  }
+  handle('style:find', async () => {
+    const look = await findPastEdits(findDeps())
+    pastEdits = look.edits
+    return { edits: pastEdits.map(({ path: _path, ...edit }) => edit), cut: look.cut }
+  })
+  handle('style:count', async () => {
+    const readable = pastEdits.filter((f) => f.readable)
+    if (!readable.length) return {}
+    return countsOf(readable, await runEngine('reference-scan', readable.map((f) => f.path)))
+  })
+  // the editors' own icons, looked up once a session; tests see only the apps in REELSTUDIO_TEST_APPS_DIR
+  let editorIcons: ReturnType<typeof appIcons> | null = null
+  const iconDeps = (): IconDeps => ({
+    platform: process.platform,
+    spotlight: TEST || process.platform !== 'darwin' ? null : async (q) => (await mdfind(q, 20))?.paths ?? null,
+    registry: TEST || process.platform !== 'win32' ? null : regDefault,
+    appFolders: TEST
+      ? [process.env.REELSTUDIO_TEST_APPS_DIR].filter((d): d is string => !!d)
+      : process.platform === 'darwin'
+        ? ['/Applications', join(app.getPath('home'), 'Applications')]
+        : [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter((d): d is string => !!d),
+    fileIcon: async (p) => {
+      const icon = await app.getFileIcon(p, { size: 'normal' })
+      return icon.isEmpty() ? null : icon.toDataURL()
+    }
+  })
+  handle('style:appIcons', () => (editorIcons ??= appIcons(iconDeps())))
+  handle('style:reveal', (_e, id: string) => {
+    const f = foundEdit(id)
+    if (TEST) log(`[style] reveal ${f.file}`)
+    else shell.showItemInFolder(f.path)
+  })
+  handle('style:learn', async (e, ids?: string[]) => {
+    let files: string[]
+    if (ids) {
+      files = ids.map((id) => foundEdit(id)).filter((f) => f.readable).map((f) => f.path)
+      if (!files.length) throw { code: 'NOT_READABLE', userMessage: 'Choose an XML export to learn from.' }
+    } else {
+      const mac = process.platform === 'darwin'
+      const picker = learnPicker(mac)
+      const r = await showOpenDialog({
+        title: picker.title,
+        // a .fcpxmld is a folder unless Final Cut Pro is installed to make it a package
+        properties: mac ? ['openFile', 'openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'],
+        filters: [{ name: picker.filter, extensions: ['fcpxml', 'fcpxmld', 'xml'] }]
+      })
+      if (r.canceled || !r.filePaths.length) return null
+      files = r.filePaths
+    }
+    return readLesson(files, (file) => runEngine('import-reference', [file]), (p) => e.sender.send('style:learnProgress', p))
   })
   handle('style:keepLearned', async (_e, rules: LearnedRule[], from: string) => {
     if (!ai.addStyleRule) throw { code: 'NOT_READY', userMessage: 'That could not be saved to My style. Try again later.' }
@@ -1395,13 +1522,6 @@ function createVendors(): VendorConnect {
   const mock = aiSource === 'mock' ? ai.mockVendor : undefined
   return createVendorConnect({
     status,
-    install: (v, signal) => {
-      if (mock) return mock.install(v, signal)
-      const run = (): Promise<void> =>
-        runInstall({ vendor: v, platform: process.platform, dir: join(settingsDir(), 'vendor-setup'), env: cliBaseEnv(), fetch: (u, i) => net.fetch(u, i), signal, systemRoot: process.env.SystemRoot, log })
-      // Test switch only: OpenAI's Windows installer rewrites the user PATH; put it back exactly as it was.
-      return TEST_VENDOR_ENV && process.platform === 'win32' && v === 'chatgpt' ? withUserPathKept(run, log) : run()
-    },
     login: (v, bin, signal, onDeviceCode) =>
       mock
         ? mock.login(v, signal, onDeviceCode)

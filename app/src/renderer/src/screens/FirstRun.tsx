@@ -1,8 +1,9 @@
 // The first run, staged in the Reel screen's own layout (ux-foundation-b.md section 4): a welcome; then the sample
 // is made in the player and the notes column the way an editor makes Version 1, so it shows everything the product
 // does; then the editor is chosen beside it; then the app opens on a new reel with no video yet.
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ProviderInfo } from '../../../shared/api'
+import { place, type Shape } from '../../../shared/phone-shapes'
 import { clock } from '../../../shared/progress'
 import type { Step } from '../../../shared/steps'
 import { reel, userMessage } from '../api'
@@ -10,7 +11,7 @@ import { Icon } from '../components/icons'
 import { Logo } from '../components/brand'
 import { ConnectAI } from '../components/connect'
 import { StepRows } from '../components/Composer'
-import { Phone, PhoneViewSwitch, usePhoneView } from '../components/Phone'
+import { Phone, PhoneViewSwitch, deviceRatio, fitPhone, usePhoneShape, usePhoneView } from '../components/Phone'
 import { createPlayhead, followVideo, usePlayhead, type Playhead } from '../components/playhead'
 import { useNotify } from '../App'
 import { Demo, freshSteps, type View } from '../components/first-run/demo'
@@ -41,17 +42,17 @@ export function FirstRun({ onDone, platform }: { onDone: () => Promise<void>; pl
   const computer = platform === 'darwin' ? 'Mac' : 'PC'
   const [start, setStart] = useState<Start | null>(null)
   const [welcomeGone, setWelcomeGone] = useState(false)
+  const [shape] = usePhoneShape()
   const center = useRef<HTMLImageElement>(null)
   const player = useRef<HTMLVideoElement>(null)
   const stage = !!start
   // Both places are read on the click, before anything moves: the stage has been laid out under the welcome.
-  const begin = () =>
-    setStart({ flight: canFly() && center.current ? { from: center.current.getBoundingClientRect(), to: player.current!.parentElement!.getBoundingClientRect() } : null })
+  const begin = () => setStart({ flight: canFly() && center.current ? { from: center.current.getBoundingClientRect(), ...landing(player.current!, shape) } : null })
 
   return (
     <div className="fr" data-testid="first-run">
       {/* mounted under the welcome, so Get started only starts things: its frame is not the stage's mount */}
-      <Stage computer={computer} start={start} video={player} onLanded={() => setWelcomeGone(true)} onDone={onDone} />
+      <Stage computer={computer} shape={shape} start={start} video={player} onLanded={() => setWelcomeGone(true)} onDone={onDone} />
       {!welcomeGone && (
         <main className={`fr-welcome${stage ? ' leaving' : ''}${start?.flight ? ' flying' : ''}`} aria-hidden={stage || undefined} inert={stage || undefined}>
           <span className="w-logo" aria-hidden>
@@ -74,26 +75,54 @@ export function FirstRun({ onDone, platform }: { onDone: () => Promise<void>; pl
   )
 }
 
+/** The welcome's reels have 14 px corners (first-run.css .reels img). */
+const THUMB_RADIUS = 14
+
 /**
- * The middle reel moving from the welcome into the player. Both are 9:16, so one translate and scale carries it;
- * the flyer is the player's own size and corners, scaled down at the start. Resolves when it lands; it then fades
- * over the player's own first frame, so the Instagram screen under it comes in rather than popping.
+ * Where the flight lands: the reel's own box on the phone (9:16, as the welcome's reel is), and the part of it the
+ * screen shows, as a clip in the box's own pixels with the screen's corners where it meets them.
  */
-async function fly(src: string, from: DOMRect, to: DOMRect): Promise<void> {
+function landing(video: HTMLVideoElement, s: Shape): { to: DOMRect; clip: string } {
+  const to = video.parentElement!.getBoundingClientRect()
+  const { viewer, reel } = place(s)
+  const k = to.width / reel.w
+  const top = Math.max(0, viewer.y - reel.y) * k
+  const bottom = Math.max(0, reel.y + reel.h - viewer.y - viewer.h) * k
+  const side = Math.max(0, viewer.x - reel.x) * k
+  const r = s.radius * k
+  const foot = viewer.y + viewer.h >= s.h ? r : 0
+  return { to, clip: `inset(${top}px ${side}px ${bottom}px ${side}px round ${r}px ${r}px ${foot}px ${foot}px)` }
+}
+
+/**
+ * The middle reel moving from the welcome into the player. Both are 9:16, so one translate and scale carries it,
+ * while its clip goes from the welcome's rounded corners to what the phone's screen shows of the reel. The flyer is
+ * the reel's own box, scaled down at the start. Resolves when it lands; it then fades over the player's own first
+ * frame, so the Instagram screen under it comes in rather than popping.
+ */
+async function fly(src: string, { from, to, clip }: Flight): Promise<void> {
   const k = from.width / to.width
   const dx = from.left + from.width / 2 - (to.left + to.width / 2)
   const dy = from.top + from.height / 2 - (to.top + to.height / 2)
   const start = `translate(${dx}px, ${dy}px) scale(${k})`
+  const round = THUMB_RADIUS / k
+  const clip0 = `inset(0px 0px 0px 0px round ${round}px ${round}px ${round}px ${round}px)`
   const node = document.createElement('div')
   node.className = 'fr-flyer'
-  Object.assign(node.style, { left: `${to.left}px`, top: `${to.top}px`, width: `${to.width}px`, height: `${to.height}px`, transform: start })
+  Object.assign(node.style, { left: `${to.left}px`, top: `${to.top}px`, width: `${to.width}px`, height: `${to.height}px`, transform: start, clipPath: clip0 })
   const img = document.createElement('img')
   img.src = src
   img.alt = ''
   node.append(img)
   document.body.append(node)
   await img.decode().catch(() => {})
-  const move = node.animate([{ transform: start }, { transform: 'none' }], { duration: 360, easing: EASE_IN_OUT, fill: 'forwards' })
+  const move = node.animate(
+    [
+      { transform: start, clipPath: clip0 },
+      { transform: 'none', clipPath: clip }
+    ],
+    { duration: 360, easing: EASE_IN_OUT, fill: 'forwards' }
+  )
   const gone = () => node.remove()
   return move.finished.then(
     () => void node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }).finished.then(gone, gone),
@@ -104,18 +133,21 @@ async function fly(src: string, from: DOMRect, to: DOMRect): Promise<void> {
 /** The first run's three parts, named at the top of the notes column. */
 const WHERE = ['The sample', 'Your editor', 'Your reel']
 
+type Flight = { from: DOMRect; to: DOMRect; clip: string }
 /** Get started: where the welcome's middle reel and the player were, or no flight (reduced motion, keyboard, narrow). */
-type Start = { flight: { from: DOMRect; to: DOMRect } | null }
+type Start = { flight: Flight | null }
 type Pane = 'sample' | 'editor'
 
 function Stage({
   computer,
+  shape,
   start,
   video,
   onLanded,
   onDone
 }: {
   computer: string
+  shape: Shape
   /** null until Get started */
   start: Start | null
   video: React.RefObject<HTMLVideoElement | null>
@@ -161,6 +193,20 @@ function Stage({
   const heading = useRef<HTMLHeadingElement>(null)
   const [landed, setLanded] = useState(false)
   const landing = !!start?.flight && !landed
+  const box = useRef<HTMLDivElement>(null)
+  const slot = useRef<HTMLDivElement>(null)
+  const ratio = deviceRatio(shape)
+
+  // The phone takes the slot's full height; the transport under it takes the phone's width, so both read --phone-w
+  // from the box around them. Written on resize only, without rendering.
+  useLayoutEffect(() => {
+    const at = box.current!
+    const el = slot.current!
+    fitPhone(at, ratio, el.clientHeight)
+    const ro = new ResizeObserver(([e]) => fitPhone(at, ratio, e.contentRect.height))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ratio])
 
   useEffect(() => followVideo(() => video.current, playhead), [playhead])
   // The cover, its candidates and the editor's pictures start hidden; decoded now, their first frame on screen is not a decode.
@@ -213,7 +259,7 @@ function Stage({
     setSoundOn(sound.on)
     let alive = true
     void (async () => {
-      if (start.flight) await fly(posterUrl, start.flight.from, start.flight.to)
+      if (start.flight) await fly(posterUrl, start.flight)
       else if (!byKeyboard()) await new Promise((r) => window.setTimeout(r, LEAVE_MS)) // the welcome fades out first
       if (!alive) return
       setLanded(true)
@@ -278,8 +324,9 @@ function Stage({
 
   return (
     <div className={`fr-stage${start ? ' on' : ''}${leaving ? ' leaving' : ''}`} inert={!start || undefined}>
+      {/* the sample's name, centred over the phone it names */}
       <header className="fr-tb">
-        <span className="rt-title">
+        <span className="fr-title">
           <h1 className="tb-h">The sample</h1>
           {version && (
             <span className="rt-ver" data-testid="version-on-screen">
@@ -287,74 +334,89 @@ function Stage({
             </span>
           )}
         </span>
-        <button className="fr-snd" aria-pressed={soundOn} onClick={toggleSound} data-testid="sound-effects">
-          Sound effects: {soundOn ? 'on' : 'off'}
-        </button>
       </header>
       <div className="reel-b">
         <section className="stage" aria-label="The sample reel">
-          <div className={`stage-v${landing ? ' fr-landing' : ''}`}>
-            <Phone view={phoneView} caption={CAPTION} className={held ? 'fr-held' : undefined} testid="sample-phone">
-              <video ref={video} className="fr-v" poster={posterUrl} muted playsInline preload="auto" aria-hidden />
-              <canvas ref={still} className="fr-still" aria-hidden />
-              <div className="fr-subs" ref={r.subs} aria-hidden />
-              <span className="reel-tag fr-tag" ref={r.tag} aria-hidden />
-              <div className="fr-scrim" ref={r.scrim} />
-              <div className="fr-cands" ref={r.cands} aria-hidden>
-                <img src={candWide} alt="" />
-                <img src={candMid} alt="" />
-                <img src={candClose} alt="" data-pick />
-              </div>
-              <div className="fr-cover" ref={r.cover} aria-hidden>
-                <img src={coverUrl} alt="" />
-                <div className="cover-t">
-                  You don’t need a <em>mixer</em>
-                </div>
-              </div>
-              {finished && (
+          <div className="fr-player" ref={box}>
+            <div className={`stage-v fr-slot${landing ? ' fr-landing' : ''}`} ref={slot}>
+              <Phone
+                shape={shape}
+                view={phoneView}
+                caption={CAPTION}
+                className={held ? 'fr-held' : undefined}
+                testid="sample-phone"
+                over={
+                  <>
+                    <span className="reel-tag fr-tag" ref={r.tag} aria-hidden />
+                    <div className="fr-scrim" ref={r.scrim} />
+                    <div className="phone-reel fr-over" aria-hidden>
+                      <div className="fr-cands" ref={r.cands}>
+                        <img src={candWide} alt="" />
+                        <img src={candMid} alt="" />
+                        <img src={candClose} alt="" data-pick />
+                      </div>
+                      <div className="fr-cover" ref={r.cover}>
+                        <img src={coverUrl} alt="" />
+                        <div className="cover-t">
+                          You don’t need a <em>mixer</em>
+                        </div>
+                      </div>
+                    </div>
+                    {finished && (
+                      <button
+                        className="fr-hold"
+                        aria-label="The sample reel. Press and hold, or hold Space, to see what you filmed."
+                        onPointerDown={(e) => {
+                          if (e.button !== 0) return
+                          e.currentTarget.setPointerCapture(e.pointerId)
+                          hold(true)
+                        }}
+                        onPointerUp={() => hold(false)}
+                        onPointerCancel={() => hold(false)}
+                        onLostPointerCapture={() => hold(false)}
+                        onKeyDown={(e) => {
+                          if (e.key !== ' ' && e.key !== 'Enter') return
+                          e.preventDefault()
+                          if (!e.repeat) hold(true)
+                        }}
+                        onContextMenu={(e) => e.preventDefault()}
+                        data-testid="sample-hold"
+                      />
+                    )}
+                  </>
+                }
+              >
+                <video ref={video} className="fr-v" poster={posterUrl} muted playsInline preload="auto" aria-hidden />
+                <canvas ref={still} className="fr-still" aria-hidden />
+                <div className="fr-subs" ref={r.subs} aria-hidden />
+              </Phone>
+            </div>
+            {/* under the phone and no wider than it: play, the time and the view, then how to see the raw take */}
+            <div className="fr-transport">
+              <div className="fr-tr-row">
                 <button
-                  className="fr-hold"
-                  aria-label="The sample reel. Press and hold, or hold Space, to see what you filmed."
-                  onPointerDown={(e) => {
-                    if (e.button !== 0) return
-                    e.currentTarget.setPointerCapture(e.pointerId)
-                    hold(true)
-                  }}
-                  onPointerUp={() => hold(false)}
-                  onPointerCancel={() => hold(false)}
-                  onLostPointerCapture={() => hold(false)}
-                  onKeyDown={(e) => {
-                    if (e.key !== ' ' && e.key !== 'Enter') return
-                    e.preventDefault()
-                    if (!e.repeat) hold(true)
-                  }}
-                  onContextMenu={(e) => e.preventDefault()}
-                  data-testid="sample-hold"
-                />
-              )}
-            </Phone>
-          </div>
-          <div className="transport">
-            <button
-              className="pp"
-              style={finished ? undefined : { visibility: 'hidden' }}
-              onClick={() => demo.current?.setPaused(!paused)}
-              aria-label={paused ? 'Play the sample' : 'Pause the sample'}
-              data-testid="play"
-            >
-              <Icon name={paused ? 'play' : 'pause'} size={14} stroke={2} />
-            </button>
-            <Clock playhead={playhead} view={view} />
-            <span className={`fr-hint${finished ? ' show' : ''}`} data-testid="hold-hint">
-              Hold the video to see what you filmed.
-            </span>
-            <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
+                  className="pp"
+                  style={finished ? undefined : { visibility: 'hidden' }}
+                  onClick={() => demo.current?.setPaused(!paused)}
+                  aria-label={paused ? 'Play the sample' : 'Pause the sample'}
+                  data-testid="play"
+                >
+                  <Icon name={paused ? 'play' : 'pause'} size={14} stroke={2} />
+                </button>
+                <Clock playhead={playhead} view={view} />
+                <span className="sp" />
+                <PhoneViewSwitch value={phoneView} onChange={(v) => void setPhoneView(v).catch((e) => notify(userMessage(e), 'error'))} />
+              </div>
+              <p className={`fr-hint${finished ? ' show' : ''}`} data-testid="hold-hint">
+                Hold the video to see what you filmed.
+              </p>
+            </div>
           </div>
         </section>
 
         <div className="ncol fr-col">
-          {/* the top of the column says where in the first run this is and what the column shows; the thread follows
-              under it and the progress or the picker sits at the bottom, where a reel's note box is */}
+          {/* where in the first run this is and what the column shows; one scroll area under it, the progress in it
+              under the words; the step's button pinned at the foot */}
           <div className="notes-h fr-h">
             <ol className="fr-where" aria-label="Getting started" data-testid="first-run-where">
               {WHERE.map((w, i) => (
@@ -372,108 +434,127 @@ function Stage({
                 : 'Your editor picks your best takes, adds pictures and makes the changes you ask for, on your own Claude or ChatGPT plan.'}
             </p>
           </div>
-          <div className="log fr-log" role="log" aria-labelledby="fr-h">
-            <div className="fr-log-in">
-            <article className="nt">
-              <div className="nt-ask">
-                <p className="bubble">
-                  <Icon name="video" size={14} stroke={1.75} />
-                  Raw take · 0:24
-                </p>
-              </div>
-              {finished ? (
-                <div className="nt-res enter" data-testid="sample-v1">
-                  <span className="nk ok">
-                    <Icon name="check" size={12} stroke={2.4} />
-                  </span>
-                  <b className="v">Version 1</b>
-                  <span className="sep" aria-hidden>
-                    ·
-                  </span>
-                  <span className="t">0:24 down to {EDIT.len}</span>
-                </div>
-              ) : (
-                <div className="nt-res quiet" aria-busy>
-                  <span className="nk">
-                    <span className="spin" />
-                  </span>
-                  <span className="t">Making Version 1</span>
-                </div>
-              )}
-              <p className="fr-words" data-testid="sample-words">
-                <b>Heard</b>{' '}
-                {segs.map((s) => (
-                  <span
-                    key={s.id}
-                    className="fr-seg"
-                    ref={(el) => {
-                      if (el) segEls.current.set(s.id, el)
-                    }}
-                  >
-                    {s.toks.map(({ t, i }) => {
-                      const pic = picAt.get(i)
-                      return (
-                        <Fragment key={i}>
-                          <span
-                            ref={(el) => {
-                              if (el) chips.current[i] = el
-                            }}
-                            className={`tk${t.text ? '' : ' pz'}`}
-                            aria-label={t.text ? undefined : `pause, ${t.pause}`}
-                          >
-                            {t.text ?? t.pause}
-                          </span>{' '}
-                          {pic && (
-                            <>
-                              <span
-                                className="tk in pic gone"
-                                role="img"
-                                aria-label={pic.label}
-                                ref={(el) => {
-                                  if (el && !pics.current.includes(el)) pics.current.push(el)
-                                }}
-                              >
-                                <img src={pic.src} alt="" />
-                              </span>{' '}
-                            </>
-                          )}
-                        </Fragment>
-                      )
-                    })}
-                  </span>
-                ))}
-              </p>
-            </article>
-            </div>
-          </div>
-
-          <div className="cbox bare">
-            <div className={`stripwrap${!finished ? ' on' : ''}`}>
-              <div>
-                {!finished && (
-                  <>
-                    <div className="steps on">
-                      <div>
-                        <ul aria-label="Steps" data-testid="steps-list">
-                          <StepRows steps={steps} />
-                        </ul>
-                      </div>
-                    </div>
-                    <div className="strip" role="status" data-testid="note-progress">
-                      <span className="bar" aria-hidden>
-                        <i style={{ transform: `scaleX(${(doneCount + (current ? 0.5 : 0)) / steps.length})` }} />
+          <div className={`fr-body${pane === 'sample' ? ' fr-log' : ''}`}>
+            {/* kept on the page in the editor step: the sample still plays and marks its words. The progress sits
+                right under the words it is working on. */}
+            <div className="fr-log-in" hidden={pane !== 'sample'}>
+              <div role="log" aria-labelledby="fr-h">
+                <article className="nt">
+                  <div className="nt-ask">
+                    <p className="bubble">
+                      <Icon name="video" size={14} stroke={1.75} />
+                      Raw take · 0:24
+                    </p>
+                  </div>
+                  {finished ? (
+                    <div className="nt-res enter" data-testid="sample-v1">
+                      <span className="nk ok">
+                        <Icon name="check" size={12} stroke={2.4} />
                       </span>
-                      <span className="spin light" aria-hidden />
-                      <b>Making Version 1</b>
-                      {/* the list above names the step; the strip says how far along */}
-                      <span className="m">{current ? ` · Step ${steps.indexOf(current) + 1} of ${steps.length}` : ''}</span>
+                      <b className="v">Version 1</b>
+                      <span className="sep" aria-hidden>
+                        ·
+                      </span>
+                      <span className="t">0:24 down to {EDIT.len}</span>
                     </div>
-                  </>
-                )}
+                  ) : (
+                    <div className="nt-res quiet" aria-busy>
+                      <span className="nk">
+                        <span className="spin" />
+                      </span>
+                      <span className="t">Making Version 1</span>
+                    </div>
+                  )}
+                  <p className="fr-words" data-testid="sample-words">
+                    <b>Heard</b>{' '}
+                    {segs.map((s) => (
+                      <span
+                        key={s.id}
+                        className="fr-seg"
+                        ref={(el) => {
+                          if (el) segEls.current.set(s.id, el)
+                        }}
+                      >
+                        {s.toks.map(({ t, i }) => {
+                          const pic = picAt.get(i)
+                          return (
+                            <Fragment key={i}>
+                              <span
+                                ref={(el) => {
+                                  if (el) chips.current[i] = el
+                                }}
+                                className={`tk${t.text ? '' : ' pz'}`}
+                                aria-label={t.text ? undefined : `pause, ${t.pause}`}
+                              >
+                                {t.text ?? t.pause}
+                              </span>{' '}
+                              {pic && (
+                                <>
+                                  <span
+                                    className="tk in pic gone"
+                                    role="img"
+                                    aria-label={pic.label}
+                                    ref={(el) => {
+                                      if (el && !pics.current.includes(el)) pics.current.push(el)
+                                    }}
+                                  >
+                                    <img src={pic.src} alt="" />
+                                  </span>{' '}
+                                </>
+                              )}
+                            </Fragment>
+                          )
+                        })}
+                      </span>
+                    ))}
+                  </p>
+                  {!finished && (
+                    <p className="fr-key" data-testid="pause-key">
+                      <span className="tk pz in" aria-hidden>
+                        1.0 s
+                      </span>{' '}
+                      is a pause. Red is what comes out.
+                    </p>
+                  )}
+                </article>
+              </div>
+              <div className="cbox bare">
+                <div className={`stripwrap${!finished ? ' on' : ''}`}>
+                  <div>
+                    {!finished && (
+                      <>
+                        <div className="steps on">
+                          <div>
+                            <ul aria-label="Steps" data-testid="steps-list">
+                              <StepRows steps={steps} />
+                            </ul>
+                          </div>
+                        </div>
+                        {/* the sample's sounds play on its cuts and its cover, so their switch sits on its progress */}
+                        <div className="strip" data-testid="note-progress">
+                          <span className="bar" aria-hidden>
+                            <i style={{ transform: `scaleX(${(doneCount + (current ? 0.5 : 0)) / steps.length})` }} />
+                          </span>
+                          <span className="spin light" aria-hidden />
+                          <span className="fr-strip-t" role="status">
+                            <b>Making Version 1</b>
+                            {/* the list above names the step; the strip says how far along */}
+                            <span className="m">{current ? ` · Step ${steps.indexOf(current) + 1} of ${steps.length}` : ''}</span>
+                          </span>
+                          <span className="sp" />
+                          <button className="sbtn fr-snd" aria-pressed={soundOn} onClick={toggleSound} title={`Sound effects: ${soundOn ? 'on' : 'off'}`} data-testid="sound-effects">
+                            <Icon name={soundOn ? 'volume' : 'mute'} size={16} stroke={2} />
+                            <span className="sr-only">Sound effects: {soundOn ? 'on' : 'off'}</span>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
             {pane === 'editor' && (
-              <div className="connect-cin fr-pick" data-testid="composer-connect">
+              <div className="fr-pick" data-testid="composer-connect">
                 <ConnectAI onConnected={connected} />
               </div>
             )}

@@ -106,7 +106,7 @@ a { color: inherit; }
 
 /* The sidebar's update row (UpdateButton.tsx): a row like the nav, not a box. */
 .update-pill {
-  display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; text-align: left;
+  display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 6px 8px; overflow: hidden; text-align: left;
   border: 0; border-radius: var(--r-md); background: transparent; color: var(--ink);
   font: inherit; cursor: pointer; transition: background-color 120ms ease, transform 120ms var(--ease-out);
 }
@@ -116,8 +116,10 @@ a { color: inherit; }
 .update-pill:active { transform: scale(.98); }
 .update-pill[aria-disabled] { cursor: default; }
 .update-pill[aria-disabled]:active { transform: none; }
-.update-pill-text { display: flex; flex-direction: column; min-width: 0; }
-.update-pill-label { font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.update-pill-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.update-pill-label { font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* folded to the rail: the icon alone, the size of a nav row (shell.css) */
+.rail .update-pill { width: 40px; padding: 5px; }
 .update-pill-sub { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .update-icon { position: relative; width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 50%; color: var(--ink); }
@@ -134,11 +136,11 @@ a { color: inherit; }
 }
 
 .update-pop {
-  position: fixed; z-index: 35; width: 300px; max-height: min(420px, calc(100vh - 80px)); overflow-y: auto;
+  position: fixed; z-index: 35; width: 300px; max-height: min(420px, calc(100vh - 80px)); overflow-y: auto; overscroll-behavior: contain;
   background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--e3);
-  padding: 16px 18px 12px; display: flex; flex-direction: column; gap: 12px;
-  transform-origin: left bottom; opacity: 0; transform: translateX(-4px) scale(.97); visibility: hidden; pointer-events: none;
-  transition: opacity .125s var(--ease-out), transform .125s var(--ease-out), visibility 0s linear .125s;
+  padding: 14px 16px 10px; display: flex; flex-direction: column; gap: 12px;
+  transform-origin: left bottom; opacity: 0; transform: translateY(4px) scale(.97); visibility: hidden; pointer-events: none;
+  transition: opacity .15s var(--ease-out), transform .15s var(--ease-out), visibility 0s linear .15s;
 }
 .update-pop[data-open] {
   opacity: 1; transform: none; visibility: visible; pointer-events: auto;
@@ -147,15 +149,17 @@ a { color: inherit; }
 .update-pop[data-instant] { transition: none; }
 .update-pop-title { font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 640; }
 .update-pop-sub { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); margin-top: 2px; }
+/* a nightly's version breaks at the space before it, never at its hyphen */
+.update-pop-sub .nowrap { white-space: nowrap; }
 .update-pop-notes { border-top: 1px solid var(--line); padding-top: 12px; }
 .update-pop-notes h3 { font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 620; color: var(--ink-2); }
 .update-pop-notes ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink); user-select: text; }
 .update-pop-link {
-  align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; padding: 4px 0; min-height: 28px;
-  font: inherit; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+  flex: none; display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; padding: 4px 0; min-height: 28px;
+  font: inherit; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; cursor: pointer;
 }
 .update-pop-link:hover { color: var(--ink); }
-.update-pop-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.update-pop-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 6px; }
 
 .update-row { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .update-row-line { display: flex; align-items: center; gap: 14px; }
@@ -285,11 +289,11 @@ html.kb .switch { transition: none; }
 /* Working: the phone column is as wide as the full-height phone (Phone.tsx PhoneFill). */
 .reel { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 36px; align-items: start; }
 .reel-left { position: sticky; top: 10px; display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 300px; }
-.phone-tag { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.6); color: #fff; font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 600; padding: 4px 10px; border-radius: 999px; }
+.phone-tag { position: absolute; top: calc(14px + var(--safe-top, 0px)); left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.6); color: #fff; font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 600; padding: 4px 10px; border-radius: 999px; }
 .big-play { position: absolute; left: 50%; top: 50%; width: 72px; height: 72px; margin: -36px 0 0 -36px; border-radius: 50%; border: 0; background: rgba(255,255,255,.92); color: var(--ink); display: grid; place-items: center; cursor: pointer; box-shadow: 0 6px 24px rgba(0,0,0,.25); transition: transform .12s; }
 .big-play .icon { fill: currentColor; margin-left: 4px; }
 .big-play:hover { transform: scale(1.05); }
-.sound-chip { position: absolute; top: 14px; right: 14px; display: inline-flex; gap: 6px; align-items: center; border: 0; border-radius: 999px; padding: 7px 12px; min-height: 32px; background: rgba(0,0,0,.6); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.sound-chip { position: absolute; top: calc(14px + var(--safe-top, 0px)); right: 14px; display: inline-flex; gap: 6px; align-items: center; border: 0; border-radius: 999px; padding: 7px 12px; min-height: 32px; background: rgba(0,0,0,.6); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
 .scrub { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 12px 10px; display: flex; align-items: center; gap: 8px; background: linear-gradient(transparent, rgba(0,0,0,.45)); opacity: 0; transition: opacity .2s; }
 .phone-screen:hover .scrub.shown, .scrub.shown:focus-within { opacity: 1; }
 .scrub-btn { width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: #fff; display: grid; place-items: center; cursor: pointer; flex: none; }
@@ -460,7 +464,8 @@ input[type="checkbox"]:disabled { cursor: default; opacity: .45; }
    span draws its own in plan.css, after the colours it overrides) */
 @media (forced-colors: active) { input[type="checkbox"] { appearance: auto; } }
 .toggle { display: flex; gap: 12px; align-items: center; cursor: pointer; font-weight: 600; min-height: 32px; }
-.slider { width: 100%; max-width: 420px; }
+/* 24 px tall: a native range is 16 px, under the house minimum for a target, and the extra height is all hit area */
+.slider { width: 100%; max-width: 420px; height: 24px; margin: 0; }
 .cover-img { width: 180px; border-radius: 12px; display: block; background: var(--sunk); aspect-ratio: 9/16; object-fit: cover; }
 /* The current cover sits at the suggestions' size, so the suggestions show without scrolling. */
 .drawer .cover-img { width: 132px; }
@@ -532,10 +537,14 @@ input[type="checkbox"]:disabled { cursor: default; opacity: .45; }
 .modal.wide { width: min(580px, 92vw); }
 /* opened from the keyboard, a dialog is just there (keyboard actions never animate) */
 html.kb .modal-backdrop, html.kb .modal { animation: none; }
-.toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); z-index: 50; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 12px; box-shadow: var(--e3); display: flex; gap: 10px; align-items: center; max-width: min(640px, 80vw); animation: toast-in .2s var(--ease-out); }
+/* At the top, under the title row: the bottom of a screen is where its main action sits (Choose video, the note box's
+   Send, Make version), and a toast there covered it. Toast (ui.tsx) centres it over the screen's main column. */
+.toast { position: fixed; top: calc(var(--titlebar) + 8px); left: 50%; transform: translateX(-50%); z-index: 50; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 12px; box-shadow: var(--e3); display: flex; gap: 10px; align-items: center; max-width: min(640px, 80vw); animation: toast-in .2s var(--ease-out); }
+/* what a key press caused just appears (motion.ts sets html.kb) */
+html.kb .toast { animation: none; }
 .toast:not(.error) { pointer-events: none; } /* nothing to press on it; a click goes to the button it covers */
 .toast.error { background: #7d2618; padding-right: 8px; }
-@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 /* ---- your own AI server (components/Connections.tsx) ---- */
 .conn-kinds { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -582,4 +591,4 @@ html.kb .modal-backdrop, html.kb .modal { animation: none; }
 @keyframes breathe-soft { 0%, 100% { opacity: .2; } 50% { opacity: .85; } }
 
 /* Over Instagram's chrome the chip sits under the Reels header, clear of the camera button. */
-.phone-screen:has(> .igc:not(.off)) > .sound-chip { top: calc(100cqw * 104 / 393); }
+.phone-screen:has(> .igc:not(.off)) > .sound-chip { top: calc(100cqw * (104 + var(--ig-top, 0)) / var(--sw, 393)); }

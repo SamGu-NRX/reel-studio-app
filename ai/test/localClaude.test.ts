@@ -197,10 +197,11 @@ describe('the Claude Code choice in the provider list', () => {
     expect(list.find((p) => p.id === 'claude-cli')!.label).toBe('Claude (your Claude Code app)');
   });
 
-  it('no e-mail or organization in any ProviderStatus (detail is the version at most)', async () => {
+  it('no e-mail or organization in any ProviderStatus (detail is the plan kind at most)', async () => {
     const ai = createAI({ ...noProvider(), localClaude: { bin: answers(), run: signedIn } });
     const st = (await ai.providers()).find((p) => p.id === 'claude-cli')!;
-    expect(st.detail).toBe('2.1.304');
+    // the row reads "Claude Code · Max"
+    expect(st.detail).toBe('Max');
     await ai.setActive('claude-cli');
     const all = JSON.stringify([await ai.providers(), await ai.active(), await ai.claudeCodeStatus()]);
     for (const secret of [EMAIL, ORG_ID, ORG_NAME]) expect(all).not.toContain(secret);
@@ -287,7 +288,7 @@ describe('Cancel while Claude is still being looked for', () => {
 });
 
 describe('a model per role (Settings › Editor › Models)', () => {
-  it('asks Claude Code and your own server for the chosen model, leaves ChatGPT and a key to their own, and refuses a name Claude Code cannot run', () => {
+  it('asks Claude Code and your own server for the chosen model, leaves ChatGPT and a key to their own, and runs Auto for a name the editor cannot run', () => {
     const choices = { editor: 'opus', checker: 'auto', writer: 'claude-haiku-4-5' };
     expect(modelForRole('claude-cli', 'editor', choices)).toBe('opus');
     expect(modelForRole('claude-cli', 'checker', choices)).toBeUndefined();
@@ -295,7 +296,10 @@ describe('a model per role (Settings › Editor › Models)', () => {
     expect(modelForRole('custom', 'editor', { editor: 'llama-3.3-70b' })).toBe('llama-3.3-70b');
     expect(modelForRole('chatgpt', 'editor', choices)).toBeUndefined();
     expect(modelForRole('claude', 'editor', choices)).toBeUndefined();
-    expect(() => modelForRole('claude-cli', 'editor', { editor: 'llama-3.3-70b' })).toThrow(expect.objectContaining({ code: 'model_not_offered' }));
+    // left from another editor: Auto, as the stage's chip shows it, never an error in the middle of an edit
+    expect(modelForRole('claude-cli', 'editor', { editor: 'llama-3.3-70b' })).toBeUndefined();
+    expect(modelForRole('codex-cli', 'checker', { checker: 'claude-opus-5-5(high)' })).toBeUndefined();
+    expect(modelForRole('codex-cli', 'checker', { checker: 'gpt-6.1-sol(high)' })).toBe('gpt-6.1-sol(high)');
   });
 
   // fails if a role's choice is saved but the call still goes out with the default model

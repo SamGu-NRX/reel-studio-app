@@ -26,6 +26,8 @@ export interface AgentResult {
   changed: string[];
   /** a typed rule to ask about ("Use lowercase captions."): Yes = approveStyleProposal(it) */
   styleProposal?: StyleProposal;
+  /** the model that made this version, as the notes name it ("Claude Sonnet 5.5 · High"); absent for a basic version */
+  model?: string;
 }
 export interface ScriptResult { hook: string; script: string; onScreenText: string[]; title?: string }
 
@@ -83,7 +85,7 @@ export class AIError extends Error implements UserFacingError {
   constructor(
     public readonly code: string,
     public readonly userMessage: string,
-    opts: { detail?: string; link?: string; retryable?: boolean; status?: number; requestId?: string; resetsAt?: string } = {},
+    opts: { detail?: string; link?: string; retryable?: boolean; status?: number; requestId?: string; resetsAt?: string; limits?: LimitWindow[] } = {},
   ) {
     super(opts.detail ?? userMessage);
     this.name = 'AIError';
@@ -92,6 +94,7 @@ export class AIError extends Error implements UserFacingError {
     this.status = opts.status;
     this.requestId = opts.requestId;
     this.resetsAt = opts.resetsAt;
+    this.limits = opts.limits;
   }
   link?: string;
   retryable: boolean;
@@ -99,9 +102,20 @@ export class AIError extends Error implements UserFacingError {
   requestId?: string;
   /** A plan at its limit: when it resets (ISO), when the service said. */
   resetsAt?: string;
-  toJSON(): UserFacingError & { status?: number; requestId?: string; resetsAt?: string } {
-    return { code: this.code, userMessage: this.userMessage, link: this.link, retryable: this.retryable, status: this.status, requestId: this.requestId, ...(this.resetsAt ? { resetsAt: this.resetsAt } : {}) };
+  /** the plan's windows when it said them (Claude Code does, as it refuses) */
+  limits?: LimitWindow[];
+  toJSON(): UserFacingError & { status?: number; requestId?: string; resetsAt?: string; limits?: LimitWindow[] } {
+    return { code: this.code, userMessage: this.userMessage, link: this.link, retryable: this.retryable, status: this.status, requestId: this.requestId, ...(this.resetsAt ? { resetsAt: this.resetsAt } : {}), ...(this.limits ? { limits: this.limits } : {}) };
   }
+}
+
+/** One usage window of a plan or account: what is left of it and when it starts over. */
+export interface LimitWindow {
+  /** "5-hour", "Weekly", "Monthly", or a model's own weekly window ("Weekly · Opus") */
+  label: string;
+  /** percent left, 0-100 */
+  left: number;
+  resetsAt?: string;
 }
 
 // ---------------------------------------------------------------- model layer
@@ -146,6 +160,8 @@ export interface CompletionResponse {
   /** where the turn's time went, from a provider that reports its waits: ms from sending to the first thinking and the
    * first answer, to the whole reply, and how many times the service was retried */
   timing?: { thinkingMs: number | null; answerMs: number | null; totalMs: number; retries: number };
+  /** the plan's usage windows, from a provider that reports them with each answer (Claude Code) */
+  limits?: LimitWindow[];
 }
 
 export interface ModelProvider {

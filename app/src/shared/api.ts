@@ -71,6 +71,8 @@ export interface VersionInfo {
   wording?: { title: string; summary: string }
   /** a `vN` rendered before receipts existed (its render.json has no renderId): its tooltip is the chat reply */
   beforeReceipts?: true
+  /** the model that made it, from `versions/vN/made-with.json` ("Claude Sonnet 5.5 · High"); absent for a basic version */
+  madeWith?: string
 }
 
 /** One thing an edit changed (engine project.net_changes): `kind` is the project.json path. */
@@ -468,13 +470,77 @@ export type ConnectionKind = 'anthropic' | 'openai'
 export interface ConnectionInfo {
   id: string
   label: string
-  kind: ConnectionKind
+  /** 'cliproxy': CLIProxyAPI, found on this computer (main/vendor-hub.ts) */
+  kind: ConnectionKind | 'cliproxy'
   baseURL: string
   model: string
   /** false: the AI editor is never sent pictures through this server */
   supportsImages: boolean
   hasKey: boolean
   active: boolean
+  /** where the key came from: a config file ("~/.cli-proxy-api/config.yaml") or "typed" */
+  keySource?: string
+  /** CLIProxyAPI: its management key is saved, so its accounts and limits can be read */
+  hasManagementKey?: boolean
+}
+
+/** CLIProxyAPI on this computer (main/vendor-hub.ts). Never the key. */
+export interface HubFound {
+  /** ready: a key from its config works; needs-key: it answers, but no readable key does; elsewhere: its config names
+   * another computer, which is never asked anything (use Advanced for a server you run elsewhere) */
+  state: 'none' | 'ready' | 'needs-key' | 'elsewhere'
+  /** with elsewhere: the host the config names */
+  host?: string
+  /** "http://127.0.0.1:8317" */
+  origin?: string
+  /** how many models the key gets */
+  models?: number
+  /** the config file the key was read from, home as ~ */
+  keySource?: string
+  /** with needs-key: the config had keys, and the server refused them */
+  keyRefused?: boolean
+  /** with none: the address it asked ("127.0.0.1:8317"), when it asked one */
+  looked?: string
+}
+
+/** One usage window of a plan or account. */
+export interface LimitWindow {
+  /** "5-hour", "Weekly", "Monthly", "Weekly · Opus" */
+  label: string
+  /** percent left, 0-100 */
+  left: number
+  resetsAt?: string
+}
+
+export type ModelFamily = 'claude' | 'gpt' | 'gemini' | 'grok' | 'other'
+
+/** A model the editor in use offers (ai index.ts editorModels). */
+export interface EditorModel {
+  id: string
+  name: string
+  family: ModelFamily
+  /** reasoning levels, lowest first; empty when it has none */
+  efforts: string[]
+  defaultEffort?: string
+  images: boolean
+}
+
+/** The accounts behind the editor in use, their plans and what each has left. */
+export interface EditorAccounts {
+  accounts: { name: string; provider: string; plan?: string; windows: LimitWindow[]; restingUntil?: string; problem?: string }[]
+  /** CLIProxyAPI without its management key */
+  needsManagementKey?: boolean
+  problem?: string
+}
+
+/** The editor's Test: what answered, with which model, and how long it took. */
+export interface TestResult {
+  reply: string
+  model?: string
+  ms: number
+  limits?: LimitWindow[]
+  /** a stage that fell back to Auto because its chosen model was gone, and why */
+  note?: string
 }
 
 export interface ConnectionInput {
@@ -538,7 +604,10 @@ export interface EngineCache {
   bytes: number
 }
 
-export type ModelRole = 'editor' | 'checker' | 'writer'
+/** Every stage that calls a model (ai index.ts MODEL_ROLES). */
+export const MODEL_ROLES = ['editor', 'checker', 'writer', 'planner', 'finder', 'trial', 'namer'] as const
+export type ModelRole = (typeof MODEL_ROLES)[number]
+/** 'auto' or a model id, with a reasoning level when chosen: "claude-opus-5-5(high)". */
 export type ModelChoice = Record<ModelRole, string>
 
 /** Anonymous data sharing. `asked`: the first run asked once; until then nothing is on. */
@@ -555,12 +624,11 @@ export type ClaudeCodeState = 'missing' | 'broken' | 'signed_out' | 'ready'
 
 /** "Connect Claude" / "Connect ChatGPT": the person's own Claude Code app or Codex app (main/vendor-connect.ts). */
 export type VendorId = 'claude' | 'chatgpt'
-/** idle = nothing running; installing = the vendor's installer runs; signing_in = the vendor's page is open in the
- * browser; checking = asking the app if it worked; done = it is the AI editor now; failed = see `problem`. */
-export type VendorStep = 'idle' | 'installing' | 'signing_in' | 'checking' | 'done' | 'failed'
+/** idle = nothing running; signing_in = the vendor's page is open in the browser; checking = asking the app if it
+ * worked; done = it is the AI editor now; failed = see `problem`. Reel Studio never installs the app: a missing one
+ * gets a link to its maker's install page. */
+export type VendorStep = 'idle' | 'signing_in' | 'checking' | 'done' | 'failed'
 export type VendorProblem =
-  | 'install_failed'
-  | 'not_found_after_install'
   | 'sign_in_failed'
   | 'sign_in_timeout'
   | 'port_busy'
@@ -642,13 +710,36 @@ export interface LearnedRule {
 
 /** What "Learn from my past edits" read: the exports, how much was in them, and the rules, before any is saved. */
 export interface StyleLesson {
-  files: { path: string; name: string; editor: 'Final Cut Pro' | 'Premiere Pro' }[]
+  /** By id and name; the paths stay in main. */
+  files: { id: string; name: string; editor: 'Final Cut Pro' | 'Premiere Pro' }[]
   timelines: number
   shots: number
   rules: LearnedRule[]
   /** Exports that couldn't be read, with the reason in plain words. */
   skipped: { name: string; reason: string }[]
 }
+
+export type PastEditKind = 'fcpxml' | 'fcpxmld' | 'fcpbundle' | 'premiere-xml' | 'prproj'
+
+/** An edit "Learn from my past edits" found on this computer. Its path stays in main; the page names it by id. */
+export interface PastEdit {
+  id: string
+  /** The file's name without its extension. */
+  name: string
+  /** The file's whole name, as a lesson lists it. */
+  file: string
+  /** The folder it is in, below the home folder ("Movies › Exports"), or its drive and folder. */
+  where: string
+  app: 'Final Cut Pro' | 'Premiere Pro'
+  kind: PastEditKind
+  /** ISO time it last changed. */
+  modified: string
+  /** Read as it is. A Final Cut Pro library or a Premiere Pro project needs an XML export first. */
+  readable: boolean
+}
+
+/** How many timelines each readable edit holds, by id, or why it can't be read. */
+export type PastEditCounts = Record<string, { timelines: number } | { problem: string }>
 
 export interface StyleProposal {
   id: string
@@ -803,8 +894,8 @@ export interface ReelApi {
     openClaudeSignIn(): Promise<void>
     /** A fresh look at a vendor's app, plus the step of a connect in progress. */
     vendorStatus(v: VendorId): Promise<VendorInfo>
-    /** Installs the vendor's app if missing, starts its own sign-in in the browser, then makes it the AI editor.
-     * Resolves when that ends (done, failed or cancelled); every step also arrives on onVendor. */
+    /** Signs the vendor's app in if needed (its own page in the browser), then makes it the AI editor. Resolves when
+     * that ends (done, failed or cancelled); every step also arrives on onVendor. */
     vendorConnect(v: VendorId): Promise<VendorInfo>
     vendorCancel(v: VendorId): Promise<void>
     /** Restarts a waiting sign-in so the vendor's app opens a fresh page. */
@@ -824,6 +915,21 @@ export interface ReelApi {
     setConnectionImages(id: string, supportsImages: boolean): Promise<void>
     /** `suggested` is null when no listed model is one Reel Studio knows: the person picks. */
     connectionModels(q: { kind: ConnectionKind; baseURL: string; key?: string; id?: string }): Promise<{ models: string[]; suggested: string | null; needsKey: boolean }>
+    /** Looks for CLIProxyAPI on this computer (its config and its /v1/models). */
+    hubStatus(): Promise<HubFound>
+    /** Connects the CLIProxyAPI found by hubStatus with the key from its config, or with `key` when typed. */
+    hubUse(key?: string): Promise<SaveConnectionResult>
+    /** CLIProxyAPI's management key, for its accounts and limits; null removes it. */
+    setHubManagementKey(key: string | null): Promise<EditorAccounts>
+    /** The models the editor in use offers, for each stage's picker. */
+    editorModels(): Promise<EditorModel[]>
+    /** What Auto runs right now for each stage, by display name ("Claude Sonnet 5.5"). */
+    /** What Auto runs for each stage, by name; null when no model runs (Reel Studio writes version names itself). */
+    autoModels(): Promise<Partial<Record<ModelRole, string | null>>>
+    /** Who the editor runs as: accounts, plans and what each has left. */
+    editorAccounts(): Promise<EditorAccounts>
+    /** One tiny prompt through `role`'s model: the reply, the model and the time it took. */
+    test(role?: ModelRole): Promise<TestResult>
     /** Returns unsubscribe. */
     onChange(cb: (p: ProviderInfo) => void): () => void
   }
@@ -951,8 +1057,20 @@ export interface ReelApi {
     damaged(): Promise<boolean>
     /** Undo of remove: the rule back where it was. Only a rule removed in this run of the app. */
     restore(id: string): Promise<void>
-    /** Pick Final Cut Pro or Premiere Pro exports and read rules from them; saves nothing. null: the picker was cancelled. */
-    learn(): Promise<StyleLesson | null>
+    /** The Final Cut Pro and Premiere Pro edits on this computer, newest first, and whether a limit stopped the look
+     * before it had looked everywhere. Each call looks again. */
+    find(): Promise<{ edits: PastEdit[]; cut: boolean }>
+    /** Timelines in each readable edit of the last find(), by id. */
+    count(): Promise<PastEditCounts>
+    /** Read rules from these found edits, or with no ids from exports picked in a file dialog; saves nothing.
+     * null: the dialog was cancelled. */
+    learn(ids?: string[]): Promise<StyleLesson | null>
+    /** How far learn() has read. */
+    onLearnProgress(cb: (p: { done: number; total: number }) => void): () => void
+    /** The installed editors' own icons as data URLs; an editor that isn't installed is missing. */
+    appIcons(): Promise<Partial<Record<PastEdit['app'], string>>>
+    /** Show a found edit in Finder or File Explorer. */
+    reveal(id: string): Promise<void>
     /** Keep these rules from a lesson; each remembers `from`, the export names it was read from. */
     keepLearned(rules: LearnedRule[], from: string): Promise<StyleRule[]>
     /** Change a rule's words, or pause or resume it. */

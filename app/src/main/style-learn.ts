@@ -1,6 +1,7 @@
 // "Learn from my past edits": each export through the engine's import-reference, then shared/learn-style.ts.
 // Nothing here writes My style; the person keeps the rules they want (style:keepLearned).
 import { basename } from 'node:path'
+import { idOf } from './past-edits'
 import type { StyleLesson } from '../shared/api'
 import { editorOf, learnStyle, type ImportRecord } from '../shared/learn-style'
 
@@ -13,15 +14,20 @@ function asRecord(x: unknown, file: string): ImportRecord {
   return r as ImportRecord
 }
 
-export async function readLesson(files: string[], importReference: (file: string) => Promise<unknown>): Promise<StyleLesson> {
+export async function readLesson(
+  files: string[],
+  importReference: (file: string) => Promise<unknown>,
+  onProgress?: (p: { done: number; total: number }) => void
+): Promise<StyleLesson> {
   const records: ImportRecord[] = []
   const read: StyleLesson['files'] = []
   const skipped: StyleLesson['skipped'] = []
-  for (const file of files) {
+  for (const [done, file] of files.entries()) {
+    onProgress?.({ done, total: files.length })
     try {
       const record = asRecord(await importReference(file), file)
       records.push(record)
-      read.push({ path: file, name: basename(file), editor: editorOf(record) })
+      read.push({ id: idOf(file), name: basename(file), editor: editorOf(record) })
     } catch (e) {
       const reason = (e as { userMessage?: unknown })?.userMessage
       if (typeof reason !== 'string') throw e

@@ -169,9 +169,9 @@ export async function newerRelease(fetchFn: FetchLike, appVersion: string, url =
 }
 
 // Copies that cannot replace themselves (a Mac app outside Applications, a build without an update feed) open the page.
-export function releasePageBackend(fetchFn: FetchLike, appVersion: string): UpdateBackend {
+export function releasePageBackend(fetchFn: FetchLike, appVersion: string, url?: string): UpdateBackend {
   return {
-    check: () => newerRelease(fetchFn, appVersion),
+    check: () => newerRelease(fetchFn, appVersion, url),
     download: () => Promise.reject(new Error('This copy opens the download page instead of downloading.')),
     verify: () => Promise.reject(new Error('This copy opens the download page instead of installing.')),
     install() {

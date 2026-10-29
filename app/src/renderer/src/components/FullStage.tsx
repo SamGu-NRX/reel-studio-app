@@ -1,6 +1,7 @@
-// Full screen on the Reel screen: the phone leaves the page for a dark stage over the whole window, at the window's
-// full height, with play, the scrub bar, speed, the view and the phone shape docked beside it. F or the transport
-// row's button opens it; F, Esc or Exit closes it, and focus goes back to what had it.
+// Full screen on the Reel screen: the phone leaves the page for a dark stage over the whole window, as tall as the
+// window leaves once its controls sit under it: play, the scrub bar and the time, then speed, the view, the phone
+// shape and Exit (brief rule 1: controls sit with what they control). F or the transport row's button opens it;
+// F, Esc or Exit closes it, and focus goes back to what had it.
 //
 // It is the window, not the display: macOS full screen opens a new Space with a slow slide, and the page Fullscreen
 // API hung on Electron 44 after the window had been full screen (fullscreen-preview, a85966c). The window's own full
@@ -16,7 +17,7 @@ import { reel } from '../api'
 import { Icon } from './icons'
 import { IconButton } from './ui'
 import { byKeyboard, reducedMotion, usePresence } from './motion'
-import { fitPhone } from './Phone'
+import { deviceRatio, fitPhone } from './Phone'
 import { ScrubRange, textField } from './Player'
 import { usePlayhead, type Playhead } from './playhead'
 import { ShapeMenu, SpeedMenu } from './PreviewControls'
@@ -143,7 +144,7 @@ export function FullStage({
     giveBack.current = null
     // the slot's width was last written for the stage; size it for the page now, as its observer will after paint
     const slot = phone?.parentElement
-    if (slot) fitPhone(slot, shape.w / shape.h)
+    if (slot) fitPhone(slot, deviceRatio(shape))
     const back = from.current?.isConnected ? from.current : stage.closest('.stage')?.querySelector<HTMLElement>('[data-testid="full-screen"]')
     back?.focus({ preventScroll: true })
     from.current = null
@@ -160,7 +161,7 @@ export function FullStage({
     <div
       ref={ref}
       className="stage-v"
-      style={{ '--ratio-n': shape.w / shape.h } as CSSProperties}
+      style={{ '--ratio-n': deviceRatio(shape) } as CSSProperties}
       data-leaving={leaving || undefined}
       role={open ? 'dialog' : undefined}
       aria-modal={open || undefined}
@@ -169,21 +170,17 @@ export function FullStage({
     >
       {(open || mounted) && <div className={`stage-backdrop${open ? '' : ' leave'}`} aria-hidden />}
       {children}
-      {open && (
-        <>
-          <Dock transport={transport} playhead={playhead} view={view} />
-          <span className="stage-exit">
-            <IconButton icon="x" label="Exit full screen" shortcut="Esc" aria-keyshortcuts="Escape" onDark onClick={() => onOpenChange(false)} data-testid="exit-full-screen" />
-          </span>
-        </>
-      )}
+      {open && <Dock transport={transport} playhead={playhead} view={view} onExit={() => onOpenChange(false)} />}
     </div>
     </>
   )
 }
 
-/** Beside the phone, never over it: play and the time, the scrub bar, speed and the view, then the phone shape. */
-function Dock({ transport, playhead, view }: { transport: Transport; playhead: Playhead; view: ReactNode }) {
+/**
+ * Under the phone, centred and no wider: play, the scrub bar and the time on one row, then speed, the view, the phone
+ * shape and Exit, which sits where the full-screen button was in the transport row.
+ */
+function Dock({ transport, playhead, view, onExit }: { transport: Transport; playhead: Playhead; view: ReactNode; onExit: () => void }) {
   const { playing, duration } = useTransport(transport)
   const second = usePlayhead(playhead, Math.floor)
   return (
@@ -192,19 +189,18 @@ function Dock({ transport, playhead, view }: { transport: Transport; playhead: P
         <button type="button" className="pp" onClick={() => transport.toggle()} aria-label={playing ? 'Pause' : 'Play'} data-testid="stage-play">
           <Icon name={playing ? 'pause' : 'play'} size={14} stroke={2} />
         </button>
+        <div className="stage-scrub">
+          <ScrubRange playhead={playhead} dur={duration} onSeek={(t) => transport.seek(t)} />
+        </div>
         <span className="tc">
           {clock(second)} <span>/ {clock(duration)}</span>
         </span>
       </div>
-      <div className="stage-scrub">
-        <ScrubRange playhead={playhead} dur={duration} onSeek={(t) => transport.seek(t)} />
-      </div>
-      <div className="stage-row">
+      <div className="stage-row view">
         <SpeedMenu transport={transport} side="right" />
         {view}
-      </div>
-      <div className="stage-row">
         <ShapeMenu side="right" />
+        <IconButton icon="exit-fullscreen" label="Exit full screen" shortcut="Esc" aria-keyshortcuts="Escape" onDark onClick={onExit} data-testid="exit-full-screen" />
       </div>
     </div>
   )

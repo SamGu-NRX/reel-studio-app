@@ -1,22 +1,60 @@
-/* The phone preview (Phone.tsx, Player.tsx). The screen is the reel's own 9:16 frame, or a real phone's screen
-   (phone-shapes.ts, through the variables Phone.tsx shapeVars sets on .phone). A thin dark edge is the only device:
-   no status bar, camera cut-out or home bar. */
+/* The phone preview (Phone.tsx, Player.tsx). The screen is a real phone's (phone-shapes.ts) or the reel's own 9:16
+   frame, inside a phone's body, through the variables Phone.tsx shapeVars sets on .phone. The body is the layout box:
+   the screen's margins draw its border, so the slot sizes the whole phone and nothing hangs outside it. */
 
 .phone-fill { flex: 1 1 0; min-height: 0; align-self: stretch; display: flex; justify-content: center; align-items: flex-start; }
 /* --phone-w comes from the slot's height (PhoneFill). max-width keeps it inside a column narrower than that. */
 .phone-fill > .phone { width: var(--phone-w); max-width: 100%; }
+/* The body: black glass with a dark metal rim. The rim is a hairline outside the box, so on the dark full-screen stage
+   the phone's edge still shows. Every fallback is the whole reel's frame (shapeVars of 'reel'). */
 .phone {
-  position: relative; flex: none; border-radius: var(--radius, 6.5% / 3.66%);
-  box-shadow: 0 0 0 3px var(--bezel), 0 30px 44px -30px rgba(10, 20, 15, .5), 0 14px 22px -16px rgba(10, 20, 15, .3);
+  --rim: #3d413f;
+  position: relative; flex: none; display: flow-root; background: #070808; border-radius: var(--radius-o, 9.4752% / 5.4631%);
+  box-shadow: 0 0 0 1.5px var(--rim), inset 0 0 0 1px rgba(255, 255, 255, .06), 0 30px 44px -30px rgba(10, 20, 15, .5), 0 14px 22px -16px rgba(10, 20, 15, .3);
 }
 .phone-screen {
-  width: 100%; aspect-ratio: var(--ratio, 9 / 16); border-radius: inherit; overflow: hidden; background: #000; position: relative;
+  margin: var(--bz-top, 3.3706%) var(--bz-side, 3.432%) var(--bz-bottom, 3.3706%);
+  aspect-ratio: var(--ratio, 9 / 16); border-radius: var(--radius, 6.4885% / 3.6498%); overflow: hidden; background: #000; position: relative;
   display: grid; place-items: center; container-type: inline-size;
+  /* Its own stacking context: container-type does not make one, so the island's z-index reached past the screen
+     and painted the island over the welcome laid on top of the first run's phone. Everything in the screen is clipped
+     to it anyway, so nothing inside needs to stack with anything outside. */
+  isolation: isolate;
+  /* the status bar's height, for what sits at the screen's top (the Original tag, the compare switch, the sound chip):
+     resolved where it is used, against this screen's width */
+  --safe-top: calc(100cqw * var(--ig-top, 0) / var(--sw, 393));
 }
+/* The side buttons, as hairlines on the rim: on a Face ID iPhone the Action button and volume on the left, the side
+   button and Camera Control on the right, placed from the iPhone 17's outline (estimates; Apple gives no positions). */
+.phone:is([data-shape="iphone-17"], [data-shape="iphone-pro-max"])::after {
+  --bw: max(1.5px, .5%);
+  content: ''; position: absolute; top: 0; bottom: 0; left: calc(-1.5px - var(--bw)); right: calc(-1.5px - var(--bw)); pointer-events: none;
+  background:
+    linear-gradient(transparent 17.5%, var(--rim) 0 21.5%, transparent 0 24.5%, var(--rim) 0 31%, transparent 0 33.5%, var(--rim) 0 40%, transparent 0) left / var(--bw) 100% no-repeat,
+    linear-gradient(transparent 26%, var(--rim) 0 37%, transparent 0 56%, var(--rim) 0 63%, transparent 0) right / var(--bw) 100% no-repeat;
+}
+/* The Dynamic Island: 125 x 37 points, 11 below the screen's top (read from screenshots; Apple gives no size). Widths
+   and the top margin are percentages of the screen's width, so it needs no container units on its own element. */
+.phone:is([data-shape="iphone-17"], [data-shape="iphone-pro-max"]) > .phone-screen::after {
+  content: ''; position: absolute; z-index: 6; top: 0; left: 50%; translate: -50% 0; pointer-events: none;
+  width: calc(125 / var(--sw) * 100%); aspect-ratio: 125 / 37; margin-top: calc(11 / var(--sw) * 100%); border-radius: 999px; background: #000;
+}
+/* The SE: its earpiece in the band above the screen and its Home button in the band below, centred in each. */
+.phone[data-shape="iphone-se"]::before, .phone[data-shape="iphone-se"]::after { content: ''; position: absolute; left: 50%; translate: -50% 0; pointer-events: none; }
+.phone[data-shape="iphone-se"]::before { top: 0; width: 15%; aspect-ratio: 10 / 1; margin-top: 12%; border-radius: 999px; background: #1e2120; }
+.phone[data-shape="iphone-se"]::after { bottom: 0; width: 16.3%; aspect-ratio: 1; margin-bottom: 4.65%; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--rim); }
 .phone-screen > video {
   position: absolute; left: var(--reel-l, 0); top: var(--reel-t, 0); width: var(--reel-w, 100%); height: var(--reel-h, 100%);
   object-fit: cover; background: #000; display: block; cursor: pointer;
 }
+/* The reel's own box on the screen, for what is drawn in the reel's coordinates (the sample, Phone.tsx Phone): it
+   overhangs where Instagram trims the reel and is clipped to what shows. Its container units are the reel's width,
+   as the export's are. */
+.phone-reel {
+  position: absolute; left: var(--reel-l, 0); top: var(--reel-t, 0); width: var(--reel-w, 100%); height: var(--reel-h, 100%);
+  clip-path: var(--reel-clip, none); container-type: inline-size;
+}
+.phone-reel > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 /* On a phone the reel's box overhangs the screen where Instagram trims it: only the part above the tab bar shows. */
 .phone-screen > video { clip-path: var(--reel-clip, none); }
 .phone-screen > video.raw-video { opacity: 0; pointer-events: none; transition: opacity .12s; }
@@ -72,14 +110,20 @@
 .igc-avatar { width: calc(32 * var(--pt)); height: calc(32 * var(--pt)); border-radius: 50%; flex: none; background: #cfd8cf; }
 .igc-who b { font-size: calc(14 * var(--pt)); font-weight: 600; }
 .igc-follow { height: calc(28 * var(--pt)); padding: 0 calc(11 * var(--pt)); display: flex; align-items: center; border-radius: calc(8 * var(--pt)); box-shadow: inset 0 0 0 calc(1 * var(--pt)) rgba(255, 255, 255, .8); font-size: calc(13 * var(--pt)); font-weight: 600; }
-.igc-cap { display: flex; min-width: 0; gap: calc(4 * var(--pt)); }
+/* a word's space between the cut caption and "more", never under 4 px on the smallest phone */
+.igc-cap { display: flex; min-width: 0; gap: max(4px, calc(5 * var(--pt))); }
 .igc-cap span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .igc-cap em { flex: none; font-style: normal; color: rgba(255, 255, 255, .7); }
 .igc-audio { display: flex; align-items: center; gap: calc(6 * var(--pt)); font-size: calc(13 * var(--pt)); }
 .igc-audio .icon { width: calc(12 * var(--pt)); height: calc(12 * var(--pt)); }
-.igc-tick { overflow: hidden; width: calc(170 * var(--pt)); mask-image: linear-gradient(90deg, #000 85%, transparent); }
+/* Both edges fade, playing or paused: a pause freezes the ticker mid-scroll, and a hard left edge then reads as
+   clipped text ("inal audio"). The left fade (6pt) sits over the gap beside the note icon (margin -6pt), and each
+   copy starts 6pt in, so at rest no letter is under it; the 28pt between copies is kept (6 + 22), so the loop's
+   -50% still lands on the second copy. */
+.igc-tick { overflow: hidden; width: calc(176 * var(--pt)); margin-left: calc(-6 * var(--pt)); mask-image: linear-gradient(90deg, transparent, #000 calc(6 * var(--pt)), #000 85%, transparent); }
+/* moving, the words leave on the left as they come in on the right: both edges fade, so none is cut mid-letter */
 .igc-tick > div { display: flex; width: max-content; animation: igc-tick 9s linear infinite paused; }
-.igc-tick span { padding-right: calc(28 * var(--pt)); white-space: nowrap; }
+.igc-tick span { padding: 0 calc(22 * var(--pt)) 0 calc(6 * var(--pt)); white-space: nowrap; }
 .igc[data-playing]:not(.off) .igc-tick > div { animation-play-state: running; }
 @keyframes igc-tick { to { transform: translateX(-50%); } }
 
@@ -90,6 +134,41 @@
 }
 .igc-tabs .icon { width: calc(26 * var(--pt)); height: calc(26 * var(--pt)); filter: none; }
 .igc-tabs .igc-avatar { width: calc(26 * var(--pt)); height: calc(26 * var(--pt)); }
+
+/* The phone's status bar and Home indicator, over Instagram's screen on a phone (StatusBar): white, in points. On a Face
+   ID phone the time and the glyphs are centred in the strips either side of the island, level with it; the SE's bar
+   is 20 points with the time centred. The whole reel's frame draws neither. */
+.igc-status, .igc-home { display: none; }
+.igc-status svg { flex: none; fill: currentColor; display: block; }
+.igc-status .sb-sig { width: calc(18 * var(--pt)); }
+.igc-status .sb-wifi { width: calc(16 * var(--pt)); }
+.igc-status .sb-bat { width: calc(27 * var(--pt)); }
+.igc-status :is(.sb-l, .sb-r) { display: flex; align-items: center; gap: calc(6 * var(--pt)); }
+.igc-status .sb-time { font-size: calc(17 * var(--pt)); font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.phone:is([data-shape="iphone-17"], [data-shape="iphone-pro-max"]) .igc-status {
+  display: grid; grid-template-columns: 1fr calc(125 * var(--pt)) 1fr; align-items: center; left: 0; right: 0;
+  top: calc(11 * var(--pt)); height: calc(37 * var(--pt)); padding: 0 calc(10 * var(--pt)); text-shadow: none;
+}
+.phone:is([data-shape="iphone-17"], [data-shape="iphone-pro-max"]) .igc-status .sb-l { display: none; }
+.phone:is([data-shape="iphone-17"], [data-shape="iphone-pro-max"]) .igc-status .sb-time { grid-column: 1; justify-self: center; }
+.phone:is([data-shape="iphone-17"], [data-shape="iphone-pro-max"]) .igc-status .sb-r { grid-column: 3; justify-self: center; }
+.phone[data-shape="iphone-se"] .igc-status {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; left: 0; right: 0; top: 0; height: calc(20 * var(--pt));
+  padding: 0 calc(6 * var(--pt)); text-shadow: none; --sbk: .72;
+}
+.phone[data-shape="iphone-se"] .igc-status .sb-time { font-size: calc(12 * var(--pt)); }
+.phone[data-shape="iphone-se"] .igc-status :is(.sb-sig, .sb-wifi, .sb-bat) { width: calc(var(--w) * var(--sbk) * var(--pt)); }
+.phone[data-shape="iphone-se"] .igc-status .sb-sig { --w: 18; }
+.phone[data-shape="iphone-se"] .igc-status .sb-wifi { --w: 16; }
+.phone[data-shape="iphone-se"] .igc-status .sb-bat { --w: 27; }
+.phone[data-shape="iphone-se"] .igc-status :is(.sb-l, .sb-r) { gap: calc(4 * var(--pt)); }
+.phone[data-shape="iphone-se"] .igc-status .sb-l { justify-self: start; }
+.phone[data-shape="iphone-se"] .igc-status .sb-r { grid-column: 3; justify-self: end; }
+.phone[data-shape="iphone-se"] .igc-status .sb-r :is(.sb-sig, .sb-wifi) { display: none; }
+/* 134 x 5 points, 8 above the screen's foot, on the strip under the tab bar */
+.phone:is([data-shape="iphone-17"], [data-shape="iphone-pro-max"]) .igc-home {
+  display: block; left: 50%; translate: -50% 0; bottom: calc(8 * var(--pt)); width: calc(134 * var(--pt)); height: calc(5 * var(--pt)); border-radius: 999px; background: #fff;
+}
 
 /* ---- Clear of Instagram, while the subtitles are being set up (SafeBand): verify.py's top 7%, bottom 19% and
    right 13%, and the subtitles' 6.5% left margin. A phone shape sets its own edges inline (phone-shapes.ts clearBand). ---- */

@@ -774,6 +774,39 @@ def import_reference(path: Path) -> dict:
             "mediaRefs": sorted(urls), **record}
 
 
+def count_timelines(path: Path) -> int:
+    """How many timelines import_reference would return, read the way _build picks them but without
+    the adapters, so a list of exports can show it cheaply. Raises the same EngineError as an import
+    for an export it would refuse before the adapters run (no timeline, a skipped event, bad XML)."""
+    path = Path(path)
+    data, adapter, _ = _load(path)
+    root = _parse(data, path)
+    if adapter == "fcpx_xml":
+        fcpx = _Fcpx(root)
+        projects = fcpx.projects()
+        if not projects:
+            raise _fail("TIMELINE_SKIPPED" if fcpx.skipped(projects) else "NO_TIMELINE",
+                        "no project the fcpx_xml adapter reads")
+        return len(projects)
+    sequences = root.findall("sequence") + root.findall(".//children/sequence")
+    if not sequences:
+        raise _fail("NO_TIMELINE", "no top-level sequence")
+    # FCP7XMLParser.top_level_sequences keeps the first sequence seen with each id
+    ids = [seq.get("id") for seq in sequences]
+    return sum(1 for i, key in enumerate(ids) if key is None or key not in ids[:i])
+
+
+def scan(paths: list[Path]) -> dict:
+    """`reference-scan`: count_timelines for each export, or the reason in plain words it can't be read."""
+    files = []
+    for path in paths:
+        try:
+            files.append({"path": str(path), "timelines": count_timelines(path)})
+        except EngineError as exc:
+            files.append({"path": str(path), "error": {"code": exc.code, "message": exc.user_message}})
+    return {"files": files}
+
+
 def run(path: Path, output: Path | None = None) -> dict:
     record = import_reference(path)
     if output:

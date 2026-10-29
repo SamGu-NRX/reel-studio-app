@@ -3,7 +3,7 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, openSettings } from './helpers'
+import { BASE, launch, openSettings, painted } from './helpers'
 
 const MAC = process.platform === 'darwin'
 
@@ -33,6 +33,21 @@ async function helperWindow(app: ElectronApplication, title: string): Promise<Pa
   for (const w of app.windows()) if ((await w.title()) === title) return w
   throw new Error(`no helper window "${title}"`)
 }
+
+/**
+ * Where a fixed element put inside `sel` lands: at the window's corner unless something above it is a containing block
+ * for fixed elements (a transform, or a transform animation left in effect), which is how a dialog or popover opened
+ * from there ends up laid out inside it.
+ */
+const fixedCorner = (page: Page, sel: string) =>
+  page.evaluate((s) => {
+    const probe = document.createElement('div')
+    probe.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px'
+    document.querySelector(s)!.append(probe)
+    const r = probe.getBoundingClientRect()
+    probe.remove()
+    return { right: r.right === innerWidth, bottom: r.bottom === innerHeight }
+  }, sel)
 
 test('a fresh first run goes welcome, sample, editor, and ends on a new reel with no video', async () => {
   const d = fresh('walk')
@@ -64,10 +79,14 @@ test('a fresh first run goes welcome, sample, editor, and ends on a new reel wit
 
     await expect(page.getByRole('heading', { name: 'Choose your editor' })).toBeFocused() // a screen reader starts at the new step
     await expect(page.getByTestId('without-ai')).toContainText('Without an editor, Reel Studio makes a basic version')
+    // fails if an entrance animation is left in effect on the column again: the server form's dialog opened inside it
+    await expect.poll(() => fixedCorner(page, '[data-testid="composer-connect"]')).toEqual({ right: true, bottom: true })
     await page.getByTestId('not-now').click()
 
     // Your turn: the reel slice's planning space, in the app's own window
     await expect(page.getByTestId('planned-stage')).toContainText('Drop the video you filmed')
+    // the sidebar's arrival leaves its popovers (the update offer) placed against the window
+    await expect.poll(() => fixedCorner(page, '#sidebar')).toEqual({ right: true, bottom: true })
     await expect(page.getByTestId('plan-empty')).toBeVisible()
     await expect(page.getByTestId('nav-home')).toBeVisible()
     const list = await page.evaluate(() => window.reel.projects.list())
@@ -192,14 +211,19 @@ test('the first-run column: where you are and what it shows at the top, the thre
         const labels = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="steps-list"] .sl'))
         return {
           gap: r('.fr-log-in').top - r('.fr-h').bottom,
+          // the progress sits right under what it is making, not pinned at the column's foot with nothing between
+          under: r('[data-testid="steps-list"]').top - r('.fr-log-in [role="log"]').bottom,
           cut: labels.filter((l) => l.scrollWidth > l.clientWidth + 1 || (oneLine && l.getBoundingClientRect().height > 22)).map((l) => l.textContent)
         }
       }, oneLine)
-      expect([size.width, m.gap < 24, m.cut]).toEqual([size.width, true, []])
+      expect([size.width, m.gap < 24, m.under >= 0 && m.under < 32, m.cut]).toEqual([size.width, true, true, []])
     }
     await page.getByTestId('get-started').click()
     await expect(page.getByTestId('first-run-where').locator('[aria-current="step"]')).toHaveText('The sample')
     await expect(page.getByTestId('first-run-lead')).toBeVisible()
+    // the transcript's grey boxes are pauses, and the column says so while they show
+    await expect(page.locator('.fr-words .tk.pz.in').first()).toBeVisible()
+    await expect(page.getByTestId('pause-key')).toHaveCSS('opacity', '1')
     // every label at its widest: the takes row with its result
     await expect(page.getByTestId('steps-list').locator('li').nth(2)).toHaveAttribute('data-state', 'done', { timeout: 30_000 })
     await check({ width: 1280, height: 820 }, true)
@@ -208,8 +232,63 @@ test('the first-run column: where you are and what it shows at the top, the thre
     await page.getByTestId('demo-skip').click()
     await page.getByTestId('demo-next').click()
     await expect(page.getByTestId('first-run-where').locator('[aria-current="step"]')).toHaveText('Your editor')
-    const gap = await page.evaluate(() => document.querySelector('.fr-log-in')!.getBoundingClientRect().top - document.querySelector('.fr-h')!.getBoundingClientRect().bottom)
+    // the editor's picker takes the thread's place under the heading
+    const gap = await page.evaluate(() => document.querySelector('.fr-pick')!.getBoundingClientRect().top - document.querySelector('.fr-h')!.getBoundingClientRect().bottom)
     expect(gap).toBeLessThan(24)
+  } finally {
+    await app.close()
+  }
+})
+
+// fails if the sample's controls leave the phone again (Sam, 2026-10-28: play, the time and the view sat in the window's
+// bottom-left corner with the hint run into the time) or the phone drifts off the centre of the space the column leaves
+test('the sample: the phone centred beside the column, its controls under it and no wider than it', async () => {
+  const d = fresh('centred')
+  const { app, page } = await launch(d.env)
+  try {
+    await page.getByTestId('get-started').click()
+    await page.getByTestId('demo-skip').click()
+    await expect(page.getByTestId('hold-hint')).toBeVisible()
+    for (const size of [{ width: 1100, height: 720 }, { width: 1920, height: 1080 }]) {
+      await page.setViewportSize(size)
+      // polled: the phone is re-fitted to its slot by a ResizeObserver after the resize
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect()
+            const phone = r('[data-testid="phone"]')
+            const col = r('.fr-col')
+            const parts = ['play', 'time', 'phone-view', 'hold-hint'].map((id) => r(`[data-testid="${id}"]`))
+            return {
+              centred: Math.abs((phone.left + phone.right) / 2 - col.left / 2) <= 2,
+              under: parts.every((p) => p.left >= phone.left - 0.5 && p.right <= phone.right + 0.5 && p.top >= phone.bottom && p.bottom <= innerHeight)
+            }
+          }), { message: `the sample at ${size.width}x${size.height}` })
+        .toEqual({ centred: true, under: true })
+    }
+  } finally {
+    await app.close()
+  }
+})
+
+// fails if part of the phone paints through the welcome: its Dynamic Island showed alone above the logo, where the
+// phone's island sits on the next step, with reduced motion as without
+test('the welcome shows nothing of the phone laid out under it', async () => {
+  const d = fresh('island')
+  const { app, page } = await launch(d.env)
+  try {
+    await expect(page.getByTestId('get-started')).toBeVisible()
+    for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+      await page.emulateMedia({ reducedMotion })
+      // the island's centre: 11 + 37 / 2 points down a 402-point screen
+      const at = await page.evaluate(() => {
+        const s = document.querySelector('[data-testid="sample-phone"]')!.getBoundingClientRect()
+        return { x: Math.round(s.left + s.width / 2), y: Math.round(s.top + (s.width * 29.5) / 402) }
+      })
+      await expect
+        .poll(() => painted(page, at.x, at.y).then((c) => Math.min(...c)), { message: `${reducedMotion}: the welcome's paper where the island would be` })
+        .toBeGreaterThan(200)
+    }
   } finally {
     await app.close()
   }

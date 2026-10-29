@@ -41,15 +41,18 @@ test('installed app: the Claude choice, in this computer\'s real state', async (
     if (st.state === 'ready') {
       // what the person already has comes first
       await expect(page.getByTestId('use-claude-code')).toHaveAccessibleName(USE_CLAUDE_CODE)
-      await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-claude-code')
-    } else {
-      // Claude first: one button that installs (missing, broken) or signs in (signed out)
-      await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'connect-claude')
+      await expect(panel.locator('[data-testid="vendor-claude"], [data-testid="vendor-chatgpt"]').locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-claude-code')
+    } else if (st.state === 'signed_out') {
+      // Claude first: one button that starts its own sign-in
+      await expect(panel.locator('[data-testid="vendor-claude"], [data-testid="vendor-chatgpt"]').locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'connect-claude')
       await expect(page.getByTestId('connect-claude')).toHaveClass(/primary/)
+    } else {
+      // not here, or it won't start: a link to Anthropic's install page; Reel Studio installs nothing
+      await expect(page.getByTestId('vendor-install-page-claude')).toBeVisible()
     }
     await expect(page.getByTestId('vendor-chatgpt')).toBeVisible()
-    if (st.state === 'ready') await expect(panel).toContainText('your own Claude plan and its usage limits')
-    else await expect(panel).toContainText('Needs Claude Pro or Max.')
+    if (st.state === 'ready') await expect(page.getByTestId('vendor-claude')).toContainText('Signed in. It uses your Claude plan’s limits.')
+    else if (st.state === 'signed_out') await expect(page.getByTestId('vendor-claude')).toContainText('Not signed in.')
     expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)
     await shot(page, `installed/connect-${st.state}`)
 
@@ -59,12 +62,21 @@ test('installed app: the Claude choice, in this computer\'s real state', async (
       await page.getByTestId('use-claude-code').click()
       await expect(panel).toContainText('Checking Claude…')
       await shot(page, 'installed/connect-checking-claude')
-      await expect(page.getByTestId('ai-connected')).toHaveText('Connected', { timeout: 60_000 })
+      // a signed-in account can be at its plan's limit: then the row says which limit and when it resets, and stays
+      // unconnected
+      const limited = page.getByTestId('vendor-claude').getByRole('alert').filter({ hasText: /has hit its .*limit/ })
+      await expect(page.getByTestId('ai-connected').or(limited)).toBeVisible({ timeout: 60_000 })
       console.log(`claude check took ${Date.now() - asked} ms`)
-      await page.getByTestId('nav-home').click() // the sidebar re-reads the AI editor on every screen change
-    await expect(page.getByTestId('ai-status')).toHaveText('Editor: Claude')
-      expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)
-      await shot(page, 'installed/connect-using-claude')
+      if (await limited.isVisible()) {
+        await expect(limited).toHaveText(/^The account in your Claude Code app has hit its .+ limit\. It resets .+\(in .+\)\.$/)
+        await shot(page, 'installed/connect-claude-limited')
+      } else {
+        await expect(page.getByTestId('ai-connected')).toHaveText('Connected')
+        await page.getByTestId('nav-home').click() // the sidebar re-reads the AI editor on every screen change
+        await expect(page.getByTestId('ai-status')).toHaveText('Editor: Claude')
+        expect(await page.locator('body').innerText()).not.toMatch(CLAUDE_CODE_MISNAMED)
+        await shot(page, 'installed/connect-using-claude')
+      }
     }
   } finally {
     await app.close()

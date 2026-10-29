@@ -1,18 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { ModelStatus, ProviderInfo } from '../../../shared/api'
 import { reel, userMessage } from '../api'
 import { Button, Progress, Spinner } from './ui'
 import { Icon } from './icons'
 import { Connections } from './Connections'
 import { ConnectedMark, Disclosure, ProviderRow } from './provider-row'
-import { VendorRows } from './vendor-connect'
+import { HubRow, VendorRows, useHub } from './vendor-connect'
+import { EditorDetails, StageModels, useStages } from './editor-limits'
 import { SETTINGS } from './settings-index'
+import { SearchHits } from './settings-rows'
 import './connect.css'
 
 /** What Reel Studio makes with no editor connected. Nobody says "I" here: no editor is there to say it. */
 export const WITHOUT_EDITOR = 'Without an editor, Reel Studio makes a basic version: pauses and retakes removed, subtitles and a cover.'
 
-export { USE_CLAUDE_CODE, USE_CODEX, USING_CLAUDE_CODE, USING_CODEX, usingLine } from './vendor-connect'
+export { USE_CLAUDE_CODE, USE_CODEX, USING_CLAUDE_CODE, USING_CODEX, USING_HUB, usingLine } from './vendor-connect'
 
 /** The editor in use, kept current: every call that changes it announces the change (main/index.ts changesAI). */
 export function useActiveEditor(): [ProviderInfo | null, (p: ProviderInfo) => void] {
@@ -33,15 +35,21 @@ export function useActiveEditor(): [ProviderInfo | null, (p: ProviderInfo) => vo
 }
 
 /**
- * Choose your editor: one picker for the first run, Settings, the composer with no editor and a failed Version 1.
- * Claude and ChatGPT are rows (vendor-connect.tsx): Connect installs the person's own AI app if needed and opens that
- * vendor's own sign-in page; what they already have comes first, otherwise Claude. Choosing Claude makes main send it
- * one short message before anything says Connected. `advanced={false}` leaves out the Advanced disclosure (your own
- * server, an API key) for a page that places those itself (Settings).
+ * Choose your editor: one component for the first run, Settings › Editor, the Connect screen, the composer with no
+ * editor and a failed Version 1. CLIProxyAPI comes first when it runs on this computer (one click, the key read from
+ * its config); then the person's own Claude Code and Codex apps, each with its plan; then Advanced (your own server, an
+ * API key), closed. The editor in use shows its accounts, plans and limits, a Test, and a model for each stage. It
+ * has no scroll area of its own: it fits the column it is given. `stagesOpen`: the stage list shows open (Settings).
  */
-export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: ProviderInfo) => void; advanced?: boolean }) {
+export function ConnectAI({ onConnected, advanced = true, stagesOpen = false }: { onConnected?: (p: ProviderInfo) => void; advanced?: boolean; stagesOpen?: boolean }) {
   const [active, setActive] = useActiveEditor()
+  const [hub, lookForHub] = useHub()
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [vendorAttention, setVendorAttention] = useState(false)
+  // a Settings search for your own server or an API key opens Advanced, where they are
+  const hits = useContext(SearchHits)
+  const searchedAdvanced = !!hits && (hits.has('own-server') || hits.has('api-key'))
+  const stages = useStages(active)
   const announce = useRef(onConnected)
   announce.current = onConnected
 
@@ -56,10 +64,33 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
   const disconnect = async () => {
     await reel.ai.setActive('none')
     setActive(await reel.ai.active())
+    void lookForHub()
   }
 
   const anyOn = !!active && active.connected && active.id !== 'none'
-  const otherOn = anyOn && !['claude-cli', 'codex-cli'].includes(active.id)
+  const hubOn = anyOn && active.id === 'custom' && active.label === 'CLIProxyAPI'
+  const otherOn = anyOn && !hubOn && !['claude-cli', 'codex-cli'].includes(active.id)
+  const [othersOpen, setOthersOpen] = useState(false)
+  // CLIProxyAPI is the recommended choice: while nothing is connected its Use it is the one filled button
+  const hubLeads = !anyOn && !!hub && (hub.state === 'ready' || hub.state === 'needs-key')
+  const details = anyOn ? (
+    <>
+      <EditorDetails active={active} stages={stages} />
+      <StageModels active={active} state={stages} open={stagesOpen} />
+    </>
+  ) : null
+
+  const vendorRows = (
+    <VendorRows
+      active={active}
+      lead={!anyOn && !hubLeads}
+      hubLeads={hubLeads && !vendorAttention}
+      onAttention={setVendorAttention}
+      onConnected={connected}
+      onDisconnect={() => void disconnect()}
+      details={details}
+    />
+  )
 
   // Your own server or an API key, while it is the editor: first, so what's in use is never one click away.
   const otherRow = otherOn && (
@@ -75,14 +106,27 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
           Disconnect
         </Button>
       }
-    />
+    >
+      {details}
+    </ProviderRow>
   )
 
   return (
-    <div className="picker">
+    <div className="picker" data-testid="editor-setup">
       <div className="prov" role="group" aria-label="Choose your editor" data-testid="ai-picker">
         {otherRow}
-        <VendorRows active={active} lead={!anyOn} onConnected={connected} onDisconnect={() => void disconnect()} />
+        {/* always the first row: found, asking for a key, elsewhere, or not running here */}
+        <HubRow hub={hub} on={hubOn} primary={hubLeads && !vendorAttention} onConnected={connected} onDisconnect={() => void disconnect()} onLook={lookForHub}>
+          {hubOn ? details : null}
+        </HubRow>
+        {hubOn ? (
+          // CLIProxyAPI is the editor: the person's own apps wait behind one quiet line
+          <Disclosure label="Other editors" hint="Claude Code app, Codex app" open={othersOpen} onToggle={() => setOthersOpen((o) => !o)} testid="other-editors">
+            <div className="prov">{vendorRows}</div>
+          </Disclosure>
+        ) : (
+          vendorRows
+        )}
       </div>
       {active?.error && !active.connected && (
         <p className="pv-note error" role="alert">
@@ -90,7 +134,7 @@ export function ConnectAI({ onConnected, advanced = true }: { onConnected?: (p: 
         </p>
       )}
       {advanced && (
-        <Disclosure label="Advanced" open={advancedOpen} onToggle={() => setAdvancedOpen((o) => !o)} testid="ai-advanced">
+        <Disclosure label="Advanced" hint="Your own server or an API key" open={advancedOpen || searchedAdvanced} onToggle={() => setAdvancedOpen((o) => !o)} testid="ai-advanced">
           <Connections onConnected={connected} />
           <AnthropicKey active={active} onConnected={connected} />
         </Disclosure>

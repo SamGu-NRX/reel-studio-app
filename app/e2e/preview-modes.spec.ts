@@ -104,7 +104,26 @@ test('fails if speed, full screen or the phone shapes stop working, applying or 
       const stage = page.getByTestId('full-stage')
       await expect(stage).toBeVisible()
       const height = await page.evaluate(() => innerHeight)
-      await expect.poll(() => rect(page, '.stage-v .phone-screen').then((r) => Math.abs(r.h - (height - 48)) <= 1 && Math.abs(r.w / r.h - 9 / 16) < 0.005)).toBe(true)
+      // the phone as tall as the window leaves once its controls are under it (brief rule 1: controls sit with what
+      // they control): the controls centred on the phone and no wider, the close button among them, all inside the
+      // window; its screen an iPhone 17's (the shape until one is picked)
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect()
+            const phone = r('.stage-v .phone')
+            const dock = r('[data-testid="stage-dock"]')
+            const exit = r('[data-testid="exit-full-screen"]')
+            return {
+              under: dock.top >= phone.bottom && dock.top - phone.bottom <= 24,
+              centred: Math.abs((dock.left + dock.right) / 2 - (phone.left + phone.right) / 2) <= 1 && dock.width <= phone.width + 0.5,
+              exitInDock: exit.top >= dock.top && exit.bottom <= dock.bottom && exit.left >= dock.left && exit.right <= dock.right,
+              inside: phone.top >= 16 && dock.bottom <= innerHeight - 16
+            }
+          })
+        )
+        .toEqual({ under: true, centred: true, exitInDock: true, inside: true })
+      await expect.poll(() => rect(page, '.stage-v .phone-screen').then((r) => Math.abs(r.w / r.h - 402 / 874) < 0.005)).toBe(true)
       expect(await page.evaluate(() => !!(document.querySelector('[data-testid="player"]') as HTMLVideoElement & { kept?: boolean }).kept)).toBe(true)
       expect(await page.evaluate(() => [!!document.querySelector('[data-testid="timeline"]')?.closest('[inert]'), !!document.querySelector('.ncol')?.closest('[inert]')])).toEqual([true, true])
       await expect(stage.getByTestId('stage-play')).toBeFocused()
@@ -173,6 +192,13 @@ test('fails if speed, full screen or the phone shapes stop working, applying or 
         const screen = await rect(page, '.stage .phone-screen')
         const video = await rect(page, '[data-testid="player"]')
         const tabs = await rect(page, '.igc-tabs')
+        // a phone looks like one: its status bar over Instagram's screen, and the Dynamic Island on a Face ID phone; the
+        // whole reel's frame is the reel alone
+        const drawn = await page.evaluate(() => {
+          const status = document.querySelector('.stage .igc-status')
+          return { island: getComputedStyle(document.querySelector('.stage .phone-screen')!, '::after').content !== 'none', status: !!status && getComputedStyle(status).display !== 'none' }
+        })
+        expect(drawn, `${s.label}: island and status bar`).toEqual({ island: s.id === 'iphone-17' || s.id === 'iphone-pro-max', status: s.id !== 'reel' })
         if (s.id === 'reel') expect([video.x, video.y, video.w, video.h].map((n, i) => Math.round(n - [screen.x, screen.y, screen.w, screen.h][i]))).toEqual([0, 0, 0, 0])
         else if (s.id === 'iphone-se') {
           // 16:9: full width, trimmed top and bottom; the reel ends at Instagram's tab bar

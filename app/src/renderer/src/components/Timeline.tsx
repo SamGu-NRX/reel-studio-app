@@ -257,16 +257,24 @@ export function Timeline({
   const laneFull = { pictures: pictures.length > 0, video: video.length > 0, sound: sounds.length > 0 || !!lanes?.music }
   return (
     <div className="tl" onPointerDown={down} onPointerMove={hover} onPointerLeave={clearHover}>
+      {/* a lane's icon only beside a lane with something on it: three icons by one drawn lane read as a puzzle. Each
+          keeps its own row (reel.css), so nothing moves when a lane fills. */}
       <span className="tl-gutter" aria-hidden data-testid="lane-gutter">
-        <span className={`tl-lane-icon pics${laneFull.pictures ? '' : ' empty'}`} title="Pictures">
-          <Icon name="image" size={16} stroke={1.5} />
-        </span>
-        <span className={`tl-lane-icon video${laneFull.video ? '' : ' empty'}`} title="Your video">
-          <Icon name="film" size={16} stroke={1.5} />
-        </span>
-        <span className={`tl-lane-icon sound${laneFull.sound ? '' : ' empty'}`} title="Sound">
-          <Icon name="music" size={16} stroke={1.5} />
-        </span>
+        {laneFull.pictures && (
+          <span className="tl-lane-icon pics" title="Pictures">
+            <Icon name="image" size={16} stroke={1.5} />
+          </span>
+        )}
+        {laneFull.video && (
+          <span className="tl-lane-icon video" title="Your video">
+            <Icon name="film" size={16} stroke={1.5} />
+          </span>
+        )}
+        {laneFull.sound && (
+          <span className="tl-lane-icon sound" title="Sound">
+            <Icon name="music" size={16} stroke={1.5} />
+          </span>
+        )}
       </span>
       <div
         ref={track}

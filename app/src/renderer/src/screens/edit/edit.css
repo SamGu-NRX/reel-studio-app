@@ -30,7 +30,8 @@ h3.edit-label { margin: 0; }
 .edit .words { gap: 12px; }
 .edit .take p { font-size: var(--fs-md); line-height: 26px; }
 .edit .take.gone .take-label { color: var(--ink-3); }
-.edit .word { padding: 1px 2px; }
+/* 2 px above and below: a word is a click target, and at 1 px it was 22 px tall, under the 24 px house minimum */
+.edit .word { padding: 2px 2px; }
 .edit .word.changed { background: var(--marker-soft); }
 .edit .word.cut { color: var(--ink-3); }
 

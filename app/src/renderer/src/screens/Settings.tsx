@@ -5,15 +5,14 @@ import { RELEASES_REPO } from '../../../shared/config'
 import { channelOf, productName } from '../../../shared/channel'
 import { reel, userMessage } from '../api'
 import type { Go, SettingsSection } from '../nav'
-import { AnthropicKey, ConnectAI, DevProviders, downloadLine, useActiveEditor, useModelStatus } from '../components/connect'
-import { Connections } from '../components/Connections'
+import { ConnectAI, DevProviders, downloadLine, useModelStatus } from '../components/connect'
 import { usePermissionStatus } from '../components/permissions'
 import { Button, Confirm, FOLDER_APP, IS_MAC, Progress, Spinner } from '../components/ui'
 import { Icon } from '../components/icons'
 import { useUpdateState } from '../components/update'
 import { UpdateSettingsRow, WhatsNew } from '../components/UpdateSettings'
 import { useNotify } from '../App'
-import { CHECKS_NOTE, Models, Privacy } from '../components/ModelsAndPrivacy'
+import { CHECKS_NOTE, Privacy } from '../components/ModelsAndPrivacy'
 import { TitleBarSlot } from '../components/titlebar'
 import { findSettings, SECTIONS, SETTING_IDS, SETTINGS, type SectionId, type SettingId } from '../components/settings-index'
 import { Marked, SearchHits, SearchScope, SettingRow, Switch, useShown } from '../components/settings-rows'
@@ -35,7 +34,6 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
   const [current, setCurrent] = useState<SectionId>(sectionOf(TARGET[section ?? 'ai']))
   const lock = useRef(0)
   const page = useRef<HTMLDivElement>(null)
-  const [active, setActive] = useActiveEditor()
 
   // The list of sections marks the one being read, so a long page never loses its place.
   useEffect(() => {
@@ -206,9 +204,11 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
             )}
 
             <Section id="editor" desc="It picks your best takes, adds pictures and makes the changes in your notes.">
-              {/* hidden, not unmounted: a search must not drop a check or sign-in that is under way */}
-              <div className="srow picker-row" data-setting="editor" hidden={!shown('editor')}>
-                <ConnectAI advanced={false} />
+              {/* hidden, not unmounted: a search must not drop a check or sign-in that is under way. The same component
+                  as the first run's editor step: CLIProxyAPI, Claude Code, the Codex app, Advanced, and the editor in use
+                  with its accounts, limits, Test and a model for each stage. */}
+              <div className="srow picker-row" data-setting="editor" hidden={!(['editor', 'models', 'own-server', 'api-key'] as const).some(shown)}>
+                <ConnectAI stagesOpen />
               </div>
               {checkEdits !== null && (
                 <SettingRow
@@ -333,10 +333,6 @@ export function Settings({ info, onInfo, section }: { info: AppInfo; onInfo: (i:
             </Section>
 
             <Section id="advanced">
-              <Models info={info} onInfo={onInfo} onError={(m) => notify(m, 'error')} />
-              <Subhead ids={['own-server', 'api-key']}>Other editors</Subhead>
-              <Connections onConnected={setActive} />
-              <AnthropicKey active={active} onConnected={setActive} />
               {/* the keys let your editor search for pictures; they are not editors (audit-1028 finding 16) */}
               <Subhead ids={['stock-keys']}>Stock photos and footage</Subhead>
               <StockKeys />

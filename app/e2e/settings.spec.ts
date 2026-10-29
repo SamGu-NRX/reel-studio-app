@@ -25,9 +25,10 @@ test('fails if a Settings search shows rows it did not find, hides a match, or E
     await expect(page.locator('[data-setting]:visible')).toHaveCount(1)
     await expect(page.getByTestId('root-display')).toBeVisible()
 
+    // your own server is part of the editor (r12): a search for it opens the editor's Advanced
     await search.fill('server')
     await expect(page.getByTestId('own-server-toggle')).toBeVisible()
-    await expect(page.getByTestId('settings-advanced')).toBeVisible()
+    await expect(page.getByTestId('settings-editor')).toBeVisible()
 
     await search.fill('qwertyuiop')
     await expect(page.getByTestId('settings-no-match')).toHaveText(/No settings match “qwertyuiop”\./)

@@ -2,14 +2,21 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 're
 import type { StyleLesson, StyleRule } from '../../../shared/api'
 import { classifyKind, KIND_NAME, newestFirst, shortLine, sourceDetail, sourceLine, type MemoryKind } from '../../../shared/memory'
 import { reel, userMessage } from '../api'
-import { IS_MAC, Spinner } from '../components/ui'
+import { IS_MAC } from '../components/ui'
 import { Icon, type IconName } from '../components/icons'
 import { byKeyboard, reducedMotion } from '../components/motion'
 import { TitleBarSlot } from '../components/titlebar'
+import { LearnSheet } from './LearnSheet'
 import { styleEmptyLine } from './style-words'
 import '../components/library.css'
 
 const KIND_ICON: Record<MemoryKind, IconName> = { captions: 'type', pacing: 'timer', music: 'music', cuts: 'scissors', look: 'aperture' }
+
+const EXAMPLES: { icon: IconName; line: string; from: string }[] = [
+  { icon: 'type', line: 'Big subtitles', from: 'from a note on one of your reels' },
+  { icon: 'timer', line: 'Cut to a new shot every 3 seconds or so', from: 'from your past edits' },
+  { icon: 'music', line: 'Put music under the talking', from: 'added by you' }
+]
 
 const UNDO_MS = 8000
 const EASE = 'cubic-bezier(.2, .8, .2, 1)'
@@ -42,7 +49,7 @@ export function MyStyle() {
   const [forgot, setForgot] = useState<{ rule: StyleRule; at: number } | null>(null)
   const [refocus, setRefocus] = useState<string | null>(null)
   const [lesson, setLesson] = useState<(StyleLesson & { keep: boolean[] }) | null>(null)
-  const [learning, setLearning] = useState(false)
+  const [sheet, setSheet] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [damaged, setDamaged] = useState(false)
   const editButtons = useRef(new Map<string, HTMLButtonElement>())
@@ -172,17 +179,10 @@ export function MyStyle() {
       setRefocus(id)
     }
   }
-  const learn = async () => {
+  const learned = (l: StyleLesson) => {
     setError(null)
-    setLearning(true)
-    try {
-      const l = await reel.style.learn()
-      if (l) setLesson({ ...l, keep: l.rules.map(() => true) })
-    } catch (e) {
-      setError(userMessage(e))
-    } finally {
-      setLearning(false)
-    }
+    setLesson({ ...l, keep: l.rules.map(() => true) })
+    setSheet(false)
   }
   const closeAdding = () => {
     setAdding(null)
@@ -205,9 +205,8 @@ export function MyStyle() {
         title="My style"
         actions={
           <>
-            <button className="btn" onClick={() => void learn()} disabled={learning} data-testid="style-learn">
-              {learning && <Spinner />}
-              {learning ? 'Reading your edits' : 'Learn from my past edits'}
+            <button className="btn" onClick={() => setSheet(true)} data-testid="style-learn">
+              Learn from my past edits
             </button>
             <button
               ref={addButton}
@@ -311,10 +310,25 @@ export function MyStyle() {
         </form>
       )}
 
-      {rules && !rules.length && !forgot && adding === null && (
+      {rules && !rules.length && !forgot && adding === null && !lesson && (
         <div className="style-empty" data-testid="style-empty">
           <h2>Nothing learned yet</h2>
           <p>{styleEmptyLine(IS_MAC)}</p>
+          {/* what the page fills with, so the person knows what a rule is before they make one */}
+          <figure className="style-example">
+            <figcaption>For example</figcaption>
+            <ul>
+              {EXAMPLES.map((x) => (
+                <li key={x.line}>
+                  <Icon name={x.icon} size={16} />
+                  <span>
+                    <b>{x.line}</b>
+                    <span>{x.from}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </figure>
         </div>
       )}
 
@@ -434,6 +448,7 @@ export function MyStyle() {
           })}
         </ul>
       )}
+      {sheet && <LearnSheet onClose={() => setSheet(false)} onLearned={learned} />}
     </div>
   )
 }

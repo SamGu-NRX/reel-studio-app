@@ -3,8 +3,9 @@
 // condition clears or the app opens again. A note stopped by a plan limit or a quit waits the same way.
 import type { PausedFor } from '../shared/api'
 
-/** Plan or rate limits, by provider (ai providers/cli.ts, openai.ts, anthropic.ts). */
-const LIMIT_CODES = new Set(['cli_limited', 'chatgpt_usage_limit', 'claude_rate_limited'])
+/** Plan or rate limits, by provider (ai providers/cli.ts, openai.ts, anthropic.ts, and connection.ts for a server such
+ * as CLIProxyAPI that names its limit). */
+const LIMIT_CODES = new Set(['cli_limited', 'chatgpt_usage_limit', 'claude_rate_limited', 'connection_limited'])
 
 /**
  * Whether a job's failure pauses it, and why. `online`: the computer has a network now (Electron net.isOnline);
@@ -27,8 +28,14 @@ export function pauseFor(
   return null
 }
 
-/** A plan with no reset time is tried again this often. */
-export const LIMIT_RETRY_MS = 15 * 60_000
+/**
+ * A limit with no usable reset time (none given, already past, or due within a minute) is tried again after 1, 2, 5,
+ * then 15 minutes. After the last the reel stays paused until the person presses Resume: a server that keeps sending
+ * the same stale reset must not loop.
+ */
+export const LIMIT_BACKOFF_MS = [1, 2, 5, 15].map((m) => m * 60_000)
+/** A reset closer than this counts as none: it would be tried again at once. */
+const SOON_MS = 60_000
 /** How often "Waiting for internet" looks again. */
 export const ONLINE_POLL_MS = 5_000
 
@@ -39,13 +46,15 @@ export const ONLINE_POLL_MS = 5_000
  */
 export function createPauser(deps: { online: () => boolean; resume: (slug: string) => Promise<void>; log: (s: string) => void; marginMs?: number }) {
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** tries so far on a limit with no usable reset, per reel; cleared when it finishes or the person acts */
+  const tries = new Map<string, number>()
   const offline = new Set<string>()
   const asleep = new Set<string>()
   /** Between the computer's sleep and its wake: a sleep pause scheduled after the wake waits only for the network. */
   let sleeping = false
   let poll: ReturnType<typeof setInterval> | null = null
 
-  function cancel(slug: string): void {
+  function clear(slug: string): void {
     const t = timers.get(slug)
     if (t) clearTimeout(t)
     timers.delete(slug)
@@ -57,8 +66,14 @@ export function createPauser(deps: { online: () => boolean; resume: (slug: strin
     }
   }
 
+  /** The person resumed it, stopped it or deleted the reel: nothing continues on its own, and the tries start over. */
+  function cancel(slug: string): void {
+    clear(slug)
+    tries.delete(slug)
+  }
+
   function go(slug: string): void {
-    cancel(slug)
+    clear(slug)
     deps.resume(slug).catch((e) => deps.log(`[pause] ${slug} could not continue: ${String((e as { userMessage?: string })?.userMessage ?? e)}`))
   }
 
@@ -73,13 +88,24 @@ export function createPauser(deps: { online: () => boolean; resume: (slug: strin
   return {
     /** `now`: for tests. */
     schedule(slug: string, p: PausedFor, now = Date.now()): void {
-      cancel(slug)
+      clear(slug)
       deps.log(`[pause] ${slug}: ${p.reason}${p.until ? ` until ${p.until}` : ''}`)
       if (p.reason === 'quit') return go(slug)
       if (p.reason === 'offline') return waitOnline(slug)
       if (p.reason === 'sleep') return sleeping ? void asleep.add(slug) : waitOnline(slug)
-      const at = p.until ? Date.parse(p.until) + (deps.marginMs ?? 30_000) : now + LIMIT_RETRY_MS
-      timers.set(slug, setTimeout(() => go(slug), Math.max(0, at - now)))
+      const reset = p.until ? Date.parse(p.until) : NaN
+      if (Number.isFinite(reset) && reset - now > SOON_MS) {
+        timers.set(slug, setTimeout(() => go(slug), reset + (deps.marginMs ?? 30_000) - now))
+        return
+      }
+      const n = tries.get(slug) ?? 0
+      if (n >= LIMIT_BACKOFF_MS.length) return deps.log(`[pause] ${slug}: no usable reset time after ${n} tries; waiting for Resume`)
+      tries.set(slug, n + 1)
+      timers.set(slug, setTimeout(() => go(slug), LIMIT_BACKOFF_MS[n]))
+    },
+    /** The job finished: a later limit starts its tries over. */
+    settled(slug: string): void {
+      tries.delete(slug)
     },
     /** The computer is going to sleep (Electron powerMonitor 'suspend'). */
     slept(): void {
@@ -94,7 +120,6 @@ export function createPauser(deps: { online: () => boolean; resume: (slug: strin
         else waitOnline(slug)
       }
     },
-    /** The person resumed it, stopped it or deleted the reel: nothing continues on its own. */
     cancel,
     /** Reels with a pause scheduled, for tests and the quit question. */
     pending: (): string[] => [...new Set([...timers.keys(), ...offline, ...asleep])]

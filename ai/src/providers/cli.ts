@@ -7,8 +7,12 @@ import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { AIError, ChatMessage, CompletionRequest, CompletionResponse, ImagePart, ModelProvider, ToolCall, ToolSchema, WaitSignal } from '../types';
+import { AIError, ChatMessage, CompletionRequest, CompletionResponse, ImagePart, LimitWindow, ModelProvider, ToolCall, ToolSchema, WaitSignal } from '../types';
 import { childEnv, cliEnv } from '../safety';
+import { claudeCodeLimitWords, resetWords } from './limits';
+
+const codexLimitWords = (resetsAt: string | null): string =>
+  `Your Codex app’s ChatGPT plan has hit its limit.${resetsAt ? ` It resets ${resetWords(resetsAt)}.` : ' Codex didn’t say when it resets.'}`;
 
 export function protocolPrompt(tools: ToolSchema[], jsonOnly: boolean): string {
   if (jsonOnly) return 'OUTPUT RULE: reply with ONE JSON object exactly as the task specifies. No prose, no markdown fences.';
@@ -181,21 +185,79 @@ export function parseProtocolReply(text: string, tools: ToolSchema[] = []): Comp
 
 export interface RunResult { code: number | null; stdout: string; stderr: string }
 
+/** Minutes `zone` is ahead of UTC at `at` (Intl's own offset table; DST included). NaN for a zone it doesn't know. */
+function zoneOffsetMin(zone: string, at: Date): number {
+  try {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' })
+      .formatToParts(at).map((p) => [p.type, p.value]));
+    const wall = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour % 24, +parts.minute, +parts.second);
+    return Math.round((wall - at.getTime()) / 60_000);
+  } catch {
+    return NaN;
+  }
+}
+
+/** The next `h:m` wall-clock time in `zone` after `now`, as an instant. */
+function nextInZone(h: number, m: number, zone: string, now: Date): Date | null {
+  for (let day = 0; day <= 2; day++) {
+    // that calendar day in the zone, at h:m, read as UTC, then moved by the zone's offset at that moment
+    const off0 = zoneOffsetMin(zone, now);
+    if (!Number.isFinite(off0)) return null;
+    const local = new Date(now.getTime() + off0 * 60_000);
+    const guess = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + day, h, m);
+    const off = zoneOffsetMin(zone, new Date(guess - off0 * 60_000));
+    const at = new Date(guess - off * 60_000);
+    if (at.getTime() > now.getTime()) return at;
+  }
+  return null;
+}
+
 /**
- * When a Claude plan at its limit resets, from the CLI's own words (ISO), or null when they don't say. Two forms are
- * known: "Claude AI usage limit reached|1761170400" (epoch seconds) and "... resets 3pm" or "resets 3:40pm", the next
- * such time on this computer's clock.
+ * When a Claude plan at its limit resets, from the CLI's own words (ISO), or null when they don't say. Known forms:
+ * "Claude AI usage limit reached|1761170400" (epoch seconds), and "resets 3pm" or "resets 3:40pm (America/Chicago)",
+ * the next such time in the zone it names, else on this computer's clock.
  */
 export function limitResetsAt(text: string, now: Date): string | null {
   const epoch = /\|(\d{10})\b/.exec(text);
   if (epoch) return new Date(Number(epoch[1]) * 1000).toISOString();
-  const at = /resets\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b/i.exec(text);
+  // any zone name in brackets; Intl decides whether it is one (America/Argentina/Buenos_Aires, Etc/GMT+3, GMT, EST)
+  const at = /resets\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b(?:\s*\(([A-Za-z][A-Za-z0-9_+\-/]{0,63})\))?/i.exec(text);
   if (!at) return null;
   const h = (Number(at[1]) % 12) + (at[3].toLowerCase() === 'p' ? 12 : 0);
+  const m = Number(at[2] ?? 0);
+  if (at[4]) {
+    const zoned = nextInZone(h, m, at[4], now);
+    if (zoned) return zoned.toISOString();
+  }
   const d = new Date(now);
-  d.setHours(h, Number(at[2] ?? 0), 0, 0);
+  d.setHours(h, m, 0, 0);
   if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
   return d.toISOString();
+}
+
+const CLAUDE_WINDOW: Record<string, string> = { five_hour: '5-hour', seven_day: 'Weekly', seven_day_opus: 'Weekly · Opus', seven_day_sonnet: 'Weekly · Sonnet', seven_day_fable: 'Weekly · Fable' };
+
+/**
+ * The windows in Claude Code's rate_limit_event (2.1.311: `rate_limit_info.unifiedWindows`, each with `utilization`
+ * 0-1, `resetsAt` in epoch seconds and `status`). A window refused with no utilization counts as nothing left.
+ */
+export function claudeCodeWindows(info: any): LimitWindow[] | undefined {
+  const w = info?.unifiedWindows;
+  if (!w || typeof w !== 'object') return undefined;
+  const out: LimitWindow[] = [];
+  for (const [k, v] of Object.entries<any>(w)) {
+    if (!v || typeof v !== 'object') continue;
+    const used = typeof v.utilization === 'number' ? v.utilization : v.status === 'rejected' ? 1 : null;
+    if (used === null) continue;
+    out.push({ label: CLAUDE_WINDOW[k] ?? k.replace(/_/g, ' '), left: Math.max(0, Math.min(100, Math.round((1 - used) * 100))), ...(typeof v.resetsAt === 'number' ? { resetsAt: new Date(v.resetsAt * 1000).toISOString() } : {}) });
+  }
+  return out.length ? out : undefined;
+}
+
+/** The latest reset among the windows with nothing left: when Claude Code can answer again. */
+function refusedReset(limits: LimitWindow[] | undefined): string | null {
+  const at = (limits ?? []).filter((l) => l.left === 0 && l.resetsAt).map((l) => l.resetsAt!).sort().at(-1);
+  return at ?? null;
 }
 
 export function runProcess(cmd: string, args: string[], input: string, opts: { cwd?: string; signal?: AbortSignal; timeoutMs?: number; env?: NodeJS.ProcessEnv; onLine?: (line: string) => void } = {}): Promise<RunResult> {
@@ -300,7 +362,10 @@ export class TurnWatch {
   runaway = false;
   stop: () => void = () => undefined;
   constructor(private readonly onWait?: (w: WaitSignal) => void) {}
+  /** the plan's windows from the turn's last rate_limit_event (Claude Code sends one before it answers or refuses) */
+  limits: LimitWindow[] | undefined;
   line(j: any): void {
+    if (j?.type === 'rate_limit_event') { this.limits = claudeCodeWindows(j.rate_limit_info) ?? this.limits; return; }
     const delta = j?.type === 'stream_event' && j.event?.type === 'content_block_delta' && j.event.delta?.type === 'text_delta' ? String(j.event.delta.text ?? '') : null;
     if (delta !== null) {
       this.text += delta;
@@ -476,12 +541,15 @@ export class ClaudeCliProvider implements ModelProvider {
     if (result.is_error) {
       const text = String(result.result ?? '');
       const limited = /limit|quota|rate/i.test(text) || result.api_error_status === 429;
-      const resetsAt = limited ? limitResetsAt(text, new Date()) : null;
-      throw new AIError(limited ? 'cli_limited' : 'cli_error', limited ? 'The AI hit its usage limit. Try again later.' : 'The AI had a problem answering.', { retryable: !limited, detail: text.slice(0, 500), ...(resetsAt ? { resetsAt } : {}) });
+      // the rate_limit_event's epoch is exact; the words are the fallback
+      const resetsAt = limited ? refusedReset(watch.limits) ?? limitResetsAt(text, new Date()) : null;
+      throw new AIError(limited ? 'cli_limited' : 'cli_error', limited ? claudeCodeLimitWords(text, resetsAt) : 'The AI had a problem answering.', {
+        retryable: !limited, detail: text.slice(0, 500), ...(resetsAt ? { resetsAt } : {}), ...(watch.limits ? { limits: watch.limits } : {}),
+      });
     }
     const reply = String(result.result ?? '');
     const parsed = req.jsonOnly ? { text: reply, toolCalls: [] } : parseProtocolReply(reply, req.tools);
-    return { ...parsed, raw: { reply }, usage: { input: result.usage?.input_tokens, output: result.usage?.output_tokens }, timing: watch.timing() };
+    return { ...parsed, raw: { reply }, usage: { input: result.usage?.input_tokens, output: result.usage?.output_tokens }, timing: watch.timing(), ...(watch.limits ? { limits: watch.limits } : {}) };
   }
 }
 
@@ -526,7 +594,8 @@ export class CodexCliProvider implements ModelProvider {
       if (!reply.trim()) {
         const all = r.stderr + r.stdout;
         const limited = /usage limit|rate limit|429|quota/i.test(all);
-        throw new AIError(limited ? 'cli_limited' : 'cli_error', limited ? 'The AI hit its usage limit. Try again later.' : 'The AI did not answer.', { detail: all.slice(-600) });
+        const resetsAt = limited ? limitResetsAt(all, new Date()) : null;
+        throw new AIError(limited ? 'cli_limited' : 'cli_error', limited ? codexLimitWords(resetsAt) : 'The AI did not answer.', { detail: all.slice(-600), ...(resetsAt ? { resetsAt } : {}) });
       }
       return req.jsonOnly ? { text: reply, toolCalls: [] } : parseProtocolReply(reply, req.tools);
     } finally {

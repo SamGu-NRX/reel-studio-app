@@ -1,10 +1,11 @@
-// "Connect Claude" / "Connect ChatGPT": one click installs the person's own AI app if it is missing, starts its own
-// sign-in in the browser, checks it worked and makes it the AI editor. The page only ever learns
+// "Use Claude Code" / "Use the Codex app": the person's own AI app, already installed. One click starts its own sign-in
+// in the browser when it is signed out, checks it worked and makes it the AI editor. A missing app is not installed
+// here: the row links to its maker's install page. The page only ever learns
 // {vendor, state, step, version, plan kind, message, problem}: never a path or an account. The one exception is
 // ChatGPT's sign-in with a code, offered when its browser sign-in cannot open its port: the person has to read and
 // type that code on OpenAI's page, so the page gets it and OpenAI's link (signIn: 'code', deviceCode).
 import type { VendorInfo, VendorProblem, VendorStep } from '../shared/api'
-import { VendorError, type DeviceCode, type LoginResult, type Vendor } from './vendor-setup'
+import type { DeviceCode, LoginResult, Vendor } from './vendor-setup'
 
 export interface CliStatus {
   state: 'missing' | 'broken' | 'signed_out' | 'ready'
@@ -20,7 +21,6 @@ export interface CliStatus {
 
 export interface VendorDeps {
   status(v: Vendor): Promise<CliStatus>
-  install(v: Vendor, signal: AbortSignal): Promise<void>
   /** with onDeviceCode: Codex's sign-in with a code (vendor-setup.ts runLogin) */
   login(v: Vendor, bin: string, signal: AbortSignal, onDeviceCode?: (c: DeviceCode) => void): Promise<LoginResult>
   /** makes it the AI editor (ai.setActive). It may first check the app answers, so it can fail with plain words
@@ -34,10 +34,8 @@ export interface VendorDeps {
 
 export const LOGIN_TIMEOUT_MS = 10 * 60_000
 
-const APP: Record<Vendor, string> = { claude: 'Claude Code app', chatgpt: 'Codex app' }
 
-export const VENDOR_MESSAGES: Record<Exclude<VendorProblem, 'install_failed' | 'cancelled'>, (v: Vendor) => string> = {
-  not_found_after_install: (v) => `Your ${APP[v]} installed, but we can’t find it. Click Check again, or install it yourself.`,
+export const VENDOR_MESSAGES: Record<Exclude<VendorProblem, 'cancelled'>, (v: Vendor) => string> = {
   sign_in_failed: () => "The sign-in didn’t finish. Try again.",
   sign_in_timeout: () => "We stopped waiting for the sign-in. Try again when you’re ready.",
   // in use (another program, often a sign-in left open) or reserved (Windows' excluded port ranges): the same way out
@@ -55,7 +53,8 @@ export function claudeCheckWords(e: unknown, platform: NodeJS.Platform): string 
   const x = (e ?? {}) as { code?: unknown; userMessage?: unknown }
   switch (x.code) {
     case 'cli_limited':
-      return 'Your Claude plan is at its limit. Try again after it resets.'
+      // the AI package's words name the window and when it resets ("…hit its weekly limit. It resets tomorrow at 9:00 AM")
+      return typeof x.userMessage === 'string' && x.userMessage ? x.userMessage : 'The account in your Claude Code app has hit its limit.'
     case 'cli_timeout':
       return "Claude took too long to answer. Check you’re online, then try again."
     case 'cli_error':
@@ -104,24 +103,13 @@ export function createVendorConnect(deps: VendorDeps) {
   async function flow(v: Vendor, run: Run): Promise<VendorInfo> {
     const signal = run.ctrl.signal
     let st = await deps.status(v)
-    if (st.state === 'missing' || st.state === 'broken') {
-      emit(info(v, st, 'installing'))
-      try {
-        await deps.install(v, signal)
-      } catch (e) {
-        if (signal.aborted) return emit(info(v, st, 'idle', { problem: 'cancelled' }))
-        const err = e instanceof VendorError ? e : null
-        deps.log?.(`[vendor] ${v} install failed: ${err?.detail ?? String((e as Error)?.message ?? e)}`.slice(0, 1500))
-        return fail(v, st, 'install_failed', err?.userMessage ?? `Your ${APP[v]} didn’t install. Try again, or install it yourself.`)
-      }
-      st = await deps.status(v)
-      if (st.state === 'missing' || st.state === 'broken') return fail(v, st, 'not_found_after_install', VENDOR_MESSAGES.not_found_after_install(v))
-    }
+    // not installed, or will not start: the row says so and links to the maker's install page; nothing runs
+    if (st.state === 'missing' || st.state === 'broken') return emit(info(v, st, 'idle'))
     // Unclear whether it is signed in: a sign-in would clear what Codex has, so stop and ask (Check again / Sign in).
     if (st.state === 'signed_out' && st.unknown && !run.signIn) return fail(v, st, 'status_unknown', VENDOR_MESSAGES.status_unknown(v))
     while (st.state === 'signed_out') {
       if (signal.aborted) return emit(info(v, st, 'idle', { problem: 'cancelled' }))
-      if (!st.bin) return fail(v, st, 'not_found_after_install', VENDOR_MESSAGES.not_found_after_install(v))
+      if (!st.bin) return emit(info(v, st, 'idle'))
       const withCode = run.code ? { signIn: 'code' as const } : {}
       emit(info(v, st, 'signing_in', withCode))
       run.restart = false
@@ -161,7 +149,7 @@ export function createVendorConnect(deps: VendorDeps) {
     return emit(info(v, st, 'done'))
   }
 
-  /** Installs if needed, signs in, selects. One at a time per vendor; starting one vendor stops the other. */
+  /** Signs in if needed, then selects. One at a time per vendor; starting one vendor stops the other. */
   function connect(v: Vendor, opts: { code?: boolean; signIn?: boolean } = {}): Promise<VendorInfo> {
     const current = runs.get(v)
     if (current) return current.done
@@ -191,7 +179,7 @@ export function createVendorConnect(deps: VendorDeps) {
     connect: (v: Vendor): Promise<VendorInfo> => connect(v),
     /** The person's explicit Sign in on a status the app could not read: connect, starting the sign-in anyway. */
     signIn: (v: Vendor): Promise<VendorInfo> => connect(v, { signIn: true }),
-    /** Stops an install or a waiting sign-in. */
+    /** Stops a waiting sign-in or the check. */
     cancel(v: Vendor): void {
       runs.get(v)?.ctrl.abort()
     },

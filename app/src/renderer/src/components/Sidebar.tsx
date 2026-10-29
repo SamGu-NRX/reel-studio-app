@@ -228,7 +228,7 @@ export function Sidebar({
         ))}
       </nav>
       <div className="side-foot">
-        <div className="lbl side-update">
+        <div className="side-update">
           <UpdateButton />
         </div>
         <button
