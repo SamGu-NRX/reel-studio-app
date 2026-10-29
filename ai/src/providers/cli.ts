@@ -185,19 +185,51 @@ export function parseProtocolReply(text: string, tools: ToolSchema[] = []): Comp
 
 export interface RunResult { code: number | null; stdout: string; stderr: string }
 
+/** Minutes `zone` is ahead of UTC at `at` (Intl's own offset table; DST included). NaN for a zone it doesn't know. */
+function zoneOffsetMin(zone: string, at: Date): number {
+  try {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' })
+      .formatToParts(at).map((p) => [p.type, p.value]));
+    const wall = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour % 24, +parts.minute, +parts.second);
+    return Math.round((wall - at.getTime()) / 60_000);
+  } catch {
+    return NaN;
+  }
+}
+
+/** The next `h:m` wall-clock time in `zone` after `now`, as an instant. */
+function nextInZone(h: number, m: number, zone: string, now: Date): Date | null {
+  for (let day = 0; day <= 2; day++) {
+    // that calendar day in the zone, at h:m, read as UTC, then moved by the zone's offset at that moment
+    const off0 = zoneOffsetMin(zone, now);
+    if (!Number.isFinite(off0)) return null;
+    const local = new Date(now.getTime() + off0 * 60_000);
+    const guess = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + day, h, m);
+    const off = zoneOffsetMin(zone, new Date(guess - off0 * 60_000));
+    const at = new Date(guess - off * 60_000);
+    if (at.getTime() > now.getTime()) return at;
+  }
+  return null;
+}
+
 /**
- * When a Claude plan at its limit resets, from the CLI's own words (ISO), or null when they don't say. Two forms are
- * known: "Claude AI usage limit reached|1761170400" (epoch seconds) and "... resets 3pm" or "resets 3:40pm", the next
- * such time on this computer's clock.
+ * When a Claude plan at its limit resets, from the CLI's own words (ISO), or null when they don't say. Known forms:
+ * "Claude AI usage limit reached|1761170400" (epoch seconds), and "resets 3pm" or "resets 3:40pm (America/Chicago)",
+ * the next such time in the zone it names, else on this computer's clock.
  */
 export function limitResetsAt(text: string, now: Date): string | null {
   const epoch = /\|(\d{10})\b/.exec(text);
   if (epoch) return new Date(Number(epoch[1]) * 1000).toISOString();
-  const at = /resets\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b/i.exec(text);
+  const at = /resets\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b(?:\s*\(([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+|UTC)\))?/i.exec(text);
   if (!at) return null;
   const h = (Number(at[1]) % 12) + (at[3].toLowerCase() === 'p' ? 12 : 0);
+  const m = Number(at[2] ?? 0);
+  if (at[4]) {
+    const zoned = nextInZone(h, m, at[4], now);
+    if (zoned) return zoned.toISOString();
+  }
   const d = new Date(now);
-  d.setHours(h, Number(at[2] ?? 0), 0, 0);
+  d.setHours(h, m, 0, 0);
   if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
   return d.toISOString();
 }
@@ -508,7 +540,8 @@ export class ClaudeCliProvider implements ModelProvider {
     if (result.is_error) {
       const text = String(result.result ?? '');
       const limited = /limit|quota|rate/i.test(text) || result.api_error_status === 429;
-      const resetsAt = limited ? limitResetsAt(text, new Date()) ?? refusedReset(watch.limits) : null;
+      // the rate_limit_event's epoch is exact; the words are the fallback
+      const resetsAt = limited ? refusedReset(watch.limits) ?? limitResetsAt(text, new Date()) : null;
       throw new AIError(limited ? 'cli_limited' : 'cli_error', limited ? claudeCodeLimitWords(text, resetsAt) : 'The AI had a problem answering.', {
         retryable: !limited, detail: text.slice(0, 500), ...(resetsAt ? { resetsAt } : {}), ...(watch.limits ? { limits: watch.limits } : {}),
       });

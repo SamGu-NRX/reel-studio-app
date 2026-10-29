@@ -18,7 +18,7 @@ import { ClaudeCliProvider, CodexCliProvider, extractJson } from './providers/cl
 import { ReplayProvider } from './providers/replay';
 import { CONNECTION_KINDS, ConnectionKind, listConnectionModels, noRedirectFetch, normalizeBaseURL, suggestedModel } from './providers/connection';
 import { OpenAICompatibleProvider } from './providers/openaiCompatible';
-import { hubAccounts, hubModels, hubProvider, splitModel, familyOf, type HubAccount, type HubModel } from './providers/hub';
+import { hubAccounts, hubImages, hubModels, hubProvider, loopbackOrigin, splitModel, familyOf, type HubAccount, type HubModel } from './providers/hub';
 import { nameFromId } from './providers/limits';
 import { readCodexAccount } from './providers/codexAccount';
 import { ClaudeCodeHarness } from './mcp/claudeCode';
@@ -98,21 +98,14 @@ export const ROLE_NAMES: Record<ModelRole, string> = {
 /**
  * The model `role` asks the active editor for, as stored (it may carry a reasoning level). Claude Code, the Codex app
  * and your own server take a model name; a Claude key picks its own, so a choice does not apply to it. A name the
- * editor cannot run (left from another editor) is refused by name rather than sent.
+ * editor cannot run (left from another editor) is Auto, as the stage's chip shows it: never an error mid-edit.
  */
 export function modelForRole(provider: ProviderId, role: ModelRole, choices: RoleModels): string | undefined {
   const m = choices[role];
   if (!m || m === 'auto') return undefined;
   const { model } = splitModel(m);
-  const refuse = (app: string) => new AIError('model_not_offered', `${app} doesn't offer "${model}", the model chosen for ${ROLE_NAMES[role]}. Choose another in Settings, under Editor, or Auto.`);
-  if (provider === 'claude-cli') {
-    if (CLAUDE_CODE_MODELS.includes(model) || /^claude-[\w.-]+$/.test(model)) return m;
-    throw refuse('Your Claude Code app');
-  }
-  if (provider === 'codex-cli') {
-    if (familyOf(model) === 'gpt') return m;
-    throw refuse('Your Codex app');
-  }
+  if (provider === 'claude-cli') return CLAUDE_CODE_MODELS.includes(model) || /^claude-[\w.-]+$/.test(model) ? m : undefined;
+  if (provider === 'codex-cli') return familyOf(model) === 'gpt' ? m : undefined;
   return provider === 'custom' ? m : undefined;
 }
 
@@ -322,6 +315,18 @@ export function createAI(opts: CreateAIOptions) {
     } else throw new AIError('no_secure_storage', weak ? WEAK_STORE_MESSAGE : noStorageMessage);
   }
 
+  /** `text` with every key this app keeps replaced: the Claude key, and each connection's key and management key. */
+  async function scrubSecrets(text: string): Promise<string> {
+    const s = await settings();
+    const names = ['claude-key', ...(s.connections ?? []).flatMap((c) => [connectionSecret(c.id), `${connectionSecret(c.id)}-management`])];
+    let out = text;
+    for (const n of names) {
+      const v = await readSecret(n);
+      if (v && v.length >= 4) out = out.split(v).join('[key]');
+    }
+    return out;
+  }
+
   // ---- Claude key (secret)
   const claudeKey = () => readSecret('claude-key');
   const storeClaudeKey = (key: string | null) => writeSecret('claude-key', key, 'This computer has no safe place to keep your Claude key, so it was not saved. Add it from the Reel Studio app.');
@@ -350,9 +355,10 @@ export function createAI(opts: CreateAIOptions) {
     const list = s.connections ?? [];
     return list.find((c) => c.id === s.activeConnection) ?? list[0];
   }
-  function connectionProvider(c: CustomConnection, key: string | null, check = false): ModelProvider {
+  /** `models`: the hub's list, which says whether the chosen model takes pictures (none when unknown). */
+  function connectionProvider(c: CustomConnection, key: string | null, check = false, models: HubModel[] | null = null): ModelProvider {
     if (c.kind === 'cliproxy') {
-      const p = hubProvider({ origin: c.baseURL, key: key ?? '', choice: c.model, supportsImages: ['claude', 'gpt'].includes(familyOf(splitModel(c.model).model)), fetch: opts.fetch, check });
+      const p = hubProvider({ origin: c.baseURL, key: key ?? '', choice: c.model, supportsImages: hubImages(models, c.model), fetch: opts.fetch, check });
       return check ? p : withAlternative(p, c);
     }
     if (c.kind === 'anthropic') {
@@ -372,23 +378,40 @@ export function createAI(opts: CreateAIOptions) {
     hubCache = { key: k, at: Date.now(), v };
     return v;
   }
-  /** A limit on the hub names another model to try: the hub's first model of another family (Claude ↔ ChatGPT),
-   * which runs on other accounts. */
+  /**
+   * A limit on the hub suggests another model: the first of another family (Claude ↔ ChatGPT) in the hub's list as it
+   * is now. With the management key saved, a family whose every account has a window at nothing left is not offered.
+   */
   function withAlternative(p: ModelProvider, c: CustomConnection): ModelProvider {
     const complete = p.complete.bind(p);
     return Object.assign(Object.create(Object.getPrototypeOf(p)), p, {
       complete: async (req: Parameters<ModelProvider['complete']>[0]) => {
         try { return await complete(req); } catch (e) {
           if (!(e instanceof AIError) || e.code !== 'connection_limited') throw e;
-          const family = familyOf(splitModel(p.model ?? c.model).model);
-          const other = (await hubList(c, await readSecret(connectionSecret(c.id))).catch(() => [] as HubModel[]))
-            .find((m) => m.family !== family && (m.family === 'claude' || m.family === 'gpt'));
+          const other = await alternativeModel(c, familyOf(splitModel(p.model ?? c.model).model));
           if (!other) throw e;
-          throw new AIError(e.code, `${e.userMessage} ${other.name} runs on your ${other.family === 'claude' ? 'Claude' : 'ChatGPT'} accounts: choose it in Settings, under Editor.`, { detail: e.message, retryable: e.retryable, status: e.status, resetsAt: e.resetsAt });
+          throw new AIError(e.code, `${e.userMessage} ${alternativeWords(other)}`, { detail: e.message, retryable: e.retryable, status: e.status, resetsAt: e.resetsAt });
         }
       },
     }) as ModelProvider;
   }
+  async function alternativeModel(c: CustomConnection, family: string): Promise<HubModel | undefined> {
+    const key = await readSecret(connectionSecret(c.id));
+    const now = await hubModels(c.baseURL, key, { fetch: opts.fetch }).catch(() => null);
+    if (!now) return undefined;
+    const spent = new Set<string>();
+    const mk = await readSecret(managementSecret(c.id));
+    if (mk) {
+      const accounts = await hubAccounts(c.baseURL, mk, { fetch: opts.fetch }).catch(() => [] as HubAccount[]);
+      for (const [fam, provider] of [['claude', 'claude'], ['gpt', 'codex']] as const) {
+        const mine = accounts.filter((a) => a.provider === provider && a.windows.length);
+        if (mine.length && mine.every((a) => a.windows.some((w) => w.left === 0))) spent.add(fam);
+      }
+    }
+    return now.find((m) => m.family !== family && (m.family === 'claude' || m.family === 'gpt') && !spent.has(m.family));
+  }
+  const alternativeWords = (m: HubModel): string =>
+    `You could try ${m.name}, which runs on your ${m.family === 'claude' ? 'Claude' : 'ChatGPT'} accounts: choose it in Settings, under Editor.`;
 
   /** Throws the plain-words AIError when the server does not answer; returns whether it took a picture. A cut-off
    * reply (connection_truncated) counts as an answer. So does busy or out of quota (connection_busy), which proves
@@ -516,7 +539,12 @@ export function createAI(opts: CreateAIOptions) {
         return oneAtATime(async () => {
           const c = activeConnection(await settings());
           if (!c) throw new AIError('no_ai', 'That connection is no longer saved. Pick your editor again in Settings.');
-          return connectionProvider(chosen ? { ...c, model: chosen } : c, await readSecret(connectionSecret(c.id)));
+          const key = await readSecret(connectionSecret(c.id));
+          if (c.kind !== 'cliproxy') return connectionProvider(chosen ? { ...c, model: chosen } : c, key);
+          // the hub's list says whether the model takes pictures; a choice it no longer lists is Auto, as its chip says
+          const models = await hubList(c, key).catch(() => null);
+          const offered = !!chosen && (!models || models.some((m) => m.id === splitModel(chosen).model));
+          return connectionProvider(offered ? { ...c, model: chosen! } : c, key, false, models);
         });
       case 'codex-cli': {
         const bin = (await localCodex()).bin;
@@ -599,6 +627,8 @@ export function createAI(opts: CreateAIOptions) {
     const list = (s.connections ?? []).filter((c) => c.id !== id);
     const wasActive = s.active === 'custom' && activeConnection(s)?.id === id;
     await writeSecret(secret, null, '');
+    // a CLIProxyAPI connection also keeps its management key
+    await writeSecret(managementSecret(id), null, '');
     await saveSettings({
       connections: list.length ? list : undefined,
       ...(s.activeConnection === id ? { activeConnection: undefined } : {}),
@@ -829,7 +859,10 @@ export function createAI(opts: CreateAIOptions) {
       try {
         const r = await p.complete({ system: 'Reply with exactly the word OK.', messages: [{ role: 'user', content: [{ type: 'text', text: 'Say OK.' }] }], tools: [], jsonOnly: true, signal });
         if (r.limits) claudeWindows = { at: Date.now(), v: r.limits };
-        return { provider: p.id, model: p.model, reply: r.text.trim().slice(0, 200), ms: Date.now() - t0, ...(r.limits ? { limits: r.limits } : {}) };
+        // a server that echoes what it was sent would put a key on screen: every saved secret comes out, and only a
+        // short excerpt is kept
+        const reply = (await scrubSecrets(r.text)).trim().slice(0, 200);
+        return { provider: p.id, model: p.model, reply, ms: Date.now() - t0, ...(r.limits ? { limits: r.limits } : {}) };
       } catch (e) {
         if (e instanceof AIError && e.limits) claudeWindows = { at: Date.now(), v: e.limits };
         throw e;
@@ -896,6 +929,9 @@ export function createAI(opts: CreateAIOptions) {
         };
         let origin: string;
         try { origin = new URL(normalizeBaseURL(input.origin)).origin; } catch (e) { return fail(e); }
+        // a found CLIProxyAPI is this computer, at a literal loopback address; a server elsewhere is added under
+        // Advanced, where the person types its address and key
+        if (!loopbackOrigin(origin)) return fail(new AIError('hub_not_local', 'That CLIProxyAPI is not on this computer, so its key was not sent. To use a server elsewhere, add it under Advanced.'));
         const key = String(input.key ?? '').trim();
         if (!key) return fail(new AIError('hub_key', 'Paste a key from api-keys in your CLIProxyAPI config.'));
         let models: HubModel[];

@@ -162,11 +162,18 @@ function Accounts({ data, onChange }: { data: EditorAccounts | null; onChange: (
   )
 }
 
-/** The model a limited stage could move to: the first of another family, which runs on other accounts. */
-function otherModel(models: EditorModel[], limitedModel: string | undefined): EditorModel | undefined {
+/**
+ * A model a limited stage could try: the first of another family in the editor's list now, which runs on other
+ * accounts. Not offered when the accounts shown for that family all have a window at nothing left.
+ */
+export function otherModel(models: EditorModel[], limitedModel: string | undefined, accounts: EditorAccounts['accounts'] = []): EditorModel | undefined {
   const bare = (limitedModel ?? '').replace(/\([a-z]+\)$/, '')
   const fam = models.find((m) => m.id === bare)?.family ?? (bare.startsWith('claude') || bare === 'sonnet' || bare === 'opus' || bare === 'fable' ? 'claude' : 'gpt')
-  return models.find((m) => m.family !== fam && (m.family === 'claude' || m.family === 'gpt'))
+  const spent = (f: string): boolean => {
+    const mine = accounts.filter((a) => (f === 'claude' ? a.provider === 'claude' : a.provider === 'codex') && a.windows.length)
+    return mine.length > 0 && mine.every((a) => a.windows.some((w) => w.left === 0))
+  }
+  return models.find((m) => m.family !== fam && (m.family === 'claude' || m.family === 'gpt') && !spent(m.family))
 }
 
 /**
@@ -202,11 +209,11 @@ export function EditorDetails({ active, stages }: { active: ProviderInfo; stages
   const limited = result && 'error' in result && /limit/.test(result.code ?? '')
   const edits = stages.choice?.editor
   // on Auto, Edits runs on the connection's own model, which the editor's status names
-  const alt = limited ? otherModel(stages.models, edits && edits !== 'auto' ? edits : active.detail) : undefined
+  const alt = limited ? otherModel(stages.models, edits && edits !== 'auto' ? edits : active.detail, accounts?.accounts) : undefined
   const modelName = (id?: string) => (id ? (stages.models.find((m) => m.id === id.replace(/\([a-z]+\)$/, ''))?.name ?? id) : '')
   const took = (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`)
   // the button below makes the offer, so the words don't repeat it
-  const said = result && 'error' in result && alt ? result.error.replace(` ${alt.name} runs on your ${alt.family === 'claude' ? 'Claude' : 'ChatGPT'} accounts: choose it in Settings, under Editor.`, '') : null
+  const said = result && 'error' in result && alt ? result.error.replace(/ You could try .+, which runs on your (Claude|ChatGPT) accounts: choose it in Settings, under Editor\.$/, '') : null
 
   return (
     <div className="pv-more ed" data-testid="editor-details">
@@ -226,7 +233,7 @@ export function EditorDetails({ active, stages }: { active: ProviderInfo; stages
       </div>
       {alt && (
         <Button size="small" onClick={() => void stages.set('editor', alt.id).then(() => setResult(null))} data-testid="editor-use-other">
-          Use {alt.name} for Edits
+          Try {alt.name} for Edits
         </Button>
       )}
     </div>
@@ -310,8 +317,9 @@ function StageRow({ stage, state, editorPicksOwn, showLine }: { stage: (typeof S
   const value = state.choice?.[stage.role] ?? 'auto'
   const { id, effort } = split(value)
   const model = state.models.find((m) => m.id === id)
+  // a choice the editor in use doesn't offer is Auto, here as at edit time (ai index.ts modelForRole)
   const missing = value !== 'auto' && !state.loading && state.models.length > 0 && !model
-  const label = value === 'auto' ? 'Auto' : (model?.name ?? id)
+  const label = value === 'auto' || missing ? 'Auto' : (model?.name ?? id)
   const lineId = `mrow-line-${stage.role}`
   return (
     <li className="mrow" data-testid={`stage-${stage.role}`}>
@@ -324,7 +332,7 @@ function StageRow({ stage, state, editorPicksOwn, showLine }: { stage: (typeof S
             {stage.line}
           </span>
         )}
-        {missing && <span className="mrow-line warn">Your editor doesn’t offer {id} now. Auto is used.</span>}
+        {missing && <span className="mrow-line warn">Your editor doesn’t offer {id} now, so Auto is used.</span>}
         {editorPicksOwn && stage.role === 'editor' && <span className="mrow-line">An API key picks its own model.</span>}
       </div>
       <button
@@ -343,7 +351,7 @@ function StageRow({ stage, state, editorPicksOwn, showLine }: { stage: (typeof S
         {model && <FamilyMark family={model.family} />}
         <span className="mchip-name" id={`stage-chip-${stage.role}`}>
           {label}
-          {effort && <span className="mchip-effort"> · {EFFORT_NAME[effort] ?? effort}</span>}
+          {effort && !missing && <span className="mchip-effort"> · {EFFORT_NAME[effort] ?? effort}</span>}
         </span>
         <Icon name="updown" size={12} />
       </button>

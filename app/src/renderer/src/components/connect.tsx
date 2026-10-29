@@ -72,7 +72,7 @@ export function ConnectAI({ onConnected, advanced = true, stagesOpen = false }: 
   const otherOn = anyOn && !hubOn && !['claude-cli', 'codex-cli'].includes(active.id)
   const hubShown = !!hub && (hub.state !== 'none' || hubOn)
   // CLIProxyAPI is the recommended choice: while nothing is connected its Use it is the one filled button
-  const hubLeads = !anyOn && !!hub && hub.state !== 'none'
+  const hubLeads = !anyOn && !!hub && (hub.state === 'ready' || hub.state === 'needs-key')
   const details = anyOn ? (
     <>
       <EditorDetails active={active} stages={stages} />

@@ -117,6 +117,21 @@ export async function hubModels(origin: string, key: string | null, opts: { fetc
   return out.sort((a, b) => a.order - b.order).map(({ order: _o, ...m }) => m);
 }
 
+/** Whether `choice`'s model takes pictures, as the hub's catalog says. A model the list doesn't have, or no list at
+ * all, takes none: a text-only model must never be sent one. */
+export function hubImages(models: HubModel[] | null, choice: string): boolean {
+  const { model } = splitModel(choice);
+  return !!models?.find((m) => m.id === model)?.images;
+}
+
+/** A CLIProxyAPI address the app found must be this computer: a literal loopback address, so nothing resolves it
+ * again on the way. Anything else is refused before a key is sent. */
+export function loopbackOrigin(origin: string): boolean {
+  let host: string;
+  try { host = new URL(origin).hostname; } catch { return false; }
+  return /^127(\.\d{1,3}){3}$/.test(host) || host === '[::1]';
+}
+
 /** The provider for one model on the hub. `choice` may carry a reasoning level (`claude-opus-5-5(high)`), which goes
  * to the hub as it is. */
 export function hubProvider(o: { origin: string; key: string; choice: string; supportsImages: boolean; fetch?: typeof fetch; check?: boolean }): ModelProvider {
@@ -201,14 +216,19 @@ export function windowLabel(mins: number | null | undefined, fallback: string): 
   return mins < 1440 ? `${Math.round(mins / 60)}-hour` : `${Math.round(mins / 1440)}-day`;
 }
 
+/**
+ * Plain words for a management API refusal. Its body is read only to tell the cases apart and never copied into the
+ * error: a hub may echo the key it was sent, and the error's detail goes to the app's log. The detail is the status.
+ */
 function managementError(status: number, json: any): AIError {
   const said = String(json?.error ?? '');
-  if (status === 401) return new AIError('hub_management_key', 'CLIProxyAPI did not accept that management key. Use the secret-key you set under remote-management in its config.', { status });
+  const detail = `management API answered ${status}`;
+  if (status === 401) return new AIError('hub_management_key', 'CLIProxyAPI did not accept that management key. Use the secret-key you set under remote-management in its config.', { status, detail });
   if (status === 404 || /key not set|disabled/i.test(said)) {
-    return new AIError('hub_management_off', 'CLIProxyAPI’s management API is off. Set remote-management secret-key in its config, restart it, then add that key here.', { status });
+    return new AIError('hub_management_off', 'CLIProxyAPI’s management API is off. Set remote-management secret-key in its config, restart it, then add that key here.', { status, detail });
   }
-  if (status === 403 && /banned/i.test(said)) return new AIError('hub_management_banned', 'CLIProxyAPI is refusing management requests for a while after several wrong keys. Try again in 30 minutes.', { status });
-  return new AIError('hub_management', 'CLIProxyAPI could not list its accounts.', { status, detail: said.slice(0, 200) });
+  if (status === 403 && /banned/i.test(said)) return new AIError('hub_management_banned', 'CLIProxyAPI is refusing management requests for a while after several wrong keys. Try again in 30 minutes.', { status, detail });
+  return new AIError('hub_management', 'CLIProxyAPI could not list its accounts.', { status, detail });
 }
 
 /**

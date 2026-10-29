@@ -38,17 +38,32 @@ export interface ServerLimit {
  * with `reset_seconds`, `provider` and `model` once every account for a model is resting (sdk/cliproxy/auth/selector.go);
  * a ChatGPT answer it passes on carries `resets_in_seconds` or `resets_at`.
  */
+/** A year: a reset further away than this, or more than a day in the past, is a value this does not understand. */
+const PLAUSIBLE_MS = 366 * 86_400_000;
+
+/**
+ * A reset time from a number a server sent, whatever its unit: an epoch in milliseconds (13 digits) or seconds (10
+ * digits), or a count of seconds from now. Undefined for anything outside a year from now, never a throw.
+ */
+export function resetFromNumber(v: unknown, now: number, kind: 'at' | 'in'): string | undefined {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return undefined;
+  const ms = v >= 1e12 ? v : v >= 1e9 ? v * 1000 : kind === 'in' ? now + v * 1000 : NaN;
+  if (!Number.isFinite(ms) || ms < now - 86_400_000 || ms > now + PLAUSIBLE_MS) return undefined;
+  return new Date(ms).toISOString();
+}
+
 export function serverLimit(body: unknown, now: number = Date.now()): ServerLimit | null {
   const e = (body as any)?.error ?? body;
   if (!e || typeof e !== 'object') return null;
-  const secs = [e.reset_seconds, e.resets_in_seconds].find((v) => typeof v === 'number' && v >= 0);
-  const at = typeof e.resets_at === 'number' ? new Date(e.resets_at * 1000).toISOString() : typeof e.resets_at === 'string' && Number.isFinite(Date.parse(e.resets_at)) ? new Date(e.resets_at).toISOString() : undefined;
-  const limited = e.code === 'model_cooldown' || e.type === 'usage_limit_reached' || e.code === 'usage_limit_reached' || secs !== undefined || at !== undefined;
+  const inSecs = [e.reset_seconds, e.resets_in_seconds].find((v) => typeof v === 'number');
+  const fromString = typeof e.resets_at === 'string' && Number.isFinite(Date.parse(e.resets_at)) ? resetFromNumber(Date.parse(e.resets_at), now, 'at') : undefined;
+  const resetsAt = resetFromNumber(inSecs, now, 'in') ?? resetFromNumber(e.resets_at, now, 'at') ?? fromString;
+  const limited = e.code === 'model_cooldown' || e.type === 'usage_limit_reached' || e.code === 'usage_limit_reached' || inSecs !== undefined || e.resets_at !== undefined;
   if (!limited) return null;
   return {
     ...(typeof e.provider === 'string' && e.provider ? { provider: e.provider } : {}),
     ...(typeof e.model === 'string' && e.model ? { model: e.model } : {}),
-    ...(secs !== undefined ? { resetsAt: new Date(now + secs * 1000).toISOString() } : at ? { resetsAt: at } : {}),
+    ...(resetsAt ? { resetsAt } : {}),
   };
 }
 

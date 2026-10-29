@@ -33,11 +33,13 @@ export function noRedirectFetch(base: typeof fetch = fetch): typeof fetch {
   return ((input: any, init?: RequestInit) => base(input, { ...init, redirect: 'error' })) as typeof fetch;
 }
 
-/** The same error with every copy of `secret` in its diagnostic text replaced: a server that echoes the key in an
- * error ("Incorrect API key provided: ...") must not put it in the app's log. */
+/** The same error with every copy of `secret` replaced, in its diagnostic text and in its words for the person: a
+ * server that echoes the key in an error ("Incorrect API key provided: ...") or in a field the words quote (a limit's
+ * model name) must not put it in the app's log or on screen. */
 export function withoutSecret(e: AIError, secret: string | null | undefined): AIError {
-  if (!secret || !e.message.includes(secret)) return e;
-  return new AIError(e.code, e.userMessage, { detail: e.message.split(secret).join('[key]'), link: e.link, retryable: e.retryable, status: e.status, requestId: e.requestId });
+  if (!secret || (!e.message.includes(secret) && !e.userMessage.includes(secret))) return e;
+  const out = (t: string) => t.split(secret).join('[key]');
+  return new AIError(e.code, out(e.userMessage), { detail: out(e.message), link: e.link, retryable: e.retryable, status: e.status, requestId: e.requestId, resetsAt: e.resetsAt, limits: e.limits });
 }
 
 export function unreachable(detail?: string): AIError {

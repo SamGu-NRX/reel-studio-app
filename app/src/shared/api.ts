@@ -486,8 +486,11 @@ export interface ConnectionInfo {
 
 /** CLIProxyAPI on this computer (main/vendor-hub.ts). Never the key. */
 export interface HubFound {
-  /** ready: a key from its config works; needs-key: it answers, but no readable key does */
-  state: 'none' | 'ready' | 'needs-key'
+  /** ready: a key from its config works; needs-key: it answers, but no readable key does; elsewhere: its config names
+   * another computer, which is never asked anything (use Advanced for a server you run elsewhere) */
+  state: 'none' | 'ready' | 'needs-key' | 'elsewhere'
+  /** with elsewhere: the host the config names */
+  host?: string
   /** "http://127.0.0.1:8317" */
   origin?: string
   /** how many models the key gets */

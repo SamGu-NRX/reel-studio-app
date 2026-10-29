@@ -2,20 +2,21 @@
 // and the probe of /v1/models against a fake hub on a random port. No real config or key is read.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, writeFileSync } from 'node:fs'
+import * as http from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FakeHub } from '../../ai/test/fakeHub'
-import { configsOfRunning, detectHub, hubConfigCandidates, parseHubConfig } from '../src/main/vendor-hub'
+import { configsOfRunning, confirmHub, detectHub, hubConfigCandidates, localAddress, parseHubConfig, type Lookup } from '../src/main/vendor-hub'
 
 describe('reading CLIProxyAPI’s config', () => {
   it('the older layout: an empty host is this computer, and the api-keys list holds the client keys', () => {
     const c = parseHubConfig('host: ""\nport: 8411\napi-keys:\n  - "k-one"\n  - "k-two"\n', '/x/config.yaml')
-    expect(c).toEqual({ file: '/x/config.yaml', origin: 'http://127.0.0.1:8411', keys: ['k-one', 'k-two'] })
+    expect(c).toEqual({ file: '/x/config.yaml', host: '127.0.0.1', port: 8411, tls: false, keys: ['k-one', 'k-two'] })
   })
 
   it('the v8 layout: server and access sections, TLS, and the top-level api-keys map of upstream keys left out', () => {
     const yaml = 'server:\n  host: 0.0.0.0\n  port: 9443\n  tls:\n    enable: true\naccess:\n  api-keys:\n    - client-key\napi-keys:\n  claude:\n    - api-key: upstream-secret\n'
-    expect(parseHubConfig(yaml, '/y')).toEqual({ file: '/y', origin: 'https://127.0.0.1:9443', keys: ['client-key'] })
+    expect(parseHubConfig(yaml, '/y')).toEqual({ file: '/y', host: '127.0.0.1', port: 9443, tls: true, keys: ['client-key'] })
   })
 
   it('not YAML, or a port that is not one: nothing', () => {
@@ -56,13 +57,13 @@ describe('finding the hub', () => {
   it('ready with the config’s key: the count of models the picker will list, the file it came from, and the key kept for Use it', async () => {
     writeFileSync(join(dir, 'config.yaml'), `port: ${hub.port}\napi-keys:\n  - stale\n  - ${hub.key}\n`)
     const found = await detectHub({ env: { REELSTUDIO_TEST_HUB_CONFIG: dir }, platform: 'darwin', fetch: f, home: '/nobody' })
-    expect(found).toEqual({ state: 'ready', origin: hub.origin, models: 5, keySource: join(dir, 'config.yaml'), key: hub.key })
+    expect(found).toEqual({ state: 'ready', origin: hub.origin, models: 5, keySource: join(dir, 'config.yaml'), key: hub.key, file: join(dir, 'config.yaml') })
   })
 
   it('answers but refuses every key in the config: asks for one, and says the config’s keys were refused', async () => {
     writeFileSync(join(dir, 'cliproxyapi.conf'), `port: ${hub.port}\napi-keys: [old-key]\n`)
     const found = await detectHub({ env: { REELSTUDIO_TEST_HUB_CONFIG: dir }, platform: 'darwin', fetch: f, home: '/nobody' })
-    expect(found).toEqual({ state: 'needs-key', origin: hub.origin, keySource: join(dir, 'cliproxyapi.conf'), keyRefused: true })
+    expect(found).toEqual({ state: 'needs-key', origin: hub.origin, keySource: join(dir, 'cliproxyapi.conf'), file: join(dir, 'cliproxyapi.conf'), keyRefused: true })
   })
 
   it('no config in the test folder: none, and the real default port is never asked', async () => {
@@ -71,3 +72,74 @@ describe('finding the hub', () => {
     expect(asked).toEqual([])
   })
 })
+
+describe('only this computer gets the key (r12 review)', () => {
+  let hub: FakeHub
+  let dir: string
+  const asked: string[] = []
+  const f = (u: string, i?: { headers?: Record<string, string>; signal?: AbortSignal; redirect?: 'error' }) => {
+    asked.push(u)
+    return fetch(u, i)
+  }
+  const resolvesTo = (...addresses: string[]): Lookup => async () => addresses.map((address) => ({ address, family: address.includes(':') ? 6 : 4 }))
+  beforeEach(async () => {
+    hub = new FakeHub()
+    await hub.start()
+    dir = mkdtempSync(join(tmpdir(), 'rs-hub-'))
+    asked.length = 0
+  })
+  afterEach(async () => {
+    await hub.stop()
+  })
+  const env = () => ({ REELSTUDIO_TEST_HUB_CONFIG: dir })
+
+  it('a config naming another computer is shown as elsewhere and is never asked anything', async () => {
+    writeFileSync(join(dir, 'config.yaml'), `host: hub.example.com\nport: ${hub.port}\napi-keys: [${hub.key}]\n`)
+    const found = await detectHub({ env: env(), platform: 'darwin', fetch: f, home: '/nobody', lookup: resolvesTo('203.0.113.7') })
+    expect(found).toEqual({ state: 'elsewhere', host: 'hub.example.com', keySource: join(dir, 'config.yaml') })
+    expect(asked).toEqual([])
+    expect(hub.requests).toEqual([])
+  })
+
+  it('a name is resolved once, every address must be loopback, and requests go to the address itself', async () => {
+    expect(await localAddress('hub.local', resolvesTo('127.0.0.1', '10.0.0.5'))).toBeNull()
+    expect(await localAddress('hub.local', resolvesTo('::1'))).toBe('::1')
+    expect(await localAddress('192.168.1.4')).toBeNull()
+    writeFileSync(join(dir, 'config.yaml'), `host: hub.local\nport: ${hub.port}\napi-keys: [${hub.key}]\n`)
+    const found = await detectHub({ env: env(), platform: 'darwin', fetch: f, home: '/nobody', lookup: resolvesTo('127.0.0.1') })
+    expect(found).toMatchObject({ state: 'ready', origin: `http://127.0.0.1:${hub.port}` })
+    expect(asked.every((u) => u.startsWith(`http://127.0.0.1:${hub.port}/`))).toBe(true)
+  })
+
+  it('a redirect is refused, so the key never leaves the address that was checked', async () => {
+    const other = new FakeHub()
+    await other.start()
+    const bounce = http.createServer((_q, r) => r.writeHead(302, { location: `${other.origin}/v1/models` }).end())
+    await new Promise<void>((r) => bounce.listen(0, '127.0.0.1', r))
+    try {
+      writeFileSync(join(dir, 'config.yaml'), `port: ${(bounce.address() as { port: number }).port}\napi-keys: [${hub.key}]\n`)
+      const found = await detectHub({ env: env(), platform: 'darwin', fetch: f, home: '/nobody' })
+      expect(found.state).toBe('none')
+      expect(other.requests).toEqual([])
+    } finally {
+      bounce.close()
+      await other.stop()
+    }
+  })
+
+  it('right before Use it the config is read again: another host, or a key no longer in it, is refused', async () => {
+    const file = join(dir, 'config.yaml')
+    writeFileSync(file, `port: ${hub.port}\napi-keys: [${hub.key}]\n`)
+    const deps = { env: env(), platform: 'darwin' as const, fetch: f, home: '/nobody', lookup: resolvesTo('203.0.113.7') }
+    const found = await detectHub(deps)
+    expect(await confirmHub(deps, found)).toEqual({ origin: hub.origin, key: hub.key, keySource: file })
+    writeFileSync(file, `host: hub.example.com\nport: ${hub.port}\napi-keys: [${hub.key}]\n`)
+    asked.length = 0
+    await expect(confirmHub(deps, found)).rejects.toMatchObject({ code: 'HUB_NOT_LOCAL' })
+    await expect(confirmHub(deps, found, 'typed-key')).rejects.toMatchObject({ code: 'HUB_NOT_LOCAL' })
+    expect(asked).toEqual([])
+    writeFileSync(file, `port: ${hub.port}\napi-keys: [another-key]\n`)
+    await expect(confirmHub(deps, found)).rejects.toMatchObject({ code: 'HUB_CHANGED' })
+  })
+})
+

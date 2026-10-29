@@ -100,6 +100,14 @@ export function HubRow({ hub, on, primary, onConnected, onDisconnect, children }
         Disconnect
       </Button>
     )
+  } else if (hub.state === 'elsewhere') {
+    // a config naming another computer: shown so the person knows why it isn't offered, and never sent a key
+    status = (
+      <span className="pv-line" title={`${hub.host} · ${hub.keySource ?? ''}`}>
+        Its config names {hub.host}, not this computer.
+      </span>
+    )
+    more = <p className="pv-more vsteps-hint">To use a server elsewhere, add it under Advanced with its address and key.</p>
   } else if (hub.state === 'ready') {
     status = (
       <span className="pv-line">
@@ -176,7 +184,7 @@ export function HubRow({ hub, on, primary, onConnected, onDisconnect, children }
         name={
           <>
             <span className="pv-name">CLIProxyAPI</span>
-            {!on && <span className="pv-tag">Recommended</span>}
+            {!on && hub.state !== 'elsewhere' && <span className="pv-tag">Recommended</span>}
           </>
         }
         status={status}
