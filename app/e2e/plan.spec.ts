@@ -138,6 +138,35 @@ test('plan a reel with the editor, edit a beat, then film it', async () => {
   await app.close()
 })
 
+// fails if a video dropped while the editor is answering names the reel after the file though no video went in (the
+// title was written before the first edit was refused), or the refusal doesn't say why
+test('a video dropped while the editor is answering is refused, and the reel keeps its name', async () => {
+  const media = makeMedia()
+  const { app, page } = await launch({ ...freshProfile('busy'), REELSTUDIO_MOCK_NOTE: '4000' })
+  await passFirstRun(page)
+  await page.getByTestId('new-reel').click()
+  const slug = await slugOf(page)
+  const dir = await page.evaluate((s) => window.reel.projects.get(s).then((d) => d.dir), slug)
+  const names = () => {
+    const s = JSON.parse(readFileSync(join(dir, 'app.json'), 'utf8'))
+    return { title: s.title, fileTitle: s.fileTitle }
+  }
+  await say(page, 'How I make sourdough without a mixer')
+  await expect(page.getByTestId('plan-answering')).toBeVisible()
+  const before = names()
+
+  await page.getByTestId('planned-stage').getByTestId('file-input').setInputFiles([media.video])
+  await expect(page.getByTestId('toast')).toContainText('Your editor is still answering. Drop the video again in a moment, or press Stop.')
+  expect(names()).toEqual(before)
+  await expect(page.getByTestId('planned-stage')).toBeVisible()
+
+  // the editor's answer lands on the reel as it was
+  await expect(page.getByTestId('plan-question')).toHaveText('Who is it for?')
+  expect(names()).toEqual(before)
+  expect((await page.evaluate((s) => window.reel.projects.get(s), slug)).status).toBe('planned')
+  await app.close()
+})
+
 // fails if the plan panel offers a form or a chat no one would answer, if Connect your editor loses this New reel (an
 // untouched one is removed when its screen closes, and Choose your editor closed it), or if coming back connected
 // needs another click before typing
