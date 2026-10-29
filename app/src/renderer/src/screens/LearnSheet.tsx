@@ -22,10 +22,6 @@ const EXPORT_HOW: Record<PastEdit['app'], string> = {
   'Final Cut Pro': 'In Final Cut Pro, select the project, then choose File › Export XML…',
   'Premiere Pro': 'In Premiere Pro, open the project, then choose File › Export › Final Cut Pro XML…'
 }
-const NEEDS_EXPORT: Record<PastEdit['app'], string> = {
-  'Final Cut Pro': 'Libraries need an XML export first.',
-  'Premiere Pro': 'Projects need an XML export first.'
-}
 const COMPUTER = IS_MAC ? 'Mac' : 'PC'
 
 function day(iso: string): string {
@@ -226,11 +222,13 @@ export function LearnSheet({ onClose, onLearned }: { onClose: () => void; onLear
                     </ul>
                   )}
                   {waiting.length > 0 && (
-                    <div className="learn-waiting" data-testid="learn-needs-export">
-                      <p className="learn-how">
-                        {NEEDS_EXPORT[app]} {EXPORT_HOW[app]}
-                      </p>
-                      <ul className="learn-items">
+                    // after the tickable rows and apart from them: these can't be ticked until they are exported
+                    <div className="learn-waiting" role="group" aria-labelledby={`${titleId}-${slug(app)}-export`} data-testid="learn-needs-export">
+                      <h4 id={`${titleId}-${slug(app)}-export`} className="learn-waiting-h">
+                        Needs an export first
+                      </h4>
+                      <p className="learn-how">{EXPORT_HOW[app]}</p>
+                      <ul className="learn-still">
                         {waiting.map((e) => (
                           <li key={e.id} className={`learn-item still${added.has(e.id) ? ' fresh' : ''}`} data-testid="learn-item-waiting">
                             <span className="learn-t">
