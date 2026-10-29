@@ -212,26 +212,45 @@ export function groupMarks(marks: NoteMark[], duration: number, trackPx: number,
 
 type PersonEvent = { type: string; message?: string; summary?: string }
 
-/**
- * Editor text without any transcript word id ("w12") or moment wrapper (`At 0:06 (around "…", words w10, w11): `).
- * The ids are written into the note only for the AI (aiNoteText); every line the person sees passes through this,
- * including notes saved before replies were cleaned.
- */
-export function withoutWordIds(line: string): string {
-  if (!/\bw\d+\b|\(around "/.test(line)) return line
-  return line
-    .replace(/(?:At|From) \d+:[0-5]\d(?: to \d+:[0-5]\d)? \(around "[^"]*", words [^()]*\): /g, '')
-    .replace(/\s*\(around "[^"]*"(?:, words [^()]*)?\)/g, '')
-    .replace(/\b(?:at |on )?words? w\d+(?:(?:,| to| and|-) ?w\d+)*/g, '')
-    .replace(/\b(?:on |at )?w\d+(?:(?:,| to| and|-) ?w\d+)*/g, '')
+const tidy = (line: string): string =>
+  line
     .replace(/\s{2,}/g, ' ')
     .replace(/\s+([,.:;)])/g, '$1')
     .trim()
+
+/**
+ * An editor's line without the shapes the app writes into a note for the AI (aiNoteText): the moment wrapper
+ * (`At 0:06 (around "…", words w10, w11): `), `(around "…")` and a `words w10, w11` list. Nothing else: a bare
+ * "w12" may be the person's own words, quoted back. For editor lines only; the person's text is never rewritten.
+ */
+export function withoutWordIds(line: string): string {
+  if (!/\(around "|\bwords? w\d+/.test(line)) return line
+  return tidy(
+    line
+      .replace(/(?:At|From) \d+:[0-5]\d(?: to \d+:[0-5]\d)? \(around "[^"]*", words [^()]*\): /g, '')
+      .replace(/\s*\(around "[^"]*"(?:, words [^()]*)?\)/g, '')
+      .replace(/\b(?:at |on )?words? w\d+(?:(?:,| to| and|-) ?w\d+)*/g, '')
+  )
 }
 
-/** A line the editor wrote about a note, with the person's own words back where it echoed what the AI was handed. */
-export const personText = (line: string, aiText: string, text: string): string =>
-  withoutWordIds(aiText && aiText !== text ? line.split(aiText).join(text) : line)
+// the ids aiNoteText handed the AI with this note: "… (around "…", words w10, w11): …"
+const HANDED = /^(?:At|From) \d+:[0-5]\d(?: to \d+:[0-5]\d)? \(around "[^"]*", words ([^()]*)\): /
+
+/**
+ * A line the editor wrote about a note, as the person may see it: their own words back where it echoed what the AI
+ * was handed, no moment wrapper or words list, and no bare id ("on w7 to w9") that is one of the ids handed with
+ * this note and not one the person typed themselves.
+ */
+export function personText(line: string, aiText: string, text: string): string {
+  const out = withoutWordIds(aiText && aiText !== text ? line.split(aiText).join(text) : line)
+  const handed = new Set((HANDED.exec(aiText)?.[1] ?? '').split(', ').filter((id) => WORD_ID.test(id)))
+  if (!handed.size) return out
+  const typed = new Set(text.match(/\bw\d+\b/g) ?? [])
+  const bare = out.replace(/\b(?:(?:on|at) )?w\d+(?:(?:,| to| and|-) ?w\d+)*/g, (run) =>
+    (run.match(/w\d+/g) ?? []).every((id) => handed.has(id) && !typed.has(id)) ? '' : run
+  )
+  return bare === out ? out : tidy(bare)
+}
 
 /**
  * A running note's events as the person may see them. The AI is handed `aiText` (aiNoteText: the moment and

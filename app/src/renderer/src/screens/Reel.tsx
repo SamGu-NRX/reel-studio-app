@@ -4,7 +4,7 @@ import { versionTitle } from '../../../shared/describe'
 import { clock } from '../../../shared/progress'
 import { EMPTY_LIVE, liveFromDetail, reduceLive, type LiveState } from '../../../shared/live'
 import { NO_TIMELINE, noSpeech, noteMarks, noteMoment, sourceAt, wordsAt, wordsBetween, type RenderSegment } from '../../../shared/moments'
-import { failedByFile, notesLog, waitingRows, type LogEntry } from '../../../shared/notes-log'
+import { failedByFile, noteToRetry, notesLog, waitingRows, type LogEntry } from '../../../shared/notes-log'
 import { momentToSend, notePlaceholder } from '../../../shared/composer'
 import { pausedSentence, pausedWords } from '../../../shared/pause'
 import type { Step } from '../../../shared/steps'
@@ -544,11 +544,18 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     if (e.ask.kind !== 'note') return
     // a note that didn't finish waits at the head of the queue, with its moment and files: run it again
     const kept = d.queue.some((q) => q.id === e.key)
+    let text: string
+    try {
+      text = noteToRetry(d.chat, e.key)
+    } catch (err) {
+      setAlert(userMessage(err))
+      return
+    }
     const r = planned
-      ? reel.projects.planSay(slug, e.ask.text).then(() => load())
+      ? reel.projects.planSay(slug, text).then(() => load())
       : kept
         ? reel.queue.runNext(slug)
-        : note(e.ask.text, undefined, e.ask.moment ?? undefined)
+        : note(text, undefined, e.ask.moment ?? undefined)
     void r.catch((err) => setAlert(userMessage(err)))
   }
 
