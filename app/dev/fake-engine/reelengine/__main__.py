@@ -11,6 +11,8 @@ Extra test hooks (env):
   FAKE_ENGINE_OFFLINE=1        download-model stops at 30% with the real engine's "no internet" error
   FAKE_ENGINE_SPEECH_CHECK=<seconds>   how long speech-check takes (default 1)
   FAKE_ENGINE_SLOW_RENDER=<seconds>   a full-quality render waits this long first, in small steps (Stop tests)
+  FAKE_ENGINE_SLOW_COPY=<seconds>   init waits this long after copying a file, before project.json is written: a Stop
+                                    then leaves a partial copy, as a real copy of a large video does (Stop tests)
 """
 from __future__ import annotations
 
@@ -169,6 +171,9 @@ def cmd_init(args: list[str]) -> dict:
         progress("init", 100 * (i - 1) / len(files), "Copying your video")
         dest = proj / "media" / f"take{i:02d}{Path(f).suffix.lower()}"
         shutil.copy2(f, dest)
+        slow = float(os.environ.get("FAKE_ENGINE_SLOW_COPY", "0") or 0)
+        for _ in range(int(slow * 10)):
+            time.sleep(0.1)
         sources.append({"id": f"s{i}", "path": f"media/{dest.name}", "originalName": Path(f).name, "duration": info["duration"],
                         "fps": info.get("fps", 30), "width": info.get("width"), "height": info.get("height"),
                         "rotation": info.get("rotation", 0)})

@@ -561,6 +561,29 @@ describe('a reel planned before it has a video', () => {
     expect([st.status, st.job, st.chat[0].outcome]).toEqual(['planned', null, 'stopped'])
   })
 
+  // fails if a reel stopped during its copy (no project.json) whose dropped file is gone reads as a pause that Resume
+  // continues, or one whose file is still there reads as failed; and if a partial copy counts as the video
+  it('a Version 1 stopped during its copy is a pause while its file opens, and COPY_GONE once it does not', async () => {
+    setupPaths()
+    await ensureRoot()
+    const dir = join(projectsDir(), 'half-copied')
+    mkdirSync(join(dir, 'media'), { recursive: true })
+    writeFileSync(join(dir, 'media', 'take01.mp4'), 'half')
+    const dropped = join(tmpdir(), `dropped-${process.pid}.mp4`)
+    writeFileSync(dropped, 'a video')
+    await updateAppState('half-copied', (s) => {
+      s.status = 'interrupted'
+      s.title = 'My take'
+      s.copyFrom = [dropped]
+    })
+    const there = await summary('half-copied')
+    expect([there?.status, there?.failedCode, there?.take]).toEqual(['interrupted', null, null])
+    await fs.rm(dropped)
+    const gone = await summary('half-copied')
+    expect([gone?.status, gone?.failedCode, gone?.failedWhy]).toEqual(['failed', 'COPY_GONE', 'Your video was only partly copied, and the file you dropped can’t be opened any more.'])
+    expect((await detail('half-copied')).lastError?.code).toBe('COPY_GONE')
+  })
+
   // fails if Home lists a reel as being made while the editor only reads it for more reels, or a quit then leaves
   // "Send your note again" for a note nobody sent
   it('keeps a reel ready on Home while the editor looks for more reels in it, and settles a look cut short without a line', async () => {

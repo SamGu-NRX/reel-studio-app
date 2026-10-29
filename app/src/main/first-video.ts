@@ -1,8 +1,9 @@
 // A first video that didn't work: Version 1 failed before any version was made. Its card shows the video's first
 // frame while there is no copy to show, and another video replaces the copy and starts Version 1 again.
 import { execFile } from 'node:child_process'
-import { promises as fs } from 'node:fs'
+import { constants, promises as fs } from 'node:fs'
 import { join } from 'node:path'
+import { isVideo } from './library'
 
 /** The first frame of the video the person brought in, kept beside app.json for its card (store.ts summary). */
 export const POSTER = 'poster.jpg'
@@ -27,6 +28,23 @@ export async function clearFailedCopy(dir: string): Promise<void> {
     throw { code: 'HAS_VIDEO', userMessage: 'This reel already has a version. Drop the other video on Reels to make a new reel.' }
   }
   for (const name of ['project.json', 'media', 'work', 'versions', POSTER]) await fs.rm(join(dir, name), { recursive: true, force: true })
+}
+
+/** Version 1 was stopped during its copy and the file it copied from can't be opened any more: its card and its stage
+ * say so (store.ts summary), and another video on the same reel starts it again. */
+export const COPY_GONE = { code: 'COPY_GONE', userMessage: 'Your video was only partly copied, and the file you dropped can’t be opened any more.' }
+
+/**
+ * Whether a copy stopped partway can be made again from `files`: each still a video file that opens, as a fresh drop
+ * is checked (main/index.ts takeVideos), and that this account can read.
+ */
+export async function canCopyAgain(files: string[] | undefined): Promise<boolean> {
+  if (!files?.length) return false
+  for (const f of files) {
+    if (!isVideo(f) || !(await fs.stat(f).catch(() => null))?.isFile()) return false
+    if (!(await fs.access(f, constants.R_OK).then(() => true, () => false))) return false
+  }
+  return true
 }
 
 /**
