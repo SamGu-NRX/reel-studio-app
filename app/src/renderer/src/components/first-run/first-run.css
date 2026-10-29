@@ -186,8 +186,10 @@ html.kb .fr-tr-row .pp:active { transform: none; }
 .fr-foot .sp { flex: 1; }
 .fr-foot .btn { flex: none; }
 /* the listening model, only while it is on its way */
-.fr-dl { min-width: 0; display: grid; gap: 1px; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); }
-.fr-dl-1 { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; color: var(--ink-2); }
+/* minmax(0, 1fr): an auto column grows to the unwrapped line, which then ran under the footer's button instead of
+   ending in its ellipsis (layout audit, 1100x720) */
+.fr-dl { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); }
+.fr-dl-1 { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; color: var(--ink-2); }
 .fr-dl-1 b { font-weight: 620; color: var(--ink); }
 .fr-dl-1 .n { font-variant-numeric: tabular-nums; }
 .fr-dl-2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
