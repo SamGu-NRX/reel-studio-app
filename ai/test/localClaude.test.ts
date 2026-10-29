@@ -288,7 +288,7 @@ describe('Cancel while Claude is still being looked for', () => {
 });
 
 describe('a model per role (Settings › Editor › Models)', () => {
-  it('asks Claude Code and your own server for the chosen model, leaves ChatGPT and a key to their own, and refuses a name Claude Code cannot run', () => {
+  it('asks Claude Code and your own server for the chosen model, leaves ChatGPT and a key to their own, and runs Auto for a name the editor cannot run', () => {
     const choices = { editor: 'opus', checker: 'auto', writer: 'claude-haiku-4-5' };
     expect(modelForRole('claude-cli', 'editor', choices)).toBe('opus');
     expect(modelForRole('claude-cli', 'checker', choices)).toBeUndefined();
@@ -296,7 +296,10 @@ describe('a model per role (Settings › Editor › Models)', () => {
     expect(modelForRole('custom', 'editor', { editor: 'llama-3.3-70b' })).toBe('llama-3.3-70b');
     expect(modelForRole('chatgpt', 'editor', choices)).toBeUndefined();
     expect(modelForRole('claude', 'editor', choices)).toBeUndefined();
-    expect(() => modelForRole('claude-cli', 'editor', { editor: 'llama-3.3-70b' })).toThrow(expect.objectContaining({ code: 'model_not_offered' }));
+    // left from another editor: Auto, as the stage's chip shows it, never an error in the middle of an edit
+    expect(modelForRole('claude-cli', 'editor', { editor: 'llama-3.3-70b' })).toBeUndefined();
+    expect(modelForRole('codex-cli', 'checker', { checker: 'claude-opus-5-5(high)' })).toBeUndefined();
+    expect(modelForRole('codex-cli', 'checker', { checker: 'gpt-6.1-sol(high)' })).toBe('gpt-6.1-sol(high)');
   });
 
   // fails if a role's choice is saved but the call still goes out with the default model

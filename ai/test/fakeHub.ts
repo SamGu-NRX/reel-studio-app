@@ -3,7 +3,7 @@
 // both run it, on a random port. Records each request with which key it carried, never the key itself.
 import * as http from 'node:http';
 
-export interface FakeHubModel { id: string; ownedBy: string; name?: string; efforts?: string[]; defaultEffort?: string; hidden?: boolean }
+export interface FakeHubModel { id: string; ownedBy: string; name?: string; efforts?: string[]; defaultEffort?: string; hidden?: boolean; textOnly?: boolean }
 export interface FakeHubAccount {
   provider: 'claude' | 'codex';
   email: string;
@@ -30,7 +30,7 @@ export const FAKE_ACCOUNTS: FakeHubAccount[] = [
   { provider: 'codex', email: 'maya@example.com', plan: 'pro', used: [12, 4], resetsInMin: [250, 6 * 1440] },
 ];
 
-export interface FakeHubRequest { method: string; path: string; query: string; key: 'client' | 'management' | 'wrong' | 'none'; header: 'bearer' | 'x-api-key' | 'none'; model?: string }
+export interface FakeHubRequest { method: string; path: string; query: string; key: 'client' | 'management' | 'wrong' | 'none'; header: 'bearer' | 'x-api-key' | 'none'; model?: string; images?: number }
 
 export class FakeHub {
   server!: http.Server;
@@ -45,6 +45,12 @@ export class FakeHub {
   noCatalog = false;
   /** the management API is switched off (no secret-key in its config) */
   managementOff = false;
+  /** a hostile or buggy hub: the chat answer repeats the key it was sent */
+  echo = false;
+  /** the management API's refusal repeats the key it was sent */
+  managementEcho = false;
+  /** the chat answer is the agent's finish tool call (a whole note in one turn), not "OK" */
+  finish = false;
   constructor(public readonly key = 'hub-client-key', public readonly managementKey = 'hub-management-key', public models = FAKE_MODELS, public accounts = FAKE_ACCOUNTS) {}
 
   async start(port = 0): Promise<void> {
@@ -69,13 +75,15 @@ export class FakeHub {
     const xKey = String(req.headers['x-api-key'] ?? '');
     const given = bearer || xKey;
     const key: FakeHubRequest['key'] = !given ? 'none' : given === this.key ? 'client' : given === this.managementKey ? 'management' : 'wrong';
-    this.requests.push({ method: req.method!, path: url.pathname, query: url.search, key, header: bearer ? 'bearer' : xKey ? 'x-api-key' : 'none', ...(typeof body?.model === 'string' ? { model: body.model } : {}) });
+    const images = JSON.stringify(body ?? '').split('"image_url"').length - 1 + JSON.stringify(body ?? '').split('"type":"image"').length - 1;
+    this.requests.push({ method: req.method!, path: url.pathname, query: url.search, key, header: bearer ? 'bearer' : xKey ? 'x-api-key' : 'none', ...(typeof body?.model === 'string' ? { model: body.model, images } : {}) });
 
     if (url.pathname === '/healthz') return this.json(res, 200, { status: 'ok' });
 
     if (url.pathname.startsWith('/v0/management/')) {
       if (this.managementOff) return this.json(res, 403, { error: 'remote management key not set' });
       if (!bearer) return this.json(res, 401, { error: 'missing management key' });
+      if (this.managementEcho) return this.json(res, 500, { error: `could not use ${bearer}` });
       if (bearer !== this.managementKey) return this.json(res, 401, { error: 'invalid management key' });
       if (url.pathname === '/v0/management/auth-files') {
         return this.json(res, 200, {
@@ -111,7 +119,7 @@ export class FakeHub {
         return this.json(res, 200, { models: this.models.map((m, i) => ({
           slug: m.id, display_name: m.name ?? m.id, priority: i + 1, visibility: m.hidden ? 'hide' : 'list',
           supported_reasoning_levels: (m.efforts ?? []).map((effort) => ({ effort, description: effort })),
-          ...(m.defaultEffort ? { default_reasoning_level: m.defaultEffort } : {}), input_modalities: ['text', 'image'],
+          ...(m.defaultEffort ? { default_reasoning_level: m.defaultEffort } : {}), input_modalities: m.textOnly ? ['text'] : ['text', 'image'],
         })) });
       }
       // the plain list is in no useful order, as CLIProxyAPI's is
@@ -126,13 +134,17 @@ export class FakeHub {
         return this.json(res, 429, { error: { code: 'model_cooldown', message: `All credentials for model ${bare} are cooling down`, model: bare, reset_time: `${this.limited.resetSeconds}s`, reset_seconds: this.limited.resetSeconds, provider: family === 'claude' ? 'claude' : 'codex' } }, { 'retry-after': String(this.limited.resetSeconds) });
       }
       if (url.pathname === '/v1/chat/completions') {
-        return this.json(res, 200, { id: 'c1', object: 'chat.completion', model, choices: [{ index: 0, message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' }], usage: { prompt_tokens: 9, completion_tokens: 1 } });
+        if (this.finish) {
+          return this.json(res, 200, { id: 'c1', object: 'chat.completion', model, choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [{ id: 't1', type: 'function', function: { name: 'finish', arguments: JSON.stringify({ summary_for_user: 'Which words?' }) } }] }, finish_reason: 'tool_calls' }] });
+        }
+        const said = this.echo ? `OK. You sent ${given}` : 'OK';
+        return this.json(res, 200, { id: 'c1', object: 'chat.completion', model, choices: [{ index: 0, message: { role: 'assistant', content: said }, finish_reason: 'stop' }], usage: { prompt_tokens: 9, completion_tokens: 1 } });
       }
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       const ev = (type: string, data: any) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
       ev('message_start', { message: { id: 'msg_1', type: 'message', role: 'assistant', model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 5, output_tokens: 1 } } });
       ev('content_block_start', { index: 0, content_block: { type: 'text', text: '' } });
-      ev('content_block_delta', { index: 0, delta: { type: 'text_delta', text: 'OK' } });
+      ev('content_block_delta', { index: 0, delta: { type: 'text_delta', text: this.echo ? `OK. You sent ${given}` : 'OK' } });
       ev('content_block_stop', { index: 0 });
       ev('message_delta', { delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } });
       ev('message_stop', {});

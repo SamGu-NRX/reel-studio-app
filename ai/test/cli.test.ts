@@ -106,7 +106,20 @@ describe('a plan at its limit: when it resets', () => {
     const now = new Date(2026, 9, 23, 14, 5);
     expect(limitResetsAt('Claude AI usage limit reached|1761170400', now)).toBe(new Date(1761170400 * 1000).toISOString());
     expect(limitResetsAt("5-hour limit reached ∙ resets 3pm", now)).toBe(new Date(2026, 9, 23, 15, 0).toISOString());
-    expect(limitResetsAt("You've hit your limit · resets 3:40pm (America/Chicago)", now)).toBe(new Date(2026, 9, 23, 15, 40).toISOString());
+  });
+
+  // fails if a reset said in the CLI's named zone is read on this computer's clock instead
+  it('reads "resets 3:40pm (America/Chicago)" in the zone it names, whatever zone this computer is in', () => {
+    const now = new Date('2026-10-23T19:05:00Z'); // 2:05 pm in Chicago, 4:05 am on the 24th in Tokyo
+    expect(limitResetsAt("You've hit your limit · resets 3:40pm (America/Chicago)", now)).toBe('2026-10-23T20:40:00.000Z');
+    expect(limitResetsAt("You've hit your weekly limit · resets 9am (Asia/Tokyo)", now)).toBe('2026-10-24T00:00:00.000Z');
+    expect(limitResetsAt('resets 9am (Europe/London)', now)).toBe('2026-10-24T08:00:00.000Z'); // BST, the day before the clocks change
+    // a zone Intl doesn't know falls back to this computer's clock rather than failing
+    expect(limitResetsAt('resets 9am (Mars/Olympus)', new Date(2026, 9, 23, 14, 5))).toBe(new Date(2026, 9, 24, 9, 0).toISOString());
+  });
+
+  it('reads the other forms, or says it does not know', () => {
+    const now = new Date(2026, 9, 23, 14, 5);
     // a time already gone today is tomorrow's
     expect(limitResetsAt('limit reached, resets 9am', now)).toBe(new Date(2026, 9, 24, 9, 0).toISOString());
     expect(limitResetsAt('Claude usage limit reached', now)).toBeNull();

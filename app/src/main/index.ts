@@ -106,7 +106,7 @@ import { settleLastRun } from './last-run'
 import { openSignInWindow, publicInfo } from './claude-signin'
 import { claudeCheckWords, createVendorConnect, type CliStatus, type VendorConnect } from './vendor-connect'
 import { runLogin, testVendorEnv, testVendorLoginEnv, type Vendor } from './vendor-setup'
-import { detectHub, type HubDetection } from './vendor-hub'
+import { confirmHub, detectHub, type HubDetection } from './vendor-hub'
 import { aiChoiceSaved, carryOverDecision } from './ai-carryover'
 import type { AppInfo, DropResult, EngineCache, ExportResult, JobEvent, ProjectJson, SettingsPane, CoverCandidate, NoteMoment, PlatformExportResult, VersionInfo, VersionTimeline, LearnedRule, MergeRequest, StyleRule } from '../shared/api'
 import { MODEL_ROLES, type ModelChoice, type ModelRole } from '../shared/api'
@@ -305,6 +305,7 @@ const jobs = createJobManager(
     feedback.onJobEvent(e)
     noteQueue.onJobEvent(e)
     if (e.type === 'paused' && e.slug) pauser.schedule(e.slug, e.paused)
+    if (e.type === 'done' && e.slug) pauser.settled(e.slug)
   },
   log,
   {
@@ -969,19 +970,19 @@ function registerIpc(): void {
   // so a test never talks to a real CLIProxyAPI on the developer's computer.
   let hubFound: HubDetection = { state: 'none' }
   const noHub = !ai.saveHub || (TEST && !process.env.REELSTUDIO_TEST_HUB_CONFIG)
+  const hubDeps = { env: process.env, platform: process.platform, fetch: (u: string, i?: { headers?: Record<string, string>; signal?: AbortSignal; redirect?: 'error' }) => fetch(u, i) }
   handle('ai:hubStatus', async () => {
     if (noHub) return { state: 'none' }
-    hubFound = await detectHub({ env: process.env, platform: process.platform, fetch: (u, i) => fetch(u, i) })
-    const { key: _key, ...found } = hubFound
+    hubFound = await detectHub(hubDeps)
+    const { key: _key, file: _file, ...found } = hubFound
     return found
   })
   changesAI('ai:hubUse', async (_e, typed: unknown) => {
-    if (noHub || !hubFound.origin) throw { code: 'NOT_FOUND', userMessage: 'CLIProxyAPI isn’t answering on this computer any more. Look again.' }
-    const key = typeof typed === 'string' && typed.trim() ? typed.trim() : hubFound.key
-    if (!key) throw { code: 'BAD_INPUT', userMessage: 'Paste a key from api-keys in your CLIProxyAPI config.' }
-    const keySource = typeof typed === 'string' && typed.trim() ? 'typed' : (hubFound.keySource ?? 'typed')
-    const r = await ai.saveHub!({ origin: hubFound.origin, key, keySource })
-    if (!r.error) log(`[ai] connected CLIProxyAPI at ${hubFound.origin} (key from ${keySource === 'typed' ? 'the person' : 'its config'})`)
+    if (noHub) throw { code: 'NOT_FOUND', userMessage: 'CLIProxyAPI isn’t answering on this computer any more. Look again.' }
+    // the config is read and checked again right here: the address the key goes to is this computer's, now
+    const use = await confirmHub(hubDeps, hubFound, typeof typed === 'string' && typed.trim() ? typed.trim() : undefined)
+    const r = await ai.saveHub!(use)
+    if (!r.error) log(`[ai] connected CLIProxyAPI at ${use.origin} (key from ${use.keySource === 'typed' ? 'the person' : 'its config'})`)
     return r
   })
   handle('ai:setHubManagementKey', async (_e, key: unknown) => {

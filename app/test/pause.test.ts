@@ -37,17 +37,38 @@ describe('createPauser: it goes on by itself', () => {
   }
 
   // fails if a reel paused at its plan limit continues before the reset, or never does
-  it('continues a plan limit 30 s after its reset time, or tries again every 15 minutes when none was given', () => {
+  it('continues a plan limit 30 s after its reset time, or after a minute when none was given', () => {
     const { p, resumed } = setup()
     const now = Date.now()
-    p.schedule('a', { reason: 'limit', until: new Date(now + 60_000).toISOString(), editor: null }, now)
+    p.schedule('a', { reason: 'limit', until: new Date(now + 120_000).toISOString(), editor: null }, now)
     p.schedule('b', { reason: 'limit', until: null, editor: null }, now)
-    vi.advanceTimersByTime(89_000)
+    vi.advanceTimersByTime(59_000)
     expect(resumed).toEqual([])
     vi.advanceTimersByTime(2_000)
-    expect(resumed).toEqual(['a'])
-    vi.advanceTimersByTime(15 * 60_000)
-    expect(resumed).toEqual(['a', 'b'])
+    expect(resumed).toEqual(['b'])
+    vi.advanceTimersByTime(90_000)
+    expect(resumed).toEqual(['b', 'a'])
+  })
+
+  // fails if a server that keeps sending a reset already past (or none) is retried at once, or forever
+  it('a past, missing or near reset backs off 1, 2, 5, 15 minutes, then waits for Resume; a finished job starts over', () => {
+    const { p, resumed } = setup()
+    const at: number[] = []
+    const t0 = Date.now()
+    const stale = new Date(t0 - 3_600_000).toISOString()
+    for (let i = 0; i < 6; i++) {
+      p.schedule('r', { reason: 'limit', until: i % 2 ? stale : new Date(Date.now() + 5_000).toISOString(), editor: null })
+      const before = resumed.length
+      vi.advanceTimersByTime(16 * 60_000)
+      if (resumed.length > before) at.push(Math.round((Date.now() - t0) / 60_000))
+    }
+    // tries 1-4 fired after 1, 2, 5 and 15 minutes (each schedule starts a 16-minute step); then nothing more
+    expect(resumed).toEqual(['r', 'r', 'r', 'r'])
+    expect(p.pending()).toEqual([])
+    p.settled('r')
+    p.schedule('r', { reason: 'limit', until: stale, editor: null })
+    vi.advanceTimersByTime(60_000)
+    expect(resumed).toHaveLength(5)
   })
 
   // fails if "Waiting for internet" never notices the network is back, or sleep never continues on wake

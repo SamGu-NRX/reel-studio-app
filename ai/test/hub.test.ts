@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { AIError, createAI, type SecretStore } from '../src';
+import { AIError, createAI, loadProject, saveProject, type SecretStore } from '../src';
+import { mapConnectionError } from '../src/providers/connection';
 import { ClaudeCliProvider } from '../src/providers/cli';
 import { FakeHub } from './fakeHub';
 import { fakeCli } from './fake-cli';
-import { FakeHost, ScriptedModel, call, firstVersion, makeProject, tmpDir } from './helpers';
+import { FakeHost, ScriptedModel, call, firstVersion, makeProject, tinyPng, tmpDir } from './helpers';
 
 const fakeSafeStorage: SecretStore = {
   isEncryptionAvailable: () => true,
@@ -87,7 +88,7 @@ describe('CLIProxyAPI as the editor', () => {
     const before = Date.now();
     const e = await caught(ai.testConnection(undefined, 'editor'));
     expect(e.code).toBe('connection_limited');
-    expect(e.userMessage).toMatch(/^Your server’s Claude accounts are all at their limit for claude-sonnet-5-5\. The first is free again at .+ \(in 1 h 2 min\)\. GPT 6\.1 Sol runs on your ChatGPT accounts: choose it in Settings, under Editor\.$/);
+    expect(e.userMessage).toMatch(/^Your server’s Claude accounts are all at their limit for claude-sonnet-5-5\. The first is free again at .+ \(in 1 h 2 min\)\. You could try GPT 6\.1 Sol, which runs on your ChatGPT accounts: choose it in Settings, under Editor\.$/);
     expect(Date.parse(e.resetsAt!) - before).toBeGreaterThanOrEqual(3720_000 - 1000);
   });
 
@@ -159,6 +160,107 @@ describe('the model that made a version', () => {
     next = steps('Nothing to change.', false);
     const same = await ai.applyNote(project, 'is it fine?', () => undefined);
     expect(same.model).toBeUndefined();
+  });
+});
+
+describe('review fixes (r12)', () => {
+  it('a Test reply that repeats the key shows [key], never the key', async () => {
+    const ai = make();
+    await ai.saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
+    await ai.setHubManagementKey(hub.managementKey);
+    hub.echo = true;
+    for (const role of ['editor', 'checker'] as const) {
+      roles = { checker: 'gpt-6.1-sol' };
+      const r = await ai.testConnection(undefined, role);
+      expect(r.reply).toContain('[key]');
+      expect(r.reply).not.toContain(hub.key);
+    }
+  });
+
+  it('a management refusal that repeats its key keeps the key out of the error, its detail and the log line', async () => {
+    const ai = make();
+    await ai.saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
+    hub.managementEcho = true;
+    const e = await caught(ai.setHubManagementKey(hub.managementKey));
+    expect(e.code).toBe('hub_management');
+    for (const text of [e.message, e.userMessage, JSON.stringify(e.toJSON())]) expect(text).not.toContain(hub.managementKey);
+    expect(e.message).toBe('management API answered 500');
+  });
+
+  it('a stage model the hub no longer lists runs as Auto (the connection’s model), not an error', async () => {
+    const ai = make();
+    await ai.saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
+    roles = { editor: 'claude-opus-9(high)' };
+    const r = await ai.testConnection(undefined, 'editor');
+    expect(r.model).toBe('claude-sonnet-5-5');
+    expect(hub.requests.filter((q) => q.model).at(-1)?.model).toBe('claude-sonnet-5-5');
+  });
+
+  it('a text-only model is sent no pictures; a model that takes them is sent them', async () => {
+    hub.models = hub.models.map((m) => (m.id === 'gpt-6-luna' ? { ...m, textOnly: true } : m));
+    hub.finish = true;
+    const { root, dir: project } = await makeProject();
+    const p = await loadProject(project);
+    p.cut.keep = [{ from: 'w0', to: 'w5' }];
+    await saveProject(project, p);
+    const asset = 'work/assets/attach-1a2b3c4d-meme.png';
+    fs.mkdirSync(path.join(project, 'work', 'assets'), { recursive: true });
+    fs.mkdirSync(path.join(project, 'work', 'thumbs'), { recursive: true });
+    fs.writeFileSync(path.join(project, asset), tinyPng());
+    fs.writeFileSync(path.join(project, 'work', 'thumbs', 'attach-1a2b3c4d-meme.jpg'), tinyPng());
+    fs.writeFileSync(path.join(project, `${asset}.attach.json`), JSON.stringify({ asset, name: 'meme.png', kind: 'image', bytes: 64, width: 4, height: 4, thumb: 'work/thumbs/attach-1a2b3c4d-meme.jpg', createdAt: new Date().toISOString() }));
+    const ai = createAI({ host: new FakeHost(root), settingsDir: dir, secretStore: fakeSafeStorage, roleModels: () => roles, finalRender: false });
+    await ai.saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
+    roles = { editor: 'gpt-6-luna' };
+    await ai.applyNote(project, 'put this over my face', () => undefined, undefined, { attachments: [asset] });
+    expect(hub.requests.filter((q) => q.path === '/v1/chat/completions').at(-1)).toMatchObject({ model: 'gpt-6-luna', images: 0 });
+    roles = { editor: 'gpt-6.1-sol' };
+    await ai.applyNote(project, 'put this over my face', () => undefined, undefined, { attachments: [asset] });
+    expect(hub.requests.filter((q) => q.path === '/v1/chat/completions').at(-1)!.images).toBeGreaterThan(0);
+  });
+
+  it('removing CLIProxyAPI deletes its key and its management key', async () => {
+    const ai = make();
+    await ai.saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
+    await ai.setHubManagementKey(hub.managementKey);
+    const [c] = await ai.connections();
+    expect(fs.existsSync(path.join(dir, `connection-${c.id}-management.bin`))).toBe(true);
+    await ai.removeConnection(c.id);
+    expect(fs.readdirSync(dir).filter((f) => f.startsWith('connection-'))).toEqual([]);
+  });
+
+  it('suggests another model only when it is listed now and its accounts have room', async () => {
+    const ai = make();
+    await ai.saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
+    await ai.setHubManagementKey(hub.managementKey);
+    hub.limited = { family: 'claude', resetSeconds: 3600 };
+    hub.accounts = hub.accounts.map((a) => (a.provider === 'codex' ? { ...a, used: [100, 40] } : a));
+    expect((await caught(ai.testConnection())).userMessage).not.toMatch(/try/i);
+    hub.accounts = hub.accounts.map((a) => (a.provider === 'codex' ? { ...a, used: [10, 40] } : a));
+    expect((await caught(ai.testConnection())).userMessage).toMatch(/ You could try GPT 6\.1 Sol, which runs on your ChatGPT accounts: choose it in Settings, under Editor\.$/);
+    hub.models = hub.models.filter((m) => m.ownedBy !== 'openai');
+    expect((await caught(ai.testConnection())).userMessage).not.toMatch(/try/i);
+  });
+
+  it('refuses an address that is not this computer before sending it anything', async () => {
+    const asked: string[] = [];
+    const ai = createAI({ host: new FakeHost(tmpDir()), settingsDir: dir, secretStore: fakeSafeStorage, fetch: (async (u: string) => { asked.push(String(u)); throw new Error('no'); }) as any });
+    const r = await ai.saveHub({ origin: 'http://hub.example.com:8317', key: 'k-123456', keySource: '/etc/cliproxyapi.conf' });
+    expect(r.error?.code).toBe('hub_not_local');
+    expect(asked).toEqual([]);
+    expect(await ai.connections()).toEqual([]);
+  });
+
+  it('reads a reset in milliseconds or seconds, and says it doesn’t know one it can’t read, never throwing', () => {
+    const ctx = { kind: 'openai' as const, model: 'claude-opus-5-5' };
+    const at = Date.now() + 3 * 3600_000;
+    expect(mapConnectionError(429, { error: { code: 'model_cooldown', resets_at: at } }, ctx).resetsAt).toBe(new Date(at).toISOString());
+    expect(mapConnectionError(429, { error: { code: 'model_cooldown', resets_at: Math.round(at / 1000) } }, ctx).resetsAt).toBe(new Date(Math.round(at / 1000) * 1000).toISOString());
+    for (const odd of [9e20, -5, 1e15 * 1e6]) {
+      const e = mapConnectionError(429, { error: { code: 'model_cooldown', resets_at: odd, provider: 'claude' } }, ctx);
+      expect(e.resetsAt).toBeUndefined();
+      expect(e.userMessage).toMatch(/It didn’t say when they reset\.$/);
+    }
   });
 });
 
