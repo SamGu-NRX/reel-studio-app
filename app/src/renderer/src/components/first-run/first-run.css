@@ -151,7 +151,6 @@ html.kb .fr-tr-row .pp:active { transform: none; }
 .fr-log-in[hidden] { display: none; }
 .fr-log-in .nt-res b.v { cursor: default; }
 @media (hover: hover) and (pointer: fine) { .fr-log-in .nt-res b.v:hover { text-decoration: none; } }
-.fr-col > .cbox { margin: 0 24px; }
 .fr-strip-t { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 1 auto; }
 .strip .fr-snd { width: 28px; padding: 0; justify-content: center; }
 /* the words as they are heard; the marker follows the voice, the pencil marks the cuts */
@@ -178,6 +177,18 @@ html.kb .fr-tr-row .pp:active { transform: none; }
 .fr-words .tk.pz.cut { color: var(--pencil); background: var(--pencil-tint); box-shadow: inset 0 0 0 1px rgba(191, 54, 38, .35); }
 .fr-words .tk.pic { padding: 0; margin: 0; vertical-align: -8px; }
 .fr-words .tk.pic img { width: 22px; height: 30px; object-fit: cover; border-radius: 4px; display: block; box-shadow: 0 0 0 2px var(--marker); }
+/* What the grey boxes are (Fable review, 2026-10-28: nothing said they were pauses): it fades in with the first one
+   heard, and goes when the cut pauses do, as the words close up, so it never names a box no longer there. */
+.fr-key {
+  margin-top: 6px; padding-left: 26px; font-size: var(--fs-sm); line-height: 22px; color: var(--ink-3);
+  opacity: 0; transition: opacity 200ms cubic-bezier(.2, .8, .2, 1);
+}
+.fr-words:has(.tk.pz.in) + .fr-key { opacity: 1; }
+.fr-words:not(:has(.fr-seg:not(.gone) .tk.pz)) + .fr-key { display: none; }
+.fr-key .tk.pz {
+  display: inline-block; font-size: 11px; line-height: 20px; height: 22px; padding: 0 7px; border-radius: 6px; color: var(--ink-3); font-weight: 600;
+  font-variant-numeric: tabular-nums; box-shadow: inset 0 0 0 1px var(--line-strong);
+}
 
 /* the editor's picker: the column's full width, scrolled by the column */
 .fr-pick { min-width: 0; animation: fr-up 220ms cubic-bezier(.2, .8, .2, 1) backwards; }

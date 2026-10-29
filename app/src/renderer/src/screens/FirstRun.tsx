@@ -415,8 +415,8 @@ function Stage({
         </section>
 
         <div className="ncol fr-col">
-          {/* where in the first run this is and what the column shows; one scroll area under it; the progress and the
-              step's button pinned at the foot */}
+          {/* where in the first run this is and what the column shows; one scroll area under it, the progress in it
+              under the words; the step's button pinned at the foot */}
           <div className="notes-h fr-h">
             <ol className="fr-where" aria-label="Getting started" data-testid="first-run-where">
               {WHERE.map((w, i) => (
@@ -434,79 +434,124 @@ function Stage({
                 : 'Your editor picks your best takes, adds pictures and makes the changes you ask for, on your own Claude or ChatGPT plan.'}
             </p>
           </div>
-          <div className={`fr-body${pane === 'sample' ? ' fr-log' : ''}`} role={pane === 'sample' ? 'log' : undefined} aria-labelledby={pane === 'sample' ? 'fr-h' : undefined}>
-            {/* kept on the page in the editor step: the sample still plays and marks its words */}
+          <div className={`fr-body${pane === 'sample' ? ' fr-log' : ''}`}>
+            {/* kept on the page in the editor step: the sample still plays and marks its words. The progress sits
+                right under the words it is working on. */}
             <div className="fr-log-in" hidden={pane !== 'sample'}>
-              <article className="nt">
-                <div className="nt-ask">
-                  <p className="bubble">
-                    <Icon name="video" size={14} stroke={1.75} />
-                    Raw take · 0:24
+              <div role="log" aria-labelledby="fr-h">
+                <article className="nt">
+                  <div className="nt-ask">
+                    <p className="bubble">
+                      <Icon name="video" size={14} stroke={1.75} />
+                      Raw take · 0:24
+                    </p>
+                  </div>
+                  {finished ? (
+                    <div className="nt-res enter" data-testid="sample-v1">
+                      <span className="nk ok">
+                        <Icon name="check" size={12} stroke={2.4} />
+                      </span>
+                      <b className="v">Version 1</b>
+                      <span className="sep" aria-hidden>
+                        ·
+                      </span>
+                      <span className="t">0:24 down to {EDIT.len}</span>
+                    </div>
+                  ) : (
+                    <div className="nt-res quiet" aria-busy>
+                      <span className="nk">
+                        <span className="spin" />
+                      </span>
+                      <span className="t">Making Version 1</span>
+                    </div>
+                  )}
+                  <p className="fr-words" data-testid="sample-words">
+                    <b>Heard</b>{' '}
+                    {segs.map((s) => (
+                      <span
+                        key={s.id}
+                        className="fr-seg"
+                        ref={(el) => {
+                          if (el) segEls.current.set(s.id, el)
+                        }}
+                      >
+                        {s.toks.map(({ t, i }) => {
+                          const pic = picAt.get(i)
+                          return (
+                            <Fragment key={i}>
+                              <span
+                                ref={(el) => {
+                                  if (el) chips.current[i] = el
+                                }}
+                                className={`tk${t.text ? '' : ' pz'}`}
+                                aria-label={t.text ? undefined : `pause, ${t.pause}`}
+                              >
+                                {t.text ?? t.pause}
+                              </span>{' '}
+                              {pic && (
+                                <>
+                                  <span
+                                    className="tk in pic gone"
+                                    role="img"
+                                    aria-label={pic.label}
+                                    ref={(el) => {
+                                      if (el && !pics.current.includes(el)) pics.current.push(el)
+                                    }}
+                                  >
+                                    <img src={pic.src} alt="" />
+                                  </span>{' '}
+                                </>
+                              )}
+                            </Fragment>
+                          )
+                        })}
+                      </span>
+                    ))}
                   </p>
+                  {!finished && (
+                    <p className="fr-key" data-testid="pause-key">
+                      <span className="tk pz in" aria-hidden>
+                        1.0 s
+                      </span>{' '}
+                      is a pause. Red is what comes out.
+                    </p>
+                  )}
+                </article>
+              </div>
+              <div className="cbox bare">
+                <div className={`stripwrap${!finished ? ' on' : ''}`}>
+                  <div>
+                    {!finished && (
+                      <>
+                        <div className="steps on">
+                          <div>
+                            <ul aria-label="Steps" data-testid="steps-list">
+                              <StepRows steps={steps} />
+                            </ul>
+                          </div>
+                        </div>
+                        {/* the sample's sounds play on its cuts and its cover, so their switch sits on its progress */}
+                        <div className="strip" data-testid="note-progress">
+                          <span className="bar" aria-hidden>
+                            <i style={{ transform: `scaleX(${(doneCount + (current ? 0.5 : 0)) / steps.length})` }} />
+                          </span>
+                          <span className="spin light" aria-hidden />
+                          <span className="fr-strip-t" role="status">
+                            <b>Making Version 1</b>
+                            {/* the list above names the step; the strip says how far along */}
+                            <span className="m">{current ? ` · Step ${steps.indexOf(current) + 1} of ${steps.length}` : ''}</span>
+                          </span>
+                          <span className="sp" />
+                          <button className="sbtn fr-snd" aria-pressed={soundOn} onClick={toggleSound} title={`Sound effects: ${soundOn ? 'on' : 'off'}`} data-testid="sound-effects">
+                            <Icon name={soundOn ? 'volume' : 'mute'} size={16} stroke={2} />
+                            <span className="sr-only">Sound effects: {soundOn ? 'on' : 'off'}</span>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
-                {finished ? (
-                  <div className="nt-res enter" data-testid="sample-v1">
-                    <span className="nk ok">
-                      <Icon name="check" size={12} stroke={2.4} />
-                    </span>
-                    <b className="v">Version 1</b>
-                    <span className="sep" aria-hidden>
-                      ·
-                    </span>
-                    <span className="t">0:24 down to {EDIT.len}</span>
-                  </div>
-                ) : (
-                  <div className="nt-res quiet" aria-busy>
-                    <span className="nk">
-                      <span className="spin" />
-                    </span>
-                    <span className="t">Making Version 1</span>
-                  </div>
-                )}
-                <p className="fr-words" data-testid="sample-words">
-                  <b>Heard</b>{' '}
-                  {segs.map((s) => (
-                    <span
-                      key={s.id}
-                      className="fr-seg"
-                      ref={(el) => {
-                        if (el) segEls.current.set(s.id, el)
-                      }}
-                    >
-                      {s.toks.map(({ t, i }) => {
-                        const pic = picAt.get(i)
-                        return (
-                          <Fragment key={i}>
-                            <span
-                              ref={(el) => {
-                                if (el) chips.current[i] = el
-                              }}
-                              className={`tk${t.text ? '' : ' pz'}`}
-                              aria-label={t.text ? undefined : `pause, ${t.pause}`}
-                            >
-                              {t.text ?? t.pause}
-                            </span>{' '}
-                            {pic && (
-                              <>
-                                <span
-                                  className="tk in pic gone"
-                                  role="img"
-                                  aria-label={pic.label}
-                                  ref={(el) => {
-                                    if (el && !pics.current.includes(el)) pics.current.push(el)
-                                  }}
-                                >
-                                  <img src={pic.src} alt="" />
-                                </span>{' '}
-                              </>
-                            )}
-                          </Fragment>
-                        )
-                      })}
-                    </span>
-                  ))}
-                </p>
-              </article>
+              </div>
             </div>
             {pane === 'editor' && (
               <div className="fr-pick" data-testid="composer-connect">
@@ -514,43 +559,6 @@ function Stage({
               </div>
             )}
           </div>
-
-          {pane === 'sample' && (
-            <div className="cbox bare">
-              <div className={`stripwrap${!finished ? ' on' : ''}`}>
-                <div>
-                  {!finished && (
-                    <>
-                      <div className="steps on">
-                        <div>
-                          <ul aria-label="Steps" data-testid="steps-list">
-                            <StepRows steps={steps} />
-                          </ul>
-                        </div>
-                      </div>
-                      {/* the sample's sounds play on its cuts and its cover, so their switch sits on its progress */}
-                      <div className="strip" data-testid="note-progress">
-                        <span className="bar" aria-hidden>
-                          <i style={{ transform: `scaleX(${(doneCount + (current ? 0.5 : 0)) / steps.length})` }} />
-                        </span>
-                        <span className="spin light" aria-hidden />
-                        <span className="fr-strip-t" role="status">
-                          <b>Making Version 1</b>
-                          {/* the list above names the step; the strip says how far along */}
-                          <span className="m">{current ? ` · Step ${steps.indexOf(current) + 1} of ${steps.length}` : ''}</span>
-                        </span>
-                        <span className="sp" />
-                        <button className="sbtn fr-snd" aria-pressed={soundOn} onClick={toggleSound} title={`Sound effects: ${soundOn ? 'on' : 'off'}`} data-testid="sound-effects">
-                          <Icon name={soundOn ? 'volume' : 'mute'} size={16} stroke={2} />
-                          <span className="sr-only">Sound effects: {soundOn ? 'on' : 'off'}</span>
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
 
           <footer className="fr-foot">
             <ModelLine active={!!start} computer={computer} />

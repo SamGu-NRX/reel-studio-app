@@ -45,13 +45,14 @@ html.kb :is(.tpill, .transport .speed, .stage-dock .pp, .stage-dock .speed):acti
 .shape-mi-text > span:first-child { display: flex; font-weight: 560; }
 .shape-mi-fit { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); white-space: normal; }
 
-/* ---- the stage: the phone's own slot, lifted over the window (FullStage.tsx). --pw is the phone's width: the
-   window's height less a margin, unless the window is too narrow to leave the dock its room beside it. ---- */
+/* ---- the stage: the phone's own slot, lifted over the window (FullStage.tsx), its controls under it. --pw is the
+   phone's width: the window's height less the margins, the controls' two rows of 32 px and the gaps, at the phone's
+   proportion. ---- */
 .stage-v[data-full] {
-  --dock-w: 248px;
-  --pw: min(calc((100vh - 48px) * var(--ratio-n)), calc(100vw - 2 * (var(--dock-w) + 56px)));
+  --dock-h: 74px;
+  --pw: min(calc((100vh - 48px - 16px - var(--dock-h)) * var(--ratio-n)), calc(100vw - 112px));
   position: fixed; inset: 0; z-index: 40; -webkit-app-region: no-drag;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
 }
 .stage-v[data-full] > .phone-fill { flex: none; align-self: center; }
 .stage-v[data-full] .phone-fill > .phone { width: var(--pw); max-width: none; }
@@ -67,16 +68,22 @@ html.kb :is(.tpill, .transport .speed, .stage-dock .pp, .stage-dock .speed):acti
 .stage-v[data-leaving] .phone { z-index: 41; }
 html.kb .stage-backdrop { transition: none; }
 
-.stage-exit { position: absolute; top: 14px; right: 16px; }
-/* Windows and Linux draw their window buttons over the title-bar row's right end */
-.platform-win32 .stage-exit, .platform-linux .stage-exit { top: calc(var(--titlebar) + 8px); }
-
-/* ---- the dock, beside the phone and level with its foot ---- */
-.stage-dock {
-  position: absolute; left: calc(50% + var(--pw) / 2 + 32px); bottom: max(24px, calc((100vh - var(--pw) / var(--ratio-n)) / 2)); width: var(--dock-w);
-  display: flex; flex-direction: column; align-items: flex-start; gap: 12px; color: #fff;
+/* ---- the controls, under the phone at its width ---- */
+.stage-dock { width: var(--pw); display: grid; gap: 10px; color: #fff; container: stage-dock / inline-size; transition: opacity 180ms var(--ease-out); }
+@starting-style { .stage-dock { opacity: 0; } }
+html.kb .stage-dock { transition: none; }
+.stage-row { display: flex; align-items: center; gap: 10px; min-width: 0; height: 32px; }
+.stage-row.view { justify-content: center; gap: 8px; }
+/* a narrow phone (about 280 px at 1100 x 720): the shape keeps its icon, its name in its label and tooltip, and
+   Instagram | Clean gives up its side padding */
+@container stage-dock (max-width: 420px) {
+  .stage-dock .shape-pick { width: 32px; padding: 0; justify-content: center; }
+  .stage-dock .shape-pick .lbl { display: none; }
 }
-.stage-row { display: flex; align-items: center; gap: 8px; }
+@container stage-dock (max-width: 300px) {
+  .stage-dock .segmented > button { padding: 0 8px; }
+  .stage-dock .speed { min-width: 36px; padding: 0 6px; }
+}
 .stage-dock .pp {
   width: 32px; height: 32px; border-radius: 50%; border: 0; background: #fff; color: var(--ink); display: grid; place-items: center; flex: none; cursor: pointer;
   transition: transform 120ms var(--ease-out);
@@ -85,7 +92,7 @@ html.kb .stage-backdrop { transition: none; }
 .stage-dock .tc { font-size: var(--fs-base); font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .stage-dock .tc span { color: rgba(255, 255, 255, .6); font-weight: 500; }
 /* 24 px to grab (the house minimum for a target; it was 16), the bar drawn 4 px tall on its track */
-.stage-scrub { align-self: stretch; display: flex; height: 24px; align-items: center; }
+.stage-scrub { flex: 1; min-width: 0; display: flex; height: 24px; align-items: center; }
 .stage-scrub input[type=range] { flex: 1; height: 24px; margin: 0; -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
 .stage-scrub input[type=range]::-webkit-slider-runnable-track {
   height: 4px; border-radius: 4px; background: linear-gradient(90deg, #fff var(--pct, 0%), rgba(255, 255, 255, .3) var(--pct, 0%));
@@ -105,4 +112,4 @@ html.kb .stage-backdrop { transition: none; }
   .stage-dock :is(.speed:not(.on), .tpill):hover { background: rgba(255, 255, 255, .12); }
   .stage-dock .segmented > button[aria-checked="false"]:hover { color: #fff; }
 }
-.stage-dock :focus-visible, .stage-exit :focus-visible { outline-color: #fff; }
+.stage-dock :focus-visible { outline-color: #fff; }
