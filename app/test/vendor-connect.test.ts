@@ -14,7 +14,7 @@ import {
   vendorEnv,
   type SpawnFn
 } from '../src/main/vendor-setup'
-import { MOVED_NOTE, createVendorConnect, VENDOR_MESSAGES, type CliStatus, type VendorDeps } from '../src/main/vendor-connect'
+import { MOVED_NOTE, claudeCheckWords, createVendorConnect, VENDOR_MESSAGES, type CliStatus, type VendorDeps } from '../src/main/vendor-connect'
 import type { VendorInfo } from '../src/shared/api'
 
 // ---- fakes -------------------------------------------------------------------------------------------------------
@@ -432,3 +432,13 @@ describe('Use: sign in if needed, check, choose; never install', () => {
     expect((await f.vc.status('claude')).message).toBeUndefined()
   })
 })
+
+// On this Mac the Claude Code app's account was at its weekly limit, and the app's check said only "Your Claude plan is
+// at its limit. Try again after it resets.", dropping the reset time Claude Code gave it.
+describe('choosing Claude when its plan is at a limit', () => {
+  it('fails if the words drop which limit it hit or when it resets', () => {
+    const said = 'The account in your Claude Code app has hit its weekly limit. It resets tomorrow at 9:00 AM (in 14 h).'
+    expect(claudeCheckWords({ code: 'cli_limited', userMessage: said, resetsAt: '2026-10-29T14:00:00.000Z' }, 'darwin')).toBe(said)
+  })
+})
+
