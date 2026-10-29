@@ -114,6 +114,10 @@ describe('a plan at its limit: when it resets', () => {
     expect(limitResetsAt("You've hit your limit · resets 3:40pm (America/Chicago)", now)).toBe('2026-10-23T20:40:00.000Z');
     expect(limitResetsAt("You've hit your weekly limit · resets 9am (Asia/Tokyo)", now)).toBe('2026-10-24T00:00:00.000Z');
     expect(limitResetsAt('resets 9am (Europe/London)', now)).toBe('2026-10-24T08:00:00.000Z'); // BST, the day before the clocks change
+    // a zone of three segments, and one-word zones Intl knows
+    expect(limitResetsAt('resets 9am (America/Argentina/Buenos_Aires)', now)).toBe('2026-10-24T12:00:00.000Z');
+    expect(limitResetsAt('resets 9am (GMT)', now)).toBe('2026-10-24T09:00:00.000Z');
+    expect(limitResetsAt('resets 4pm (EST)', now)).toBe('2026-10-23T21:00:00.000Z');
     // a zone Intl doesn't know falls back to this computer's clock rather than failing
     expect(limitResetsAt('resets 9am (Mars/Olympus)', new Date(2026, 9, 23, 14, 5))).toBe(new Date(2026, 9, 24, 9, 0).toISOString());
   });

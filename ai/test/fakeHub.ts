@@ -51,6 +51,8 @@ export class FakeHub {
   managementEcho = false;
   /** the chat answer is the agent's finish tool call (a whole note in one turn), not "OK" */
   finish = false;
+  /** the model list fails (500) while chat still works */
+  listDown = false;
   constructor(public readonly key = 'hub-client-key', public readonly managementKey = 'hub-management-key', public models = FAKE_MODELS, public accounts = FAKE_ACCOUNTS) {}
 
   async start(port = 0): Promise<void> {
@@ -113,6 +115,7 @@ export class FakeHub {
       if (!given) return this.json(res, 401, { error: 'Missing API key' });
       if (given !== this.key || this.rejectKey) return this.json(res, 401, { error: 'Invalid API key' });
     }
+    if (url.pathname === '/v1/models' && req.method === 'GET' && this.listDown) return this.json(res, 500, { error: 'list unavailable' });
     if (url.pathname === '/v1/models' && req.method === 'GET') {
       if (url.searchParams.has('client_version')) {
         if (this.noCatalog) return this.json(res, 500, { error: 'no catalog' });

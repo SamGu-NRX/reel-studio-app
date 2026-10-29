@@ -36,6 +36,12 @@ async function plainWords(page: import('@playwright/test').Page): Promise<void> 
 test('nothing on this computer: each row says so and links to its maker\'s install page; nothing installs', async () => {
   const { app, page, info, panel, claude, chatgpt } = await connectScreen('missing', 'missing')
   test.skip(info.ai !== 'mock', 'the mock plays the vendor states')
+  // CLIProxyAPI is always the first row, saying it isn't running here, with an outlined Check again
+  await expect(page.getByTestId('ai-picker').locator(':scope > *').first()).toHaveAttribute('data-testid', 'hub-row')
+  await expect(page.getByTestId('hub-row')).toHaveAttribute('data-state', 'none')
+  await expect(page.getByTestId('hub-row')).toContainText('Not running on this computer')
+  await expect(page.getByTestId('hub-look')).not.toHaveClass(/\bprimary\b/)
+  await expect(page.getByTestId('hub-about')).toHaveAttribute('href', 'https://github.com/router-for-me/CLIProxyAPI')
   await expect(claude).toHaveAttribute('data-state', 'missing')
   await expect(chatgpt).toHaveAttribute('data-state', 'missing')
   await expect(claude).toContainText('Not on this Mac.')
@@ -54,7 +60,7 @@ test('nothing on this computer: each row says so and links to its maker\'s insta
 test('signed out: Sign in opens Anthropic\'s own page, then the Claude Code app connects', async () => {
   const { app, page, info, panel, claude } = await connectScreen('signed_out', 'signed_out')
   test.skip(info.ai !== 'mock', 'the mock plays the vendor states')
-  await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'connect-claude')
+  await expect(panel.locator('[data-testid="vendor-claude"], [data-testid="vendor-chatgpt"]').locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'connect-claude')
   await expect(page.getByTestId('connect-claude')).toHaveClass(/primary/)
   await expect(page.getByTestId('connect-claude')).toHaveAccessibleName('Sign in to Claude Code app')
   await expect(page.getByTestId('connect-chatgpt')).not.toHaveClass(/primary/)
@@ -93,7 +99,7 @@ test('already signed in: "Use Claude (your Claude Code app)" comes first, and on
   const { app, page, info, panel } = await connectScreen('ready')
   test.skip(info.ai !== 'mock', 'the mock plays the vendor states')
   await expect(page.getByTestId('use-claude-code')).toHaveAccessibleName(USE_CLAUDE_CODE)
-  await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-claude-code')
+  await expect(panel.locator('[data-testid="vendor-claude"], [data-testid="vendor-chatgpt"]').locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-claude-code')
   await expect(page.getByTestId('use-claude-code')).toHaveClass(/primary/)
   // the plan the app reports, beside its name
   await expect(page.getByTestId('vendor-plan-claude')).toHaveText('Max')
@@ -108,7 +114,7 @@ test('already signed in: "Use Claude (your Claude Code app)" comes first, and on
 test('only ChatGPT is ready: "Use ChatGPT (your Codex app)" goes first', async () => {
   const { app, page, info, panel } = await connectScreen('missing', 'ready')
   test.skip(info.ai !== 'mock', 'the mock plays the vendor states')
-  await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-codex')
+  await expect(panel.locator('[data-testid="vendor-claude"], [data-testid="vendor-chatgpt"]').locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-codex')
   await expect(page.getByTestId('use-codex')).toHaveAccessibleName('Use ChatGPT (your Codex app)')
   await expect(page.getByTestId('use-codex')).toHaveClass(/primary/)
   await shot(page, 'connect-08-chatgpt-ready')
@@ -189,10 +195,10 @@ test('ChatGPT\'s sign-in port held by Windows: plain words, then one click signs
   await expect(page.getByTestId('vendor-retry-chatgpt')).toHaveText('Try again')
   const withCode = page.getByTestId('vendor-code-start-chatgpt')
   await expect(withCode).toHaveText('Sign in with a code instead')
-  // reserved by Windows: Try again cannot work until the port is freed, so the code is the row's filled pill
-  await expect(withCode).toHaveClass(/\bprimary\b/)
-  await expect(page.getByTestId('vendor-retry-chatgpt')).not.toHaveClass(/\bprimary\b/)
+  // reserved by Windows: Try again cannot work until the port is freed, so the code is the row's own action; like
+  // every row action it is outlined (the panel's one filled button is the recommended one, or Continue)
   await expect(chatgpt.locator('.pv-main > button')).toHaveAttribute('data-testid', 'vendor-code-start-chatgpt')
+  await expect(chatgpt.locator('.btn.primary')).toHaveCount(0)
   await expect(page.getByTestId('vendor-claude').locator('.btn.primary')).toHaveCount(0) // one filled button on the screen
   await plainWords(page)
   await shot(page, 'connect-12-port-reserved')
@@ -249,9 +255,8 @@ test('ChatGPT\'s sign-in port only in use by another program: Try again stays th
   await page.getByTestId('connect-chatgpt').click()
   await expect(chatgpt).toHaveAttribute('data-problem', 'port_busy')
   await expect(page.getByTestId('vendor-message-chatgpt')).toHaveText(/holding the port ChatGPT’s sign-in uses\.$/)
-  await expect(page.getByTestId('vendor-retry-chatgpt')).toHaveClass(/\bprimary\b/)
-  await expect(page.getByTestId('vendor-code-start-chatgpt')).not.toHaveClass(/\bprimary\b/)
   await expect(chatgpt.locator('.pv-main > button')).toHaveAttribute('data-testid', 'vendor-retry-chatgpt')
+  await expect(chatgpt.locator('.btn.primary')).toHaveCount(0)
   await plainWords(page)
   await shot(page, 'connect-15-port-in-use')
   await app.close()
@@ -265,10 +270,14 @@ test('ChatGPT\'s status unknown: it says so, Check again only asks again, and on
   await expect(page.getByTestId('connect-chatgpt')).toHaveCount(0) // no button that would start a sign-in by itself
   // the safe choice is the row's filled pill; Sign in waits under the row and says what it does
   await expect(chatgpt.locator('.pv-main > button')).toHaveAttribute('data-testid', 'vendor-check-chatgpt')
-  await expect(page.getByTestId('vendor-check-chatgpt')).toHaveClass(/\bprimary\b/)
-  await expect(page.getByTestId('vendor-signin-chatgpt')).not.toHaveClass(/\bprimary\b/)
+  // one action at a time: Check again, outlined; a new sign-in waits behind its own confirm
+  await expect(page.getByTestId('vendor-check-chatgpt')).not.toHaveClass(/\bprimary\b/)
+  await expect(page.getByTestId('vendor-signin-chatgpt')).toHaveCount(0)
   await expect(page.getByTestId('vendor-claude').locator('.btn.primary')).toHaveCount(0) // one filled button on the screen
-  await expect(chatgpt).toContainText('your Codex app forgets the one it has')
+  await page.getByTestId('vendor-signin-ask-chatgpt').click()
+  await expect(chatgpt).toContainText('A new sign-in makes your Codex app forget the one it has.')
+  await expect(page.getByTestId('vendor-check-chatgpt')).toHaveCount(0)
+  await chatgpt.getByRole('button', { name: 'Cancel' }).click()
   await plainWords(page)
   await shot(page, 'connect-16-status-unknown')
   await page.getByTestId('vendor-check-chatgpt').click()
@@ -277,6 +286,7 @@ test('ChatGPT\'s status unknown: it says so, Check again only asks again, and on
   await page.waitForTimeout(500)
   await expect(chatgpt).not.toHaveAttribute('data-step', 'signing_in')
   expect(await page.evaluate(() => window.reel.ai.vendorStatus('chatgpt'))).toMatchObject({ step: 'idle', problem: 'status_unknown' })
+  await page.getByTestId('vendor-signin-ask-chatgpt').click()
   await page.getByTestId('vendor-signin-chatgpt').click()
   await expect(page.locator('[data-provider="codex-cli"]')).toContainText('Connected', { timeout: 15_000 })
   await app.close()

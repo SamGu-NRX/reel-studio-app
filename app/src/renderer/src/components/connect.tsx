@@ -70,7 +70,7 @@ export function ConnectAI({ onConnected, advanced = true, stagesOpen = false }: 
   const anyOn = !!active && active.connected && active.id !== 'none'
   const hubOn = anyOn && active.id === 'custom' && active.label === 'CLIProxyAPI'
   const otherOn = anyOn && !hubOn && !['claude-cli', 'codex-cli'].includes(active.id)
-  const hubShown = !!hub && (hub.state !== 'none' || hubOn)
+  const [othersOpen, setOthersOpen] = useState(false)
   // CLIProxyAPI is the recommended choice: while nothing is connected its Use it is the one filled button
   const hubLeads = !anyOn && !!hub && (hub.state === 'ready' || hub.state === 'needs-key')
   const details = anyOn ? (
@@ -79,6 +79,18 @@ export function ConnectAI({ onConnected, advanced = true, stagesOpen = false }: 
       <StageModels active={active} state={stages} open={stagesOpen} />
     </>
   ) : null
+
+  const vendorRows = (
+    <VendorRows
+      active={active}
+      lead={!anyOn && !hubLeads}
+      hubLeads={hubLeads && !vendorAttention}
+      onAttention={setVendorAttention}
+      onConnected={connected}
+      onDisconnect={() => void disconnect()}
+      details={details}
+    />
+  )
 
   // Your own server or an API key, while it is the editor: first, so what's in use is never one click away.
   const otherRow = otherOn && (
@@ -103,20 +115,18 @@ export function ConnectAI({ onConnected, advanced = true, stagesOpen = false }: 
     <div className="picker" data-testid="editor-setup">
       <div className="prov" role="group" aria-label="Choose your editor" data-testid="ai-picker">
         {otherRow}
-        {hubShown && (
-          <HubRow hub={hub ?? { state: 'none' }} on={hubOn} primary={hubLeads && !vendorAttention} onConnected={connected} onDisconnect={() => void disconnect()}>
-            {hubOn ? details : null}
-          </HubRow>
+        {/* always the first row: found, asking for a key, elsewhere, or not running here */}
+        <HubRow hub={hub} on={hubOn} primary={hubLeads && !vendorAttention} onConnected={connected} onDisconnect={() => void disconnect()} onLook={lookForHub}>
+          {hubOn ? details : null}
+        </HubRow>
+        {hubOn ? (
+          // CLIProxyAPI is the editor: the person's own apps wait behind one quiet line
+          <Disclosure label="Other editors" hint="Claude Code app, Codex app" open={othersOpen} onToggle={() => setOthersOpen((o) => !o)} testid="other-editors">
+            <div className="prov">{vendorRows}</div>
+          </Disclosure>
+        ) : (
+          vendorRows
         )}
-        <VendorRows
-          active={active}
-          lead={!anyOn && !hubLeads}
-          hubLeads={hubLeads && !vendorAttention}
-          onAttention={setVendorAttention}
-          onConnected={connected}
-          onDisconnect={() => void disconnect()}
-          details={details}
-        />
       </div>
       {active?.error && !active.connected && (
         <p className="pv-note error" role="alert">

@@ -110,7 +110,8 @@ export async function hubModels(origin: string, key: string | null, opts: { fetc
       family: familyOf(id, ownedBy),
       efforts,
       ...(def && efforts.includes(def) ? { defaultEffort: def } : {}),
-      images: Array.isArray(c?.input_modalities) ? c.input_modalities.includes('image') : familyOf(id, ownedBy) === 'claude' || familyOf(id, ownedBy) === 'gpt',
+      // unknown is no: without the catalog's word, a model is sent no pictures
+      images: Array.isArray(c?.input_modalities) && c.input_modalities.includes('image'),
       order: typeof c?.priority === 'number' ? c.priority : 100_000 + i,
     });
   }

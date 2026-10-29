@@ -243,7 +243,7 @@ test('Claude Code app ready: "Use Claude (your Claude Code app)" comes first, bu
   const { app, page, info, panel } = await claudeScreen('ready')
   test.skip(info.ai !== 'mock', 'the mock plays the Claude Code states')
   await expect(page.getByTestId('use-claude-code')).toHaveAccessibleName(USE_CLAUDE_CODE)
-  await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-claude-code')
+  await expect(panel.locator('[data-testid="vendor-claude"], [data-testid="vendor-chatgpt"]').locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-claude-code')
   await expect(page.getByTestId('use-claude-code')).toHaveClass(/primary/)
   await expect(page.getByTestId('vendor-chatgpt').locator('.btn.primary')).toHaveCount(0) // one filled button
   await expect(panel).toContainText('Signed in. It uses your Claude plan’s limits.')

@@ -26,6 +26,15 @@ export function resetShort(iso: string | undefined, now = Date.now()): string {
   return sameDay ? clock : `${at.toLocaleDateString('en-US', { weekday: 'short' })} ${clock}`
 }
 
+/** "6:20 PM" today, "Sat 9 AM" later: the clock, for "until …", where "until in 42 min" would not read. */
+export function untilShort(iso: string | undefined, now = Date.now()): string {
+  if (!iso) return ''
+  const at = new Date(iso)
+  if (!Number.isFinite(at.getTime())) return ''
+  const clock = at.toLocaleTimeString('en-US', { hour: 'numeric', minute: at.getMinutes() ? '2-digit' : undefined })
+  return new Date(now).toDateString() === at.toDateString() ? clock : `${at.toLocaleDateString('en-US', { weekday: 'short' })} ${clock}`
+}
+
 /** "resets today at 6:20 PM (in 2 h 14 min)": the full words, for tooltips and screen readers. */
 export function resetLong(iso: string | undefined, now = Date.now()): string {
   if (!iso) return 'no reset time given'
@@ -40,6 +49,19 @@ export function resetLong(iso: string | undefined, now = Date.now()): string {
   return `resets ${day} at ${at.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} (in ${span})`
 }
 
+/** A name for a model the editor's list doesn't (or no longer) name: the id spoken the way ai limits.ts nameFromId
+ *  says it, so UI copy never shows a raw id such as claude-sonnet-5-5. */
+export function idName(id: string): string {
+  const bare = id.replace(/\([a-z]+\)$/, '').slice(id.lastIndexOf('/') + 1).replace(/-\d{8}$/, '')
+  const claude = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?$/.exec(bare)
+  if (claude) return `Claude ${claude[1][0].toUpperCase()}${claude[1].slice(1)} ${claude[2]}${claude[3] ? `.${claude[3]}` : ''}`
+  return bare
+    .split('-')
+    .map((w) => (/^gpt$/i.test(w) ? 'GPT' : w[0] ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(' ')
+    .replace(/^GPT (\d)/, 'GPT-$1')
+}
+
 // ---- accounts and limits ----------------------------------------------------------------------------------------
 
 const PROVIDER_NAME: Record<string, string> = { claude: 'Claude', codex: 'ChatGPT', anthropic: 'Claude', openai: 'ChatGPT' }
@@ -49,13 +71,15 @@ function Window({ w }: { w: LimitWindow }) {
   const level = w.left === 0 ? 'out' : w.left <= 20 ? 'low' : 'ok'
   const said = `${w.label}: ${w.left}% left, ${resetLong(w.resetsAt)}`
   return (
-    <li className={`lw ${level}`} aria-label={said} title={said}>
-      <span className="lw-label">{w.label}</span>
-      <span className="lw-bar" aria-hidden>
+    <li className={`ed-lw ${level}`} aria-label={said} title={said}>
+      <span className="ed-lw-label">{w.label}</span>
+      <span className="ed-lw-bar" aria-hidden>
         <i style={{ transform: `scaleX(${w.left / 100})` }} />
       </span>
-      <span className="lw-left">{w.left}%</span>
-      <span className="lw-reset">{resetShort(w.resetsAt)}</span>
+      <span className="ed-lw-text">
+        <b>{w.left}% left</b>
+        {w.resetsAt ? ` · resets ${resetShort(w.resetsAt)}` : ''}
+      </span>
     </li>
   )
 }
@@ -63,25 +87,25 @@ function Window({ w }: { w: LimitWindow }) {
 function Account({ a }: { a: EditorAccounts['accounts'][number] }) {
   const plan = planName(a.plan)
   return (
-    <li className="acct" data-testid="editor-account">
-      <div className="acct-h">
-        <bdi className="acct-name" title={a.name}>
+    <li className="ed-acct" data-testid="editor-account">
+      <div className="ed-acct-h">
+        <bdi className="ed-acct-name" title={a.name}>
           {a.name}
         </bdi>
-        <span className="acct-plan" title={[PROVIDER_NAME[a.provider] ?? a.provider, plan].filter(Boolean).join(' · ')}>
+        <span className="ed-acct-plan" title={[PROVIDER_NAME[a.provider] ?? a.provider, plan].filter(Boolean).join(' · ')}>
           {[PROVIDER_NAME[a.provider] ?? a.provider, plan].filter(Boolean).join(' · ')}
         </span>
       </div>
       {a.windows.length > 0 && (
-        <ul className="lws" aria-label={`${a.name}: limits`}>
+        <ul className="ed-lws" aria-label={`${a.name}: limits`}>
           {a.windows.map((w) => (
             <Window key={w.label} w={w} />
           ))}
         </ul>
       )}
-      {a.problem && <p className="acct-note">{a.problem}</p>}
-      {!a.problem && !a.windows.length && <p className="acct-note">No limits reported yet. A Test shows them.</p>}
-      {a.restingUntil && <p className="acct-note warn">CLIProxyAPI is resting this account until {resetShort(a.restingUntil)}.</p>}
+      {a.problem && <p className="ed-acct-note">{a.problem}</p>}
+      {!a.problem && !a.windows.length && <p className="ed-acct-note">No limits reported yet. A Test shows them.</p>}
+      {a.restingUntil && <p className="ed-acct-note warn">CLIProxyAPI is resting this account until {untilShort(a.restingUntil)}.</p>}
     </li>
   )
 }
@@ -148,7 +172,7 @@ function Accounts({ data, onChange }: { data: EditorAccounts | null; onChange: (
   const shown = all ? data.accounts : data.accounts.slice(0, MANY)
   return (
     <>
-      <ul className="accts" data-testid="editor-accounts">
+      <ul className="ed-accts" data-testid="editor-accounts">
         {shown.map((a, i) => (
           <Account key={`${a.provider}-${a.name}-${i}`} a={a} />
         ))}
@@ -182,17 +206,10 @@ export function otherModel(models: EditorModel[], limitedModel: string | undefin
  * offers the other family's model for Edits.
  */
 export function EditorDetails({ active, stages }: { active: ProviderInfo; stages: StageState }) {
-  const [accounts, setAccounts] = useState<EditorAccounts | null>(null)
+  const { accounts, setAccounts, reloadAccounts: load } = stages
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<{ ok: TestResult } | { error: string; code?: string } | null>(null)
-  const load = useCallback(() => {
-    reel.ai.editorAccounts().then(setAccounts, () => setAccounts({ accounts: [], problem: 'Couldn’t read the accounts. Look again.' }))
-  }, [])
-  useEffect(() => {
-    setAccounts(null)
-    setResult(null)
-    load()
-  }, [active.id, active.connectionId, load])
+  useEffect(() => setResult(null), [active.id, active.connectionId])
 
   const test = async () => {
     setTesting(true)
@@ -210,10 +227,10 @@ export function EditorDetails({ active, stages }: { active: ProviderInfo; stages
   const edits = stages.choice?.editor
   // on Auto, Edits runs on the connection's own model, which the editor's status names
   const alt = limited ? otherModel(stages.models, edits && edits !== 'auto' ? edits : active.detail, accounts?.accounts) : undefined
-  const modelName = (id?: string) => (id ? (stages.models.find((m) => m.id === id.replace(/\([a-z]+\)$/, ''))?.name ?? id) : '')
+  const modelName = (id?: string) => (id ? (stages.models.find((m) => m.id === id.replace(/\([a-z]+\)$/, ''))?.name ?? idName(id)) : '')
   const took = (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`)
   // the button below makes the offer, so the words don't repeat it
-  const said = result && 'error' in result && alt ? result.error.replace(/ You could try .+, which runs on your (Claude|ChatGPT) accounts: choose it in Settings, under Editor\.$/, '') : null
+  const said = result && 'error' in result && alt ? result.error.replace(/ (Your (Claude|ChatGPT) accounts have room: you|If your (Claude|ChatGPT) accounts have room, you) could try .+\. Choose it in Settings, under Editor\.$/, '') : null
 
   return (
     <div className="pv-more ed" data-testid="editor-details">
@@ -227,7 +244,7 @@ export function EditorDetails({ active, stages }: { active: ProviderInfo; stages
           {!result
             ? 'Sends one short message with the Edits model.'
             : 'ok' in result
-              ? `“${result.ok.reply.slice(0, 40)}” from ${modelName(result.ok.model) || 'your editor'} in ${took(result.ok.ms)}`
+              ? `“${result.ok.reply.slice(0, 40)}” from ${modelName(result.ok.model) || 'your editor'} in ${took(result.ok.ms)}${result.ok.note ? `. ${result.ok.note}` : ''}`
               : (said ?? result.error)}
         </p>
       </div>
@@ -270,6 +287,12 @@ export interface StageState {
   choice: ModelChoice | null
   models: EditorModel[]
   loading: boolean
+  /** what Auto runs right now, per stage, by name */
+  auto: Partial<Record<ModelRole, string | null>>
+  /** the accounts behind the editor, shared by the limit bars, Test's offer and the picker's marks */
+  accounts: EditorAccounts | null
+  setAccounts: (a: EditorAccounts) => void
+  reloadAccounts: () => void
   set: (role: ModelRole, value: string) => Promise<void>
 }
 
@@ -278,7 +301,19 @@ export function useStages(active: ProviderInfo | null): StageState {
   const [choice, setChoice] = useState<ModelChoice | null>(null)
   const [models, setModels] = useState<EditorModel[]>([])
   const [loading, setLoading] = useState(false)
+  const [auto, setAuto] = useState<Partial<Record<ModelRole, string | null>>>({})
+  const [accounts, setAccounts] = useState<EditorAccounts | null>(null)
   const on = !!active?.connected && active.id !== 'none'
+  const reloadAccounts = useCallback(() => {
+    reel.ai.editorAccounts().then(setAccounts, () => setAccounts({ accounts: [], problem: 'Couldn’t read the accounts. Look again.' }))
+  }, [])
+  useEffect(() => {
+    setAccounts(null)
+    setAuto({})
+    if (!on) return
+    reloadAccounts()
+    reel.ai.autoModels().then(setAuto, () => setAuto({}))
+  }, [on, active?.id, active?.connectionId, reloadAccounts])
   useEffect(() => {
     let live = true
     reel.app.info().then((i) => live && setChoice(i.models), () => undefined)
@@ -307,7 +342,7 @@ export function useStages(active: ProviderInfo | null): StageState {
     },
     [choice]
   )
-  return { choice, models, loading, set }
+  return { choice, models, loading, auto, accounts, setAccounts, reloadAccounts, set }
 }
 
 /** One stage's chip: the provider's mark, the model's name and its reasoning level. */
@@ -317,9 +352,12 @@ function StageRow({ stage, state, editorPicksOwn, showLine }: { stage: (typeof S
   const value = state.choice?.[stage.role] ?? 'auto'
   const { id, effort } = split(value)
   const model = state.models.find((m) => m.id === id)
-  // a choice the editor in use doesn't offer is Auto, here as at edit time (ai index.ts modelForRole)
+  // a choice the editor in use doesn't offer is Auto, here as at edit time (ai index.ts modelForRole); Auto says what
+  // it runs right now
   const missing = value !== 'auto' && !state.loading && state.models.length > 0 && !model
-  const label = value === 'auto' || missing ? 'Auto' : (model?.name ?? id)
+  // null: no model runs at all; Reel Studio writes the version names itself
+  const autoName = state.auto[stage.role] === null ? 'Reel Studio’s own titles' : state.auto[stage.role]
+  const label = value === 'auto' || missing ? (autoName ? `Auto · ${autoName}` : 'Auto') : (model?.name ?? idName(id))
   const lineId = `mrow-line-${stage.role}`
   return (
     <li className="mrow" data-testid={`stage-${stage.role}`}>
@@ -332,7 +370,7 @@ function StageRow({ stage, state, editorPicksOwn, showLine }: { stage: (typeof S
             {stage.line}
           </span>
         )}
-        {missing && <span className="mrow-line warn">Your editor doesn’t offer {id} now, so Auto is used.</span>}
+        {missing && <span className="mrow-line warn">Your editor doesn’t offer {idName(id)} now, so Auto is used.</span>}
         {editorPicksOwn && stage.role === 'editor' && <span className="mrow-line">An API key picks its own model.</span>}
       </div>
       <button
@@ -362,6 +400,8 @@ function StageRow({ stage, state, editorPicksOwn, showLine }: { stage: (typeof S
           value={value}
           models={state.models}
           loading={state.loading}
+          auto={state.auto[stage.role] === null ? null : autoName}
+          accounts={state.accounts?.accounts ?? []}
           onPick={(v) => void state.set(stage.role, v)}
           onClose={() => {
             setOpen(false)
@@ -381,8 +421,14 @@ export function StageModels({ active, state, open: startOpen }: { active: Provid
   const [open, setOpen] = useState(startOpen)
   const picksOwn = active.id === 'claude'
   const edits = state.choice?.editor ?? 'auto'
-  const custom = MODEL_ROLES.filter((r) => (state.choice?.[r] ?? 'auto') !== 'auto').length
-  const summary = picksOwn ? 'This editor picks its own' : custom ? `${custom} of ${STAGES.length} chosen` : 'Auto for every stage'
+  // the models the stages run, by name: what each chose, or what its Auto runs
+  const runs = STAGES.map(({ role }) => {
+    const v = state.choice?.[role] ?? 'auto'
+    const m = v !== 'auto' ? state.models.find((x) => x.id === split(v).id) : undefined
+    return m?.name ?? state.auto[role]
+  }).filter((n): n is string => !!n)
+  const names = [...new Set(runs)]
+  const summary = picksOwn ? 'This editor picks its own' : names.length ? names.join(', ') : 'Auto'
   return (
     <div className={`mstages${open ? ' open' : ''}`} data-testid="stage-models">
       <button className="mstages-h" aria-expanded={open} aria-controls="stage-list" onClick={() => setOpen((o) => !o)} data-testid="stage-models-toggle">
@@ -446,7 +492,16 @@ function mainActions(box: HTMLElement | null): Rect[] {
  * model's reasoning levels at the foot. It is drawn on the page's top layer (a portal), so no column or scroll area
  * clips it. Arrow keys move through the list, Enter picks, Escape closes.
  */
-function ModelPicker({ anchor, stage, value, models, loading, onPick, onClose }: { anchor: React.RefObject<HTMLButtonElement | null>; stage: (typeof STAGES)[number]; value: string; models: EditorModel[]; loading: boolean; onPick: (v: string) => void; onClose: () => void }) {
+/** When a family's accounts are all at a limit: the earliest moment one of them is free again. Null when one has room
+ * or there are no accounts to tell. */
+export function familyAtLimit(accounts: EditorAccounts['accounts'], family: ModelFamily): string | null {
+  const mine = accounts.filter((a) => (family === 'claude' ? a.provider === 'claude' : family === 'gpt' ? a.provider === 'codex' : false) && a.windows.length)
+  if (!mine.length || !mine.every((a) => a.windows.some((w) => w.left === 0))) return null
+  const free = mine.map((a) => a.windows.filter((w) => w.left === 0).map((w) => w.resetsAt ?? '').sort().at(-1) ?? '').filter(Boolean).sort()[0]
+  return free ?? ''
+}
+
+function ModelPicker({ anchor, stage, value, models, loading, auto, accounts, onPick, onClose }: { anchor: React.RefObject<HTMLButtonElement | null>; stage: (typeof STAGES)[number]; value: string; models: EditorModel[]; loading: boolean; auto?: string | null; accounts: EditorAccounts['accounts']; onPick: (v: string) => void; onClose: () => void }) {
   const [q, setQ] = useState('')
   const [pos, setPos] = useState<(CSSProperties & { origin: string }) | null>(null)
   const box = useRef<HTMLDivElement>(null)
@@ -500,8 +555,10 @@ function ModelPicker({ anchor, stage, value, models, loading, onPick, onClose }:
     const hit = (m: EditorModel) => words.every((w) => `${m.name} ${m.id} ${FAMILY_NAME[m.family]}`.toLowerCase().includes(w))
     const names = new Map<string, number>()
     for (const m of models) names.set(m.name, (names.get(m.name) ?? 0) + 1)
-    return FAMILY_ORDER.map((f) => ({ family: f, items: models.filter((m) => m.family === f && hit(m)).map((m) => ({ m, twin: (names.get(m.name) ?? 0) > 1 })) })).filter((g) => g.items.length)
-  }, [models, q])
+    // a family whose accounts are all at a limit stays choosable, after the others, saying until when
+    const groups = FAMILY_ORDER.map((f) => ({ family: f, until: familyAtLimit(accounts, f), items: models.filter((m) => m.family === f && hit(m)).map((m) => ({ m, twin: (names.get(m.name) ?? 0) > 1 })) })).filter((g) => g.items.length)
+    return [...groups.filter((g) => g.until === null), ...groups.filter((g) => g.until !== null)]
+  }, [models, q, accounts])
   const autoShown = !q.trim() || 'auto'.includes(q.trim().toLowerCase())
 
   const pick = (v: string): void => {
@@ -557,7 +614,7 @@ function ModelPicker({ anchor, stage, value, models, loading, onPick, onClose }:
           <button className="mopt" role="option" tabIndex={-1} aria-selected={value === 'auto'} data-opt onClick={() => pick('auto')} data-testid="model-opt-auto">
             <span className="mopt-mark">{value === 'auto' && <Icon name="check" size={14} stroke={2.4} />}</span>
             <span className="mopt-name">Auto</span>
-            <span className="mopt-sub">Your editor’s own choice</span>
+            <span className="mopt-sub">{auto === null ? 'No model: Reel Studio writes them' : auto ? `Now ${auto}` : 'Your editor’s own choice'}</span>
           </button>
         )}
         {loading && (
@@ -569,9 +626,21 @@ function ModelPicker({ anchor, stage, value, models, loading, onPick, onClose }:
           <div key={g.family} role="group" aria-label={FAMILY_NAME[g.family]}>
             <p className="mpop-group" aria-hidden>
               {FAMILY_NAME[g.family]}
+              {g.until !== null && <span className="mpop-group-note"> · at its limit{g.until ? ` until ${untilShort(g.until)}` : ''}</span>}
             </p>
             {g.items.map(({ m, twin }) => (
-              <button key={m.id} className="mopt" role="option" tabIndex={-1} aria-selected={m.id === chosenId} data-opt onClick={() => pick(m.id)} title={m.id} data-testid={`model-opt-${m.id}`}>
+              <button
+                key={m.id}
+                className={`mopt${g.until !== null ? ' spent' : ''}`}
+                role="option"
+                tabIndex={-1}
+                aria-selected={m.id === chosenId}
+                aria-description={g.until !== null ? `Every ${FAMILY_NAME[g.family]} account is at its limit${g.until ? `, ${resetLong(g.until)}` : ''}` : undefined}
+                data-opt
+                onClick={() => pick(m.id)}
+                title={m.id}
+                data-testid={`model-opt-${m.id}`}
+              >
                 <span className="mopt-mark">{m.id === chosenId ? <Icon name="check" size={14} stroke={2.4} /> : <FamilyMark family={m.family} />}</span>
                 <span className="mopt-name">{m.name}</span>
                 {twin && <span className="mopt-sub">{m.id}</span>}
@@ -600,11 +669,11 @@ function ModelPicker({ anchor, stage, value, models, loading, onPick, onClose }:
           }}
         >
           <span className="mpop-effort-h">Reasoning</span>
-          <div className="seg">
+          <div className="ed-seg">
             {['', ...chosen.efforts].map((e) => {
               const on = (effort ?? '') === e
               return (
-                <button key={e || 'default'} role="radio" aria-checked={on} tabIndex={on ? 0 : -1} className={`seg-o${on ? ' on' : ''}`} onClick={() => onPick(e ? `${chosen.id}(${e})` : chosen.id)} data-testid={`effort-${e || 'default'}`} title={e ? EFFORT_NAME[e] : `Default${chosen.defaultEffort ? ` (${EFFORT_NAME[chosen.defaultEffort]})` : ''}`}>
+                <button key={e || 'default'} role="radio" aria-checked={on} tabIndex={on ? 0 : -1} className={`ed-seg-o${on ? ' on' : ''}`} onClick={() => onPick(e ? `${chosen.id}(${e})` : chosen.id)} data-testid={`effort-${e || 'default'}`} title={e ? EFFORT_NAME[e] : `Default${chosen.defaultEffort ? ` (${EFFORT_NAME[chosen.defaultEffort]})` : ''}`}>
                   {e ? (EFFORT_NAME[e] ?? e).replace('Extra high', 'XHigh') : 'Default'}
                 </button>
               )

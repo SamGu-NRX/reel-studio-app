@@ -88,7 +88,8 @@ describe('CLIProxyAPI as the editor', () => {
     const before = Date.now();
     const e = await caught(ai.testConnection(undefined, 'editor'));
     expect(e.code).toBe('connection_limited');
-    expect(e.userMessage).toMatch(/^Your server’s Claude accounts are all at their limit for claude-sonnet-5-5\. The first is free again at .+ \(in 1 h 2 min\)\. You could try GPT 6\.1 Sol, which runs on your ChatGPT accounts: choose it in Settings, under Editor\.$/);
+    // no management key, so the accounts are unknown: what the hub said, by display name, and an unverified suggestion
+    expect(e.userMessage).toMatch(/^CLIProxyAPI says Claude Sonnet 5\.5’s accounts are all resting until .+ \(in 1 h 2 min\)\. Add its management key in Settings, under Editor, to see which accounts\. If your ChatGPT accounts have room, you could try GPT 6\.1 Sol\. Choose it in Settings, under Editor\.$/);
     expect(Date.parse(e.resetsAt!) - before).toBeGreaterThanOrEqual(3720_000 - 1000);
   });
 
@@ -97,7 +98,7 @@ describe('CLIProxyAPI as the editor', () => {
     await ai.saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
     expect(await ai.editorAccounts()).toEqual({ accounts: [], needsManagementKey: true });
 
-    const wrong = await caught(ai.setHubManagementKey('nope'));
+    const wrong = await caught(ai.setHubManagementKey('not-the-right-key'));
     expect(wrong.code).toBe('hub_management_key');
     expect((await ai.connections())[0].hasManagementKey).toBe(false);
 
@@ -235,11 +236,11 @@ describe('review fixes (r12)', () => {
     await ai.setHubManagementKey(hub.managementKey);
     hub.limited = { family: 'claude', resetSeconds: 3600 };
     hub.accounts = hub.accounts.map((a) => (a.provider === 'codex' ? { ...a, used: [100, 40] } : a));
-    expect((await caught(ai.testConnection())).userMessage).not.toMatch(/try/i);
+    expect((await caught(ai.testConnection())).userMessage).not.toMatch(/could try/);
     hub.accounts = hub.accounts.map((a) => (a.provider === 'codex' ? { ...a, used: [10, 40] } : a));
-    expect((await caught(ai.testConnection())).userMessage).toMatch(/ You could try GPT 6\.1 Sol, which runs on your ChatGPT accounts: choose it in Settings, under Editor\.$/);
+    expect((await caught(ai.testConnection())).userMessage).toMatch(/ Your ChatGPT accounts have room: you could try GPT 6\.1 Sol\. Choose it in Settings, under Editor\.$/);
     hub.models = hub.models.filter((m) => m.ownedBy !== 'openai');
-    expect((await caught(ai.testConnection())).userMessage).not.toMatch(/try/i);
+    expect((await caught(ai.testConnection())).userMessage).not.toMatch(/could try/);
   });
 
   it('refuses an address that is not this computer before sending it anything', async () => {
@@ -261,6 +262,82 @@ describe('review fixes (r12)', () => {
       expect(e.resetsAt).toBeUndefined();
       expect(e.userMessage).toMatch(/It didn’t say when they reset\.$/);
     }
+  });
+});
+
+describe('design review and re-check (r12)', () => {
+  it('a limit names the account at its limit and the one with room, by display name, without "all at their limit"', async () => {
+    const ai = make();
+    await ai.saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
+    await ai.setHubManagementKey(hub.managementKey);
+    hub.limited = { family: 'claude', resetSeconds: 3600 };
+    const e = await caught(ai.testConnection());
+    expect(e.userMessage).toMatch(/^studio@example\.com is at its 5-hour limit until .+; Claude Sonnet 5\.5 can still use maya@example\.com\. Try again in a minute\./);
+    expect(e.userMessage).not.toMatch(/all at their limit|claude-sonnet-5-5/);
+    hub.accounts = hub.accounts.map((a) => (a.provider === 'claude' ? { ...a, used: [100, 50] } : a));
+    expect((await caught(ai.testConnection())).userMessage).toMatch(/^Every Claude account is at a limit: maya@example\.com is at its 5-hour limit until .+; studio@example\.com is at its 5-hour limit until /);
+  });
+
+  it('says what Auto runs for each stage, by name', async () => {
+    const ai = make();
+    await ai.saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
+    const auto = await ai.autoModels();
+    expect(auto.editor).toBe('Claude Sonnet 5.5');
+    expect(auto.planner).toBe('Claude Sonnet 5.5');
+    expect(auto.namer).toBeNull();
+  });
+
+  it('a saved CLIProxyAPI that is not a loopback address is never used and never sent either key', async () => {
+    const id = 'c_deadbeef';
+    const client = 'client-key-0123456789';
+    const mgmt = 'management-key-0123456789';
+    fs.writeFileSync(path.join(dir, 'ai-settings.json'), JSON.stringify({ active: 'custom', activeConnection: id, connections: [{ id, label: 'CLIProxyAPI', kind: 'cliproxy', baseURL: 'http://hub.example.com:8317', model: 'claude-sonnet-5-5', supportsImages: true }] }));
+    fs.writeFileSync(path.join(dir, `connection-${id}.bin`), fakeSafeStorage.encryptString(client));
+    fs.writeFileSync(path.join(dir, `connection-${id}-management.bin`), fakeSafeStorage.encryptString(mgmt));
+    const sent: string[] = [];
+    const spy = (async (u: string, init?: RequestInit) => {
+      sent.push(`${u} ${JSON.stringify(init?.headers ?? {})}`);
+      throw new Error('offline');
+    }) as unknown as typeof fetch;
+    const ai = createAI({ host: new FakeHost(tmpDir()), settingsDir: dir, secretStore: fakeSafeStorage, fetch: spy, roleModels: () => ({ editor: 'claude-opus-5-5' }) });
+    const st = (await ai.providers()).find((p) => p.id === 'custom')!;
+    expect(st).toMatchObject({ connected: false, error: { code: 'hub_not_local' } });
+    expect((await ai.active()).id).toBe('none');
+    await caught(ai.testConnection());
+    expect(await ai.editorModels()).toEqual([]);
+    expect(await ai.editorAccounts()).toEqual({ accounts: [] });
+    expect(await ai.autoModels()).toEqual({});
+    expect((await caught(ai.setHubManagementKey('another-key-0123'))).code).toBe('hub_not_local');
+    expect((await caught(ai.setActive('custom', id))).code).toBe('hub_not_local');
+    await ai.connectionModels({ kind: 'openai', baseURL: 'http://hub.example.com:8317/v1', id });
+    for (const line of sent) for (const secret of [client, mgmt]) expect(line).not.toContain(secret);
+  });
+
+  it('refuses a CLIProxyAPI key or management key under 8 characters, so every saved key can be scrubbed', async () => {
+    const ai = make();
+    expect((await ai.saveHub({ origin: hub.origin, key: 'short7k', keySource: 'typed' })).error?.code).toBe('hub_key_short');
+    expect(await ai.connections()).toEqual([]);
+    await ai.saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
+    expect((await caught(ai.setHubManagementKey('abc'))).code).toBe('hub_key_short');
+  });
+
+  it('a chosen model the list can’t confirm is sent, and "no such model" falls back to Auto once, saying so', async () => {
+    await make().saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
+    hub.listDown = true;
+    roles = { editor: 'claude-opus-9' };
+    const r = await make().testConnection(undefined, 'editor'); // a fresh app: no list kept
+    expect(r.model).toBe('claude-sonnet-5-5');
+    expect(r.note).toBe('Edits used Claude Sonnet 5.5, because Claude Opus 9 isn’t offered any more.');
+    expect(hub.requests.filter((q) => q.model).map((q) => q.model)).toEqual(['claude-opus-9', 'claude-sonnet-5-5']);
+  });
+
+  it('a model whose picture support the hub doesn’t say is sent no pictures', async () => {
+    const ai = make();
+    await ai.saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
+    hub.noCatalog = true;
+    const models = await make().editorModels();
+    expect(models.length).toBeGreaterThan(0);
+    expect(models.every((m) => m.images === false)).toBe(true);
   });
 });
 

@@ -25,6 +25,8 @@ async function sized(name: string, ready: () => Promise<void> = async () => {}):
     await expect.poll(() => page.evaluate(() => [innerWidth, innerHeight])).toEqual([w, h])
     await ready()
     await page.waitForTimeout(250)
+    // the sample's crossfade and any other finite animation finish first, so a shot never catches one mid-frame
+    await page.evaluate(() => Promise.race([Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, 2000))]))
     await page.screenshot({ path: join(SHOTS, `${name}@${w}x${h}.png`) })
   }
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1280, 820))
@@ -66,7 +68,9 @@ test('CLIProxyAPI is found from its config and is the recommended first row', as
   await expect(row).toContainText('CLIProxyAPI')
   await expect(row).toContainText('Recommended')
   await expect(row).toContainText('5 models on this Mac')
-  await expect(row).toContainText(`Key from ${join(configDir, 'config.yaml')}`)
+  // where the key came from, in words; the path in its tooltip
+  await expect(row).toContainText('Key read from its config')
+  await expect(row.locator('.pv-src')).toHaveAttribute('title', `Key read from ${join(configDir, 'config.yaml')}`)
   // first in the picker, and its Use it is the screen's one filled button
   await expect(page.getByTestId('ai-picker').locator(':scope > *').first()).toHaveAttribute('data-testid', 'hub-row')
   await expect(page.getByTestId('ai-picker').locator('.btn.primary')).toHaveCount(1)
@@ -93,8 +97,20 @@ test('Use it connects with the config’s key; accounts, plans and limits need t
   const accounts = page.getByTestId('editor-account')
   await expect(accounts).toHaveCount(3)
   await expect(accounts.nth(0)).toContainText('maya@example.com')
-  await expect(accounts.nth(1).locator('.lw').first()).toHaveAttribute('aria-label', /^5-hour: 0% left, resets today at .+ \(in 4\d minutes\)$/)
+  await expect(accounts.nth(1).locator('.ed-lw').first()).toHaveAttribute('aria-label', /^5-hour: 0% left, resets today at .+ \(in 4\d minutes\)$/)
   await expect(accounts.nth(2)).toContainText('ChatGPT · Pro')
+  // each bar says it is what's left, and when it resets
+  await expect(accounts.nth(0).locator('.ed-lw').first()).toHaveText(/^5-hour62% left · resets /)
+  await expect(accounts.nth(1).locator('.ed-lw').first()).toContainText('0% left · resets in 4')
+  // the person's own apps wait behind one quiet line while CLIProxyAPI is the editor
+  await expect(page.getByTestId('other-editors')).toHaveText(/Other editors\s*Claude Code app, Codex app/)
+  await expect(page.getByTestId('vendor-claude')).toBeHidden()
+  // the models section names what each stage runs: Auto, and what Auto is right now
+  await expect(page.getByTestId('stage-models-toggle')).toContainText('Claude Sonnet 5.5')
+  // naming versions runs no model on this editor, so the summary leaves it out
+  await expect(page.getByTestId('stage-models-toggle')).not.toContainText('Reel Studio')
+  await expect(page.getByTestId('stage-models-toggle')).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('stage-editor')).toBeHidden()
   expect(await page.content()).not.toContain(hub.managementKey)
   await sized('first-run-hub-accounts')
 })
@@ -109,12 +125,15 @@ test('a limit names whose accounts hit it and when they reset, and offers the ot
   test.setTimeout(120_000)
   hub.limited = { family: 'claude', resetSeconds: 2 * 3600 + 14 * 60 }
   await page.getByTestId('editor-test').click()
-  await expect(page.getByTestId('editor-test-result')).toContainText('Your server’s Claude accounts are all at their limit for claude-sonnet-5-5. The first is free again at')
-  await expect(page.getByTestId('editor-test-result')).toContainText('(in 2 h 14 min)')
+  // the bars' own terms: which account is at which limit until when, which one has room, by display name
+  await expect(page.getByTestId('editor-test-result')).toContainText('studio@example.com is at its 5-hour limit until')
+  await expect(page.getByTestId('editor-test-result')).toContainText('Claude Sonnet 5.5 can still use maya@example.com. Try again in a minute.')
+  await expect(page.getByTestId('editor-test-result')).not.toContainText('claude-sonnet-5-5')
   await expect(page.getByTestId('editor-use-other')).toHaveText('Try GPT 6.1 Sol for Edits')
   await sized('first-run-hub-limit')
   await page.getByTestId('editor-use-other').click()
   await page.getByTestId('stage-models-toggle').click()
+  await expect(page.getByTestId('model-checker')).toHaveText(/^Auto · Claude Sonnet 5\.5/)
   await expect(page.getByTestId('model-editor')).toContainText('GPT 6.1 Sol')
   hub.limited = null
   await page.getByTestId('editor-test').click()
@@ -131,6 +150,7 @@ test('each stage has a searchable picker grouped by provider, with the model’s
   await expect(picker.getByRole('group', { name: 'Claude' })).toBeVisible()
   await expect(picker.getByRole('group', { name: 'ChatGPT' })).toBeVisible()
   await expect(picker.getByText('GPT Image 2')).toHaveCount(0)
+  await expect(picker.getByTestId('model-opt-auto')).toContainText('Now Claude Sonnet 5.5')
   await sized('first-run-model-picker', async () => {
     if (!(await picker.isVisible())) await page.getByTestId('model-checker').click()
     // inside the window at every size
@@ -152,6 +172,30 @@ test('each stage has a searchable picker grouped by provider, with the model’s
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('model-checker')).toContainText('Claude Opus 5.5 · High')
   expect((await page.evaluate(() => window.reel.app.info())).models).toMatchObject({ editor: 'gpt-6.1-sol', checker: 'claude-opus-5-5(high)', planner: 'auto' })
+})
+
+test('a family whose accounts are all at a limit stays offered, last, saying when it is free again', async () => {
+  test.setTimeout(120_000)
+  const before = hub.accounts
+  hub.accounts = before.map((a) => (a.provider === 'claude' ? { ...a, used: [100, a.used[1]] as [number, number] } : a))
+  // the accounts are read again after each Test
+  await page.getByTestId('editor-test').click()
+  await expect(page.getByTestId('editor-test-result')).toHaveText(/^“OK” from /)
+  await expect(page.getByTestId('editor-account').nth(0).locator('.ed-lw').first()).toContainText('0% left')
+  await page.getByTestId('model-checker').click()
+  const picker = page.getByTestId('model-picker')
+  const groups = picker.getByRole('group')
+  await expect(groups.last()).toHaveAccessibleName('Claude')
+  await expect(groups.first()).toHaveAccessibleName('ChatGPT')
+  await expect(groups.last()).toContainText(/at its limit until ([A-Z][a-z]{2} )?\d{1,2}(:\d{2})? [AP]M/)
+  await expect(picker.locator('.mopt.spent').first()).toBeEnabled()
+  await sized('first-run-model-picker-limit', async () => {
+    if (!(await picker.isVisible())) await page.getByTestId('model-checker').click()
+  })
+  await page.keyboard.press('Escape')
+  hub.accounts = before
+  await page.getByTestId('editor-test').click()
+  await expect(page.getByTestId('editor-account').nth(0).locator('.ed-lw').first()).toContainText('62% left')
 })
 
 test('a key the hub refuses: the same row asks for one, and a typed key says so in the row', async () => {
@@ -181,13 +225,14 @@ test('Settings › Editor draws the same component, with every stage open', asyn
   await page.evaluate((m) => window.reel.app.setModels(m), { ...info.models, writer: 'gpt-retired(high)' })
   await page.getByTestId('account').click()
   const settings = page.getByTestId('settings-editor')
-  await expect(settings.getByTestId('model-writer')).toHaveText('Auto')
-  await expect(settings.getByTestId('stage-writer')).toContainText('Your editor doesn’t offer gpt-retired now, so Auto is used.')
+  await expect(settings.getByTestId('model-writer')).toHaveText('Auto · Claude Sonnet 5.5')
+  await expect(settings.getByTestId('stage-writer')).toContainText('Your editor doesn’t offer GPT Retired now, so Auto is used.')
   await expect(settings.getByTestId('editor-setup')).toBeVisible()
   await expect(settings.getByTestId('hub-row')).toHaveAttribute('data-state', 'connected')
   await expect(settings.getByTestId('editor-account')).toHaveCount(3)
   await expect(settings.locator('.mrow')).toHaveCount(7)
   await expect(settings.getByTestId('stage-planner')).toContainText('Plans reels')
+  await expect(settings.getByTestId('model-namer')).toHaveText('Auto · Reel Studio’s own titles')
   await sized('settings-editor')
   await settings.getByTestId('ai-advanced').click()
   await settings.getByTestId('own-server-toggle').click()
