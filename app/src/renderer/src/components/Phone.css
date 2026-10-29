@@ -112,11 +112,13 @@
 .igc-audio { display: flex; align-items: center; gap: calc(6 * var(--pt)); font-size: calc(13 * var(--pt)); }
 .igc-audio .icon { width: calc(12 * var(--pt)); height: calc(12 * var(--pt)); }
 /* Both edges fade, playing or paused: a pause freezes the ticker mid-scroll, and a hard left edge then reads as
-   clipped text ("inal audio"). */
-.igc-tick { overflow: hidden; width: calc(170 * var(--pt)); mask-image: linear-gradient(90deg, transparent, #000 8%, #000 85%, transparent); }
+   clipped text ("inal audio"). The left fade (6pt) sits over the gap beside the note icon (margin -6pt), and each
+   copy starts 6pt in, so at rest no letter is under it; the 28pt between copies is kept (6 + 22), so the loop's
+   -50% still lands on the second copy. */
+.igc-tick { overflow: hidden; width: calc(176 * var(--pt)); margin-left: calc(-6 * var(--pt)); mask-image: linear-gradient(90deg, transparent, #000 calc(6 * var(--pt)), #000 85%, transparent); }
 /* moving, the words leave on the left as they come in on the right: both edges fade, so none is cut mid-letter */
 .igc-tick > div { display: flex; width: max-content; animation: igc-tick 9s linear infinite paused; }
-.igc-tick span { padding-right: calc(28 * var(--pt)); white-space: nowrap; }
+.igc-tick span { padding: 0 calc(22 * var(--pt)) 0 calc(6 * var(--pt)); white-space: nowrap; }
 .igc[data-playing]:not(.off) .igc-tick > div { animation-play-state: running; }
 @keyframes igc-tick { to { transform: translateX(-50%); } }
 
