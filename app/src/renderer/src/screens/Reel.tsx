@@ -1018,6 +1018,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
               ) : (
                 <NotesLog
                   slug={slug}
+                  madeWith={Object.fromEntries(d.versions.flatMap((v) => (v.madeWith ? [[v.n, v.madeWith]] : [])))}
                   entries={entries}
                   queue={d.queue}
                   held={d.queueHeld}

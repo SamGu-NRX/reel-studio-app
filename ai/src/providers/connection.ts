@@ -1,6 +1,7 @@
 // The person's own AI server ("custom" provider), Anthropic-compatible (Messages) or OpenAI-compatible (Chat
 // Completions): address checks, plain-words errors and the model list both kinds share.
 import { AIError } from '../types';
+import { serverLimit, serverLimitWords } from './limits';
 
 export type ConnectionKind = 'anthropic' | 'openai';
 
@@ -76,6 +77,11 @@ export function mapConnectionError(status: number | undefined, body: unknown, ct
   }
   if (status === 404 || status === 405) return wrongAddress(ctx, info.detail, status);
   if (status === 429) {
+    // a limit the server names (which accounts, when they reset) is said as such; a bare 429 stays "busy"
+    const limit = serverLimit(body);
+    // a pause of a minute or less (one account resting) is worth another try; a later reset is not
+    const soon = !!limit?.resetsAt && Date.parse(limit.resetsAt) - Date.now() <= 60_000;
+    if (limit) return new AIError('connection_limited', serverLimitWords(limit, ctx.model), { ...info, retryable: soon, ...(limit.resetsAt ? { resetsAt: limit.resetsAt } : {}) });
     return new AIError('connection_busy', 'The server is busy, or this key has used up its limit. Wait a minute, then try again.', { ...info, retryable: true });
   }
   if (status && status >= 500) {

@@ -9,7 +9,7 @@ import { writeJson } from './store'
 import type { SpeechCheckResult } from './models'
 import type { ReleaseEntry } from '../shared/update'
 import type { Dismissal, RememberedRelease } from './update-machine'
-import type { DataSharing, ModelChoice, PhoneView } from '../shared/api'
+import { MODEL_ROLES, type DataSharing, type ModelChoice, type PhoneView } from '../shared/api'
 import type { TikTokSettings } from '../shared/tiktok'
 import type { InstagramSettings } from '../shared/instagram'
 
@@ -62,7 +62,7 @@ const DEFAULTS: Settings = {
   updateDismissed: null,
   updateHistory: null,
   checkEdits: false,
-  models: { editor: 'auto', checker: 'auto', writer: 'auto' },
+  models: Object.fromEntries(MODEL_ROLES.map((r) => [r, 'auto'])) as ModelChoice,
   sharing: { asked: false, on: false, usage: true, quality: true, posts: true },
   phoneView: 'instagram',
   // Sam asked for the timeline as a toggle that starts on (spec §7)
@@ -82,7 +82,9 @@ export function showsFirstRun(s: Pick<Settings, 'firstRunDone' | 'firstRunAgain'
 
 export async function loadSettings(): Promise<Settings> {
   try {
-    return { ...DEFAULTS, ...JSON.parse(await fs.readFile(settingsFile(), 'utf8')) }
+    const saved = JSON.parse(await fs.readFile(settingsFile(), 'utf8'))
+    // a model choice saved before a stage existed: the new stage starts on Auto
+    return { ...DEFAULTS, ...saved, models: { ...DEFAULTS.models, ...(saved?.models ?? {}) } }
   } catch {
     return { ...DEFAULTS }
   }

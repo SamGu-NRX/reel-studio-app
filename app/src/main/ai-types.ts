@@ -1,6 +1,6 @@
 // Mirror of the @reelstudio/ai interface (docs/architecture.md section 8). The real package is loaded at
 // runtime when it exists; until then ai-mock.ts implements the same shape.
-import type { JobUpdate, StyleProposal, StyleRule, MergeRequest, ProjectJson, ReelCandidateView, Word } from '../shared/api'
+import type { EditorAccounts, EditorModel, JobUpdate, LimitWindow, ModelRole, StyleProposal, StyleRule, MergeRequest, ProjectJson, ReelCandidateView, Word } from '../shared/api'
 import type { PlanTurn } from '../shared/plan'
 import type { TryVariable } from '../shared/platforms'
 
@@ -25,6 +25,8 @@ export interface AgentResult {
   styleProposal?: StyleProposal
   /** Set when the AI stopped early and a simpler edit was made instead. */
   notice?: UserFacingError
+  /** the model that made this version ("Claude Sonnet 5.5 · High"); absent for a basic version */
+  model?: string
 }
 
 /** One turn of a planned reel's planning chat (ai editor.ts planTurn). `asked`: questions the editor has asked. */
@@ -93,7 +95,9 @@ export interface ProviderStatus {
 export interface ConnectionInfo {
   id: string
   label: string
-  kind: 'anthropic' | 'openai'
+  kind: 'anthropic' | 'openai' | 'cliproxy'
+  keySource?: string
+  hasManagementKey?: boolean
   baseURL: string
   model: string
   supportsImages: boolean
@@ -191,15 +195,22 @@ export interface AI {
   connectionModels?(q: { kind: ConnectionInfo['kind']; baseURL: string; key?: string; id?: string }): Promise<{ models: string[]; suggested: string | null; needsKey: boolean }>
   /** One small-model call that rewords a version's title and summary; null when the connection has no small model. Optional: older packages lack it. */
   rewordVersion?(text: { title: string; summary: string }, signal?: AbortSignal): Promise<{ title: string; summary: string } | null>
+  /** CLIProxyAPI as the editor (ai index.ts saveHub), its management key, and what the editor in use offers and runs
+   * as. Optional: older packages and the mock lack them. */
+  saveHub?(input: { origin: string; key: string; keySource: string }): Promise<SaveConnectionResult>
+  setHubManagementKey?(key: string | null): Promise<EditorAccounts>
+  editorModels?(): Promise<EditorModel[]>
+  editorAccounts?(): Promise<EditorAccounts>
+  /** One tiny prompt through `role`'s model. */
+  testConnection?(signal?: AbortSignal, role?: ModelRole): Promise<{ reply: string; model?: string; ms: number; limits?: LimitWindow[] }>
   /** Mock only: the sign-in window "opened" (tests flip the mock's state instead of opening a terminal). */
   mockClaudeSignInOpened?(): void
   /** Mock only: how REELSTUDIO_MOCK_CLAUDE / REELSTUDIO_MOCK_CODEX play an install and a browser sign-in. */
   mockVendor?: MockVendor
 }
 
-/** Mock only (ai-mock.ts): plays install and sign-in for the Connect cards without a real CLI. */
+/** Mock only (ai-mock.ts): plays a sign-in for the editor rows without a real CLI. */
 export interface MockVendor {
-  install(v: 'claude' | 'chatgpt', signal: AbortSignal): Promise<void>
   /** with onDeviceCode: ChatGPT's sign-in with a code */
   login(
     v: 'claude' | 'chatgpt',

@@ -3,8 +3,9 @@
 // condition clears or the app opens again. A note stopped by a plan limit or a quit waits the same way.
 import type { PausedFor } from '../shared/api'
 
-/** Plan or rate limits, by provider (ai providers/cli.ts, openai.ts, anthropic.ts). */
-const LIMIT_CODES = new Set(['cli_limited', 'chatgpt_usage_limit', 'claude_rate_limited'])
+/** Plan or rate limits, by provider (ai providers/cli.ts, openai.ts, anthropic.ts, and connection.ts for a server such
+ * as CLIProxyAPI that names its limit). */
+const LIMIT_CODES = new Set(['cli_limited', 'chatgpt_usage_limit', 'claude_rate_limited', 'connection_limited'])
 
 /**
  * Whether a job's failure pauses it, and why. `online`: the computer has a network now (Electron net.isOnline);

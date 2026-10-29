@@ -11,7 +11,7 @@
 //
 // Accepted exceptions live in e2e/layout-audit/allowlist.ts, each with a state, a selector and a reason.
 import { test, expect, _electron as electron, type ElectronApplication, type Locator, type Page } from '@playwright/test'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { APP_DIR, makeMedia, makeReel, passFirstRun } from './helpers'
@@ -19,6 +19,7 @@ import { makePastEditsHome } from './past-edits-home'
 import { detectLayout, type RawFinding } from './layout-audit/detect'
 import { ALLOW } from './layout-audit/allowlist'
 import { OUT, commit, counts, outlinedShot, sourceFor, writeScreen, type Finding, type ScreenResult } from './layout-audit/report'
+import { FakeHub } from '../../ai/test/fakeHub'
 
 const ALL_SIZES: [number, number][] = [
   [1100, 720],
@@ -50,6 +51,8 @@ interface Screen {
   /** fresh: the first run. ready: past the first run, no reels. reel: past the first run, with one reel. */
   profile: 'fresh' | 'ready' | 'reel'
   env?: Record<string, string>
+  /** Runs before the screen's profile is made; what it returns joins `env` (the fake CLIProxyAPI's config folder). */
+  before?: () => Promise<Record<string, string>>
   states: State[]
 }
 
@@ -163,6 +166,7 @@ async function settle(page: Page): Promise<void> {
 
 // ---- running one screen ----------------------------------------------------------------------------------
 async function audit(screen: Screen): Promise<void> {
+  if (screen.before) screen.env = { ...screen.env, ...(await screen.before()) }
   const media = makeMedia()
   const dir = await profileFor(screen, media)
   const { app, page } = await launchIn(dir, screen.env)
@@ -634,11 +638,13 @@ SCREENS.push({
       ready: (page: Page) => page.locator(`[data-testid="settings-nav-${k}"][aria-current="true"]`)
     })),
     {
+      // your own server lives in the editor component's Advanced, under Settings › Editor (r12-editor)
       id: 'settings-advanced-server-form',
       enter: async ({ page }) => {
         if (!(await page.getByTestId('settings-search').isVisible())) await page.getByTestId('account').click()
-        await page.getByTestId('settings-nav-advanced').click()
-        await page.getByTestId('own-server-toggle').click()
+        await page.getByTestId('settings-nav-editor').click()
+        if ((await page.getByTestId('ai-advanced').getAttribute('aria-expanded')) !== 'true') await page.getByTestId('ai-advanced').click()
+        if (!(await page.getByTestId('connection-address').isVisible())) await page.getByTestId('own-server-toggle').click()
       },
       ready: byTestId('connection-address')
     },
@@ -651,6 +657,108 @@ SCREENS.push({
         await page.getByRole('button', { name: 'Reset…' }).click()
       },
       ready: (page) => page.getByRole('dialog', { name: 'Reset the first run?' })
+    }
+  ]
+})
+
+// ---- the editor with CLIProxyAPI (connect.tsx): a fake hub on a random port and the real AI package, so the rows,
+// accounts, limits and picker are the ones a person sees. Claude Code and Codex see a throwaway home.
+let hub: FakeHub | null = null
+async function hubEnv(): Promise<Record<string, string>> {
+  if (!hub) {
+    hub = new FakeHub()
+    await hub.start()
+  }
+  const dir = mkdtempSync(join(RUN_DIR.replace(/[^/]+$/, ''), 'hub-config-'))
+  writeFileSync(join(dir, 'config.yaml'), `port: ${hub.port}\napi-keys:\n  - ${hub.key}\n`)
+  return { REELSTUDIO_MOCK_AI: '0', REELSTUDIO_TEST_HUB_CONFIG: dir, REELSTUDIO_TEST_VENDOR_HOME: mkdtempSync(join(dir, 'vendor-home-')) }
+}
+test.afterAll(async () => {
+  await hub?.stop()
+})
+const lookAgain = (page: Page) => page.evaluate(() => window.dispatchEvent(new Event('focus')))
+const hubReady = (page: Page) => page.locator('[data-testid="hub-row"][data-state="ready"]')
+async function connectHub(page: Page): Promise<void> {
+  hub!.rejectKey = false
+  hub!.limited = null
+  if (!(await page.locator('[data-testid="hub-row"][data-state="connected"]').isVisible())) {
+    await lookAgain(page)
+    await hubReady(page).getByTestId('hub-use').click()
+  }
+  const mgmt = page.getByTestId('hub-management-key')
+  await expect(mgmt.or(page.getByTestId('editor-accounts'))).toBeVisible()
+  if (await mgmt.isVisible()) {
+    await mgmt.fill(hub!.managementKey)
+    await page.getByTestId('hub-management-add').click()
+  }
+}
+async function openPicker(page: Page): Promise<void> {
+  if ((await page.getByTestId('stage-models-toggle').getAttribute('aria-expanded')) !== 'true') await page.getByTestId('stage-models-toggle').click()
+  if (!(await page.getByTestId('model-picker').isVisible())) await page.getByTestId('model-checker').click()
+}
+const toEditorStep = async ({ page }: Ctx) => {
+  if (await page.getByTestId('get-started').isVisible()) await page.getByTestId('get-started').click()
+  if (await page.getByTestId('demo-skip').isVisible()) await page.getByTestId('demo-skip').click()
+  if (await page.getByTestId('demo-next').isVisible()) await page.getByTestId('demo-next').click()
+}
+SCREENS.push({
+  id: 'editor-hub',
+  profile: 'fresh',
+  before: hubEnv,
+  states: [
+    { id: 'first-run-hub-found', enter: toEditorStep, ready: hubReady },
+    {
+      id: 'first-run-hub-key-needed',
+      enter: async ({ page }) => {
+        hub!.rejectKey = true
+        await lookAgain(page)
+      },
+      ready: (page) => page.locator('[data-testid="hub-row"][data-state="needs-key"]')
+    },
+    { id: 'first-run-hub-accounts', enter: async ({ page }) => connectHub(page), ready: byTestId('editor-accounts') },
+    {
+      id: 'first-run-hub-limit',
+      enter: async ({ page }) => {
+        await connectHub(page)
+        hub!.limited = { family: 'claude', resetSeconds: 2 * 3600 + 14 * 60 }
+        await page.getByTestId('editor-test').click()
+      },
+      ready: byTestId('editor-use-other')
+    },
+    {
+      id: 'first-run-model-picker',
+      enter: async ({ page }) => {
+        hub!.limited = null
+        await openPicker(page)
+      },
+      ready: byTestId('model-picker')
+    }
+  ]
+})
+SCREENS.push({
+  id: 'settings-hub',
+  profile: 'ready',
+  before: hubEnv,
+  states: [
+    {
+      id: 'settings-editor-hub',
+      enter: async ({ page }) => {
+        await closeAll(page)
+        if (!(await page.getByTestId('settings-search').isVisible())) await page.getByTestId('account').click()
+        await page.getByTestId('settings-nav-editor').click()
+        await connectHub(page)
+      },
+      ready: byTestId('editor-accounts')
+    },
+    { id: 'settings-editor-picker', enter: async ({ page }) => openPicker(page), ready: byTestId('model-picker') },
+    {
+      id: 'settings-editor-own-server',
+      enter: async ({ page }) => {
+        await page.keyboard.press('Escape')
+        if ((await page.getByTestId('ai-advanced').getAttribute('aria-expanded')) !== 'true') await page.getByTestId('ai-advanced').click()
+        if (!(await page.getByTestId('connection-address').isVisible())) await page.getByTestId('own-server-toggle').click()
+      },
+      ready: byTestId('connection-address')
     }
   ]
 })

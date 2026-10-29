@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ConnectionInfo, ConnectionKind, ProviderInfo, SaveConnectionResult } from '../../../shared/api'
 import { reel, userMessage } from '../api'
-import { Button, Confirm, Modal, MoreMenu, Spinner } from './ui'
+import { Button, Spinner } from './ui'
 import { Icon } from './icons'
 import { ConnectedMark, ProviderRow } from './provider-row'
 
@@ -13,16 +13,21 @@ const ADDRESS_EXAMPLE: Record<ConnectionKind, string> = { openai: 'http://127.0.
 const ADDRESS_HELP: Record<ConnectionKind, string> = { openai: 'Usually ends in /v1.', anthropic: 'Usually without /v1 at the end.' }
 type Field = NonNullable<NonNullable<SaveConnectionResult['error']>['field']>
 
-/** Your own AI server: one row with Set up until a server is saved, then each saved one under it. */
+/**
+ * Your own AI server: one row with Set up until a server is saved, then each saved one under it. The form opens in
+ * place under the row, one field per line, so it fits a narrow column; nothing here opens a dialog over the window.
+ * CLIProxyAPI, found by the app, has its own row and is not listed here.
+ */
 export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) => void }) {
   const [list, setList] = useState<ConnectionInfo[] | null>(null)
   const [editing, setEditing] = useState<ConnectionInfo | 'new' | null>(null)
   const [removing, setRemoving] = useState<ConnectionInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const toggle = useRef<HTMLButtonElement>(null)
   const load = () =>
     reel.ai
       .connections()
-      .then(setList)
+      .then((l) => setList(l.filter((c) => c.kind !== 'cliproxy')))
       .catch(() => setList([]))
   useEffect(() => {
     void load()
@@ -65,35 +70,79 @@ export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) =>
         mark={<Icon name="server" size={20} />}
         status={list.length ? `${list.length} saved` : 'Not set up'}
         action={
-          <Button size="small" onClick={() => setEditing('new')} data-testid={list.length ? 'connection-add' : 'own-server-toggle'}>
-            {list.length ? 'Add another' : 'Set up'}
-          </Button>
+          editing === 'new' ? null : (
+            <Button ref={toggle} size="small" onClick={() => setEditing('new')} data-testid={list.length ? 'connection-add' : 'own-server-toggle'}>
+              {list.length ? 'Add another' : 'Set up'}
+            </Button>
+          )
         }
       >
+        {editing === 'new' && (
+          <ConnectionForm
+            editing={null}
+            onClose={() => {
+              setEditing(null)
+              // the form took the Set up button's place: focus goes back to it, never to the page
+              requestAnimationFrame(() => toggle.current?.focus({ preventScroll: true }))
+            }}
+            onSaved={(status) => {
+              setEditing(null)
+              void load()
+              onConnected(status)
+            }}
+          />
+        )}
         {list.length > 0 && (
           <ul className="pv-subs" data-testid="connections">
             {list.map((c) => (
               <li key={c.id} className="pv-sub" data-testid="connection-card">
                 <div className="pv-sub-main">
                   <div className="pv-t">
-                    <b className="conn-line">{c.label}</b>
+                    <b className="conn-line" title={c.label}>{c.label}</b>
                     <span className={`pv-status conn-line ${c.active ? 'ok' : 'plain'}`} title={`${c.model} · ${c.baseURL}`}>
                       {c.active ? <ConnectedMark /> : `${c.model} · ${c.baseURL}`}
                     </span>
                   </div>
                   {!c.active && (
-                    <Button size="small" onClick={() => void use(c)} data-testid="connection-use">
-                      Use this
+                    <Button size="small" onClick={() => void use(c)} aria-label={`Use ${c.label}`} data-testid="connection-use">
+                      Use it
                     </Button>
                   )}
-                  <MoreMenu
-                    label={`More for ${c.label}`}
-                    items={[
-                      { label: 'Edit…', run: () => setEditing(c), testid: 'connection-edit' },
-                      { label: 'Remove…', run: () => setRemoving(c), danger: true, testid: 'connection-remove' }
-                    ]}
-                  />
                 </div>
+                <div className="conn-acts">
+                  <button className="link inline" onClick={() => setEditing(c)} aria-label={`Edit ${c.label}`} data-testid="connection-edit">
+                    Edit
+                  </button>
+                  <button className="link inline danger" onClick={() => setRemoving(c)} aria-label={`Remove ${c.label}`} data-testid="connection-remove">
+                    Remove
+                  </button>
+                </div>
+                {removing?.id === c.id && (
+                  <div className="conn-confirm" role="group" aria-label={`Remove ${c.label}?`} data-testid="confirm">
+                    <p>
+                      Reel Studio forgets this server and its key.{c.active ? ' Reels get a basic version until you connect an editor again.' : ''}
+                    </p>
+                    <div className="row">
+                      <Button size="small" kind="tertiary" onClick={() => setRemoving(null)} autoFocus data-testid="confirm-no">
+                        Keep it
+                      </Button>
+                      <Button size="small" danger onClick={() => void remove(c)} data-testid="confirm-yes">
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {editing && editing !== 'new' && editing.id === c.id && (
+                  <ConnectionForm
+                    editing={c}
+                    onClose={() => setEditing(null)}
+                    onSaved={(status) => {
+                      setEditing(null)
+                      void load()
+                      onConnected(status)
+                    }}
+                  />
+                )}
                 <label className="toggle conn-images">
                   <input type="checkbox" checked={c.supportsImages} onChange={(e) => void setImages(c, e.target.checked)} data-testid="connection-images" />
                   Can see pictures
@@ -109,34 +158,12 @@ export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) =>
           </p>
         )}
       </ProviderRow>
-      {editing && (
-        <ConnectionDialog
-          editing={editing === 'new' ? null : editing}
-          onClose={() => setEditing(null)}
-          onSaved={(status) => {
-            setEditing(null)
-            void load()
-            onConnected(status)
-          }}
-        />
-      )}
-      {removing && (
-        <Confirm
-          title={`Remove ${removing.label}?`}
-          body={`Reel Studio forgets this server and its key.${removing.active ? ' Reels get a basic version until you connect an editor again.' : ''}`}
-          yes="Remove"
-          no="Keep it"
-          danger
-          onYes={() => void remove(removing)}
-          onNo={() => setRemoving(null)}
-        />
-      )}
     </>
   )
 }
 
-function ConnectionDialog({ editing, onClose, onSaved }: { editing: ConnectionInfo | null; onClose: () => void; onSaved: (p: ProviderInfo) => void }) {
-  const [kind, setKind] = useState<ConnectionKind>(editing?.kind ?? 'openai')
+function ConnectionForm({ editing, onClose, onSaved }: { editing: ConnectionInfo | null; onClose: () => void; onSaved: (p: ProviderInfo) => void }) {
+  const [kind, setKind] = useState<ConnectionKind>(editing?.kind === 'anthropic' ? 'anthropic' : 'openai')
   const [baseURL, setBaseURL] = useState(editing?.baseURL ?? '')
   const [key, setKey] = useState('')
   const [model, setModel] = useState(editing?.model ?? '')
@@ -223,14 +250,19 @@ function ConnectionDialog({ editing, onClose, onSaved }: { editing: ConnectionIn
   }
 
   return (
-    <Modal wide onClose={busy ? undefined : onClose} testid="connection-dialog" labelledBy="conn-title">
-      <div className="stack" style={{ gap: 4 }}>
-        <h2 id="conn-title">{editing ? `Edit ${editing.label}` : 'Use your own AI server'}</h2>
-        <p className="muted">For an AI server you run or rent that works like ChatGPT's or Claude's.</p>
-      </div>
+    <div className="pv-more conn-form" data-testid="connection-dialog" role="group" aria-labelledby="conn-title">
+      <p className="conn-form-h">
+        <b id="conn-title">{editing ? `Edit ${editing.label}` : 'Use your own AI server'}</b>
+        <span>For a server you run or rent that works like ChatGPT’s or Claude’s.</span>
+      </p>
       <form
-        className="stack"
-        style={{ gap: 14 }}
+        className="conn-fields"
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && !busy) {
+            e.stopPropagation()
+            onClose()
+          }
+        }}
         noValidate
         onSubmit={(e) => {
           e.preventDefault()
@@ -245,7 +277,7 @@ function ConnectionDialog({ editing, onClose, onSaved }: { editing: ConnectionIn
                 type="radio"
                 name="conn-kind"
                 checked={kind === k.kind}
-                data-autofocus={kind === k.kind || undefined}
+                autoFocus={kind === k.kind}
                 onChange={() => {
                   setKind(k.kind)
                   setModels(null)
@@ -406,13 +438,12 @@ function ConnectionDialog({ editing, onClose, onSaved }: { editing: ConnectionIn
             <span>{error.text}</span>
           </div>
         )}
-        <div className="row">
-          <Button kind="tertiary" onClick={onClose} disabled={busy} data-testid="connection-cancel">
+        {busy && <p className="muted-sm" role="status">Sending one short message to check it works.</p>}
+        <div className="conn-buttons">
+          <Button size="small" kind="tertiary" onClick={onClose} disabled={busy} data-testid="connection-cancel">
             Cancel
           </Button>
-          <span className="spacer" />
-          {busy && <span className="muted-sm">Sending one short message to check it works.</span>}
-          <Button type="submit" kind="primary" disabled={busy} data-testid="connection-save">
+          <Button type="submit" size="small" kind="primary" disabled={busy} data-testid="connection-save">
             {busy ? (
               <>
                 <Spinner /> Checking…
@@ -425,7 +456,7 @@ function ConnectionDialog({ editing, onClose, onSaved }: { editing: ConnectionIn
           </Button>
         </div>
       </form>
-    </Modal>
+    </div>
   )
 }
 

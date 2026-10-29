@@ -70,6 +70,7 @@ const VIDEO_TYPES = 'video/*,.mov,.mp4,.m4v'
  */
 export function NotesLog({
   slug,
+  madeWith,
   entries,
   queue,
   held,
@@ -100,6 +101,8 @@ export function NotesLog({
   label = 'Notes for your editor'
 }: {
   slug: string
+  /** the model that made each version, by its number (VersionInfo.madeWith): its line names it */
+  madeWith?: Record<number, string>
   entries: LogEntry[]
   queue: QueuedNote[]
   held: boolean
@@ -204,6 +207,16 @@ export function NotesLog({
             <>
               <span className="t fact" data-testid={`version-fact-${v}`}>
                 {fact}
+              </span>
+              <span className="sep" aria-hidden>
+                ·
+              </span>
+            </>
+          )}
+          {madeWith?.[v] && (
+            <>
+              <span className="t by" title={`Made with ${madeWith[v]}`} data-testid={`version-model-${v}`}>
+                {madeWith[v]}
               </span>
               <span className="sep" aria-hidden>
                 ·

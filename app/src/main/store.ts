@@ -432,12 +432,15 @@ export async function listVersions(dir: string): Promise<VersionInfo[]> {
     const receipts = await readJson<{ renderId: string; facts: EditFact[] }[] | null>(join(d, 'receipts.json'), null)
     // a rewording describes the receipts up to the one it names; a later receipt in this folder makes it stale
     const titled = await readJson<{ renderId: string; title: string; summary: string } | null>(join(d, 'title.json'), null)
+    // which model made it (main/index.ts recordMadeWith), for its line in the notes
+    const made = await readJson<{ model?: unknown } | null>(join(d, 'made-with.json'), null)
     // an engine that records receipts gives every render an id (render_identity.py)
     const manifest = receipts || n === 0 ? null : await readJson<{ renderId?: unknown } | null>(join(d, 'render.json'), null)
     out.push({
       ...(receipts ? { facts: receipts.flatMap((r) => r.facts) } : {}),
       ...(n > 0 && !receipts && typeof manifest?.renderId !== 'string' ? { beforeReceipts: true as const } : {}),
       ...(titled && titled.renderId === receipts?.at(-1)?.renderId ? { wording: { title: titled.title, summary: titled.summary } } : {}),
+      ...(typeof made?.model === 'string' && made.model ? { madeWith: made.model.slice(0, 80) } : {}),
       n,
       parent,
       ...(parents ? { parents } : {}),

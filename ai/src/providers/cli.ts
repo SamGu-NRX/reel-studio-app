@@ -7,8 +7,12 @@ import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { AIError, ChatMessage, CompletionRequest, CompletionResponse, ImagePart, ModelProvider, ToolCall, ToolSchema, WaitSignal } from '../types';
+import { AIError, ChatMessage, CompletionRequest, CompletionResponse, ImagePart, LimitWindow, ModelProvider, ToolCall, ToolSchema, WaitSignal } from '../types';
 import { childEnv, cliEnv } from '../safety';
+import { claudeCodeLimitWords, resetWords } from './limits';
+
+const codexLimitWords = (resetsAt: string | null): string =>
+  `Your Codex app’s ChatGPT plan has hit its limit.${resetsAt ? ` It resets ${resetWords(resetsAt)}.` : ' Codex didn’t say when it resets.'}`;
 
 export function protocolPrompt(tools: ToolSchema[], jsonOnly: boolean): string {
   if (jsonOnly) return 'OUTPUT RULE: reply with ONE JSON object exactly as the task specifies. No prose, no markdown fences.';
@@ -198,6 +202,31 @@ export function limitResetsAt(text: string, now: Date): string | null {
   return d.toISOString();
 }
 
+const CLAUDE_WINDOW: Record<string, string> = { five_hour: '5-hour', seven_day: 'Weekly', seven_day_opus: 'Weekly · Opus', seven_day_sonnet: 'Weekly · Sonnet', seven_day_fable: 'Weekly · Fable' };
+
+/**
+ * The windows in Claude Code's rate_limit_event (2.1.311: `rate_limit_info.unifiedWindows`, each with `utilization`
+ * 0-1, `resetsAt` in epoch seconds and `status`). A window refused with no utilization counts as nothing left.
+ */
+export function claudeCodeWindows(info: any): LimitWindow[] | undefined {
+  const w = info?.unifiedWindows;
+  if (!w || typeof w !== 'object') return undefined;
+  const out: LimitWindow[] = [];
+  for (const [k, v] of Object.entries<any>(w)) {
+    if (!v || typeof v !== 'object') continue;
+    const used = typeof v.utilization === 'number' ? v.utilization : v.status === 'rejected' ? 1 : null;
+    if (used === null) continue;
+    out.push({ label: CLAUDE_WINDOW[k] ?? k.replace(/_/g, ' '), left: Math.max(0, Math.min(100, Math.round((1 - used) * 100))), ...(typeof v.resetsAt === 'number' ? { resetsAt: new Date(v.resetsAt * 1000).toISOString() } : {}) });
+  }
+  return out.length ? out : undefined;
+}
+
+/** The latest reset among the windows with nothing left: when Claude Code can answer again. */
+function refusedReset(limits: LimitWindow[] | undefined): string | null {
+  const at = (limits ?? []).filter((l) => l.left === 0 && l.resetsAt).map((l) => l.resetsAt!).sort().at(-1);
+  return at ?? null;
+}
+
 export function runProcess(cmd: string, args: string[], input: string, opts: { cwd?: string; signal?: AbortSignal; timeoutMs?: number; env?: NodeJS.ProcessEnv; onLine?: (line: string) => void } = {}): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env ?? childEnv(), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -300,7 +329,10 @@ export class TurnWatch {
   runaway = false;
   stop: () => void = () => undefined;
   constructor(private readonly onWait?: (w: WaitSignal) => void) {}
+  /** the plan's windows from the turn's last rate_limit_event (Claude Code sends one before it answers or refuses) */
+  limits: LimitWindow[] | undefined;
   line(j: any): void {
+    if (j?.type === 'rate_limit_event') { this.limits = claudeCodeWindows(j.rate_limit_info) ?? this.limits; return; }
     const delta = j?.type === 'stream_event' && j.event?.type === 'content_block_delta' && j.event.delta?.type === 'text_delta' ? String(j.event.delta.text ?? '') : null;
     if (delta !== null) {
       this.text += delta;
@@ -476,12 +508,14 @@ export class ClaudeCliProvider implements ModelProvider {
     if (result.is_error) {
       const text = String(result.result ?? '');
       const limited = /limit|quota|rate/i.test(text) || result.api_error_status === 429;
-      const resetsAt = limited ? limitResetsAt(text, new Date()) : null;
-      throw new AIError(limited ? 'cli_limited' : 'cli_error', limited ? 'The AI hit its usage limit. Try again later.' : 'The AI had a problem answering.', { retryable: !limited, detail: text.slice(0, 500), ...(resetsAt ? { resetsAt } : {}) });
+      const resetsAt = limited ? limitResetsAt(text, new Date()) ?? refusedReset(watch.limits) : null;
+      throw new AIError(limited ? 'cli_limited' : 'cli_error', limited ? claudeCodeLimitWords(text, resetsAt) : 'The AI had a problem answering.', {
+        retryable: !limited, detail: text.slice(0, 500), ...(resetsAt ? { resetsAt } : {}), ...(watch.limits ? { limits: watch.limits } : {}),
+      });
     }
     const reply = String(result.result ?? '');
     const parsed = req.jsonOnly ? { text: reply, toolCalls: [] } : parseProtocolReply(reply, req.tools);
-    return { ...parsed, raw: { reply }, usage: { input: result.usage?.input_tokens, output: result.usage?.output_tokens }, timing: watch.timing() };
+    return { ...parsed, raw: { reply }, usage: { input: result.usage?.input_tokens, output: result.usage?.output_tokens }, timing: watch.timing(), ...(watch.limits ? { limits: watch.limits } : {}) };
   }
 }
 
@@ -526,7 +560,8 @@ export class CodexCliProvider implements ModelProvider {
       if (!reply.trim()) {
         const all = r.stderr + r.stdout;
         const limited = /usage limit|rate limit|429|quota/i.test(all);
-        throw new AIError(limited ? 'cli_limited' : 'cli_error', limited ? 'The AI hit its usage limit. Try again later.' : 'The AI did not answer.', { detail: all.slice(-600) });
+        const resetsAt = limited ? limitResetsAt(all, new Date()) : null;
+        throw new AIError(limited ? 'cli_limited' : 'cli_error', limited ? codexLimitWords(resetsAt) : 'The AI did not answer.', { detail: all.slice(-600), ...(resetsAt ? { resetsAt } : {}) });
       }
       return req.jsonOnly ? { text: reply, toolCalls: [] } : parseProtocolReply(reply, req.tools);
     } finally {
