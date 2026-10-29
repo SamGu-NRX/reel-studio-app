@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -171,4 +171,33 @@ describe('Learn from my past edits: finding them', () => {
     expect(real).toEqual([1, 1, 1, 1])
     expect(scan(join(APP_DIR, 'dev', 'fake-engine'))).toEqual(real)
   })
+})
+
+// A file that opens but can't be read: on Windows, a OneDrive file kept only in the cloud (attribute O) when OneDrive
+// can't fetch it fails its read with UNKNOWN. In the installed v0.1.3-nightly.20261029.11 two such .xml files under
+// OneDrive\Desktop made the whole sheet fail ("Something went wrong while working on your reel") with nothing listed.
+// Another process's byte-range lock gives the same open-then-failed-read here; Windows enforces those locks, other
+// systems only advise them, so a locked file reads fine there.
+describe('Learn from my past edits: a file that cannot be read', () => {
+  it.runIf(process.platform === 'win32')('fails if one unreadable file stops the whole look instead of being left out', async () => {
+    const home = fresh()
+    const docs = join(home, 'Documents')
+    mkdirSync(docs, { recursive: true })
+    const xml = readFileSync(join(APP_DIR, '..', 'engine', 'tests', 'fixtures', 'reference-import', 'talking-head.xml'))
+    writeFileSync(join(docs, 'Kept.xml'), xml)
+    const locked = join(docs, 'In the cloud.xml')
+    writeFileSync(locked, xml)
+    const holder = spawn('powershell.exe', ['-NoProfile', '-Command',
+      `$f = [IO.File]::Open('${locked.replace(/'/g, "''")}', 'Open', 'ReadWrite', 'ReadWrite'); $f.Lock(0, $f.Length); 'locked'; Start-Sleep 60`])
+    try {
+      await new Promise<void>((resolve, reject) => {
+        holder.stdout.on('data', (d) => String(d).includes('locked') && resolve())
+        holder.on('exit', () => reject(new Error('the lock holder ended before locking')))
+      })
+      const look = await findPastEdits({ platform: 'win32', home, spotlight: null })
+      expect(look.edits.map((e) => e.file)).toEqual(['Kept.xml'])
+    } finally {
+      holder.kill()
+    }
+  }, 30_000)
 })
