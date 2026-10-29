@@ -29,26 +29,25 @@ test('fails if the play controls and timeline are not centred under the phone, o
     await makeReel(page, media.video)
     for (const size of SIZES) {
       await setSize(app, page, size)
-      const at = `${size[0]}x${size[1]}`
-      await expect.poll(async () => {
-        const phone = await box(page, '.stage-v .phone')
-        const row = await box(page, '.stage > .transport')
-        return Math.abs((row.left + row.right) / 2 - (phone.left + phone.right) / 2)
-      }, { message: at }).toBeLessThan(2)
-      const phone = await box(page, '.stage-v .phone')
-      const row = await box(page, '.stage > .transport')
-      const line = await box(page, '.stage > .tl')
-      expect(row.width, at).toBeLessThanOrEqual(Math.max(phone.width, 440) + 1)
-      expect(Math.abs(line.right - row.right), at).toBeLessThan(2)
-      // nothing in the row overflows it or is truncated
-      const cut = await page.locator('.stage > .transport').evaluate((el) =>
-        Array.from(el.querySelectorAll<HTMLElement>('*'))
-          .filter((c) => c.offsetParent !== null && c.scrollWidth > c.clientWidth + 1 && getComputedStyle(c).overflow !== 'visible')
-          .map((c) => c.textContent)
-      )
-      expect(cut, at).toEqual([])
-      const parts = await page.locator('.stage > .transport .tr-row > *').evaluateAll((els) => els.map((c) => c.getBoundingClientRect().right))
-      expect(Math.max(...parts), at).toBeLessThanOrEqual(row.right + 1)
+      // one snapshot of the stage: the reel is still settling (the phone takes its size a frame after the window, the
+      // row follows it), so it is read until it holds; a real break never does
+      const problems = () =>
+        page.evaluate(() => {
+          const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect()
+          const phone = r('.stage-v .phone')
+          const row = r('.stage > .transport')
+          const line = r('.stage > .tl')
+          const out: string[] = []
+          if (Math.abs((row.left + row.right) / 2 - (phone.left + phone.right) / 2) >= 2) out.push(`row centre off the phone's by ${Math.round((row.left + row.right) / 2 - (phone.left + phone.right) / 2)} px`)
+          if (row.width > Math.max(phone.width, 440) + 1) out.push(`row ${Math.round(row.width)} px wide under a ${Math.round(phone.width)} px phone`)
+          if (Math.abs(line.right - row.right) >= 2) out.push(`timeline ends ${Math.round(line.right - row.right)} px from the row`)
+          const kids = Array.from(document.querySelectorAll<HTMLElement>('.stage > .transport .tr-row > *'))
+          for (const k of kids) if (k.getBoundingClientRect().right > row.right + 1) out.push(`${k.className} runs past the row`)
+          for (const c of Array.from(document.querySelectorAll<HTMLElement>('.stage > .transport *')))
+            if (c.offsetParent !== null && c.scrollWidth > c.clientWidth + 1 && getComputedStyle(c).overflow !== 'visible') out.push(`"${c.textContent}" is cut short`)
+          return out
+        })
+      await expect.poll(problems, { message: `${size[0]}x${size[1]}` }).toEqual([])
     }
   } finally {
     await app.close()
