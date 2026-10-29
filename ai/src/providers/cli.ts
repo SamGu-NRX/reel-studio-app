@@ -220,7 +220,8 @@ function nextInZone(h: number, m: number, zone: string, now: Date): Date | null 
 export function limitResetsAt(text: string, now: Date): string | null {
   const epoch = /\|(\d{10})\b/.exec(text);
   if (epoch) return new Date(Number(epoch[1]) * 1000).toISOString();
-  const at = /resets\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b(?:\s*\(([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+|UTC)\))?/i.exec(text);
+  // any zone name in brackets; Intl decides whether it is one (America/Argentina/Buenos_Aires, Etc/GMT+3, GMT, EST)
+  const at = /resets\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b(?:\s*\(([A-Za-z][A-Za-z0-9_+\-/]{0,63})\))?/i.exec(text);
   if (!at) return null;
   const h = (Number(at[1]) % 12) + (at[3].toLowerCase() === 'p' ? 12 : 0);
   const m = Number(at[2] ?? 0);

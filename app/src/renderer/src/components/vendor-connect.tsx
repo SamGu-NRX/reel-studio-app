@@ -27,6 +27,8 @@ const PROVIDER: Record<VendorId, ProviderInfo['id']> = { claude: 'claude-cli', c
 const MARK: Record<VendorId, 'claude' | 'openai'> = { claude: 'claude', chatgpt: 'openai' }
 const PLAN_OF: Record<VendorId, string> = { claude: 'Claude', chatgpt: 'ChatGPT' }
 const HERE = IS_MAC ? 'this Mac' : 'this PC'
+/** What CLIProxyAPI is, on its maker's page. */
+const HUB_ABOUT = 'https://github.com/router-for-me/CLIProxyAPI'
 const PLAN_NAMES: Record<string, string> = { max: 'Max', max5x: 'Max 5x', max20x: 'Max 20x', pro: 'Pro', team: 'Team', enterprise: 'Enterprise', free: 'Free', plus: 'Plus', go: 'Go', business: 'Business', edu: 'Edu' }
 /** "max" → "Max"; a plan name the app already wrote ("Pro 5x") stays as it is. */
 export const planName = (p: string | undefined): string | undefined => (p ? (PLAN_NAMES[p.toLowerCase()] ?? p) : undefined)
@@ -64,11 +66,16 @@ export function useHub(): [HubFound | null, () => Promise<void>] {
  * CLIProxyAPI's row: found with a key that works (one Use it), or answering without one (a key box). `primary`: it is
  * the recommended choice and nothing is connected, so its pill is the screen's one filled button.
  */
-export function HubRow({ hub, on, primary, onConnected, onDisconnect, children }: { hub: HubFound; on: boolean; primary: boolean; onConnected: (p: ProviderInfo) => void; onDisconnect: () => void; children?: ReactNode }) {
+export function HubRow({ hub, on, primary, onConnected, onDisconnect, onLook, children }: { hub: HubFound | null; on: boolean; primary: boolean; onConnected: (p: ProviderInfo) => void; onDisconnect: () => void; onLook: () => Promise<void>; children?: ReactNode }) {
   const [busy, setBusy] = useState(false)
+  const [looking, setLooking] = useState(false)
   const [key, setKey] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const host = hub.origin?.replace(/^https?:\/\//, '') ?? ''
+  const host = hub?.origin?.replace(/^https?:\/\//, '') ?? ''
+  const look = (): void => {
+    setLooking(true)
+    void onLook().finally(() => setLooking(false))
+  }
 
   const use = async (typed?: string) => {
     if (busy) return
@@ -92,13 +99,40 @@ export function HubRow({ hub, on, primary, onConnected, onDisconnect, children }
   let tone: Tone = 'plain'
   let action: ReactNode = null
   let more: ReactNode = null
-  if (on) {
+  if (!hub) {
+    status = (
+      <>
+        <Spinner /> Looking on {HERE}…
+      </>
+    )
+  } else if (on) {
     status = <ConnectedMark testid="ai-connected" />
     tone = 'ok'
     action = (
       <Button size="small" kind="tertiary" onClick={onDisconnect} data-testid="use-no-ai">
         Disconnect
       </Button>
+    )
+  } else if (hub.state === 'none') {
+    // always the first row, so a person who runs it, or wants to, knows where it would be
+    status = (
+      <span className="pv-line" title={hub.looked ? `Looked at ${hub.looked}` : undefined}>
+        Not running on this computer{hub.looked ? ` · Looked at ${hub.looked}` : ''}
+      </span>
+    )
+    action = (
+      <Button size="small" onClick={look} disabled={looking} data-testid="hub-look">
+        {looking ? <Spinner /> : null}
+        Check again
+      </Button>
+    )
+    more = (
+      <p className="pv-more vsteps-hint">
+        <a href={HUB_ABOUT} target="_blank" rel="noreferrer" data-testid="hub-about">
+          What is CLIProxyAPI?
+        </a>{' '}
+        It pools your Claude and ChatGPT accounts on this computer.
+      </p>
     )
   } else if (hub.state === 'elsewhere') {
     // a config naming another computer: shown so the person knows why it isn't offered, and never sent a key
@@ -123,8 +157,8 @@ export function HubRow({ hub, on, primary, onConnected, onDisconnect, children }
     )
     more = (
       <div className="pv-more hub-src">
-        <p className="pv-src" title={`Key from ${hub.keySource}`}>
-          Key from <bdi className="pv-path">{hub.keySource}</bdi>
+        <p className="pv-src" title={`Key read from ${hub.keySource}`}>
+          Key read from its config
         </p>
         {error && (
           <p className="pv-note error" role="alert" data-testid="hub-error">
@@ -177,14 +211,14 @@ export function HubRow({ hub, on, primary, onConnected, onDisconnect, children }
   }
 
   return (
-    <div data-testid="hub-row" data-state={on ? 'connected' : hub.state}>
+    <div data-testid="hub-row" data-state={on ? 'connected' : (hub?.state ?? 'loading')}>
       <ProviderRow
         id="cliproxy"
         mark={<Icon name="server" size={20} />}
         name={
           <>
             <span className="pv-name">CLIProxyAPI</span>
-            {!on && hub.state !== 'elsewhere' && <span className="pv-tag">Recommended</span>}
+            {!on && (hub?.state === 'ready' || hub?.state === 'needs-key') && <span className="pv-tag">Recommended</span>}
           </>
         }
         status={status}
@@ -292,7 +326,6 @@ export function VendorRows({
             info={info[v]}
             on={on}
             primary={leadIdle && k === 0 && info[v]?.state !== 'missing'}
-            quiet={hubLeads}
             asked={asked === v}
             error={error?.v === v ? error.text : null}
             lookFailed={lookFailed[v]}
@@ -327,11 +360,9 @@ function VendorRow({
   onSignIn,
   onOther,
   onDisconnect,
-  quiet,
   children
 }: {
   vendor: VendorId
-  quiet: boolean
   info: VendorInfo | null
   lookFailed: boolean
   onLook: () => void
@@ -351,6 +382,7 @@ function VendorRow({
 }) {
   const [fallbackError, setFallbackError] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
+  const [confirmSignIn, setConfirmSignIn] = useState(false)
   const row = useRef<HTMLDivElement>(null)
   const step = info?.step ?? 'loading'
   const plan = planName(info?.plan)
@@ -411,12 +443,12 @@ function VendorRow({
     )
   } else if (info.problem === 'status_unknown' && !running(info) && !asked && !error) {
     // The app could not tell whether ChatGPT is signed in. Nothing starts on its own: Check again only asks again,
-    // and Sign in is the person's choice, because a sign-in makes Codex forget the one it has.
+    // and a new sign-in is the person's choice, asked for in its own confirm, because it makes Codex forget the one
+    // it has. One action at a time.
     status = <span data-testid={`vendor-message-${v}`}>{info.message}</span>
-    action = (
+    action = confirmSignIn ? null : (
       <Button
         size="small"
-        kind={quiet ? 'secondary' : 'primary'}
         disabled={checking}
         onClick={() => {
           setChecking(true)
@@ -427,15 +459,24 @@ function VendorRow({
         {checking ? 'Checking…' : 'Check again'}
       </Button>
     )
-    more = (
-      <div className="pv-more vendor-steps">
-        <div className="row wrap vsteps-acts">
-          <Button size="small" disabled={checking} onClick={onSignIn} data-testid={`vendor-signin-${v}`}>
-            Sign in
+    more = confirmSignIn ? (
+      <div className="pv-more conn-confirm" role="group" aria-label="Sign in again?">
+        <p>A new sign-in makes your Codex app forget the one it has.</p>
+        <div className="row">
+          <Button size="small" kind="tertiary" onClick={() => setConfirmSignIn(false)} autoFocus>
+            Cancel
+          </Button>
+          <Button size="small" onClick={onSignIn} data-testid={`vendor-signin-${v}`}>
+            Sign in again
           </Button>
         </div>
-        <p className="vsteps-hint">Sign in starts a new sign-in, and your Codex app forgets the one it has.</p>
       </div>
+    ) : (
+      <p className="pv-more vsteps-hint">
+        <button className="link inline" onClick={() => setConfirmSignIn(true)} data-testid={`vendor-signin-ask-${v}`}>
+          Sign in again instead…
+        </button>
+      </p>
     )
   } else if (running(info) && info.signIn === 'code') {
     const dc = info.deviceCode
@@ -547,7 +588,8 @@ function VendorRow({
         Sign in with a code instead
       </Button>
     )
-    action = codeFirst ? code('primary') : retry(offerCode ? 'primary' : 'secondary')
+    // outlined like every other row action: the panel's one filled button is the recommended one, or Continue
+    action = codeFirst ? code('secondary') : retry('secondary')
     if (offerCode)
       more = (
         <div className="pv-more vendor-steps">

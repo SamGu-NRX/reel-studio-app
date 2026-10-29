@@ -200,9 +200,10 @@ export interface AI {
   saveHub?(input: { origin: string; key: string; keySource: string }): Promise<SaveConnectionResult>
   setHubManagementKey?(key: string | null): Promise<EditorAccounts>
   editorModels?(): Promise<EditorModel[]>
+  autoModels?(): Promise<Partial<Record<ModelRole, string | null>>>
   editorAccounts?(): Promise<EditorAccounts>
   /** One tiny prompt through `role`'s model. */
-  testConnection?(signal?: AbortSignal, role?: ModelRole): Promise<{ reply: string; model?: string; ms: number; limits?: LimitWindow[] }>
+  testConnection?(signal?: AbortSignal, role?: ModelRole): Promise<{ reply: string; model?: string; ms: number; limits?: LimitWindow[]; note?: string }>
   /** Mock only: the sign-in window "opened" (tests flip the mock's state instead of opening a terminal). */
   mockClaudeSignInOpened?(): void
   /** Mock only: how REELSTUDIO_MOCK_CLAUDE / REELSTUDIO_MOCK_CODEX play an install and a browser sign-in. */

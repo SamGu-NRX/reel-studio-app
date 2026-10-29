@@ -103,6 +103,7 @@ const api: ReelApi = {
     hubUse: (key) => call('ai:hubUse', key),
     setHubManagementKey: (key) => call('ai:setHubManagementKey', key),
     editorModels: () => call('ai:editorModels'),
+    autoModels: () => call('ai:autoModels'),
     editorAccounts: () => call('ai:editorAccounts'),
     test: (role) => call('ai:test', role),
     onChange: (cb) => on<ProviderInfo>('ai:change', cb)

@@ -211,7 +211,7 @@ export async function detectHub(d: DetectDeps): Promise<HubDetection> {
     if ((await probe(d.fetch, origin, null)) !== null) return { state: 'needs-key', origin }
   }
   if (elsewhere) return { state: 'elsewhere', host: elsewhere.host, keySource: shownPath(elsewhere.file, d.home) }
-  return { state: 'none' }
+  return { state: 'none', ...(test ? {} : { looked: `127.0.0.1:${DEFAULT_HUB_PORT}` }) }
 }
 
 /**

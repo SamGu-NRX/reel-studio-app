@@ -1013,11 +1013,12 @@ function registerIpc(): void {
     return ai.setHubManagementKey(typeof key === 'string' ? key : null)
   })
   handle('ai:editorModels', async () => (await ai.editorModels?.()) ?? [])
+  handle('ai:autoModels', async () => (await ai.autoModels?.()) ?? {})
   handle('ai:editorAccounts', async () => (await ai.editorAccounts?.()) ?? { accounts: [] })
   handle('ai:test', async (_e, role: unknown) => {
     if (!ai.testConnection) throw { code: 'NOT_READY', userMessage: 'Testing the editor needs the AI package.' }
     const r = await ai.testConnection(undefined, (MODEL_ROLES as readonly unknown[]).includes(role) ? (role as ModelRole) : 'editor')
-    return { reply: r.reply, ms: r.ms, ...(r.model ? { model: r.model } : {}), ...(r.limits ? { limits: r.limits } : {}) }
+    return { reply: r.reply, ms: r.ms, ...(r.model ? { model: r.model } : {}), ...(r.limits ? { limits: r.limits } : {}), ...(r.note ? { note: r.note } : {}) }
   })
 
   handle('projects:list', () => listProjects())

@@ -14,6 +14,18 @@ export function resetWords(iso: string, now: Date = new Date()): string {
   return days < 2 ? `${when} (in ${duration(ms)})` : when;
 }
 
+/** "10:59 PM (in 2 h 14 min)" within six hours, "10:59 PM" later today, "tomorrow at 9:00 AM", "Sat at 8:45 PM". */
+export function untilWords(iso: string, now: Date = new Date()): string {
+  const at = new Date(iso);
+  const ms = at.getTime() - now.getTime();
+  if (!Number.isFinite(ms)) return '';
+  const clock = at.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((day(at) - day(now)) / 86_400_000);
+  if (days <= 0) return ms > 0 && ms < 6 * 3_600_000 ? `${clock} (in ${duration(ms)})` : clock;
+  return days === 1 ? `tomorrow at ${clock}` : `${at.toLocaleDateString('en-US', { weekday: 'short' })} at ${clock}`;
+}
+
 /** "42 min", "2 h 14 min", "3 d 4 h". */
 export function duration(ms: number): string {
   const min = Math.max(1, Math.round(ms / 60_000));
@@ -70,7 +82,7 @@ export function serverLimit(body: unknown, now: number = Date.now()): ServerLimi
 /** "Your server's Claude accounts are all at their limit for claude-opus-5-5. The first is free again at 4:10 PM (in 1 h 2 min)." */
 export function serverLimitWords(l: ServerLimit, fallbackModel: string, now: Date = new Date()): string {
   const who = providerName(l.provider);
-  const model = l.model ?? fallbackModel;
+  const model = nameFromId(l.model ?? fallbackModel);
   const head = who ? `Your server’s ${who} accounts are all at their limit for ${model}.` : `Your server’s accounts for ${model} are all at their limit.`;
   return l.resetsAt ? `${head} The first is free again ${resetWords(l.resetsAt, now)}.` : `${head} It didn’t say when they reset.`;
 }

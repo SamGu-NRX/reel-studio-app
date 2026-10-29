@@ -499,6 +499,8 @@ export interface HubFound {
   keySource?: string
   /** with needs-key: the config had keys, and the server refused them */
   keyRefused?: boolean
+  /** with none: the address it asked ("127.0.0.1:8317"), when it asked one */
+  looked?: string
 }
 
 /** One usage window of a plan or account. */
@@ -537,6 +539,8 @@ export interface TestResult {
   model?: string
   ms: number
   limits?: LimitWindow[]
+  /** a stage that fell back to Auto because its chosen model was gone, and why */
+  note?: string
 }
 
 export interface ConnectionInput {
@@ -919,6 +923,9 @@ export interface ReelApi {
     setHubManagementKey(key: string | null): Promise<EditorAccounts>
     /** The models the editor in use offers, for each stage's picker. */
     editorModels(): Promise<EditorModel[]>
+    /** What Auto runs right now for each stage, by display name ("Claude Sonnet 5.5"). */
+    /** What Auto runs for each stage, by name; null when no model runs (Reel Studio writes version names itself). */
+    autoModels(): Promise<Partial<Record<ModelRole, string | null>>>
     /** Who the editor runs as: accounts, plans and what each has left. */
     editorAccounts(): Promise<EditorAccounts>
     /** One tiny prompt through `role`'s model: the reply, the model and the time it took. */

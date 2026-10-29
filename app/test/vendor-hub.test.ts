@@ -71,6 +71,21 @@ describe('finding the hub', () => {
     expect(found).toEqual({ state: 'none' })
     expect(asked).toEqual([])
   })
+
+  it('nothing anywhere: none, naming the address it looked at', async () => {
+    // no file is read for real: the usual places include this computer's own config
+    const read: string[] = []
+    const tried: string[] = []
+    const found = await detectHub({
+      env: {}, platform: 'darwin', home: '/nobody', running: async () => [],
+      readFile: async (p: string) => { read.push(p); throw Object.assign(new Error('no such file'), { code: 'ENOENT' }) },
+      fetch: async (u: string) => { tried.push(u); throw new Error('connect ECONNREFUSED') }
+    })
+    expect(found).toEqual({ state: 'none', looked: '127.0.0.1:8317' })
+    expect(read).toContain('/opt/homebrew/etc/cliproxyapi.conf')
+    expect(tried.length).toBeGreaterThan(0)
+    expect(tried.every((u) => u.startsWith('http://127.0.0.1:8317/'))).toBe(true)
+  })
 })
 
 describe('only this computer gets the key (r12 review)', () => {
@@ -142,4 +157,3 @@ describe('only this computer gets the key (r12 review)', () => {
     await expect(confirmHub(deps, found)).rejects.toMatchObject({ code: 'HUB_CHANGED' })
   })
 })
-
