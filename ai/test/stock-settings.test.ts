@@ -59,3 +59,20 @@ it('fails if the basic_text backend saves stock keys or loads existing keys as c
   backend = 'gnome_libsecret';
   expect(await restarted.stockProviders()).toContainEqual({ id: 'pexels', connected: true });
 });
+it('fails if opening Settings with no keys saved touches the secret store', async () => {
+  // On a Mac, any secret store call (even isEncryptionAvailable) reads the app's keychain item. An ad-hoc-signed
+  // build (the nightly) gets a keychain prompt after every update, and the app is blocked until it is answered, so
+  // status must not touch the store unless a key file is there to read.
+  const settingsDir = tmpDir('stock-keys '); roots.push(settingsDir);
+  const touched: string[] = [];
+  const trap = (name: string) => () => { touched.push(name); throw new Error(`secret store touched: ${name}`); };
+  const ai = createAI({ settingsDir, host: new FakeHost(settingsDir), secretStore: {
+    isEncryptionAvailable: trap('isEncryptionAvailable'), encryptString: trap('encryptString'), decryptString: trap('decryptString'),
+    getSelectedStorageBackend: trap('getSelectedStorageBackend') } as SecretStore });
+  expect(await ai.stockProviders()).toEqual([{ id: 'pexels', connected: false }, { id: 'pixabay', connected: false }, { id: 'openverse', connected: true }]);
+  await ai.providers();
+  await ai.connections?.();
+  await ai.autoModels?.();
+  await ai.editorModels?.();
+  expect(touched).toEqual([]);
+});

@@ -471,9 +471,15 @@ export function createAI(opts: CreateAIOptions) {
     return (await ask([{ type: 'text', text: 'Say OK.' }, { type: 'image', mime: 'image/png', base64: PIXEL_PNG }]).catch(() => 'refused')) === 'answered';
   }
 
+  const stockKeyFile = (provider: 'pexels' | 'pixabay') => path.join(opts.settingsDir, `${provider}-key.bin`);
+  // No key file, no secret store call. On a Mac even isEncryptionAvailable() reads the app's keychain item, and an
+  // ad-hoc-signed build (the nightly) is asked to allow that again after every update, with the app blocked until
+  // the person answers; opening Settings must not set that off when there is nothing to read.
+  const hasStockKey = (provider: 'pexels' | 'pixabay') => fs.existsSync(stockKeyFile(provider)) && protectedSecretStore(opts.secretStore);
   async function stockKey(provider: 'pexels' | 'pixabay'): Promise<string | null> {
-    if (!protectedSecretStore(opts.secretStore)) return null;
-    try { return opts.secretStore.decryptString(await fsp.readFile(path.join(opts.settingsDir, `${provider}-key.bin`))); }
+    const store = opts.secretStore;
+    if (!fs.existsSync(stockKeyFile(provider)) || !protectedSecretStore(store)) return null;
+    try { return store.decryptString(await fsp.readFile(stockKeyFile(provider))); }
     catch { return null; }
   }
 
@@ -872,7 +878,8 @@ export function createAI(opts: CreateAIOptions) {
       if (s.active === 'chatgpt') await saveSettings({ active: undefined });
     },
     async stockProviders(): Promise<{ id: StockProvider; connected: boolean }[]> {
-      return [{ id: 'pexels', connected: !!await stockKey('pexels') }, { id: 'pixabay', connected: !!await stockKey('pixabay') }, { id: 'openverse', connected: true }];
+      // whether a key is saved, without decrypting it
+      return [{ id: 'pexels', connected: hasStockKey('pexels') }, { id: 'pixabay', connected: hasStockKey('pixabay') }, { id: 'openverse', connected: true }];
     },
     async setStockKey(provider: 'pexels' | 'pixabay', key: string | null): Promise<void> {
       if (!['pexels', 'pixabay'].includes(provider) || (key !== null && typeof key !== 'string')) throw new AIError('bad_stock_key', 'Choose Pexels or Pixabay and enter an API key.');
