@@ -14,13 +14,14 @@ import { ConnectedMark, ProviderRow, type Tone } from './provider-row'
  * own sign-in on its maker's page; a missing one says so and links to its install page.
  */
 
-export const USE_CLAUDE_CODE = 'Use Claude Code'
-export const USE_CODEX = 'Use the Codex app'
+export const USE_CLAUDE_CODE = 'Use Claude (your Claude Code app)'
+export const USE_CODEX = 'Use ChatGPT (your Codex app)'
 export const USING_CLAUDE_CODE = 'Using Claude through your Claude Code app.'
 export const USING_CODEX = 'Using ChatGPT through your Codex app.'
 export const USING_HUB = 'Using CLIProxyAPI on this computer.'
 
-const APP: Record<VendorId, string> = { claude: 'Claude Code', chatgpt: 'Codex app' }
+// Always "Claude Code app", never "Claude Code" alone: Reel Studio is not Claude Code, it uses the app the person has
+const APP: Record<VendorId, string> = { claude: 'Claude Code app', chatgpt: 'Codex app' }
 const MAKER: Record<VendorId, string> = { claude: 'Anthropic', chatgpt: 'OpenAI' }
 const PROVIDER: Record<VendorId, ProviderInfo['id']> = { claude: 'claude-cli', chatgpt: 'codex-cli' }
 const MARK: Record<VendorId, 'claude' | 'openai'> = { claude: 'claude', chatgpt: 'openai' }
@@ -101,8 +102,8 @@ export function HubRow({ hub, on, primary, onConnected, onDisconnect, children }
     )
   } else if (hub.state === 'ready') {
     status = (
-      <span className="pv-line" title={`Key from ${hub.keySource}`}>
-        {hub.models} {hub.models === 1 ? 'model' : 'models'} · key from <bdi className="pv-path">{hub.keySource}</bdi>
+      <span className="pv-line">
+        {hub.models} {hub.models === 1 ? 'model' : 'models'} on {HERE}
       </span>
     )
     tone = error ? 'error' : 'plain'
@@ -112,12 +113,18 @@ export function HubRow({ hub, on, primary, onConnected, onDisconnect, children }
         Use it
       </Button>
     )
-    if (error)
-      more = (
-        <p className="pv-more pv-note error" role="alert" data-testid="hub-error">
-          {error}
+    more = (
+      <div className="pv-more hub-src">
+        <p className="pv-src" title={`Key from ${hub.keySource}`}>
+          Key from <bdi className="pv-path">{hub.keySource}</bdi>
         </p>
-      )
+        {error && (
+          <p className="pv-note error" role="alert" data-testid="hub-error">
+            {error}
+          </p>
+        )}
+      </div>
+    )
   } else {
     status = (
       <span className="pv-line" title={hub.keySource ? `Config: ${hub.keySource}` : undefined}>
@@ -168,7 +175,7 @@ export function HubRow({ hub, on, primary, onConnected, onDisconnect, children }
         mark={<Icon name="server" size={20} />}
         name={
           <>
-            <span className="pv-name">CLIProxyAPI on {HERE}</span>
+            <span className="pv-name">CLIProxyAPI</span>
             {!on && <span className="pv-tag">Recommended</span>}
           </>
         }
@@ -193,7 +200,9 @@ export function VendorRows({
   lead,
   onConnected,
   onDisconnect,
-  details
+  details,
+  hubLeads = false,
+  onAttention
 }: {
   active: ProviderInfo | null
   lead: boolean
@@ -201,6 +210,10 @@ export function VendorRows({
   onDisconnect: () => void
   /** shown under the row of the editor in use */
   details?: ReactNode
+  /** CLIProxyAPI's row holds the screen's filled button, so a row the person did not start stays quiet */
+  hubLeads?: boolean
+  /** a sign-in or check the person started is running or failed here: that row holds the filled button */
+  onAttention?: (on: boolean) => void
 }) {
   const [info, setInfo] = useState<Record<VendorId, VendorInfo | null>>({ claude: null, chatgpt: null })
   // The click before main's first step: "Use Claude Code" checks Claude with one short message, which shows no step.
@@ -258,6 +271,8 @@ export function VendorRows({
     return asked === v || error?.v === v || running(i) || i?.step === 'failed' || i?.problem === 'status_unknown'
   }
   const leadIdle = lead && !order.some(needs)
+  const started = order.some((v) => asked === v || error?.v === v || running(info[v]) || info[v]?.step === 'failed')
+  useEffect(() => onAttention?.(started), [started, onAttention])
   return (
     <>
       {order.map((v, k) => {
@@ -269,6 +284,7 @@ export function VendorRows({
             info={info[v]}
             on={on}
             primary={leadIdle && k === 0 && info[v]?.state !== 'missing'}
+            quiet={hubLeads}
             asked={asked === v}
             error={error?.v === v ? error.text : null}
             lookFailed={lookFailed[v]}
@@ -277,6 +293,7 @@ export function VendorRows({
             onCode={() => start(v, reel.ai.vendorSignInWithCode, false)}
             onCheck={() => refresh(v)}
             onSignIn={() => start(v, reel.ai.vendorSignIn)}
+            onOther={() => start(order[1 - k], reel.ai.vendorConnect)}
             onDisconnect={onDisconnect}
           >
             {on ? details : null}
@@ -300,10 +317,13 @@ function VendorRow({
   onCode,
   onCheck,
   onSignIn,
+  onOther,
   onDisconnect,
+  quiet,
   children
 }: {
   vendor: VendorId
+  quiet: boolean
   info: VendorInfo | null
   lookFailed: boolean
   onLook: () => void
@@ -316,6 +336,8 @@ function VendorRow({
   /** asks the app's status again, nothing else */
   onCheck: () => Promise<void>
   onSignIn: () => void
+  /** the other vendor's connect: the way out of a Claude plan that can't be used */
+  onOther: () => void
   onDisconnect: () => void
   children?: ReactNode
 }) {
@@ -352,7 +374,7 @@ function VendorRow({
 
   if (!info && lookFailed) {
     tone = 'error'
-    status = `Couldn’t look for ${APP[v]} on ${HERE}.`
+    status = `Couldn’t look for ${MAKER[v]}’s ${APP[v]} on ${HERE}.`
     action = (
       <Button size="small" onClick={onLook} data-testid={`vendor-look-${v}`}>
         Try again
@@ -386,7 +408,7 @@ function VendorRow({
     action = (
       <Button
         size="small"
-        kind="primary"
+        kind={quiet ? 'secondary' : 'primary'}
         disabled={checking}
         onClick={() => {
           setChecking(true)
@@ -472,10 +494,15 @@ function VendorRow({
         )}
         {signing && v === 'claude' && (
           <p className="vsteps-hint" data-testid="claude-free-hint">
-            The free Claude plan can’t be used here.{' '}
+            Does {MAKER[v]}’s page say you need Claude Pro or Max? The free Claude plan can’t be used here.{' '}
             <a href={CLAUDE_PLANS_URL} target="_blank" rel="noreferrer">
               See Claude plans
-            </a>
+            </a>{' '}
+            or{' '}
+            <button className="link inline" onClick={onOther} data-testid="claude-free-switch">
+              connect ChatGPT
+            </button>
+            , whose free plan works.
           </p>
         )}
         {fallbackError && <p className="pv-note error">{fallbackError}</p>}
@@ -486,7 +513,7 @@ function VendorRow({
     tone = 'busy'
     status = (
       <>
-        <Spinner /> {v === 'claude' ? 'Checking Claude Code…' : 'Connecting…'}
+        <Spinner /> {v === 'claude' ? 'Checking Claude…' : 'Connecting…'}
       </>
     )
     action = (
@@ -509,7 +536,7 @@ function VendorRow({
     )
     const code = (kind: 'primary' | 'secondary') => (
       <Button size="small" kind={kind} onClick={onCode} data-testid={`vendor-code-start-${v}`}>
-        Sign in with a code
+        Sign in with a code instead
       </Button>
     )
     action = codeFirst ? code('primary') : retry(offerCode ? 'primary' : 'secondary')
@@ -523,9 +550,12 @@ function VendorRow({
     else if (free)
       more = (
         <div className="pv-more vendor-steps">
-          <a className="btn small" href={CLAUDE_PLANS_URL} target="_blank" rel="noreferrer">
-            See Claude plans <Icon name="external" size={12} stroke={2} />
-          </a>
+          <div className="row wrap vsteps-acts">
+            <a className="btn small" href={CLAUDE_PLANS_URL} target="_blank" rel="noreferrer">
+              See Claude plans <Icon name="external" size={12} stroke={2} />
+            </a>
+          </div>
+          <p className="vsteps-hint">Or connect ChatGPT. Its free plan works, with limits.</p>
         </div>
       )
   } else {

@@ -526,6 +526,21 @@ export function createAI(opts: CreateAIOptions) {
       default: return null;
     }
   }
+  /** The model a version was made with, named as the notes say it: the hub's own name, Claude Code's alias, or a
+   * name made from the id, with the reasoning level when one was chosen. */
+  async function madeWith(p: ModelProvider | null): Promise<{ model?: string }> {
+    if (!p) return {};
+    const st = await active();
+    const effortName: Record<string, string> = { minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra' };
+    // the stored choice carries the reasoning level; Claude Code's provider holds its level apart from the model
+    const choice = modelForRole(st.id, 'editor', await roleChoices());
+    const { model, effort } = splitModel(choice ?? p.model ?? (p instanceof ClaudeCliProvider ? 'sonnet' : ''));
+    let name: string;
+    if (!model) name = st.id === 'codex-cli' ? 'the Codex app’s default model' : st.label;
+    else if (st.id === 'claude-cli' && CLAUDE_CODE_MODELS.includes(model)) name = `Claude ${model[0].toUpperCase()}${model.slice(1)}`;
+    else name = hubCache?.v.find((m) => m.id === model)?.name ?? nameFromId(model);
+    return { model: effort && effortName[effort] ? `${name} · ${effortName[effort]}` : name };
+  }
   /** A stored choice for Claude Code: its model and --effort (a level it does not take is left out). */
   function claudeCodeChoice(choice: string | undefined): { model?: string; effort?: string } {
     if (!choice) return {};
@@ -847,7 +862,7 @@ export function createAI(opts: CreateAIOptions) {
       if (st.id === 'claude-cli') {
         const lc = await localClaude();
         const plan = claudePlanName(lc.plan);
-        return { accounts: [{ name: 'Claude Code', provider: 'claude', ...(plan ? { plan } : {}), windows: claudeWindows?.v ?? [] }] };
+        return { accounts: [{ name: 'Claude Code app', provider: 'claude', ...(plan ? { plan } : {}), windows: claudeWindows?.v ?? [] }] };
       }
       if (st.id === 'codex-cli') {
         const bin = (await localCodex()).bin;
@@ -918,7 +933,10 @@ export function createAI(opts: CreateAIOptions) {
         if (opts.basic) return editor.firstEdit(d, null, projectDir, onEvent, signal);
         // each role asks for its own model (Settings › Editor › Models)
         const roles = { checker: await modelProvider('checker'), writer: await modelProvider('writer') };
-        return editor.firstEdit({ ...d, ...roles, pauseOn: opts.pauseOn }, await modelProvider('editor'), projectDir, onEvent, signal);
+        const provider = await modelProvider('editor');
+        const r = await editor.firstEdit({ ...d, ...roles, pauseOn: opts.pauseOn }, provider, projectDir, onEvent, signal);
+        // a notice means the editor stopped and the simple edit made the version: no model made it
+        return r.notice ? r : { ...r, ...(await madeWith(provider)) };
       }));
     },
     async applyNote(projectDir: string, note: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, opts: editor.ApplyNoteOptions & { owner?: string } = {}): Promise<AgentResult> {
@@ -928,7 +946,8 @@ export function createAI(opts: CreateAIOptions) {
         // "Double-check each edit": in our own loop the checker role's model reviews (#73); a note in an MCP harness
         // is reviewed by the other harness (mcp-harness-2)
         const checker = !opts.checkEdit ? {} : harness ? { checkerHarness: await checkerHarness(harness) } : { checker: await modelProvider('checker') };
-        return editor.applyNote({ ...d, ...checker, harness }, provider, projectDir, note, onEvent, signal, opts);
+        const r = await editor.applyNote({ ...d, ...checker, harness }, provider, projectDir, note, onEvent, signal, opts);
+        return r.version !== undefined && r.changed.length ? { ...r, ...(await madeWith(provider)) } : r;
       }));
     },
     /** True when applyNote would take the no-model fast path for these words ("smaller captions"):

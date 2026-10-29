@@ -66,8 +66,8 @@ export function serverLimitWords(l: ServerLimit, fallbackModel: string, now: Dat
  */
 export function claudeCodeLimitWords(text: string, resetsAt: string | null, now: Date = new Date()): string {
   const window = /weekly|7[- ]day|seven_day/i.test(text) ? 'weekly' : /5[- ]hour|five_hour|session/i.test(text) ? '5-hour' : '';
-  const head = `Your Claude Code account has hit its ${window ? `${window} ` : ''}limit.`;
-  return resetsAt ? `${head} It resets ${resetWords(resetsAt, now)}.` : `${head} Claude Code didn’t say when it resets.`;
+  const head = `The account in your Claude Code app has hit its ${window ? `${window} ` : ''}limit.`;
+  return resetsAt ? `${head} It resets ${resetWords(resetsAt, now)}.` : `${head} The app didn’t say when it resets.`;
 }
 
 /** A readable name for an id the server gave none for: claude-sonnet-4-5-20250929 → "Claude Sonnet 4.5". */

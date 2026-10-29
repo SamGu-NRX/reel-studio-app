@@ -42,10 +42,13 @@ test('installed app: the Claude choice, in this computer\'s real state', async (
       // what the person already has comes first
       await expect(page.getByTestId('use-claude-code')).toHaveAccessibleName(USE_CLAUDE_CODE)
       await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-claude-code')
-    } else {
-      // Claude first: one button that installs (missing, broken) or signs in (signed out)
+    } else if (st.state === 'signed_out') {
+      // Claude first: one button that starts its own sign-in
       await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'connect-claude')
       await expect(page.getByTestId('connect-claude')).toHaveClass(/primary/)
+    } else {
+      // not here, or it won't start: a link to Anthropic's install page; Reel Studio installs nothing
+      await expect(page.getByTestId('vendor-install-page-claude')).toBeVisible()
     }
     await expect(page.getByTestId('vendor-chatgpt')).toBeVisible()
     if (st.state === 'ready') await expect(panel).toContainText('your own Claude plan and its usage limits')

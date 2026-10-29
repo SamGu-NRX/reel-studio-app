@@ -237,7 +237,7 @@ export const createMockAI: CreateAI = ({ host }) => {
           // The real package checks Claude with one short call here (about 4-5 s). REELSTUDIO_MOCK_CLAUDE_CHECK:
           // a number waits that many ms; `limited` and `no-answer` fail the check the way the real one does.
           const check = process.env.REELSTUDIO_MOCK_CLAUDE_CHECK ?? ''
-          if (check === 'limited') throw { code: 'cli_limited', userMessage: 'Your Claude Code account has hit its weekly limit. It resets tomorrow at 9:00 AM (in 14 h).' }
+          if (check === 'limited') throw { code: 'cli_limited', userMessage: 'The account in your Claude Code app has hit its weekly limit. It resets tomorrow at 9:00 AM (in 14 h).' }
           if (check === 'no-answer') throw { code: 'cli_error', userMessage: 'The AI did not answer.' }
           if (Number(check) > 0) {
             const stop = (checking = new AbortController())

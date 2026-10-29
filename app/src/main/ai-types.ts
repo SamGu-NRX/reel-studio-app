@@ -25,6 +25,8 @@ export interface AgentResult {
   styleProposal?: StyleProposal
   /** Set when the AI stopped early and a simpler edit was made instead. */
   notice?: UserFacingError
+  /** the model that made this version ("Claude Sonnet 5.5 · High"); absent for a basic version */
+  model?: string
 }
 
 /** One turn of a planned reel's planning chat (ai editor.ts planTurn). `asked`: questions the editor has asked. */

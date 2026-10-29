@@ -5,7 +5,7 @@ import { AIError, createAI, type SecretStore } from '../src';
 import { ClaudeCliProvider } from '../src/providers/cli';
 import { FakeHub } from './fakeHub';
 import { fakeCli } from './fake-cli';
-import { FakeHost, tmpDir } from './helpers';
+import { FakeHost, ScriptedModel, call, firstVersion, makeProject, tmpDir } from './helpers';
 
 const fakeSafeStorage: SecretStore = {
   isEncryptionAvailable: () => true,
@@ -131,7 +131,7 @@ describe('Claude Code at its limit', () => {
     const bin = fakeCli('claude', { stdout: `${JSON.stringify(event)}\n${JSON.stringify(result)}` });
     const e = await caught(new ClaudeCliProvider({ bin }).complete({ system: '', messages: [{ role: 'user', content: [{ type: 'text', text: 'OK?' }] }], tools: [], jsonOnly: true }));
     expect(e.code).toBe('cli_limited');
-    expect(e.userMessage).toMatch(/^Your Claude Code account has hit its weekly limit\. It resets (tomorrow )?at .+ \(in 14 h\)\.$/);
+    expect(e.userMessage).toMatch(/^The account in your Claude Code app has hit its weekly limit\. It resets (tomorrow )?at .+ \(in 14 h\)\.$/);
     expect(e.resetsAt).toBe(new Date(resetsAt * 1000).toISOString());
     expect(e.limits).toEqual([
       { label: '5-hour', left: 100, resetsAt: new Date((resetsAt - 3600) * 1000).toISOString() },
@@ -139,3 +139,26 @@ describe('Claude Code at its limit', () => {
     ]);
   });
 });
+
+describe('the model that made a version', () => {
+  it('is named the way the notes say it, with its reasoning level, and only for a note that changed something', async () => {
+    const { root, dir: project } = await makeProject();
+    const host = new FakeHost(root);
+    await firstVersion(project, host);
+    roles = { editor: 'claude-opus-5-5(high)' };
+    const steps = (summary: string, change: boolean) => new ScriptedModel([
+      ...(change ? [{ toolCalls: [call('set_gap_cap', { seconds: 0.3 })] }] : []),
+      { toolCalls: [call('finish', { summary_for_user: summary })] },
+    ]);
+    let next = steps('Tightened.', true);
+    const ai = createAI({ host, settingsDir: dir, secretStore: fakeSafeStorage, roleModels: () => roles, providerOverride: () => next });
+    await ai.saveHub({ origin: hub.origin, key: hub.key, keySource: 'typed' });
+    const changed = await ai.applyNote(project, 'tighter', () => undefined);
+    expect(changed.version).toBe(2);
+    expect(changed.model).toBe('Claude Opus 5.5 · High');
+    next = steps('Nothing to change.', false);
+    const same = await ai.applyNote(project, 'is it fine?', () => undefined);
+    expect(same.model).toBeUndefined();
+  });
+});
+

@@ -54,7 +54,7 @@ export function claudeCheckWords(e: unknown, platform: NodeJS.Platform): string 
   switch (x.code) {
     case 'cli_limited':
       // the AI package's words name the window and when it resets ("…hit its weekly limit. It resets tomorrow at 9:00 AM")
-      return typeof x.userMessage === 'string' && x.userMessage ? x.userMessage : 'Your Claude Code account has hit its limit.'
+      return typeof x.userMessage === 'string' && x.userMessage ? x.userMessage : 'The account in your Claude Code app has hit its limit.'
     case 'cli_timeout':
       return "Claude took too long to answer. Check you’re online, then try again."
     case 'cli_error':

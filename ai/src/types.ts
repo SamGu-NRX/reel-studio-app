@@ -26,6 +26,8 @@ export interface AgentResult {
   changed: string[];
   /** a typed rule to ask about ("Use lowercase captions."): Yes = approveStyleProposal(it) */
   styleProposal?: StyleProposal;
+  /** the model that made this version, as the notes name it ("Claude Sonnet 5.5 · High"); absent for a basic version */
+  model?: string;
 }
 export interface ScriptResult { hook: string; script: string; onScreenText: string[]; title?: string }
 

@@ -331,10 +331,10 @@ describe('Use: sign in if needed, check, choose; never install', () => {
     const vc = createVendorConnect({
       status: async () => ready,
       login: async () => ({ code: 0 }),
-      select: async () => { throw { code: 'CHECK_FAILED', userMessage: 'Your Claude Code account has hit its weekly limit. It resets tomorrow at 9:00 AM (in 14 h).' } },
+      select: async () => { throw { code: 'CHECK_FAILED', userMessage: 'The account in your Claude Code app has hit its weekly limit. It resets tomorrow at 9:00 AM (in 14 h).' } },
       emit: (i) => void seen.push(i)
     })
-    expect(await vc.connect('claude')).toMatchObject({ step: 'failed', problem: 'sign_in_failed', message: 'Your Claude Code account has hit its weekly limit. It resets tomorrow at 9:00 AM (in 14 h).' })
+    expect(await vc.connect('claude')).toMatchObject({ step: 'failed', problem: 'sign_in_failed', message: 'The account in your Claude Code app has hit its weekly limit. It resets tomorrow at 9:00 AM (in 14 h).' })
   })
 
   it('fails if Cancel during that first message leaves it running or reads as a failure', async () => {

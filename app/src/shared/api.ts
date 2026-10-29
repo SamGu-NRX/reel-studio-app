@@ -71,6 +71,8 @@ export interface VersionInfo {
   wording?: { title: string; summary: string }
   /** a `vN` rendered before receipts existed (its render.json has no renderId): its tooltip is the chat reply */
   beforeReceipts?: true
+  /** the model that made it, from `versions/vN/made-with.json` ("Claude Sonnet 5.5 · High"); absent for a basic version */
+  madeWith?: string
 }
 
 /** One thing an edit changed (engine project.net_changes): `kind` is the project.json path. */

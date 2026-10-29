@@ -74,7 +74,8 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
   await expect(page.getByTestId('pointer')).toHaveCount(0)
   const picker = page.getByTestId('composer-connect')
   await expect(picker).toContainText('Connect an editor to leave notes')
-  await expect(picker.getByTestId('connect-chatgpt')).toBeVisible()
+  // no Codex app on this computer: its row links to OpenAI's install page (Reel Studio installs nothing)
+  await expect(picker.getByTestId('vendor-install-page-chatgpt')).toBeVisible()
   await expect(picker.getByTestId('without-ai')).toHaveText('Without an editor, Reel Studio makes a basic version: pauses and retakes removed, subtitles and a cover.')
   await expect(picker.getByTestId('claude-key-toggle')).toBeHidden()
   await shot(page, 'ux-03-no-ai-connect')
@@ -213,7 +214,7 @@ test('no AI: honest first version, one connect prompt, caption controls, a song 
 
   // ---- 9. Settings uses the same simple connect panel ----
   await openSettings(page)
-  await expect(page.getByTestId('connect-chatgpt')).toBeVisible()
+  await expect(page.getByTestId('vendor-install-page-chatgpt')).toBeVisible()
   await shot(page, 'ux-14-settings')
   await app.close()
 })
@@ -244,8 +245,8 @@ test('Claude Code app ready: "Use Claude (your Claude Code app)" comes first, bu
   await expect(page.getByTestId('use-claude-code')).toHaveAccessibleName(USE_CLAUDE_CODE)
   await expect(panel.locator('.pv-main > button').first()).toHaveAttribute('data-testid', 'use-claude-code')
   await expect(page.getByTestId('use-claude-code')).toHaveClass(/primary/)
-  await expect(page.getByTestId('connect-chatgpt')).not.toHaveClass(/primary/)
-  await expect(panel).toContainText('It uses your own Claude plan and its usage limits.')
+  await expect(page.getByTestId('vendor-chatgpt').locator('.btn.primary')).toHaveCount(0) // one filled button
+  await expect(panel).toContainText('Signed in. It uses your Claude plan’s limits.')
   expect((await page.evaluate(() => window.reel.ai.active())).id).toBe('none') // never picked on its own
   await shot(page, 'ux-15-connect-claude-ready')
   await page.getByTestId('use-claude-code').click()
@@ -269,7 +270,8 @@ test('fails if "Use Claude" says Connected before the check call answers, or a f
 
   const limited = await claudeScreen('ready', { REELSTUDIO_MOCK_CLAUDE_CHECK: 'limited' })
   await limited.page.getByTestId('use-claude-code').click()
-  await expect(limited.panel.getByRole('alert')).toHaveText('Your Claude plan is at its limit. Try again after it resets.')
+  // which limit and when it resets, never a bare "at its limit"
+  await expect(limited.panel.getByRole('alert')).toHaveText(/^The account in your Claude Code app has hit its weekly limit\. It resets .+\.$/)
   await expect(limited.page.getByTestId('vendor-retry-claude')).toBeVisible()
   await expect(limited.page.getByTestId('ai-connected')).toHaveCount(0)
   expect((await limited.page.evaluate(() => window.reel.ai.active())).id).toBe('none')

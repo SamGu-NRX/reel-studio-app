@@ -108,14 +108,23 @@ export function shownPath(file: string, home = homedir()): string {
 
 type Fetch = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<{ status: number; json(): Promise<any> }>
 
-/** GET /v1/models: how many models a key gets, 'refused' for 401/403, null when nothing like CLIProxyAPI answers. */
+/**
+ * GET /v1/models: how many models a key gets, 'refused' for 401/403, null when nothing like CLIProxyAPI answers. The
+ * models its catalog hides (image models, its review helper) are not counted, so the row's count is the picker's.
+ */
 async function probe(f: Fetch, origin: string, key: string | null): Promise<number | 'refused' | null> {
+  const headers: Record<string, string> = key ? { authorization: `Bearer ${key}` } : {}
   try {
-    const res = await f(`${origin}/v1/models`, { headers: key ? { authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(2500) })
+    const res = await f(`${origin}/v1/models`, { headers, signal: AbortSignal.timeout(2500) })
     if (res.status === 401 || res.status === 403) return 'refused'
     if (res.status !== 200) return null
     const j = await res.json().catch(() => null)
-    return Array.isArray(j?.data) ? j.data.length : null
+    if (!Array.isArray(j?.data)) return null
+    const hidden = await f(`${origin}/v1/models?client_version=0.163.0`, { headers, signal: AbortSignal.timeout(2500) })
+      .then((r) => (r.status === 200 ? r.json() : null))
+      .then((c) => new Set<string>((Array.isArray(c?.models) ? c.models : []).filter((m: any) => m?.visibility === 'hide').map((m: any) => String(m.slug))))
+      .catch(() => new Set<string>())
+    return j.data.filter((m: any) => !hidden.has(String(m?.id))).length
   } catch {
     return null
   }

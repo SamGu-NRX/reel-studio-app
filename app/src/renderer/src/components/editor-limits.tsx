@@ -198,8 +198,12 @@ export function EditorDetails({ active, stages }: { active: ProviderInfo; stages
   }
   const limited = result && 'error' in result && /limit/.test(result.code ?? '')
   const edits = stages.choice?.editor
-  const alt = limited ? otherModel(stages.models, edits && edits !== 'auto' ? edits : undefined) : undefined
+  // on Auto, Edits runs on the connection's own model, which the editor's status names
+  const alt = limited ? otherModel(stages.models, edits && edits !== 'auto' ? edits : active.detail) : undefined
   const modelName = (id?: string) => (id ? (stages.models.find((m) => m.id === id.replace(/\([a-z]+\)$/, ''))?.name ?? id) : '')
+  const took = (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`)
+  // the button below makes the offer, so the words don't repeat it
+  const said = result && 'error' in result && alt ? result.error.replace(` ${alt.name} runs on your ${alt.family === 'claude' ? 'Claude' : 'ChatGPT'} accounts: choose it in Settings, under Editor.`, '') : null
 
   return (
     <div className="pv-more ed" data-testid="editor-details">
@@ -213,12 +217,12 @@ export function EditorDetails({ active, stages }: { active: ProviderInfo; stages
           {!result
             ? 'Sends one short message with the Edits model.'
             : 'ok' in result
-              ? `“${result.ok.reply.slice(0, 40)}” from ${modelName(result.ok.model) || 'your editor'} in ${(result.ok.ms / 1000).toFixed(1)} s`
-              : result.error}
+              ? `“${result.ok.reply.slice(0, 40)}” from ${modelName(result.ok.model) || 'your editor'} in ${took(result.ok.ms)}`
+              : (said ?? result.error)}
         </p>
       </div>
       {alt && (
-        <Button size="small" kind="primary" onClick={() => void stages.set('editor', alt.id).then(() => setResult(null))} data-testid="editor-use-other">
+        <Button size="small" onClick={() => void stages.set('editor', alt.id).then(() => setResult(null))} data-testid="editor-use-other">
           Use {alt.name} for Edits
         </Button>
       )}
@@ -305,26 +309,27 @@ function StageRow({ stage, state, editorPicksOwn, showLine }: { stage: (typeof S
   const model = state.models.find((m) => m.id === id)
   const missing = value !== 'auto' && !state.loading && state.models.length > 0 && !model
   const label = value === 'auto' ? 'Auto' : (model?.name ?? id)
-  const lineId = `stage-line-${stage.role}`
+  const lineId = `mrow-line-${stage.role}`
   return (
-    <li className="stage" data-testid={`stage-${stage.role}`}>
-      <div className="stage-t">
-        <span className="stage-name" id={`stage-name-${stage.role}`}>
+    <li className="mrow" data-testid={`stage-${stage.role}`}>
+      <div className="mrow-t">
+        <span className="mrow-name" id={`mrow-name-${stage.role}`}>
           {stage.name}
         </span>
         {showLine && (
-          <span className="stage-line" id={lineId}>
+          <span className="mrow-line" id={lineId}>
             {stage.line}
           </span>
         )}
-        {missing && <span className="stage-line warn">Your editor doesn’t offer {id} now. Auto is used.</span>}
+        {missing && <span className="mrow-line warn">Your editor doesn’t offer {id} now. Auto is used.</span>}
       </div>
       <button
         ref={chip}
         className={`mchip${missing ? ' warn' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-labelledby={`stage-name-${stage.role} stage-chip-${stage.role}`}
+        aria-controls={open ? `model-picker-${stage.role}` : undefined}
+        aria-labelledby={`mrow-name-${stage.role} stage-chip-${stage.role}`}
         aria-describedby={showLine ? lineId : undefined}
         disabled={editorPicksOwn}
         title={editorPicksOwn ? 'This editor picks its own model.' : `${label}${effort ? ` · ${EFFORT_NAME[effort] ?? effort}` : ''}`}
@@ -367,15 +372,15 @@ export function StageModels({ active, state, open: startOpen }: { active: Provid
   const custom = MODEL_ROLES.filter((r) => (state.choice?.[r] ?? 'auto') !== 'auto').length
   const summary = picksOwn ? 'This editor picks its own' : custom ? `${custom} of ${STAGES.length} chosen` : 'Auto for every stage'
   return (
-    <div className={`stages-box${open ? ' open' : ''}`} data-testid="stage-models">
-      <button className="stages-h" aria-expanded={open} aria-controls="stage-list" onClick={() => setOpen((o) => !o)} data-testid="stage-models-toggle">
+    <div className={`mstages${open ? ' open' : ''}`} data-testid="stage-models">
+      <button className="mstages-h" aria-expanded={open} aria-controls="stage-list" onClick={() => setOpen((o) => !o)} data-testid="stage-models-toggle">
         <Icon name="chevron-right" size={14} stroke={2} className="chev" />
-        <span className="stages-title">Models</span>
-        <span className="stages-sum" title={edits !== 'auto' ? `Edits: ${edits}` : undefined}>
+        <span className="mstages-title">Models</span>
+        <span className="mstages-sum" title={edits !== 'auto' ? `Edits: ${edits}` : undefined}>
           {summary}
         </span>
       </button>
-      <ul className="stages" id="stage-list" hidden={!open}>
+      <ul className="mrows" id="stage-list" hidden={!open}>
         {STAGES.map((s) => (
           <StageRow key={s.role} stage={s} state={state} editorPicksOwn={picksOwn} showLine={startOpen} />
         ))}
@@ -384,23 +389,44 @@ export function StageModels({ active, state, open: startOpen }: { active: Provid
   )
 }
 
-/** Where the picker opens: under its chip, or over it when the window has no room below; always inside the window. */
-function place(anchor: HTMLElement, width: number, want: number): CSSProperties & { origin: string } {
+type Rect = { left: number; top: number; right: number; bottom: number }
+const overlaps = (a: Rect, b: Rect): boolean => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+
+/**
+ * Where the picker opens, given its size: under its chip, over it, or beside it on the left, whichever first fits
+ * inside the window without covering the screen's main action (its filled button). The list shortens to fit when
+ * none does.
+ */
+function place(anchor: HTMLElement, width: number, height: number, avoid: Rect[]): CSSProperties & { origin: string } {
   const r = anchor.getBoundingClientRect()
+  const W = window.innerWidth
+  const H = window.innerHeight
   const gap = 6
-  const below = window.innerHeight - r.bottom - gap - 8
-  const above = r.top - gap - 8
-  const down = below >= Math.min(want, 280) || below >= above
-  const maxHeight = Math.max(160, Math.min(want, down ? below : above))
-  const left = Math.min(Math.max(8, r.right - width), window.innerWidth - width - 8)
-  return {
-    position: 'fixed',
-    left,
-    width,
-    maxHeight,
-    ...(down ? { top: r.bottom + gap } : { bottom: window.innerHeight - r.top + gap }),
-    origin: `${down ? 'top' : 'bottom'} ${r.right - width >= 8 ? 'right' : 'left'}`
-  }
+  const m = 8
+  const x = Math.min(Math.max(m, r.right - width), W - width - m)
+  const side = r.left - gap - width
+  const ySide = Math.min(Math.max(m, r.top), H - height - m)
+  const tries: (Rect & { origin: string })[] = [
+    { left: x, top: r.bottom + gap, right: x + width, bottom: r.bottom + gap + height, origin: 'top right' },
+    { left: x, top: r.top - gap - height, right: x + width, bottom: r.top - gap, origin: 'bottom right' },
+    { left: side, top: ySide, right: side + width, bottom: ySide + height, origin: 'top right' }
+  ]
+  const fits = tries.find((t) => t.left >= m && t.top >= m && t.right <= W - m && t.bottom <= H - m && !avoid.some((a) => overlaps(t, a)))
+  if (fits) return { position: 'fixed', left: fits.left, top: fits.top, width, maxHeight: height, origin: fits.origin }
+  // nothing fits whole: the taller side of the chip, with a shorter list
+  const below = H - r.bottom - gap - m
+  const above = r.top - gap - m
+  return below >= above
+    ? { position: 'fixed', left: x, top: r.bottom + gap, width, maxHeight: Math.max(160, below), origin: 'top right' }
+    : { position: 'fixed', left: x, bottom: H - r.top + gap, width, maxHeight: Math.max(160, above), origin: 'bottom right' }
+}
+
+/** The filled buttons on screen, outside `box`: the main actions a popover must leave visible. */
+function mainActions(box: HTMLElement | null): Rect[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('.btn.primary'))
+    .filter((b) => !box?.contains(b) && b.offsetParent !== null)
+    .map((b) => b.getBoundingClientRect())
+    .filter((r) => r.width > 0 && r.height > 0)
 }
 
 /**
@@ -416,16 +442,27 @@ function ModelPicker({ anchor, stage, value, models, loading, onPick, onClose }:
   const { id: chosenId, effort } = split(value)
   const chosen = models.find((m) => m.id === chosenId)
 
+  // placed twice: first at its widest to measure, then where its measured size fits
   useLayoutEffect(() => {
+    // its whole height: the search and the reasoning row as drawn, and the list as long as all its models
+    const natural = (): number => {
+      const b = box.current
+      if (!b) return 420
+      return Array.from(b.children).reduce((h, c) => h + (c.classList.contains('mpop-list') ? c.scrollHeight : (c as HTMLElement).offsetHeight), 0)
+    }
     const at = (): void => {
-      if (anchor.current) setPos(place(anchor.current, Math.min(320, window.innerWidth - 16), 420))
+      if (!anchor.current) return
+      setPos(place(anchor.current, Math.min(320, window.innerWidth - 16), Math.min(420, natural()), mainActions(box.current)))
+    }
+    const onScroll = (e: Event): void => {
+      if (!box.current?.contains(e.target as Node)) at()
     }
     at()
     window.addEventListener('resize', at)
-    window.addEventListener('scroll', at, true)
+    window.addEventListener('scroll', onScroll, true)
     return () => {
       window.removeEventListener('resize', at)
-      window.removeEventListener('scroll', at, true)
+      window.removeEventListener('scroll', onScroll, true)
     }
   }, [anchor])
   useEffect(() => {
@@ -467,11 +504,11 @@ function ModelPicker({ anchor, stage, value, models, loading, onPick, onClose }:
     e.stopPropagation()
   }
 
-  if (!pos) return null
-  const { origin, ...style } = pos
+  const { origin, ...style } = pos ?? { origin: 'top right', position: 'fixed' as const, left: -9999, top: 0, width: Math.min(320, window.innerWidth - 16), maxHeight: 420 }
   return createPortal(
     <div
       ref={box}
+      id={`model-picker-${stage.role}`}
       className="mpop"
       style={{ ...style, '--o': origin } as CSSProperties}
       role="dialog"

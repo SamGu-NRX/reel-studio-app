@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { ModelStatus, ProviderInfo } from '../../../shared/api'
 import { reel, userMessage } from '../api'
 import { Button, Progress, Spinner } from './ui'
@@ -8,6 +8,7 @@ import { ConnectedMark, Disclosure, ProviderRow } from './provider-row'
 import { HubRow, VendorRows, useHub } from './vendor-connect'
 import { EditorDetails, StageModels, useStages } from './editor-limits'
 import { SETTINGS } from './settings-index'
+import { SearchHits } from './settings-rows'
 import './connect.css'
 
 /** What Reel Studio makes with no editor connected. Nobody says "I" here: no editor is there to say it. */
@@ -44,6 +45,10 @@ export function ConnectAI({ onConnected, advanced = true, stagesOpen = false }: 
   const [active, setActive] = useActiveEditor()
   const [hub, lookForHub] = useHub()
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [vendorAttention, setVendorAttention] = useState(false)
+  // a Settings search for your own server or an API key opens Advanced, where they are
+  const hits = useContext(SearchHits)
+  const searchedAdvanced = !!hits && (hits.has('own-server') || hits.has('api-key'))
   const stages = useStages(active)
   const announce = useRef(onConnected)
   announce.current = onConnected
@@ -66,6 +71,8 @@ export function ConnectAI({ onConnected, advanced = true, stagesOpen = false }: 
   const hubOn = anyOn && active.id === 'custom' && active.label === 'CLIProxyAPI'
   const otherOn = anyOn && !hubOn && !['claude-cli', 'codex-cli'].includes(active.id)
   const hubShown = !!hub && (hub.state !== 'none' || hubOn)
+  // CLIProxyAPI is the recommended choice: while nothing is connected its Use it is the one filled button
+  const hubLeads = !anyOn && !!hub && hub.state !== 'none'
   const details = anyOn ? (
     <>
       <EditorDetails active={active} stages={stages} />
@@ -97,11 +104,19 @@ export function ConnectAI({ onConnected, advanced = true, stagesOpen = false }: 
       <div className="prov" role="group" aria-label="Choose your editor" data-testid="ai-picker">
         {otherRow}
         {hubShown && (
-          <HubRow hub={hub ?? { state: 'none' }} on={hubOn} primary={!anyOn} onConnected={connected} onDisconnect={() => void disconnect()}>
+          <HubRow hub={hub ?? { state: 'none' }} on={hubOn} primary={hubLeads && !vendorAttention} onConnected={connected} onDisconnect={() => void disconnect()}>
             {hubOn ? details : null}
           </HubRow>
         )}
-        <VendorRows active={active} lead={!anyOn && !(hub && hub.state !== 'none')} onConnected={connected} onDisconnect={() => void disconnect()} details={details} />
+        <VendorRows
+          active={active}
+          lead={!anyOn && !hubLeads}
+          hubLeads={hubLeads && !vendorAttention}
+          onAttention={setVendorAttention}
+          onConnected={connected}
+          onDisconnect={() => void disconnect()}
+          details={details}
+        />
       </div>
       {active?.error && !active.connected && (
         <p className="pv-note error" role="alert">
@@ -109,7 +124,7 @@ export function ConnectAI({ onConnected, advanced = true, stagesOpen = false }: 
         </p>
       )}
       {advanced && (
-        <Disclosure label="Advanced" hint="Your own server or an API key" open={advancedOpen} onToggle={() => setAdvancedOpen((o) => !o)} testid="ai-advanced">
+        <Disclosure label="Advanced" hint="Your own server or an API key" open={advancedOpen || searchedAdvanced} onToggle={() => setAdvancedOpen((o) => !o)} testid="ai-advanced">
           <Connections onConnected={connected} />
           <AnthropicKey active={active} onConnected={connected} />
         </Disclosure>

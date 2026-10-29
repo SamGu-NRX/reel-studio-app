@@ -53,10 +53,10 @@ describe('finding the hub', () => {
     await hub.stop()
   })
 
-  it('ready with the config’s key: the model count, the file it came from, and the key kept for Use it', async () => {
+  it('ready with the config’s key: the count of models the picker will list, the file it came from, and the key kept for Use it', async () => {
     writeFileSync(join(dir, 'config.yaml'), `port: ${hub.port}\napi-keys:\n  - stale\n  - ${hub.key}\n`)
     const found = await detectHub({ env: { REELSTUDIO_TEST_HUB_CONFIG: dir }, platform: 'darwin', fetch: f, home: '/nobody' })
-    expect(found).toEqual({ state: 'ready', origin: hub.origin, models: 6, keySource: join(dir, 'config.yaml'), key: hub.key })
+    expect(found).toEqual({ state: 'ready', origin: hub.origin, models: 5, keySource: join(dir, 'config.yaml'), key: hub.key })
   })
 
   it('answers but refuses every key in the config: asks for one, and says the config’s keys were refused', async () => {
