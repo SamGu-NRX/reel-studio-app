@@ -34,6 +34,21 @@ async function helperWindow(app: ElectronApplication, title: string): Promise<Pa
   throw new Error(`no helper window "${title}"`)
 }
 
+/**
+ * Where a fixed element put inside `sel` lands: at the window's corner unless something above it is a containing block
+ * for fixed elements (a transform, or a transform animation left in effect), which is how a dialog or popover opened
+ * from there ends up laid out inside it.
+ */
+const fixedCorner = (page: Page, sel: string) =>
+  page.evaluate((s) => {
+    const probe = document.createElement('div')
+    probe.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px'
+    document.querySelector(s)!.append(probe)
+    const r = probe.getBoundingClientRect()
+    probe.remove()
+    return { right: r.right === innerWidth, bottom: r.bottom === innerHeight }
+  }, sel)
+
 test('a fresh first run goes welcome, sample, editor, and ends on a new reel with no video', async () => {
   const d = fresh('walk')
   const { app, page } = await launch(d.env)
@@ -64,10 +79,14 @@ test('a fresh first run goes welcome, sample, editor, and ends on a new reel wit
 
     await expect(page.getByRole('heading', { name: 'Choose your editor' })).toBeFocused() // a screen reader starts at the new step
     await expect(page.getByTestId('without-ai')).toContainText('Without an editor, Reel Studio makes a basic version')
+    // fails if an entrance animation is left in effect on the column again: the server form's dialog opened inside it
+    await expect.poll(() => fixedCorner(page, '[data-testid="composer-connect"]')).toEqual({ right: true, bottom: true })
     await page.getByTestId('not-now').click()
 
     // Your turn: the reel slice's planning space, in the app's own window
     await expect(page.getByTestId('planned-stage')).toContainText('Drop the video you filmed')
+    // the sidebar's arrival leaves its popovers (the update offer) placed against the window
+    await expect.poll(() => fixedCorner(page, '#sidebar')).toEqual({ right: true, bottom: true })
     await expect(page.getByTestId('plan-empty')).toBeVisible()
     await expect(page.getByTestId('nav-home')).toBeVisible()
     const list = await page.evaluate(() => window.reel.projects.list())
@@ -211,6 +230,37 @@ test('the first-run column: where you are and what it shows at the top, the thre
     // the editor's picker takes the thread's place under the heading
     const gap = await page.evaluate(() => document.querySelector('.fr-pick')!.getBoundingClientRect().top - document.querySelector('.fr-h')!.getBoundingClientRect().bottom)
     expect(gap).toBeLessThan(24)
+  } finally {
+    await app.close()
+  }
+})
+
+// fails if the sample's controls leave the phone again (Sam, 2026-10-28: play, the time and the view sat in the window's
+// bottom-left corner with the hint run into the time) or the phone drifts off the centre of the space the column leaves
+test('the sample: the phone centred beside the column, its controls under it and no wider than it', async () => {
+  const d = fresh('centred')
+  const { app, page } = await launch(d.env)
+  try {
+    await page.getByTestId('get-started').click()
+    await page.getByTestId('demo-skip').click()
+    await expect(page.getByTestId('hold-hint')).toBeVisible()
+    for (const size of [{ width: 1100, height: 720 }, { width: 1920, height: 1080 }]) {
+      await page.setViewportSize(size)
+      // polled: the phone is re-fitted to its slot by a ResizeObserver after the resize
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect()
+            const phone = r('[data-testid="phone"]')
+            const col = r('.fr-col')
+            const parts = ['play', 'time', 'phone-view', 'hold-hint'].map((id) => r(`[data-testid="${id}"]`))
+            return {
+              centred: Math.abs((phone.left + phone.right) / 2 - col.left / 2) <= 2,
+              under: parts.every((p) => p.left >= phone.left - 0.5 && p.right <= phone.right + 0.5 && p.top >= phone.bottom && p.bottom <= innerHeight)
+            }
+          }), { message: `the sample at ${size.width}x${size.height}` })
+        .toEqual({ centred: true, under: true })
+    }
   } finally {
     await app.close()
   }

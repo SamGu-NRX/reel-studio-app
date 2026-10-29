@@ -175,6 +175,13 @@ test('fails if speed, full screen or the phone shapes stop working, applying or 
         const screen = await rect(page, '.stage .phone-screen')
         const video = await rect(page, '[data-testid="player"]')
         const tabs = await rect(page, '.igc-tabs')
+        // a phone looks like one: its status bar over Instagram's screen, and the Dynamic Island on a Face ID phone; the
+        // whole reel's frame is the reel alone
+        const drawn = await page.evaluate(() => {
+          const status = document.querySelector('.stage .igc-status')
+          return { island: getComputedStyle(document.querySelector('.stage .phone-screen')!, '::after').content !== 'none', status: !!status && getComputedStyle(status).display !== 'none' }
+        })
+        expect(drawn, `${s.label}: island and status bar`).toEqual({ island: s.id === 'iphone-17' || s.id === 'iphone-pro-max', status: s.id !== 'reel' })
         if (s.id === 'reel') expect([video.x, video.y, video.w, video.h].map((n, i) => Math.round(n - [screen.x, screen.y, screen.w, screen.h][i]))).toEqual([0, 0, 0, 0])
         else if (s.id === 'iphone-se') {
           // 16:9: full width, trimmed top and bottom; the reel ends at Instagram's tab bar
