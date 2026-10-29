@@ -183,10 +183,13 @@ function Lines({
     <section className="pl-sec" aria-label={title}>
       <h4>
         {title}
-        {done > 0 && (
+        {done > 0 ? (
           <span className="pl-done-n">
             {done} of {lines.length} done
           </span>
+        ) : (
+          // the boxes are ticks, not list markers: say so until the first one is ticked
+          !readOnly && <span className="pl-done-n">Tick as you film</span>
         )}
       </h4>
       <ol className="pl-lines">
