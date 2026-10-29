@@ -3,7 +3,7 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BASE, launch, openSettings } from './helpers'
+import { BASE, launch, openSettings, painted } from './helpers'
 
 const MAC = process.platform === 'darwin'
 
@@ -211,14 +211,19 @@ test('the first-run column: where you are and what it shows at the top, the thre
         const labels = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="steps-list"] .sl'))
         return {
           gap: r('.fr-log-in').top - r('.fr-h').bottom,
+          // the progress sits right under what it is making, not pinned at the column's foot with nothing between
+          under: r('[data-testid="steps-list"]').top - r('.fr-log-in [role="log"]').bottom,
           cut: labels.filter((l) => l.scrollWidth > l.clientWidth + 1 || (oneLine && l.getBoundingClientRect().height > 22)).map((l) => l.textContent)
         }
       }, oneLine)
-      expect([size.width, m.gap < 24, m.cut]).toEqual([size.width, true, []])
+      expect([size.width, m.gap < 24, m.under >= 0 && m.under < 32, m.cut]).toEqual([size.width, true, true, []])
     }
     await page.getByTestId('get-started').click()
     await expect(page.getByTestId('first-run-where').locator('[aria-current="step"]')).toHaveText('The sample')
     await expect(page.getByTestId('first-run-lead')).toBeVisible()
+    // the transcript's grey boxes are pauses, and the column says so while they show
+    await expect(page.locator('.fr-words .tk.pz.in').first()).toBeVisible()
+    await expect(page.getByTestId('pause-key')).toHaveCSS('opacity', '1')
     // every label at its widest: the takes row with its result
     await expect(page.getByTestId('steps-list').locator('li').nth(2)).toHaveAttribute('data-state', 'done', { timeout: 30_000 })
     await check({ width: 1280, height: 820 }, true)
@@ -260,6 +265,29 @@ test('the sample: the phone centred beside the column, its controls under it and
             }
           }), { message: `the sample at ${size.width}x${size.height}` })
         .toEqual({ centred: true, under: true })
+    }
+  } finally {
+    await app.close()
+  }
+})
+
+// fails if part of the phone paints through the welcome: its Dynamic Island showed alone above the logo, where the
+// phone's island sits on the next step, with reduced motion as without
+test('the welcome shows nothing of the phone laid out under it', async () => {
+  const d = fresh('island')
+  const { app, page } = await launch(d.env)
+  try {
+    await expect(page.getByTestId('get-started')).toBeVisible()
+    for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+      await page.emulateMedia({ reducedMotion })
+      // the island's centre: 11 + 37 / 2 points down a 402-point screen
+      const at = await page.evaluate(() => {
+        const s = document.querySelector('[data-testid="sample-phone"]')!.getBoundingClientRect()
+        return { x: Math.round(s.left + s.width / 2), y: Math.round(s.top + (s.width * 29.5) / 402) }
+      })
+      await expect
+        .poll(() => painted(page, at.x, at.y).then((c) => Math.min(...c)), { message: `${reducedMotion}: the welcome's paper where the island would be` })
+        .toBeGreaterThan(200)
     }
   } finally {
     await app.close()
