@@ -66,7 +66,10 @@ class _Detector:
         self.det = None
         if YUNET_MODEL.exists() and hasattr(cv2, "FaceDetectorYN"):
             try:
-                self.det = cv2.FaceDetectorYN.create(str(YUNET_MODEL), "", (w, h), 0.6, 0.3, 5000)
+                # From its bytes, not its path: on Windows OpenCV opens a model file through the ANSI API, which can't
+                # reach a path with letters outside the code page (an install under C:\Users\Zoë), so Haar took over.
+                model = np.frombuffer(YUNET_MODEL.read_bytes(), np.uint8)
+                self.det = cv2.FaceDetectorYN.create("onnx", model, np.empty(0, np.uint8), (w, h), 0.6, 0.3, 5000)
                 self.kind = "yunet"
             except Exception as e:  # pragma: no cover - depends on the cv2 build
                 log(f"YuNet unavailable ({e}); trying Haar")
