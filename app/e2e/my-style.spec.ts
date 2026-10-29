@@ -129,6 +129,15 @@ test('Learn from my past edits lists the edits on this computer by app, and lear
     await expect(sheet).toHaveCount(0)
     await expect(page.getByTestId('style-lesson')).toContainText('Spring launch.fcpxml (Final Cut Pro), talking-head.xml (Premiere Pro)')
     expect(await page.evaluate(() => window.reel.style.rules())).toEqual([])
+
+    // what crosses to the page names edits by id: no path in what was found or in what was read
+    const crossed = await page.evaluate(async () => {
+      const found = await window.reel.style.find()
+      const lesson = await window.reel.style.learn(found.edits.filter((e) => e.readable).map((e) => e.id))
+      return JSON.stringify({ found, lesson })
+    })
+    expect(crossed).toContain('Spring launch.fcpxml')
+    expect(crossed).not.toContain(home)
   } finally {
     await app.close().catch(() => {})
   }
@@ -161,6 +170,34 @@ test('with nothing found, Learn from my past edits says so and how to get one in
     // only Choose files… opens the dialog; cancelled, the sheet stays
     expect(opened).toEqual(['0', '1'])
     await expect(none).toBeVisible()
+  } finally {
+    await app.close().catch(() => {})
+  }
+})
+
+test('when a limit stops the look, Learn from my past edits says older edits may be missing and keeps what it found', async () => {
+  const mine = mkdtempSync(join(BASE, 'style-'))
+  const root = join(mine, 'Documents', 'Reel Studio')
+  const home = join(mine, 'home')
+  mkdirSync(root, { recursive: true })
+  makePastEditsHome(home)
+  const { app, page } = await launch({
+    REELSTUDIO_ROOT: root,
+    REELSTUDIO_USER_DATA: join(mine, 'user data'),
+    REELSTUDIO_TEST_PAST_EDITS_HOME: home,
+    // the walk reads the top of Movies, Documents and Desktop (7 entries), then stops before the folders below
+    REELSTUDIO_TEST_PAST_EDITS_LIMITS: JSON.stringify({ walk: 7 })
+  })
+  try {
+    await passFirstRun(page)
+    await page.getByTestId('nav-style').click()
+    await page.getByTestId('style-learn').click()
+    await expect(page.getByTestId('learn-item')).toHaveText([/^talking-head/])
+    await expect(page.getByTestId('learn-item-waiting')).toHaveText([/^Untitled/])
+    await expect(page.getByTestId('learn-cut')).toHaveText(
+      /^This (Mac|PC) has too many files to look through them all, so older edits may be missing\. Use Choose files… for those\.$/
+    )
+    await expect(page.getByTestId('learn-choose')).toBeVisible()
   } finally {
     await app.close().catch(() => {})
   }

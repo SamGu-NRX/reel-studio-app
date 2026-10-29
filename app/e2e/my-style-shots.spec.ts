@@ -25,7 +25,7 @@ const RULES = [
   'Use straight cuts between shots, no transitions.'
 ]
 
-async function open(rules: string[], pastEdits: boolean): Promise<{ app: ElectronApplication; page: Page }> {
+async function open(rules: string[], pastEdits: boolean, env: Record<string, string> = {}): Promise<{ app: ElectronApplication; page: Page }> {
   const mine = mkdtempSync(join(BASE, 'style-shots-'))
   const root = join(mine, 'Documents', 'Reel Studio')
   mkdirSync(root, { recursive: true })
@@ -36,7 +36,7 @@ async function open(rules: string[], pastEdits: boolean): Promise<{ app: Electro
   const home = join(mine, 'home')
   mkdirSync(home)
   if (pastEdits) makePastEditsHome(home)
-  const { app, page } = await launch({ REELSTUDIO_ROOT: root, REELSTUDIO_USER_DATA: join(mine, 'user data'), REELSTUDIO_TEST_PAST_EDITS_HOME: home }, { realViewport: true })
+  const { app, page } = await launch({ REELSTUDIO_ROOT: root, REELSTUDIO_USER_DATA: join(mine, 'user data'), REELSTUDIO_TEST_PAST_EDITS_HOME: home, ...env }, { realViewport: true })
   await passFirstRun(page)
   await page.getByTestId('nav-style').click()
   return { app, page }
@@ -81,5 +81,17 @@ test('Learn from my past edits: the sheet, found and not found, and what it read
     } finally {
       await app.close().catch(() => {})
     }
+  }
+})
+
+test('Learn from my past edits when a limit stopped the look', async () => {
+  test.skip(process.env.SHOTS_PHASE === 'before', 'the older build opens a file dialog')
+  const { app, page } = await open([], true, { REELSTUDIO_TEST_PAST_EDITS_LIMITS: JSON.stringify({ walk: 7 }) })
+  try {
+    await page.getByTestId('style-learn').click()
+    await expect(page.getByTestId('learn-cut')).toBeVisible()
+    await sized(app, page, 'sheet-cut')
+  } finally {
+    await app.close().catch(() => {})
   }
 })

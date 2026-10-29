@@ -642,7 +642,8 @@ export interface LearnedRule {
 
 /** What "Learn from my past edits" read: the exports, how much was in them, and the rules, before any is saved. */
 export interface StyleLesson {
-  files: { path: string; name: string; editor: 'Final Cut Pro' | 'Premiere Pro' }[]
+  /** By id and name; the paths stay in main. */
+  files: { id: string; name: string; editor: 'Final Cut Pro' | 'Premiere Pro' }[]
   timelines: number
   shots: number
   rules: LearnedRule[]
@@ -973,8 +974,9 @@ export interface ReelApi {
     damaged(): Promise<boolean>
     /** Undo of remove: the rule back where it was. Only a rule removed in this run of the app. */
     restore(id: string): Promise<void>
-    /** The Final Cut Pro and Premiere Pro edits on this computer, newest first. Each call looks again. */
-    find(): Promise<PastEdit[]>
+    /** The Final Cut Pro and Premiere Pro edits on this computer, newest first, and whether a limit stopped the look
+     * before it had looked everywhere. Each call looks again. */
+    find(): Promise<{ edits: PastEdit[]; cut: boolean }>
     /** Timelines in each readable edit of the last find(), by id. */
     count(): Promise<PastEditCounts>
     /** Read rules from these found edits, or with no ids from exports picked in a file dialog; saves nothing.

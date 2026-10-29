@@ -567,7 +567,12 @@ def cmd_reference_scan(args: list[str]) -> dict:
             files.append({"path": arg, "error": {"code": "BAD_XML", "message": "This file isn't a readable edit export. "
                                                  "Export it again from your editor and try once more."}})
             continue
-        n = len(_fcpx_projects(root)) if root.tag == "fcpxml" else len(root.findall("sequence") + root.findall(".//children/sequence"))
+        if root.tag == "fcpxml":
+            n = len(_fcpx_projects(root))
+        else:
+            # the real engine keeps the first sequence seen with each id (reference_import.count_timelines)
+            ids = [seq.get("id") for seq in root.findall("sequence") + root.findall(".//children/sequence")]
+            n = sum(1 for i, key in enumerate(ids) if key is None or key not in ids[:i])
         files.append({"path": arg, "timelines": n} if n else {"path": arg, "error": {"code": "NO_TIMELINE", "message":
                       "This export has no timeline in it. In your editor, export the project or sequence itself, not just its clips, and try again."}})
     return {"files": files}

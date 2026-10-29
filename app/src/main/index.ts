@@ -1314,7 +1314,13 @@ function registerIpc(): void {
   const findDeps = (): FindDeps =>
     TEST
       ? // tests never look at the machine's own files: a folder of fixtures stands in for the home folder
-        { platform: process.platform, home: process.env.REELSTUDIO_TEST_PAST_EDITS_HOME ?? join(app.getPath('userData'), 'no-home'), spotlight: null }
+        {
+          platform: process.platform,
+          home: process.env.REELSTUDIO_TEST_PAST_EDITS_HOME ?? join(app.getPath('userData'), 'no-home'),
+          spotlight: null,
+          // smaller limits, so a test can reach one (JSON, e.g. {"walk":3})
+          limits: process.env.REELSTUDIO_TEST_PAST_EDITS_LIMITS ? JSON.parse(process.env.REELSTUDIO_TEST_PAST_EDITS_LIMITS) : undefined
+        }
       : { platform: process.platform, home: app.getPath('home'), spotlight: process.platform === 'darwin' ? mdfind : null }
   const foundEdit = (id: string): Found => {
     const f = pastEdits.find((x) => x.id === id)
@@ -1322,8 +1328,9 @@ function registerIpc(): void {
     return f
   }
   handle('style:find', async () => {
-    pastEdits = await findPastEdits(findDeps())
-    return pastEdits.map(({ path: _path, ...edit }) => edit)
+    const look = await findPastEdits(findDeps())
+    pastEdits = look.edits
+    return { edits: pastEdits.map(({ path: _path, ...edit }) => edit), cut: look.cut }
   })
   handle('style:count', async () => {
     const readable = pastEdits.filter((f) => f.readable)
@@ -1334,7 +1341,7 @@ function registerIpc(): void {
   let editorIcons: ReturnType<typeof appIcons> | null = null
   const iconDeps = (): IconDeps => ({
     platform: process.platform,
-    spotlight: TEST || process.platform !== 'darwin' ? null : mdfind,
+    spotlight: TEST || process.platform !== 'darwin' ? null : async (q) => (await mdfind(q, 20))?.paths ?? null,
     registry: TEST || process.platform !== 'win32' ? null : regDefault,
     appFolders: TEST
       ? [process.env.REELSTUDIO_TEST_APPS_DIR].filter((d): d is string => !!d)
