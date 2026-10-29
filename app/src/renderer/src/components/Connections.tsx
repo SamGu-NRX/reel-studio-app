@@ -23,6 +23,7 @@ export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) =>
   const [editing, setEditing] = useState<ConnectionInfo | 'new' | null>(null)
   const [removing, setRemoving] = useState<ConnectionInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const toggle = useRef<HTMLButtonElement>(null)
   const load = () =>
     reel.ai
       .connections()
@@ -70,7 +71,7 @@ export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) =>
         status={list.length ? `${list.length} saved` : 'Not set up'}
         action={
           editing === 'new' ? null : (
-            <Button size="small" onClick={() => setEditing('new')} aria-expanded={false} data-testid={list.length ? 'connection-add' : 'own-server-toggle'}>
+            <Button ref={toggle} size="small" onClick={() => setEditing('new')} data-testid={list.length ? 'connection-add' : 'own-server-toggle'}>
               {list.length ? 'Add another' : 'Set up'}
             </Button>
           )
@@ -79,7 +80,11 @@ export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) =>
         {editing === 'new' && (
           <ConnectionForm
             editing={null}
-            onClose={() => setEditing(null)}
+            onClose={() => {
+              setEditing(null)
+              // the form took the Set up button's place: focus goes back to it, never to the page
+              requestAnimationFrame(() => toggle.current?.focus({ preventScroll: true }))
+            }}
             onSaved={(status) => {
               setEditing(null)
               void load()
@@ -99,7 +104,7 @@ export function Connections({ onConnected }: { onConnected: (p: ProviderInfo) =>
                     </span>
                   </div>
                   {!c.active && (
-                    <Button size="small" onClick={() => void use(c)} data-testid="connection-use">
+                    <Button size="small" onClick={() => void use(c)} aria-label={`Use ${c.label}`} data-testid="connection-use">
                       Use it
                     </Button>
                   )}

@@ -34,7 +34,8 @@ export function resetLong(iso: string | undefined, now = Date.now()): string {
   if (!Number.isFinite(ms)) return 'no reset time given'
   if (ms <= 60_000) return 'resets now'
   const mins = Math.round(ms / 60_000)
-  const span = mins < 60 ? `${mins} min` : mins < 1440 ? `${Math.floor(mins / 60)} h${mins % 60 ? ` ${mins % 60} min` : ''}` : `${Math.floor(mins / 1440)} d ${Math.floor((mins % 1440) / 60)} h`
+  const n = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`
+  const span = mins < 60 ? n(mins, 'minute') : mins < 1440 ? `${n(Math.floor(mins / 60), 'hour')}${mins % 60 ? ` ${n(mins % 60, 'minute')}` : ''}` : `${n(Math.floor(mins / 1440), 'day')} ${n(Math.floor((mins % 1440) / 60), 'hour')}`
   const day = new Date(now).toDateString() === at.toDateString() ? 'today' : at.toLocaleDateString('en-US', { weekday: 'long' })
   return `resets ${day} at ${at.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} (in ${span})`
 }
@@ -67,7 +68,9 @@ function Account({ a }: { a: EditorAccounts['accounts'][number] }) {
         <bdi className="acct-name" title={a.name}>
           {a.name}
         </bdi>
-        <span className="acct-plan">{[PROVIDER_NAME[a.provider] ?? a.provider, plan].filter(Boolean).join(' · ')}</span>
+        <span className="acct-plan" title={[PROVIDER_NAME[a.provider] ?? a.provider, plan].filter(Boolean).join(' · ')}>
+          {[PROVIDER_NAME[a.provider] ?? a.provider, plan].filter(Boolean).join(' · ')}
+        </span>
       </div>
       {a.windows.length > 0 && (
         <ul className="lws" aria-label={`${a.name}: limits`}>
@@ -322,6 +325,7 @@ function StageRow({ stage, state, editorPicksOwn, showLine }: { stage: (typeof S
           </span>
         )}
         {missing && <span className="mrow-line warn">Your editor doesn’t offer {id} now. Auto is used.</span>}
+        {editorPicksOwn && stage.role === 'editor' && <span className="mrow-line">An API key picks its own model.</span>}
       </div>
       <button
         ref={chip}
@@ -454,8 +458,14 @@ function ModelPicker({ anchor, stage, value, models, loading, onPick, onClose }:
       if (!anchor.current) return
       setPos(place(anchor.current, Math.min(320, window.innerWidth - 16), Math.min(420, natural()), mainActions(box.current)))
     }
+    // a scroll moves the chip: follow it, measuring at most once a frame and never inside the scroll event itself
+    let frame = 0
     const onScroll = (e: Event): void => {
-      if (!box.current?.contains(e.target as Node)) at()
+      if (box.current?.contains(e.target as Node) || frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        at()
+      })
     }
     at()
     window.addEventListener('resize', at)
@@ -463,8 +473,10 @@ function ModelPicker({ anchor, stage, value, models, loading, onPick, onClose }:
     return () => {
       window.removeEventListener('resize', at)
       window.removeEventListener('scroll', onScroll, true)
+      cancelAnimationFrame(frame)
     }
-  }, [anchor])
+    // placed again when the editor's model list arrives and the picker grows
+  }, [anchor, models.length, loading])
   useEffect(() => {
     search.current?.focus({ preventScroll: true })
     const away = (e: PointerEvent): void => {
@@ -518,11 +530,23 @@ function ModelPicker({ anchor, stage, value, models, loading, onPick, onClose }:
     >
       <div className="mpop-search">
         <Icon name="search" size={14} />
-        <input ref={search} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search models" aria-label="Search models" spellCheck={false} data-testid="model-search" />
+        <input
+          ref={search}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search models"
+          aria-label="Search models"
+          aria-controls={`model-list-${stage.role}`}
+          aria-expanded
+          aria-autocomplete="list"
+          role="combobox"
+          spellCheck={false}
+          data-testid="model-search"
+        />
       </div>
-      <div className="mpop-list" role="listbox" aria-label={`Models for ${stage.name}`}>
+      <div className="mpop-list" role="listbox" id={`model-list-${stage.role}`} aria-label={`Models for ${stage.name}`}>
         {autoShown && (
-          <button className="mopt" role="option" aria-selected={value === 'auto'} data-opt onClick={() => pick('auto')} data-testid="model-opt-auto">
+          <button className="mopt" role="option" tabIndex={-1} aria-selected={value === 'auto'} data-opt onClick={() => pick('auto')} data-testid="model-opt-auto">
             <span className="mopt-mark">{value === 'auto' && <Icon name="check" size={14} stroke={2.4} />}</span>
             <span className="mopt-name">Auto</span>
             <span className="mopt-sub">Your editor’s own choice</span>
@@ -539,7 +563,7 @@ function ModelPicker({ anchor, stage, value, models, loading, onPick, onClose }:
               {FAMILY_NAME[g.family]}
             </p>
             {g.items.map(({ m, twin }) => (
-              <button key={m.id} className="mopt" role="option" aria-selected={m.id === chosenId} data-opt onClick={() => pick(m.id)} title={m.id} data-testid={`model-opt-${m.id}`}>
+              <button key={m.id} className="mopt" role="option" tabIndex={-1} aria-selected={m.id === chosenId} data-opt onClick={() => pick(m.id)} title={m.id} data-testid={`model-opt-${m.id}`}>
                 <span className="mopt-mark">{m.id === chosenId ? <Icon name="check" size={14} stroke={2.4} /> : <FamilyMark family={m.family} />}</span>
                 <span className="mopt-name">{m.name}</span>
                 {twin && <span className="mopt-sub">{m.id}</span>}
@@ -551,13 +575,28 @@ function ModelPicker({ anchor, stage, value, models, loading, onPick, onClose }:
         {!loading && !models.length && autoShown && <p className="mpop-empty">This editor lists no models. Auto lets it choose.</p>}
       </div>
       {chosen && chosen.efforts.length > 0 && (
-        <div className="mpop-effort" role="radiogroup" aria-label={`Reasoning for ${chosen.name}`}>
+        <div
+          className="mpop-effort"
+          role="radiogroup"
+          aria-label={`Reasoning for ${chosen.name}`}
+          onKeyDown={(e) => {
+            // the levels are one stop: Left and Right move within them and never reach the list
+            if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return
+            e.preventDefault()
+            e.stopPropagation()
+            const opts = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]'))
+            const i = opts.indexOf(document.activeElement as HTMLElement)
+            const j = e.key === 'Home' ? 0 : e.key === 'End' ? opts.length - 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? Math.max(0, i - 1) : Math.min(opts.length - 1, i + 1)
+            opts[j]?.focus()
+            opts[j]?.click()
+          }}
+        >
           <span className="mpop-effort-h">Reasoning</span>
           <div className="seg">
             {['', ...chosen.efforts].map((e) => {
               const on = (effort ?? '') === e
               return (
-                <button key={e || 'default'} role="radio" aria-checked={on} className={`seg-o${on ? ' on' : ''}`} onClick={() => onPick(e ? `${chosen.id}(${e})` : chosen.id)} data-testid={`effort-${e || 'default'}`} title={e ? EFFORT_NAME[e] : `Default${chosen.defaultEffort ? ` (${EFFORT_NAME[chosen.defaultEffort]})` : ''}`}>
+                <button key={e || 'default'} role="radio" aria-checked={on} tabIndex={on ? 0 : -1} className={`seg-o${on ? ' on' : ''}`} onClick={() => onPick(e ? `${chosen.id}(${e})` : chosen.id)} data-testid={`effort-${e || 'default'}`} title={e ? EFFORT_NAME[e] : `Default${chosen.defaultEffort ? ` (${EFFORT_NAME[chosen.defaultEffort]})` : ''}`}>
                   {e ? (EFFORT_NAME[e] ?? e).replace('Extra high', 'XHigh') : 'Default'}
                 </button>
               )

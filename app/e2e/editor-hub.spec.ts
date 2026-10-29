@@ -93,7 +93,7 @@ test('Use it connects with the config’s key; accounts, plans and limits need t
   const accounts = page.getByTestId('editor-account')
   await expect(accounts).toHaveCount(3)
   await expect(accounts.nth(0)).toContainText('maya@example.com')
-  await expect(accounts.nth(1).locator('.lw').first()).toHaveAttribute('aria-label', /^5-hour: 0% left, resets today at .+ \(in 4\d min\)$/)
+  await expect(accounts.nth(1).locator('.lw').first()).toHaveAttribute('aria-label', /^5-hour: 0% left, resets today at .+ \(in 4\d minutes\)$/)
   await expect(accounts.nth(2)).toContainText('ChatGPT · Pro')
   expect(await page.content()).not.toContain(hub.managementKey)
   await sized('first-run-hub-accounts')
