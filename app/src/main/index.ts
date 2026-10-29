@@ -68,7 +68,7 @@ import {
   writeProject,
   type AppState
 } from './store'
-import { clearFailedCopy, posterFrame, titleWithAnotherVideo } from './first-video'
+import { COPY_GONE, canCopyAgain, clearFailedCopy, posterFrame, titleWithAnotherVideo } from './first-video'
 import { addToLibrary, isVideo, listLibrary, uniqueDest } from './library'
 import { libraryPreview } from './library-preview'
 import { readLesson } from './style-learn'
@@ -290,11 +290,12 @@ async function continuePaused(slug: string): Promise<void> {
     await updateAppState(slug, (s) => void delete s.paused)
     return noteQueue.resume(slug)
   }
-  if (!existsSync(join(dir, 'project.json'))) {
+  // paused during the copy: it copies the video again (startFirstEdit), unless the file it copied from is gone
+  if (!existsSync(join(dir, 'project.json')) && !st.from && !(await canCopyAgain(st.copyFrom))) {
     await updateAppState(slug, (s) => {
       delete s.paused
       s.status = 'failed'
-      s.lastError = { code: 'CANNOT_RESUME', userMessage: 'This reel’s video never finished copying. Delete the reel and drop the video in again.' }
+      s.lastError = COPY_GONE
     })
     return
   }
@@ -517,14 +518,20 @@ function owned(args: string[], owner: string | null): string[] {
 }
 
 /** `basic`: the version is made without the editor (a failed Version 1's "Make a basic version"). `initArgs` null: a
- * resume. A reel made from another reel's proposal starts from its app.json `from` (main/propose-reels.ts). `record`:
- * changes to app.json written with the job's start, so a start that is refused leaves none of them behind. */
+ * resume: one stopped during its copy copies the video again from app.json `copyFrom`. A reel made from another reel's
+ * proposal starts from its app.json `from` (main/propose-reels.ts). `record`: changes to app.json written with the
+ * job's start, so a start that is refused leaves none of them behind. */
 function startFirstEdit(slug: string, initArgs: { title: string; files: string[] } | null, basic = false, record?: (s: AppState) => void): string {
   const dir = projectDir(slug)
   const startedAt = Date.now()
   let editor: string | null = null
   // a plan at its limit, no internet or sleep pauses Version 1 to continue by itself (main/pause.ts)
   const pause = (e: unknown) => (basic ? null : pauseFor(e, pauseCtx('first-edit', startedAt, editor)))
+  // with the job's start: what the copy is made from, until it is in, so a Stop during the copy can copy it again
+  const started = (s: AppState): void => {
+    if (initArgs) s.copyFrom = initArgs.files
+    record?.(s)
+  }
   return jobs.start(slug, 'first-edit', async (emit, signal, { owner }) => {
     const copyIn = async (title: string, files: string[]) => {
       const { fasterExports } = await loadSettings()
@@ -538,14 +545,23 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
     }
     // a reel made from another reel's proposal is copied in and seeded from it, on a resume too if the app closed
     // between the two, so it never becomes an edit of the whole video
-    const from = (await readAppState(slug)).from
+    const st = await readAppState(slug)
+    const from = st.from
     if (from) await prepareReel(slug, from, () => copyIn(from.about.title, [from.media]), { resumed: !initArgs, signal })
-    else if (initArgs && !existsSync(join(dir, 'project.json'))) {
-      await copyIn(initArgs.title, initArgs.files).catch(async (e) => {
+    else if (!existsSync(join(dir, 'project.json'))) {
+      // No project.json: the copy is not in. A resume (Stop, a quit or a pause during the copy) copies again from the
+      // files the person dropped, after clearing what was half copied, so a partial copy is never taken for the video.
+      const files = initArgs?.files ?? st.copyFrom ?? []
+      if (!initArgs) {
+        if (!(await canCopyAgain(files))) throw COPY_GONE
+        await clearFailedCopy(dir)
+      }
+      await copyIn(initArgs?.title ?? st.title ?? titleFromFile(files[0]), files).catch(async (e) => {
         // refused before a copy exists (no sound, not a video): the card shows the file's first frame instead
-        await posterFrame(ffmpegPath(), initArgs.files[0], dir).catch((err) => log(`[poster] ${slug}: ${String(err).slice(0, 300)}`))
+        await posterFrame(ffmpegPath(), files[0], dir).catch((err) => log(`[poster] ${slug}: ${String(err).slice(0, 300)}`))
         throw e
       })
+      await updateAppState(slug, (s) => void delete s.copyFrom)
     }
     // a reel planned before it had a video: the editor reads its script from project.json (again on a resume,
     // in case the app closed between the copy and this)
@@ -580,7 +596,7 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
     })
     if (r.notice?.userMessage) await addChat(slug, 'editor', r.notice.userMessage)
     return replyAskingAboutStyle(r, r.summary)
-  }, { pause, record })
+  }, { pause, record: started })
 }
 
 /** Which model made a version, beside it (`versions/vN/made-with.json`, as title.json is): its line in the notes names
@@ -1121,9 +1137,10 @@ function registerIpc(): void {
   })
   handle('projects:resume', async (_e, slug: string, basic?: boolean) => {
     const dir = projectDir(slug)
-    if (!existsSync(join(dir, 'project.json'))) {
-      throw { code: 'CANNOT_RESUME', userMessage: 'This reel’s video never finished copying. Delete the reel and drop the video in again.' }
-    }
+    // stopped during the copy: Resume copies the video again from the file the person dropped, if it still opens
+    // (startFirstEdit). The card never offers Resume otherwise (store.ts copyGone); this is for a file gone since.
+    const st = await readAppState(slug)
+    if (!existsSync(join(dir, 'project.json')) && !st.from && !(await canCopyAgain(st.copyFrom))) throw COPY_GONE
     // the person's Resume: nothing waits to continue it on its own any more
     pauser.cancel(slug)
     return { jobId: startFirstEdit(slug, null, basic === true) }
