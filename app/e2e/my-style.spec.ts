@@ -113,9 +113,12 @@ test('Learn from my past edits lists the edits on this computer by app, and lear
     for (const box of await items.locator('input').all()) await expect(box).toBeChecked()
     // a library and a project can't be read as they are: each says once how to export one, beside Show in Finder
     const needs = sheet.getByTestId('learn-needs-export')
-    await expect(needs.nth(0)).toContainText('Libraries need an XML export first. In Final Cut Pro, select the project, then choose File › Export XML…')
+    // in their own sub-group after the tickable rows, named for what they need, with no checkbox
+    await expect(needs.nth(0)).toHaveAccessibleName('Needs an export first')
+    await expect(needs.nth(0)).toContainText('In Final Cut Pro, select the project, then choose File › Export XML…')
+    await expect(needs.locator('input[type="checkbox"]')).toHaveCount(0)
     await expect(needs.nth(0).getByTestId('learn-item-waiting')).toContainText('Untitled')
-    await expect(needs.nth(1)).toContainText('Projects need an XML export first. In Premiere Pro, open the project, then choose File › Export › Final Cut Pro XML…')
+    await expect(needs.nth(1)).toContainText('In Premiere Pro, open the project, then choose File › Export › Final Cut Pro XML…')
     await expect(needs.nth(1).getByRole('button', { name: 'Show Interview in Finder' }).or(needs.nth(1).getByRole('button', { name: 'Show Interview in Explorer' }))).toBeVisible()
 
     // back from the editor with a new export: the list looks again when the window has focus, and ticks it

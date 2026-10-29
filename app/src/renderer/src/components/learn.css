@@ -16,21 +16,27 @@
 .learn-mark { width: 20px; height: 20px; flex: none; }
 .learn-mark.neutral { display: grid; place-items: center; color: var(--ink-2); }
 .learn-items { list-style: none; margin: 0; padding: 0; }
-/* an edit that appears while the sheet is open (a new export) fades in, so the eye finds it */
-.learn-items > li.fresh { transition: opacity 180ms cubic-bezier(.2, .8, .2, 1); @starting-style { opacity: 0; } }
+/* an edit that appears while the sheet is open (a new export) fades in, so the eye finds it (and in .learn-still) */
 .learn-item { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 9px 0; box-shadow: inset 0 1px 0 var(--line); cursor: pointer; }
 .learn-item input { margin: 2px 0 0; flex: none; }
 .learn-item.off, .learn-item.still { cursor: default; }
-.learn-item.still { align-items: center; padding-left: 28px; }
+/* the tickable list closes with its own line, which the sub-group below doesn't share */
+.learn-items > li:last-child > .learn-item { box-shadow: inset 0 1px 0 var(--line), inset 0 -1px 0 var(--line); }
+/* Needs an export first: its own sub-group after the tickable rows, quieter, with no checkbox column and no
+   dividers, so a row there doesn't read as one left unticked */
+.learn-waiting { margin-top: 16px; }
+.learn-waiting-h { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 560; color: var(--ink-2); }
+.learn-how { margin: 2px 0 0; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); overflow-wrap: anywhere; }
+.learn-still { list-style: none; margin: 6px 0 0; padding: 0; }
+.learn-items > li.fresh, .learn-still > li.fresh { transition: opacity 180ms cubic-bezier(.2, .8, .2, 1); @starting-style { opacity: 0; } }
+.learn-item.still { align-items: center; padding: 5px 0; box-shadow: none; }
+.learn-item.still .learn-t > b { font-size: var(--fs-base); line-height: var(--lh-base); font-weight: 500; color: var(--ink-2); }
 .learn-t { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .learn-t > b, .learn-t > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .learn-t > b { font-size: var(--fs-md); line-height: var(--lh-md); font-weight: 560; }
 .learn-t > span { font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); }
 .learn-t > .learn-problem { white-space: normal; overflow-wrap: anywhere; color: var(--ink-2); }
 .learn-item.off .learn-t > b { color: var(--ink-3); }
-.learn-waiting { margin-top: 4px; }
-.learn-how { padding: 10px 0 10px 28px; box-shadow: inset 0 1px 0 var(--line); font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-2); overflow-wrap: anywhere; }
-.learn-waiting .learn-items > li:first-child { box-shadow: none; padding-top: 0; }
 
 .learn-none { padding: 4px var(--space-s) 8px; overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
 .learn-none-h { font-size: var(--fs-section); line-height: var(--lh-section); font-weight: 560; margin-bottom: 4px; }
@@ -46,4 +52,4 @@
 .learn-choose { margin-left: -8px; }
 .learn-foot-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-left: auto; }
 
-html.kb .learn-items > li.fresh { transition: none; }
+html.kb :is(.learn-items, .learn-still) > li.fresh { transition: none; }
