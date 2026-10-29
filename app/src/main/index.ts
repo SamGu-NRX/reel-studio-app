@@ -509,8 +509,9 @@ function owned(args: string[], owner: string | null): string[] {
 }
 
 /** `basic`: the version is made without the editor (a failed Version 1's "Make a basic version"). `initArgs` null: a
- * resume. A reel made from another reel's proposal starts from its app.json `from` (main/propose-reels.ts). */
-function startFirstEdit(slug: string, initArgs: { title: string; files: string[] } | null, basic = false): string {
+ * resume. A reel made from another reel's proposal starts from its app.json `from` (main/propose-reels.ts). `record`:
+ * changes to app.json written with the job's start, so a start that is refused leaves none of them behind. */
+function startFirstEdit(slug: string, initArgs: { title: string; files: string[] } | null, basic = false, record?: (s: AppState) => void): string {
   const dir = projectDir(slug)
   const startedAt = Date.now()
   let editor: string | null = null
@@ -570,7 +571,7 @@ function startFirstEdit(slug: string, initArgs: { title: string; files: string[]
     })
     if (r.notice?.userMessage) await addChat(slug, 'editor', r.notice.userMessage)
     return replyAskingAboutStyle(r, r.summary)
-  }, { pause })
+  }, { pause, record })
 }
 
 /** The editor's reply into the chat, then one "Remember this for next time?" per My style rule (style-consent.ts). */
@@ -1011,6 +1012,9 @@ function registerIpc(): void {
     // A reel cut from another reel's video can't change its video.
     const again = !st.from && !jobs.forSlug(slug) && (await reelSummary(slug))?.status === 'failed' && !(await listVersions(projectDir(slug))).length
     if (st.status !== 'planned' && !again) throw { code: 'HAS_VIDEO', userMessage: 'This reel already has its video. Drop it on Reels to make a new reel.' }
+    // refused before anything is written or moved: not the title, and not the other files into the Library
+    if (jobs.forSlug(slug)?.kind === 'script') throw { code: 'BUSY', userMessage: 'Your editor is still answering. Drop the video again in a moment, or press Stop.' }
+    jobs.refuseIfBusy(slug)
     const { videos, skipped } = await takeVideos(files)
     const fromFile = titleFromFile(videos[0])
     let title: string
@@ -1020,12 +1024,12 @@ function registerIpc(): void {
       title = titleWithAnotherVideo(current, st.fileTitle, fromFile)
       await clearFailedCopy(projectDir(slug))
     } else title = st.title && st.title !== PLANNED_TITLE ? st.title : fromFile
-    await updateAppState(slug, (s) => {
+    // the title is written with the first edit's start, so a start refused in the meantime leaves the reel as it was
+    const named = (s: AppState): void => {
       s.title = title
       if (title === fromFile) s.fileTitle = title
-    })
-    // refused while a script is still being written; the reel stays planned until its first edit starts
-    return { jobId: startFirstEdit(slug, { title, files: videos }), skipped }
+    }
+    return { jobId: startFirstEdit(slug, { title, files: videos }, false, named), skipped }
   })
   // A turn of a planned reel's planning chat: the editor asks a short question or proposes the whole plan, which
   // becomes the reel's plan (shared/plan.ts). The plan's title names the reel, unless the person named it.

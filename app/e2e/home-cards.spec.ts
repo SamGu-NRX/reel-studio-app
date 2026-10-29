@@ -24,6 +24,8 @@ test('a reel you paused says so and what Resume does; the pill resumes it, the c
   try {
     await passFirstRun(page)
     await startReel(page, media.video)
+    // Stop once the video is in (its original plays, tagged): a Stop during the copy leaves nothing to resume
+    await expect(page.getByTestId('first-tag')).toHaveText('Original', { timeout: 60_000 })
     await page.getByTestId('stop').click()
     await expect(page.getByTestId('first-paused')).toBeVisible({ timeout: 60_000 })
     await page.getByTestId('nav-home').click()
