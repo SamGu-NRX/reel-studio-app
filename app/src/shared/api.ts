@@ -650,6 +650,28 @@ export interface StyleLesson {
   skipped: { name: string; reason: string }[]
 }
 
+export type PastEditKind = 'fcpxml' | 'fcpxmld' | 'fcpbundle' | 'premiere-xml' | 'prproj'
+
+/** An edit "Learn from my past edits" found on this computer. Its path stays in main; the page names it by id. */
+export interface PastEdit {
+  id: string
+  /** The file's name without its extension. */
+  name: string
+  /** The file's whole name, as a lesson lists it. */
+  file: string
+  /** The folder it is in, below the home folder ("Movies › Exports"), or its drive and folder. */
+  where: string
+  app: 'Final Cut Pro' | 'Premiere Pro'
+  kind: PastEditKind
+  /** ISO time it last changed. */
+  modified: string
+  /** Read as it is. A Final Cut Pro library or a Premiere Pro project needs an XML export first. */
+  readable: boolean
+}
+
+/** How many timelines each readable edit holds, by id, or why it can't be read. */
+export type PastEditCounts = Record<string, { timelines: number } | { problem: string }>
+
 export interface StyleProposal {
   id: string
   text: string
@@ -951,8 +973,19 @@ export interface ReelApi {
     damaged(): Promise<boolean>
     /** Undo of remove: the rule back where it was. Only a rule removed in this run of the app. */
     restore(id: string): Promise<void>
-    /** Pick Final Cut Pro or Premiere Pro exports and read rules from them; saves nothing. null: the picker was cancelled. */
-    learn(): Promise<StyleLesson | null>
+    /** The Final Cut Pro and Premiere Pro edits on this computer, newest first. Each call looks again. */
+    find(): Promise<PastEdit[]>
+    /** Timelines in each readable edit of the last find(), by id. */
+    count(): Promise<PastEditCounts>
+    /** Read rules from these found edits, or with no ids from exports picked in a file dialog; saves nothing.
+     * null: the dialog was cancelled. */
+    learn(ids?: string[]): Promise<StyleLesson | null>
+    /** How far learn() has read. */
+    onLearnProgress(cb: (p: { done: number; total: number }) => void): () => void
+    /** The installed editors' own icons as data URLs; an editor that isn't installed is missing. */
+    appIcons(): Promise<Partial<Record<PastEdit['app'], string>>>
+    /** Show a found edit in Finder or File Explorer. */
+    reveal(id: string): Promise<void>
     /** Keep these rules from a lesson; each remembers `from`, the export names it was read from. */
     keepLearned(rules: LearnedRule[], from: string): Promise<StyleRule[]>
     /** Change a rule's words, or pause or resume it. */

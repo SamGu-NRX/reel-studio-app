@@ -13,11 +13,16 @@ function asRecord(x: unknown, file: string): ImportRecord {
   return r as ImportRecord
 }
 
-export async function readLesson(files: string[], importReference: (file: string) => Promise<unknown>): Promise<StyleLesson> {
+export async function readLesson(
+  files: string[],
+  importReference: (file: string) => Promise<unknown>,
+  onProgress?: (p: { done: number; total: number }) => void
+): Promise<StyleLesson> {
   const records: ImportRecord[] = []
   const read: StyleLesson['files'] = []
   const skipped: StyleLesson['skipped'] = []
-  for (const file of files) {
+  for (const [done, file] of files.entries()) {
+    onProgress?.({ done, total: files.length })
     try {
       const record = asRecord(await importReference(file), file)
       records.push(record)

@@ -404,6 +404,11 @@ def cmd_import_reference(args):
     return reference_import.run(Path(args.file), Path(args.output) if args.output else None)
 
 
+def cmd_reference_scan(args):
+    from . import reference_import
+    return reference_import.scan([Path(f) for f in args.files])
+
+
 # Commands that change nothing in the project, and `attach`, which only adds its own uniquely named
 # file: they run even while Reel Studio has the project open. Every other command given --project is
 # refused then unless Reel Studio runs it (owner.py).
@@ -512,6 +517,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("import-reference", cmd_import_reference, "import FCPXML or Premiere FCP7 XML")
     sp.add_argument("file")
     sp.add_argument("--output", help="write the import record as JSON")
+    sp = add("reference-scan", cmd_reference_scan, "count the timelines import-reference would read from each export")
+    sp.add_argument("files", nargs="+")
     sp = add("search-images", cmd_search_images, "find freely licensed pictures on the web")
     sp.add_argument("--query")
     sp.add_argument("--n", type=int, default=8)

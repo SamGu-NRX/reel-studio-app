@@ -3,9 +3,10 @@
 //
 // Run: npm run build && npx playwright test e2e/my-style.spec.ts
 import { test, expect } from '@playwright/test'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BASE, launch, passFirstRun, shot } from './helpers'
+import { makePastEditsHome } from './past-edits-home'
 
 test('a damaged My style file is kept next to a new one, and My style says so in one line', async () => {
   const mine = mkdtempSync(join(BASE, 'style-'))
@@ -65,6 +66,101 @@ test('Edit changes a rule\'s words, and Pause keeps it listed but off until Resu
     await page.getByRole('button', { name: 'Resume "Keep music much quieter under talking"' }).click()
     await expect(rule).not.toContainText('Paused')
     expect(saved()[0].paused).toBeUndefined()
+  } finally {
+    await app.close().catch(() => {})
+  }
+})
+
+test('Learn from my past edits lists the edits on this computer by app, and learns from the ticked ones in one click', async () => {
+  const mine = mkdtempSync(join(BASE, 'style-'))
+  const root = join(mine, 'Documents', 'Reel Studio')
+  const home = join(mine, 'home')
+  mkdirSync(root, { recursive: true })
+  makePastEditsHome(home)
+  // Final Cut Pro is installed; Premiere Pro isn't
+  const apps = join(mine, 'Applications')
+  mkdirSync(join(apps, 'Final Cut Pro.app'), { recursive: true })
+  const { app, page } = await launch({
+    REELSTUDIO_ROOT: root,
+    REELSTUDIO_USER_DATA: join(mine, 'user data'),
+    REELSTUDIO_TEST_PAST_EDITS_HOME: home,
+    REELSTUDIO_TEST_APPS_DIR: apps
+  })
+  try {
+    await passFirstRun(page)
+    await page.getByTestId('nav-style').click()
+    // fails if the button opens a file dialog again (Sam cancelled it twice): the sheet opens, the dialog never does
+    await app.evaluate(({ dialog }) => {
+      ;(dialog as any).showOpenDialog = async () => {
+        throw new Error('a file dialog opened')
+      }
+    })
+    await page.getByTestId('style-learn').click()
+    const sheet = page.getByTestId('learn-sheet')
+    const groups = sheet.getByTestId('learn-group')
+    await expect(groups).toHaveCount(2)
+    // each app's section is named by its heading (aria-labelledby broke on the space in "Final Cut Pro")
+    await expect(groups.nth(0)).toHaveAccessibleName('Final Cut Pro')
+    await expect(groups.nth(1)).toHaveAccessibleName('Premiere Pro')
+    // the installed editor's own icon from the system; the missing one gets the neutral icon, never a drawn copy
+    await expect(groups.nth(0).getByTestId('learn-app-icon')).toHaveAttribute('src', /^data:image\/png;base64,/)
+    await expect(groups.nth(1).getByTestId('learn-app-icon')).toHaveCount(0)
+    await expect(groups.nth(1).getByTestId('learn-app-neutral')).toBeVisible()
+    // Return learns from what is ticked: the Learn button has the focus once the list is there
+    await expect(page.getByTestId('learn-go')).toBeFocused()
+    const items = sheet.getByTestId('learn-item')
+    await expect(items).toHaveText([/^Spring launchXML export · .* · 1 timeline · Movies › Exports$/, /^Kitchen tour/, /^talking-head.* · Desktop$/])
+    for (const box of await items.locator('input').all()) await expect(box).toBeChecked()
+    // a library and a project can't be read as they are: each says once how to export one, beside Show in Finder
+    const needs = sheet.getByTestId('learn-needs-export')
+    await expect(needs.nth(0)).toContainText('Libraries need an XML export first. In Final Cut Pro, select the project, then choose File › Export XML…')
+    await expect(needs.nth(0).getByTestId('learn-item-waiting')).toContainText('Untitled')
+    await expect(needs.nth(1)).toContainText('Projects need an XML export first. In Premiere Pro, open the project, then choose File › Export › Final Cut Pro XML…')
+    await expect(needs.nth(1).getByRole('button', { name: 'Show Interview in Finder' }).or(needs.nth(1).getByRole('button', { name: 'Show Interview in Explorer' }))).toBeVisible()
+
+    // back from the editor with a new export: the list looks again when the window has focus, and ticks it
+    copyFileSync(join(home, 'Desktop', 'talking-head.xml'), join(home, 'Documents', 'Fresh export.xml'))
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(items.filter({ hasText: 'Fresh export' }).locator('input')).toBeChecked()
+
+    await items.filter({ hasText: 'Fresh export' }).locator('input').uncheck()
+    await items.filter({ hasText: 'Kitchen tour' }).locator('input').uncheck()
+    await page.getByTestId('learn-go').click()
+    await expect(sheet).toHaveCount(0)
+    await expect(page.getByTestId('style-lesson')).toContainText('Spring launch.fcpxml (Final Cut Pro), talking-head.xml (Premiere Pro)')
+    expect(await page.evaluate(() => window.reel.style.rules())).toEqual([])
+  } finally {
+    await app.close().catch(() => {})
+  }
+})
+
+test('with nothing found, Learn from my past edits says so and how to get one in, and opens no file dialog by itself', async () => {
+  const mine = mkdtempSync(join(BASE, 'style-'))
+  const root = join(mine, 'Documents', 'Reel Studio')
+  mkdirSync(root, { recursive: true })
+  const { app, page } = await launch({ REELSTUDIO_ROOT: root, REELSTUDIO_USER_DATA: join(mine, 'user data'), REELSTUDIO_TEST_PAST_EDITS_HOME: join(mine, 'empty home') })
+  try {
+    await passFirstRun(page)
+    await page.getByTestId('nav-style').click()
+    const opened: string[] = []
+    await app.evaluate(({ dialog }) => {
+      ;(globalThis as any).__dialogs = 0
+      ;(dialog as any).showOpenDialog = async () => {
+        ;(globalThis as any).__dialogs++
+        return { canceled: true, filePaths: [] }
+      }
+    })
+    await page.getByTestId('style-learn').click()
+    const none = page.getByTestId('learn-none')
+    await expect(none).toContainText(/No Final Cut Pro or Premiere Pro edits on this (Mac|PC) yet\./)
+    await expect(none).toContainText('Export one from your editor.')
+    await expect(none).toContainText('In Premiere Pro, open the project, then choose File › Export › Final Cut Pro XML… Save it anywhere')
+    opened.push(String(await app.evaluate(() => (globalThis as any).__dialogs)))
+    await page.getByTestId('learn-choose').click()
+    opened.push(String(await app.evaluate(() => (globalThis as any).__dialogs)))
+    // only Choose files… opens the dialog; cancelled, the sheet stays
+    expect(opened).toEqual(['0', '1'])
+    await expect(none).toBeVisible()
   } finally {
     await app.close().catch(() => {})
   }

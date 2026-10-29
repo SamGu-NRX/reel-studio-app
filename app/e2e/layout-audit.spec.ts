@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { APP_DIR, makeMedia, makeReel, passFirstRun } from './helpers'
+import { makePastEditsHome } from './past-edits-home'
 import { detectLayout, type RawFinding } from './layout-audit/detect'
 import { ALLOW } from './layout-audit/allowlist'
 import { OUT, commit, counts, outlinedShot, sourceFor, writeScreen, type Finding, type ScreenResult } from './layout-audit/report'
@@ -54,7 +55,6 @@ interface Screen {
 
 /** The practice editor: connected, and answers notes from a script (REELSTUDIO_MOCK_NOTE is its delay in ms). */
 const EDITOR = { REELSTUDIO_MOCK_NOTE: '400' }
-const FIXTURE_EDIT = join(APP_DIR, '..', 'engine', 'tests', 'fixtures', 'reference-import', 'talking-head.xml')
 
 // ---- launching -------------------------------------------------------------------------------------------
 // Profiles outside BASE survive Playwright restarting the worker after a failed screen (BASE goes with the worker);
@@ -562,9 +562,11 @@ SCREENS.push({
   }))
 })
 
+const STYLE_HOME = join(RUN_DIR, 'my-style-home')
 SCREENS.push({
   id: 'my-style',
   profile: 'ready',
+  env: { REELSTUDIO_TEST_PAST_EDITS_HOME: STYLE_HOME },
   states: [
     { id: 'my-style-empty', enter: click('nav-style'), ready: byTestId('style-empty'), focal: '[data-testid="style-empty"]', column: MAIN },
     {
@@ -577,13 +579,34 @@ SCREENS.push({
       ready: byTestId('style-rule')
     },
     {
-      id: 'my-style-learn',
-      enter: async ({ app, page }) => {
-        // the native folder picker can't be driven: it answers with an exported Premiere Pro timeline
-        await app.evaluate(({ dialog }, f) => {
-          ;(dialog as any).showOpenDialog = async () => ({ canceled: false, filePaths: [f] })
-        }, FIXTURE_EDIT)
+      // Learn from my past edits looks in this folder instead of the home folder (REELSTUDIO_TEST_PAST_EDITS_HOME):
+      // empty first, then holding an edit of each kind
+      id: 'my-style-learn-none',
+      enter: async ({ page }) => {
+        mkdirSync(STYLE_HOME, { recursive: true })
         await page.getByTestId('style-learn').click()
+      },
+      ready: byTestId('learn-none')
+    },
+    {
+      id: 'my-style-learn-found',
+      enter: async ({ page }) => {
+        await closeAll(page)
+        if (!existsSync(join(STYLE_HOME, 'Movies'))) makePastEditsHome(STYLE_HOME)
+        await page.getByTestId('style-learn').click()
+        // the timeline counts have arrived
+        await expect(page.getByTestId('learn-item').first()).toContainText('timeline')
+      },
+      ready: byTestId('learn-item')
+    },
+    {
+      id: 'my-style-learn',
+      enter: async ({ page }) => {
+        if (!(await page.getByTestId('learn-go').count())) {
+          await closeAll(page)
+          await page.getByTestId('style-learn').click()
+        }
+        await page.getByTestId('learn-go').click()
       },
       ready: byTestId('style-lesson')
     }

@@ -380,3 +380,59 @@ def test_cli_writes_the_record(tmp_path):
     done = json.loads(buf.getvalue().splitlines()[-1])
     assert code == 0 and done["event"] == "done"
     assert json.loads(out.read_text(encoding="utf-8")) == done["result"]
+
+
+def _two_sequences(tmp_path):
+    """talking-head.xml with a second top-level sequence beside the first."""
+    text = (FIXTURES / "talking-head.xml").read_text(encoding="utf-8")
+    start, end = text.index('  <sequence id="seq-1">'), text.index("</xmeml>")
+    second = text[start:end].replace('id="seq-1"', 'id="seq-2"').replace("<name>Talking head cut</name>", "<name>Second cut</name>", 1)
+    source = tmp_path / "two-sequences.xml"
+    source.write_text(text[:end] + second + text[end:], encoding="utf-8")
+    return source
+
+
+def _two_projects(tmp_path):
+    source = tmp_path / "two.fcpxml"
+    source.write_text(_TWO_PROJECTS, encoding="utf-8")
+    return source
+
+
+@pytest.mark.parametrize("make,count", [
+    (lambda _: FIXTURES / "talking-head.xml", 1),
+    (lambda _: FIXTURES / "ntsc-lanes.fcpxml", 1),
+    (lambda _: FIXTURES / "cut.fcpxmld", 1),
+    (_two_sequences, 2),
+    (_two_projects, 1),   # the adapter reads only the first top-level project
+], ids=["premiere", "fcpxml", "fcpxmld", "two-sequences", "two-projects"])
+def test_scan_counts_the_timelines_an_import_returns(tmp_path, make, count):
+    source = make(tmp_path)
+    assert reference_import.count_timelines(source) == count
+    assert len(import_reference(source)["timelines"]) == count
+
+
+def test_scan_gives_each_unreadable_export_its_reason_and_reads_the_rest(tmp_path):
+    later = tmp_path / "later.fcpxml"
+    later.write_text('<fcpxml version="1.10"><resources><format id="r1" frameDuration="1/25s"/></resources><library>'
+                     '<event name="Clips"/><event name="Edits"><project name="Cut"><sequence format="r1"><spine/>'
+                     '</sequence></project></event></library></fcpxml>', encoding="utf-8")
+    notes = tmp_path / "notes.xml"
+    notes.write_text("<notes>not an edit</notes>", encoding="utf-8")
+    good = FIXTURES / "talking-head.xml"
+    assert reference_import.scan([later, notes, good])["files"] == [
+        {"path": str(later), "error": {"code": "TIMELINE_SKIPPED", "message": reference_import._USER["TIMELINE_SKIPPED"]}},
+        {"path": str(notes), "error": {"code": "NO_TIMELINE", "message": reference_import._USER["NO_TIMELINE"]}},
+        {"path": str(good), "timelines": 1},
+    ]
+
+
+def test_cli_scan_reports_every_file():
+    buf = io.StringIO()
+    proto.set_stream(buf)
+    try:
+        code = cli.main(["reference-scan", str(FIXTURES / "talking-head.xml"), str(FIXTURES / "cut.fcpxmld")])
+    finally:
+        proto.set_stream(None)
+    done = json.loads(buf.getvalue().splitlines()[-1])
+    assert code == 0 and done["event"] == "done"
+    assert [f["timelines"] for f in done["result"]["files"]] == [1, 1]
