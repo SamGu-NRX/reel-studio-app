@@ -26,7 +26,8 @@ describe('forPerson', () => {
       [
         { type: 'status', message: `Reading ${ai}` },
         { type: 'status', message: 'Zooming at words w12, w13 (around "you don\'t need a mixer")' },
-        { type: 'tool', name: 'zoom', summary: 'Zoom on w7 to w9' },
+        // bare ids go only when they are ones handed with this note (w0, w1, w2 here)
+        { type: 'tool', name: 'zoom', summary: 'Zoom on w0 to w2' },
         { type: 'status', message: 'At 0:14 (around "flour", words w80, w81): cut this part' }
       ],
       text
@@ -52,5 +53,18 @@ describe('personText', () => {
     expect(personText(`I made the subtitles bigger from 0:06 to 0:09 (around "engine will write", words w10, w11).`, ai, text)).toBe(
       'I made the subtitles bigger from 0:06 to 0:09.'
     )
+  })
+})
+
+// Review finding r12: a bare "w\d+" rule stripped the person's own words ("Use w12 for the lower third").
+describe("personText and the person's own w12", () => {
+  const text = 'Use w12 for the lower third here'
+  const ai = aiNoteText(text, { at: 6, version: 1, words: ['w10', 'w11'], quote: 'engine will write' })
+  it('fails if an echo or a paraphrase loses an id-like word the person typed', () => {
+    expect(personText(`Done: "${ai}". It is Version 2.`, ai, text)).toBe(`Done: "${text}". It is Version 2.`)
+    expect(personText('I put w12 in the lower third on w10 to w11.', ai, text)).toBe('I put w12 in the lower third.')
+  })
+  it('fails if a bare id that was not handed with the note is taken for one', () => {
+    expect(personText('Kept w40 as it was.', ai, text)).toBe('Kept w40 as it was.')
   })
 })

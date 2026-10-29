@@ -70,6 +70,14 @@ export function editorSaid(text: string): string | null {
   return s
 }
 
+/** What a note sends again: the person's note as stored, never the log's line for it. Throws when the log's entry
+ * names no note of theirs, rather than sending something else. */
+export function noteToRetry(chat: ChatMessage[], key: string): string {
+  const m = chat.find((c) => c.id === key && c.from === 'you')
+  if (!m) throw new Error(`no note of yours with id ${key} to send again`)
+  return m.text
+}
+
 /** The words said about a version without "It is Version 3.", which its line already says. */
 export const withoutNumber = (text: string): string => text.replace(/\s*It is Version \d+\.?/g, '').trim()
 
@@ -97,8 +105,9 @@ export function notesLog(input: {
   now: Date
 }): LogEntry[] {
   const { made, versions, running, now } = input
-  // the guard: a transcript word id ("words w10, w11") is for the AI only, whatever an editor or an old build saved
-  const chat = input.chat.map((m) => (typeof m.text === 'string' && withoutWordIds(m.text) !== m.text ? { ...m, text: withoutWordIds(m.text) } : m))
+  // the guard: the moment wrapper and words lists the app writes for the AI never show in an editor's line, whatever an
+  // editor or an old build saved. The person's own notes are shown and retried exactly as they wrote them.
+  const chat = input.chat.map((m) => (m.from === 'editor' && withoutWordIds(m.text) !== m.text ? { ...m, text: withoutWordIds(m.text) } : m))
   const latest = versions[versions.length - 1]?.n ?? 0
   const first: LogEntry & { at: string } = {
     key: 'video',
