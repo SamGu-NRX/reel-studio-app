@@ -16,7 +16,7 @@ import { reel } from '../api'
 import { Icon } from './icons'
 import { IconButton } from './ui'
 import { byKeyboard, reducedMotion, usePresence } from './motion'
-import { fitPhone } from './Phone'
+import { deviceRatio, fitPhone } from './Phone'
 import { ScrubRange, textField } from './Player'
 import { usePlayhead, type Playhead } from './playhead'
 import { ShapeMenu, SpeedMenu } from './PreviewControls'
@@ -143,7 +143,7 @@ export function FullStage({
     giveBack.current = null
     // the slot's width was last written for the stage; size it for the page now, as its observer will after paint
     const slot = phone?.parentElement
-    if (slot) fitPhone(slot, shape.w / shape.h)
+    if (slot) fitPhone(slot, deviceRatio(shape))
     const back = from.current?.isConnected ? from.current : stage.closest('.stage')?.querySelector<HTMLElement>('[data-testid="full-screen"]')
     back?.focus({ preventScroll: true })
     from.current = null
@@ -160,7 +160,7 @@ export function FullStage({
     <div
       ref={ref}
       className="stage-v"
-      style={{ '--ratio-n': shape.w / shape.h } as CSSProperties}
+      style={{ '--ratio-n': deviceRatio(shape) } as CSSProperties}
       data-leaving={leaving || undefined}
       role={open ? 'dialog' : undefined}
       aria-modal={open || undefined}

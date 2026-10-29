@@ -1,6 +1,7 @@
-/* The first run (screens/FirstRun.tsx). The stage is the Reel screen's own layout and classes (reel.css: .reel-b,
-   .stage, .ncol, .log, .nt-res, .cbox, .strip, .steps, .transport); this file adds what only the sample needs.
-   Everything that moves uses transform and opacity. */
+/* The first run (screens/FirstRun.tsx). The stage borrows the Reel screen's classes (reel.css: .reel-b, .stage, .ncol,
+   .nt-res, .cbox, .strip, .steps) and lays them out for one focal object: the phone centred in the space the column
+   leaves, its controls under it at its width, and a column of fixed width with one scroll area. Everything that moves
+   uses transform and opacity. */
 
 /* above the empty title-bar row App draws, which would otherwise take the sound toggle's clicks */
 .fr { position: fixed; inset: 0; z-index: 31; background: var(--paper); overflow: hidden; }
@@ -33,33 +34,57 @@
 .fr-welcome .btn { animation-delay: 200ms; }
 .fr-welcome .w-foot { animation-delay: 250ms; }
 
-/* the middle reel on its way into the player (FirstRun.tsx fly): the player's size and corners, scaled */
-.fr-flyer { position: fixed; z-index: 50; border-radius: 6.5% / 3.66%; overflow: hidden; pointer-events: none; }
+/* the middle reel on its way into the player (FirstRun.tsx fly): the reel's box on the phone, scaled and clipped */
+.fr-flyer { position: fixed; z-index: 50; overflow: hidden; pointer-events: none; }
 .fr-flyer img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* ---------- the stage: the Reel screen's layout ---------- */
-.fr-stage { position: absolute; inset: 0; padding-top: var(--titlebar); display: flex; flex-direction: column; }
-.fr-stage > .reel-b { flex: 1; min-height: 0; }
+/* ---------- the stage ---------- */
+.fr-stage { --fr-col: 400px; position: absolute; inset: 0; padding-top: var(--titlebar); display: flex; flex-direction: column; }
+.fr-stage > .reel-b { flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) var(--fr-col); }
 @keyframes fr-in { from { opacity: 0; } }
 @keyframes fr-up { from { opacity: 0; transform: translateY(8px); } }
 .fr-stage.on .stage { animation: fr-in 220ms cubic-bezier(.2, .8, .2, 1) both; }
-.fr-stage.on .fr-col { animation: fr-up 220ms 160ms cubic-bezier(.2, .8, .2, 1) both; }
+/* backwards, not both: a transform animation still in effect makes its element the containing block of fixed
+   descendants, and the server form's dialog (Connections.tsx Modal) then opened inside the column, cut off by it */
+.fr-stage.on .fr-col { animation: fr-up 220ms 160ms cubic-bezier(.2, .8, .2, 1) backwards; }
 .fr-stage.leaving { opacity: 0; transition: opacity 200ms cubic-bezier(.2, .8, .2, 1); }
 
-/* the title-bar row: the sample's name and version, and the sound switch where a reel's actions sit */
+/* The title-bar row, in the body's two columns: the sample's name centred over the phone (the window buttons sit
+   left of it at every size), the version hanging after it so its arrival moves nothing. */
 .fr-tb {
-  position: absolute; top: 0; left: 0; right: 0; height: var(--titlebar); display: flex; align-items: center; gap: 12px;
-  padding: 0 var(--gutter) 0 84px; -webkit-app-region: drag;
+  position: absolute; top: 0; left: 0; right: 0; height: var(--titlebar); display: grid; grid-template-columns: minmax(0, 1fr) var(--fr-col);
+  align-items: center; -webkit-app-region: drag;
 }
-.platform-win32 .fr-tb, .platform-linux .fr-tb { padding: 0 150px 0 16px; }
-.fr-tb .rt-title { flex: 1; }
-.fr-snd {
-  -webkit-app-region: no-drag; height: 32px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: var(--ink-2);
-  font: inherit; font-size: var(--fs-base); font-weight: 560; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, color 120ms ease;
-}
-@media (hover: hover) and (pointer: fine) { .fr-snd:hover { background: var(--wash); color: var(--ink); } }
+.fr-title { position: relative; justify-self: center; min-width: 0; max-width: calc(100% - 2 * 96px); display: flex; }
+.fr-title .tb-h { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fr-title .rt-ver { position: absolute; left: calc(100% + 10px); top: 50%; translate: 0 -50%; }
 
-/* the player: one video, the still that covers a source change, and what the sample draws over the picture */
+/* The phone at the slot's full height and the transport under it, both --phone-w wide (FirstRun.tsx). */
+.fr-stage .stage { padding: 0 var(--gutter) 16px; }
+.fr-player { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
+.fr-slot { align-self: stretch; justify-content: center; align-items: flex-start; }
+.fr-player .phone { width: var(--phone-w); max-width: 100%; }
+.fr-transport { flex: none; width: var(--phone-w); max-width: 100%; margin-top: 14px; display: grid; gap: 6px; container: fr-transport / inline-size; }
+.fr-tr-row { display: flex; align-items: center; gap: 10px; min-width: 0; height: 32px; }
+.fr-tr-row .sp { flex: 1; min-width: 0; }
+.fr-tr-row .pp {
+  width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--ink); color: #fff; display: grid; place-items: center; flex: none; cursor: pointer;
+  transition: transform 120ms var(--ease-out);
+}
+.fr-tr-row .pp:active { transform: scale(.94); }
+.fr-tr-row .tc { flex: none; font-size: var(--fs-base); font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fr-tr-row .tc span { color: var(--ink-3); font-weight: 500; }
+/* the narrowest phone (1100 x 720) leaves the row about 270 px: Instagram | Clean gives up its side padding */
+@container fr-transport (max-width: 320px) {
+  .fr-tr-row { gap: 8px; }
+  .fr-tr-row .segmented > button { padding: 0 8px; }
+}
+html.kb .fr-tr-row .pp:active { transform: none; }
+
+/* the player: one video, the still that covers a source change, and what the sample draws over the picture. The video,
+   the still and the subtitles sit in the reel's box under Instagram's screen; the candidates and the cover in a second
+   reel box over it, with the scrim, the tag and the hold area on the whole screen (Phone.tsx Phone). */
+.fr-over { z-index: 2; pointer-events: none; }
 /* pressed slowly enough to see, let go at once */
 .fr-stage .phone { transition: transform 100ms cubic-bezier(.2, .8, .2, 1); }
 .fr-stage .phone.fr-held { transform: scale(.985); transition-duration: 160ms; }
@@ -88,7 +113,7 @@
 .fr-cands.show img { opacity: 1; }
 .fr-cands.picked img:not([data-pick]) { opacity: .3; }
 .fr-cands.picked img[data-pick] { transform: scale(1.07); box-shadow: 0 0 0 .9cqw var(--marker), 0 10px 24px rgba(0, 0, 0, .45); }
-.fr-cover { position: absolute; inset: 0; z-index: 2; border-radius: 6.5cqw; overflow: hidden; opacity: 0; pointer-events: none; }
+.fr-cover { position: absolute; inset: 0; z-index: 2; overflow: hidden; opacity: 0; pointer-events: none; }
 .fr-cover.show { opacity: 1; }
 .fr-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .fr-cover .cover-t {
@@ -99,27 +124,36 @@
 /* inside the picture: the screen clips anything outside it */
 .fr-hold:focus-visible { outline: 3px solid #fff; outline-offset: -6px; box-shadow: inset 0 0 0 9px rgba(0, 0, 0, .35); }
 
+/* a quiet caption on its own line; its line is kept while the sample is made, so the phone never changes size */
 .fr-hint {
-  flex: 1; min-width: 0; text-align: center; font-size: var(--fs-base); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin: 0; min-height: var(--lh-sm); text-align: center; font-size: var(--fs-sm); line-height: var(--lh-sm); color: var(--ink-3); text-wrap: balance;
   opacity: 0; transition: opacity 200ms cubic-bezier(.2, .8, .2, 1);
 }
 .fr-hint.show { opacity: 1; }
 
-/* ---------- the notes column ---------- */
-/* Its top says where in the first run this is (the onboarding prototype's step line) and what the column shows. */
-.fr-col .fr-h { height: auto; display: grid; justify-items: start; gap: 4px; padding: 10px 0 6px; }
+/* ---------- the column ---------- */
+/* Fixed width; the header, the body and the foot each keep the side padding, so the body's scroll bar runs down the
+   column's own edge instead of between two bars or through the content. */
+.fr-stage .fr-col { padding: 0 0 16px; }
+.fr-col .fr-h { height: auto; display: grid; justify-items: start; gap: 4px; padding: 10px 24px 8px; }
 .fr-where { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--fs-sm); line-height: var(--lh-sm); font-weight: 560; color: var(--ink-3); }
 .fr-where li { display: inline-flex; align-items: center; gap: 7px; }
 .fr-where li::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .fr-where li.done { color: var(--ink-2); }
 .fr-where li[aria-current] { color: var(--ink); }
 .fr-lead { font-size: var(--fs-base); line-height: var(--lh-base); color: var(--ink-2); max-width: 46ch; text-wrap: pretty; }
-/* Reversed with one child, the log stays scrolled to its end as lines arrive, without measuring; the child's free
+/* the column's one scroll area, on one axis */
+.fr-body { flex: 1; min-height: 0; min-width: 0; overflow: hidden auto; padding: 6px 24px 16px; }
+/* Reversed with one child, the thread stays scrolled to its end as lines arrive, without measuring; the child's free
    space goes below it, so a short thread starts under the heading instead of sinking to the bottom. */
-.fr-log { flex-direction: column-reverse; }
-.fr-log > .fr-log-in { display: flex; flex-direction: column; gap: 12px; margin-top: 0; margin-bottom: auto; }
-.fr-log .nt-res b.v { cursor: default; }
-@media (hover: hover) and (pointer: fine) { .fr-log .nt-res b.v:hover { text-decoration: none; } }
+.fr-body.fr-log { display: flex; flex-direction: column-reverse; }
+.fr-log > .fr-log-in { display: flex; flex-direction: column; gap: 12px; margin-bottom: auto; }
+.fr-log-in[hidden] { display: none; }
+.fr-log-in .nt-res b.v { cursor: default; }
+@media (hover: hover) and (pointer: fine) { .fr-log-in .nt-res b.v:hover { text-decoration: none; } }
+.fr-col > .cbox { margin: 0 24px; }
+.fr-strip-t { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 1 auto; }
+.strip .fr-snd { width: 28px; padding: 0; justify-content: center; }
 /* the words as they are heard; the marker follows the voice, the pencil marks the cuts */
 .fr-words { padding-left: 26px; font-size: 15px; line-height: 25px; color: var(--ink); }
 .fr-words > b { font-size: var(--fs-base); font-weight: 620; margin-right: 2px; }
@@ -145,9 +179,10 @@
 .fr-words .tk.pic { padding: 0; margin: 0; vertical-align: -8px; }
 .fr-words .tk.pic img { width: 22px; height: 30px; object-fit: cover; border-radius: 4px; display: block; box-shadow: 0 0 0 2px var(--marker); }
 
-.fr-pick { animation: fr-up 220ms cubic-bezier(.2, .8, .2, 1) both; }
+/* the editor's picker: the column's full width, scrolled by the column */
+.fr-pick { min-width: 0; animation: fr-up 220ms cubic-bezier(.2, .8, .2, 1) backwards; }
 
-.fr-foot { flex: none; display: flex; align-items: center; gap: 12px; min-height: 50px; padding-top: 12px; }
+.fr-foot { flex: none; display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 12px 24px 0; }
 .fr-foot .sp { flex: 1; }
 .fr-foot .btn { flex: none; }
 /* the listening model, only while it is on its way */
@@ -165,7 +200,7 @@ html.kb :is(.fr-stage.on .stage, .fr-stage.on .fr-col, .fr-pick, .shell.arriving
 @media (prefers-reduced-motion: reduce) {
   @keyframes fr-rise { from { opacity: 0; } }
   @keyframes fr-up { from { opacity: 0; } }
-  .fr-stage .phone, .fr-stage .phone.fr-held, .fr-stage.leaving .phone { transform: none; transition: none; }
+  .fr-stage .phone, .fr-stage .phone.fr-held, .fr-stage.leaving .phone, .fr-tr-row .pp:active { transform: none; transition: none; }
   .fr-words .tk { transform: none; transition: opacity 200ms cubic-bezier(.2, .8, .2, 1); }
   .fr-words .tk::after { transition: none; }
   .fr-cands img { transition: opacity 200ms cubic-bezier(.2, .8, .2, 1); }
@@ -174,9 +209,10 @@ html.kb :is(.fr-stage.on .stage, .fr-stage.on .fr-col, .fr-pick, .shell.arriving
 
 /* ---------- your turn: the app's window arrives around a new reel (App.tsx) ---------- */
 @keyframes fr-side { from { opacity: 0; transform: translateX(-16px); } }
-.shell.arriving > .side { animation: fr-side 220ms cubic-bezier(.2, .8, .2, 1) both; }
-/* backwards, not both: fr-in has only a from frame, and a fill that outlives it kept an opacity animation in effect on
-   .main for the rest of the session, which made .main a stacking context and drew the sidebar and title bar over full
-   screen (FullStage.tsx; e2e/preview-modes.spec.ts reads the pixels) */
+/* backwards, not both, on all three: these keyframes have only a from frame, and a fill that outlives them keeps the
+   animation in effect for the rest of the session. On .main that made a stacking context, which drew the sidebar and
+   title bar over full screen (FullStage.tsx; e2e/preview-modes.spec.ts reads the pixels); on .side the transform made
+   the sidebar the containing block of its fixed popovers (the update offer). */
+.shell.arriving > .side { animation: fr-side 220ms cubic-bezier(.2, .8, .2, 1) backwards; }
 .shell.arriving > .titlebar, .shell.arriving > .main { animation: fr-in 220ms 60ms cubic-bezier(.2, .8, .2, 1) backwards; }
 @media (prefers-reduced-motion: reduce) { @keyframes fr-side { from { opacity: 0; } } }

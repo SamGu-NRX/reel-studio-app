@@ -61,7 +61,11 @@
   position: absolute; top: calc(100cqw * (58 + var(--ig-top, 0)) / var(--sw, 393) + var(--reel-dip, 0px)); left: 50%; translate: -50% 0; background: rgba(0, 0, 0, .6); color: #fff; font-size: var(--fs-sm); line-height: var(--lh-sm);
   font-weight: 600; padding: 4px 10px; border-radius: 999px; pointer-events: none;
 }
-.cmp { position: absolute; top: calc(14px + var(--reel-dip, 0px)); left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+/* inside the screen's width (cqw is the screen's, Phone.css): on a narrow phone Done goes under the switch */
+.cmp {
+  position: absolute; top: calc(14px + var(--safe-top, 0px) + var(--reel-dip, 0px)); left: 50%; translate: -50% 0; display: flex; flex-wrap: wrap; justify-content: center;
+  align-items: center; gap: 6px; width: max-content; max-width: calc(100cqw - 16px); white-space: nowrap;
+}
 .abswitch { display: flex; padding: 3px; border-radius: 999px; background: rgba(0, 0, 0, .6); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .abswitch button { border: 0; background: transparent; color: #fff; font: inherit; font-size: var(--fs-sm); font-weight: 650; padding: 5px 11px; border-radius: 999px; white-space: nowrap; cursor: pointer; }
 .abswitch button.on { background: #fff; color: var(--ink); }
@@ -88,7 +92,7 @@
 .spot.flip .spot-lab { left: auto; right: 30px; }
 .pointer { position: absolute; inset: 0; cursor: crosshair; outline: none; }
 .pointer-hint {
-  position: absolute; top: calc(14px + var(--reel-dip, 0px)); left: 50%; translate: -50% 0; background: var(--ink); color: #fff; font-size: var(--fs-sm); font-weight: 600; padding: 5px 12px;
+  position: absolute; top: calc(14px + var(--safe-top, 0px) + var(--reel-dip, 0px)); left: 50%; translate: -50% 0; background: var(--ink); color: #fff; font-size: var(--fs-sm); font-weight: 600; padding: 5px 12px;
   border-radius: 999px; white-space: nowrap; pointer-events: none;
 }
 .ring { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(0, 0, 0, .35); pointer-events: none; }
