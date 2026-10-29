@@ -52,6 +52,8 @@ function AppMark({ icon }: { icon?: string }) {
 export function LearnSheet({ onClose, onLearned }: { onClose: () => void; onLearned: (l: StyleLesson) => void }) {
   const titleId = useId()
   const [edits, setEdits] = useState<PastEdit[] | null>(null)
+  // a limit stopped the look before it had looked everywhere (main past-edits.ts LIMITS)
+  const [cut, setCut] = useState(false)
   const [counts, setCounts] = useState<PastEditCounts>({})
   const [icons, setIcons] = useState<Partial<Record<PastEdit['app'], string>>>({})
   const [ticked, setTicked] = useState<Set<string>>(new Set())
@@ -67,7 +69,7 @@ export function LearnSheet({ onClose, onLearned }: { onClose: () => void; onLear
 
   const look = useCallback(async () => {
     try {
-      const found = await reel.style.find()
+      const { edits: found, cut: stopped } = await reel.style.find()
       const first = shown.current === null
       const before = shown.current ?? new Set<string>()
       const readable = found.filter((e) => e.readable)
@@ -80,6 +82,7 @@ export function LearnSheet({ onClose, onLearned }: { onClose: () => void; onLear
       if (!first) setAdded(new Set(found.filter((e) => !before.has(e.id)).map((e) => e.id)))
       shown.current = new Set([...before, ...found.map((e) => e.id)])
       setEdits(found)
+      setCut(stopped)
       if (readable.length) {
         const c = await reel.style.count()
         setCounts(c)
@@ -168,7 +171,9 @@ export function LearnSheet({ onClose, onLearned }: { onClose: () => void; onLear
 
         {none && (
           <div className="learn-none" data-testid="learn-none">
-            <p className="learn-none-h">No Final Cut Pro or Premiere Pro edits on this {COMPUTER} yet.</p>
+            <p className="learn-none-h">
+              {cut ? `No Final Cut Pro or Premiere Pro edits among the newest files on this ${COMPUTER}.` : `No Final Cut Pro or Premiere Pro edits on this ${COMPUTER} yet.`}
+            </p>
             <ul className="learn-ways">
               <li>
                 <b>Export one from your editor.</b>
@@ -244,6 +249,12 @@ export function LearnSheet({ onClose, onLearned }: { onClose: () => void; onLear
               )
             })}
           </div>
+        )}
+
+        {cut && !none && (
+          <p className="learn-cut" data-testid="learn-cut">
+            This {COMPUTER} has too many files to look through them all, so older edits may be missing. Use Choose files… for those.
+          </p>
         )}
 
         <footer className="learn-foot">

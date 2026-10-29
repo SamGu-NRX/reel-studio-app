@@ -2,17 +2,48 @@
 // person ticks them instead of hunting through a file dialog (Sam opened that dialog twice and cancelled both).
 // On a Mac Spotlight finds them anywhere it indexes, external drives included; a walk of the usual folders runs
 // on every system, so a Mac with Spotlight off, and Windows, still find what sits where the editors save.
-import { execFile } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { open, readdir, stat } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, sep } from 'node:path'
 import type { PastEdit, PastEditKind } from '../shared/api'
 
+/** How much one look may do, so a home folder full of files can't hold the sheet up. Each bound is checked, and
+ * reaching one marks the result `cut`, which the sheet says in one line rather than losing edits silently. There is
+ * no evidence behind the numbers beyond keeping a look to a few seconds on a large home folder; they are not tuned. */
+export interface Limits {
+  /** Directory entries the folder walk reads. */
+  walk: number
+  /** Paths taken from each Spotlight query. */
+  spotlight: number
+  /** .xml files opened, newest first, to see whether Premiere Pro wrote them. */
+  sniff: number
+  /** File reads in flight at once. */
+  concurrency: number
+}
+export const LIMITS: Limits = { walk: 20_000, spotlight: 5_000, sniff: 400, concurrency: 16 }
+
+interface Stat {
+  mtimeMs: number
+  size: number
+  isDirectory(): boolean
+}
+
 export interface FindDeps {
   platform: NodeJS.Platform
   home: string
-  /** Every path Spotlight matches for a query, or null when Spotlight can't be asked (not a Mac, or it failed). */
-  spotlight: ((query: string) => Promise<string[] | null>) | null
+  /** At most `max` paths Spotlight matches for a query, `cut` when it had more or ran out of time; null when
+   * Spotlight can't be asked (not a Mac, or it failed). */
+  spotlight: ((query: string, max: number) => Promise<{ paths: string[]; cut: boolean } | null>) | null
+  limits?: Partial<Limits>
+  /** The file reads, for tests; the real file system otherwise. */
+  fs?: { stat(path: string): Promise<Stat | null>; head(path: string, bytes: number): Promise<string | null> }
+}
+
+/** What one look found, newest first, and whether a limit stopped it before it had looked everywhere. */
+export interface Look {
+  edits: Found[]
+  cut: boolean
 }
 
 /** A found edit with the path main keeps; the page gets the PastEdit part, never the path. */
@@ -37,10 +68,6 @@ const START: Record<'darwin' | 'other', string[]> = {
   other: ['Videos', 'Documents', 'Desktop', 'Downloads', join('OneDrive', 'Documents'), join('OneDrive', 'Desktop')]
 }
 const DEPTH = 5
-/** Directory entries one walk looks at before it stops, so a huge Documents folder can't hold the list up. */
-const WALK_BUDGET = 20_000
-/** .xml files sniffed for a Premiere export, newest first; the rest of a folder full of XML is not looked at. */
-const XML_SNIFF = 400
 const XML_MAX_BYTES = 64 * 1024 * 1024
 // Folders that never hold an edit the person made: app data, packages of other apps, caches and the editors'
 // own backups and auto-saves (copies of a project already listed).
@@ -55,7 +82,7 @@ const SPOTLIGHT_QUERIES = [
   `kMDItemFSName == "*.xml"c && kMDItemFSSize < ${XML_MAX_BYTES}`
 ]
 
-const idOf = (path: string): string => createHash('sha256').update(path).digest('hex').slice(0, 16)
+export const idOf = (path: string): string => createHash('sha256').update(path).digest('hex').slice(0, 16)
 
 function excluded(path: string, home: string): boolean {
   if (INSIDE.test(path) || /[\\/]\.Trash(es)?[\\/]/.test(path)) return true
@@ -72,15 +99,15 @@ function whereOf(path: string, home: string): string {
   return parts.join(' › ')
 }
 
-async function walk(home: string, platform: NodeJS.Platform): Promise<string[]> {
+async function walk(home: string, platform: NodeJS.Platform, budget: number): Promise<{ hits: string[]; cut: boolean }> {
   const hits: string[] = []
-  let budget = WALK_BUDGET
   const queue: { dir: string; depth: number }[] = START[platform === 'darwin' ? 'darwin' : 'other'].map((d) => ({ dir: join(home, d), depth: 0 }))
-  while (queue.length && budget > 0) {
+  // runs on past the budget only to see whether anything was left unread: the first entry over it is a cut
+  while (queue.length) {
     const { dir, depth } = queue.shift()!
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
     for (const e of entries) {
-      if (--budget <= 0) break
+      if (budget-- <= 0) return { hits, cut: true }
       const full = join(dir, e.name)
       const ext = extname(e.name).toLowerCase()
       if (e.isDirectory()) {
@@ -89,41 +116,72 @@ async function walk(home: string, platform: NodeJS.Platform): Promise<string[]> 
       } else if (e.isFile() && KIND[ext] && !KIND[ext].folder) hits.push(full)
     }
   }
-  return hits
+  return { hits, cut: false }
 }
 
-async function isPremiereXml(path: string): Promise<boolean> {
-  const fh = await open(path, 'r').catch(() => null)
-  if (!fh) return false
-  try {
-    const buf = Buffer.alloc(2048)
-    const { bytesRead } = await fh.read(buf, 0, buf.length, 0)
-    // FCP7 XML, which Premiere Pro writes for File › Export › Final Cut Pro XML: `<xmeml version="4">`
-    return /<xmeml[\s>]/.test(buf.subarray(0, bytesRead).toString('utf8'))
-  } finally {
-    await fh.close()
+const realFs: NonNullable<FindDeps['fs']> = {
+  stat: (path) => stat(path).catch(() => null),
+  async head(path, bytes) {
+    const fh = await open(path, 'r').catch(() => null)
+    if (!fh) return null
+    try {
+      const buf = Buffer.alloc(bytes)
+      const { bytesRead } = await fh.read(buf, 0, bytes, 0)
+      return buf.subarray(0, bytesRead).toString('utf8')
+    } finally {
+      await fh.close()
+    }
   }
 }
 
+/** fn over every item, at most `limit` at a time, results in item order. */
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++
+      out[i] = await fn(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return out
+}
+
 /** Every edit found, newest first. Paths that vanish or can't be read between finding and looking are left out. */
-export async function findPastEdits(deps: FindDeps): Promise<Found[]> {
-  const fromSpotlight = deps.spotlight ? await Promise.all(SPOTLIGHT_QUERIES.map((q) => deps.spotlight!(q))) : []
-  const paths = new Set([...fromSpotlight.flat().filter((p): p is string => !!p), ...(await walk(deps.home, deps.platform))])
-  const seen = await Promise.all(
-    [...paths]
-      .filter((p) => KIND[extname(p).toLowerCase()] && !excluded(p, deps.home))
-      .map(async (path) => {
-        const st = await stat(path).catch(() => null)
-        const k = KIND[extname(path).toLowerCase()]
-        if (!st || st.isDirectory() !== k.folder) return null
-        return { path, st, k }
-      })
-  )
+export async function findPastEdits(deps: FindDeps): Promise<Look> {
+  const lim = { ...LIMITS, ...deps.limits }
+  const fs = deps.fs ?? realFs
+  let cut = false
+  const fromSpotlight: string[] = []
+  for (const q of deps.spotlight ? SPOTLIGHT_QUERIES : []) {
+    const got = await deps.spotlight!(q, lim.spotlight)
+    if (!got) continue
+    // a Spotlight that ignores max is held to it too
+    cut ||= got.cut || got.paths.length > lim.spotlight
+    fromSpotlight.push(...got.paths.slice(0, lim.spotlight))
+  }
+  const walked = await walk(deps.home, deps.platform, lim.walk)
+  cut ||= walked.cut
+  const paths = [...new Set([...fromSpotlight, ...walked.hits])].filter((p) => KIND[extname(p).toLowerCase()] && !excluded(p, deps.home))
+  const seen = await mapLimit(paths, lim.concurrency, async (path) => {
+    const st = await fs.stat(path)
+    const k = KIND[extname(path).toLowerCase()]
+    return st && st.isDirectory() === k.folder ? { path, st, k } : null
+  })
   const candidates = seen.filter((x) => x !== null).sort((a, b) => b.st.mtimeMs - a.st.mtimeMs)
   // XML is everywhere; only the newest are opened to see whether Premiere Pro wrote them
-  const xml = candidates.filter((c) => c.k.kind === 'premiere-xml' && c.st.size <= XML_MAX_BYTES).slice(0, XML_SNIFF)
-  const premiere = new Set((await Promise.all(xml.map(async (c) => ((await isPremiereXml(c.path)) ? c.path : null)))).filter(Boolean))
-  return candidates
+  const xml = candidates.filter((c) => c.k.kind === 'premiere-xml' && c.st.size <= XML_MAX_BYTES)
+  if (xml.length > lim.sniff) cut = true
+  const premiere = new Set(
+    (
+      await mapLimit(xml.slice(0, lim.sniff), lim.concurrency, async (c) =>
+        // FCP7 XML, which Premiere Pro writes for File › Export › Final Cut Pro XML: `<xmeml version="4">`
+        /<xmeml[\s>]/.test((await fs.head(c.path, 2048)) ?? '') ? c.path : null
+      )
+    ).filter(Boolean)
+  )
+  const edits = candidates
     .filter((c) => c.k.kind !== 'premiere-xml' || premiere.has(c.path))
     .map(({ path, st, k }) => ({
       id: idOf(path),
@@ -133,16 +191,39 @@ export async function findPastEdits(deps: FindDeps): Promise<Found[]> {
       where: whereOf(path, deps.home),
       app: k.app,
       kind: k.kind,
-      modified: st.mtime.toISOString(),
+      modified: new Date(st.mtimeMs).toISOString(),
       readable: READABLE.has(k.kind)
     }))
+  return { edits, cut }
 }
 
-/** Spotlight through `mdfind`, or null when it fails, so the folder walk alone decides. */
-export function mdfind(query: string): Promise<string[] | null> {
+/** Spotlight through `mdfind`, stopped once it has listed more than `max` paths or after 8 s; null when it fails,
+ * so the walk decides. */
+export function mdfind(query: string, max: number): Promise<{ paths: string[]; cut: boolean } | null> {
   return new Promise((resolve) => {
-    execFile('mdfind', [query], { timeout: 8000, maxBuffer: 32 * 1024 * 1024 }, (err, stdout) => {
-      resolve(err ? null : stdout.split('\n').filter(Boolean))
+    const child = spawn('mdfind', [query], { stdio: ['ignore', 'pipe', 'ignore'] })
+    const paths: string[] = []
+    let rest = ''
+    let done = false
+    const finish = (out: { paths: string[]; cut: boolean } | null): void => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      child.kill()
+      resolve(out)
+    }
+    const timer = setTimeout(() => finish({ paths: paths.slice(0, max), cut: true }), 8000)
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => {
+      const lines = (rest + chunk).split('\n')
+      rest = lines.pop() ?? ''
+      for (const line of lines) if (line) paths.push(line)
+      if (paths.length > max) finish({ paths: paths.slice(0, max), cut: true })
+    })
+    child.on('error', () => finish(null))
+    child.on('close', (code) => {
+      const all = [...paths, ...(rest ? [rest] : [])]
+      finish(code === 0 ? { paths: all.slice(0, max), cut: all.length > max } : null)
     })
   })
 }
