@@ -1,7 +1,8 @@
 /* Settings (screens/Settings.tsx): rows and hairlines, never cards (ux-foundation-b.md section 9). A list of sections
    on the left; search, then the sections, on the right. */
 
-.page.settings-page { max-width: 920px; margin: 0; padding: 0 var(--gutter) var(--space-l); }
+/* centred in the page, as My style's column is: at 1920 the list and the sections stopped at 58% of the width */
+.page.settings-page { max-width: 920px; margin: 0 auto; padding: 0 var(--gutter) var(--space-l); }
 .settings { display: grid; grid-template-columns: 168px minmax(0, 640px); gap: 32px; align-items: start; }
 
 .snav { position: sticky; top: 0; display: grid; gap: 2px; padding-top: var(--space-s); }

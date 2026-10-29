@@ -882,7 +882,7 @@ export function Reel({ slug, go }: { slug: string; go: Go }) {
     <div className="reel-page" data-slug={slug}>
       <TitleBarSlot title={title} actions={actions} />
       <div className="reel-b">
-        <section ref={setStageBox} className="stage" aria-label="Video" onPointerEnter={() => setWarmOriginal(true)}>
+        <section ref={setStageBox} className="stage" aria-label="Video" data-toast-column onPointerEnter={() => setWarmOriginal(true)}>
           {planned ? (
             <PlannedStage plan={planCard} onFiles={(p) => void addVideo(p)} />
           ) : (

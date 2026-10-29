@@ -49,6 +49,17 @@ test('fails if the play controls and timeline are not centred under the phone, o
         })
       await expect.poll(problems, { message: `${size[0]}x${size[1]}` }).toEqual([])
     }
+    // design review r12: three lane icons beside one drawn lane read as a puzzle; only a lane with something on it
+    // gets its icon. This reel has only its video (no pictures or sounds are drawn).
+    await expect(page.locator('.tl-pic, .tl-sound')).toHaveCount(0)
+    await expect(page.getByTestId('lane-gutter').locator('[title]')).toHaveCount(1)
+    await expect(page.getByTestId('lane-gutter').locator('[title]')).toHaveAttribute('title', 'Your video')
+    // the drag-out grip shows over the phone only, not wherever the pointer is on the stage
+    const grip = page.getByTestId('drag-handle')
+    await page.getByTestId('time').hover()
+    await expect.poll(() => grip.evaluate((g) => getComputedStyle(g).opacity)).toBe('0')
+    await page.getByTestId('phone').hover()
+    await expect.poll(() => grip.evaluate((g) => getComputedStyle(g).opacity)).toBe('1')
   } finally {
     await app.close()
   }
@@ -70,6 +81,10 @@ test('fails if a word in Cut, the cover slider or a link in Settings is under 24
     expect((await box(page, '[data-testid="cover-slider"]')).height).toBeGreaterThanOrEqual(24)
     await page.getByTestId('drawer-close').click()
     await page.getByTestId('account').click()
+    // design review r12: Settings' list and sections are centred in the page, as My style's column is
+    const settingsPage = await box(page, '.settings-page')
+    const mainBox = await box(page, 'main.main')
+    expect(Math.abs((settingsPage.left + settingsPage.right) / 2 - (mainBox.left + mainBox.right) / 2)).toBeLessThan(8)
     for (const id of ['licence-link', 'notices-link', 'update-releases-link']) {
       await page.getByTestId(id).scrollIntoViewIfNeeded()
       expect((await box(page, `[data-testid="${id}"]`)).height, id).toBeGreaterThanOrEqual(24)
@@ -80,8 +95,8 @@ test('fails if a word in Cut, the cover slider or a link in Settings is under 24
 })
 
 // BRIEF layout rule 5 and the audit's new-reel-toast state: "That isn't a video" sat at the window's bottom centre,
-// over Choose video.
-test("fails if a toast covers the screen's main action or is not centred on the page", async () => {
+// over Choose video; then, centred on the whole page, over the plan panel's header (design review r12).
+test("fails if a toast covers the screen's main action or its side panel, or is not centred on the main column", async () => {
   const media = makeMedia()
   const { app, page } = await launch({}, { realViewport: true })
   try {
@@ -98,12 +113,13 @@ test("fails if a toast covers the screen's main action or is not centred on the 
         await page.waitForTimeout(250)
         const at = `${size[0]}x${size[1]}${folded ? ' folded' : ''}`
         const t = await box(page, '[data-testid="toast"]')
-        const main = await box(page, 'main.main')
+        const column = await box(page, 'section.stage')
+        const panel = await box(page, '.ncol')
         const choose = await box(page, '[data-testid="planned-stage"] .btn.primary')
-        const meets = t.left < choose.right && choose.left < t.right && t.top < choose.bottom && choose.top < t.bottom
-        expect(meets, at).toBe(false)
-        expect(Math.abs((t.left + t.right) / 2 - (main.left + main.right) / 2), at).toBeLessThan(2)
-        expect(t.left, at).toBeGreaterThanOrEqual(main.left)
+        const meets = (a: typeof t, b: typeof t) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+        expect(meets(t, choose), at).toBe(false)
+        expect(meets(t, panel), at).toBe(false)
+        expect(Math.abs((t.left + t.right) / 2 - (column.left + column.right) / 2), at).toBeLessThan(2)
         await page.getByTestId('nav-home').click()
         await page.getByTestId('new-reel').click()
       }

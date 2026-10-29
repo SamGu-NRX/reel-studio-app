@@ -31,7 +31,8 @@
   padding: 0; background: transparent; color: var(--ink-3); display: grid; place-items: center; cursor: grab; opacity: 0;
   transition: opacity 150ms var(--ease-out), background-color 150ms ease, color 150ms ease, scale 150ms var(--ease-out);
 }
-@media (hover: hover) and (pointer: fine) { .stage:hover .draghandle { opacity: 1; } }
+/* over the phone, not anywhere on the stage: at rest beside the video it read as debris */
+@media (hover: hover) and (pointer: fine) { .phone:hover > .draghandle { opacity: 1; } }
 @media (hover: none) { .draghandle { opacity: 1; } }
 .draghandle:active { cursor: grabbing; scale: .96; background: var(--sunk); color: var(--ink); opacity: 1; }
 .draghandle-tip {
@@ -108,7 +109,6 @@
 html.tl-instant .tl-pic > i, html.tl-instant .tl-thumb { transition: none; }
 .tl-gutter { position: absolute; left: -24px; top: 0; width: 16px; height: 100%; pointer-events: none; }
 .tl-lane-icon { position: absolute; left: 0; width: 16px; height: 16px; color: var(--ink-3); pointer-events: auto; cursor: default; }
-.tl-lane-icon.empty { color: var(--ink-4); }
 .tl-lane-icon.pics { top: 0; }
 .tl-lane-icon.video { top: 22px; }
 .tl-lane-icon.sound { top: 40px; }

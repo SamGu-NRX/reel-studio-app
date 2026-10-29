@@ -130,7 +130,9 @@ export function Thinking() {
 
 /**
  * Toasts: a success line goes away by itself after 4 s and has no button to press. An error stays
- * until it is closed or the screen changes (App clears toasts on every screen change).
+ * until it is closed or the screen changes (App clears toasts on every screen change). It is centred over the screen's
+ * main column: the one marked data-toast-column (the stage beside a side panel), else the page, so it never covers a
+ * panel's header. Without either (the first run) styles.css centres it on the window.
  */
 export function Toast({ text, kind, onClose }: { text: string; kind?: 'error' | 'info'; onClose: () => void }) {
   useEffect(() => {
@@ -138,8 +140,25 @@ export function Toast({ text, kind, onClose }: { text: string; kind?: 'error' | 
     const t = setTimeout(onClose, 4000)
     return () => clearTimeout(t)
   }, [text, kind, onClose])
+  const el = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const column = document.querySelector('[data-toast-column]') ?? document.querySelector('main.main')
+    if (!column) return
+    const place = (): void => {
+      const t = el.current
+      if (!t) return
+      const col = column.getBoundingClientRect()
+      t.style.left = `${col.left + col.width / 2}px`
+      t.style.maxWidth = `${Math.min(640, col.width - 48)}px`
+    }
+    place()
+    // the column changes size with the window and when the sidebar folds
+    const sizes = new ResizeObserver(place)
+    sizes.observe(column)
+    return () => sizes.disconnect()
+  }, [])
   return (
-    <div className={`toast${kind === 'error' ? ' error' : ''}`} role={kind === 'error' ? 'alert' : 'status'} data-testid="toast" data-over-dialogs>
+    <div ref={el} className={`toast${kind === 'error' ? ' error' : ''}`} role={kind === 'error' ? 'alert' : 'status'} data-testid="toast" data-over-dialogs>
       <span>{text}</span>
       {kind === 'error' && <IconButton icon="x" label="Close" onDark onClick={onClose} />}
     </div>
