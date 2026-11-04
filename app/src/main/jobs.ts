@@ -207,34 +207,8 @@ export function createJobManager(broadcast: (e: JobEvent) => void, log: (s: stri
     }
   }
 
-  /** Runs an attachment change: refused while a job runs on the project or a manual edit holds it, but
-   * never by another attachment. No job or manual edit starts until every one of them is done. */
-  async function share<T>(slug: string, fn: (owner: string) => Promise<T>): Promise<T> {
-    // the last one is still letting go of the lock: a lock claimed now could be the one it deletes
-    for (let prev = sharing.get(slug); prev?.closing; prev = sharing.get(slug)) await prev.closing
-    const closed = stuck.get(slug)
-    if (closed) throw closed
-    if (forSlug(slug) || held.has(slug)) throw BUSY
-    let entry = sharing.get(slug)
-    if (!entry) sharing.set(slug, (entry = { count: 0, owner: claimProject(projectDir(slug)) }))
-    entry.count++
-    try {
-      const owner = await entry.owner
-      return await fn(owner.token)
-    } catch (e) {
-      keepStuck(slug, e)
-      throw e
-    } finally {
-      if (--entry.count === 0) {
-        const last = entry
-        last.closing = (async () => {
-          if (!stuck.has(slug)) await last.owner.then((o) => o.release(), () => undefined).catch((e) => log(`[attach] could not let go of ${slug}: ${String(e)}`))
-          sharing.delete(slug)
-        })()
-        await last.closing
-      }
-    }
-  }
+  // unfixed: attachments take the manual-edit reservation, as on the original #86 head
+  const share = hold
 
   /** A project something of a previous run still writes to (orphans.ts reap): closed until it stops. */
   function keepClosed(slug: string): void {
