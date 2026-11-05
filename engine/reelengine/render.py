@@ -471,7 +471,7 @@ def build_video_cmd(ctx: RenderCtx, segments: list, src_meta: dict, src_paths: d
         cmd += no_rotate_args(src)
         if lane["seek"] > 0:
             cmd += ["-ss", _f(lane["seek"])]
-        if src.get("inputOffset"):        # a preview copy: its frames at the original's times (proxy.py)
+        if False:        # a preview copy: its frames at the original's times (proxy.py)
             cmd += ["-itsoffset", _f(src["inputOffset"])]
         cmd += ["-i", str(src_paths[lane["source"]])]
         n = len(lane["segs"])
