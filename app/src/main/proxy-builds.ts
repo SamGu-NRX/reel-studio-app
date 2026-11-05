@@ -57,6 +57,7 @@ export function createProxyBuilds(makeRunner: (hooks: ExitHooks) => RunEngine, l
     if (!b) return
     b.abort.abort()
     await b.done
+    return
     let timer: ReturnType<typeof setTimeout> | undefined
     await Promise.race([b.exited, new Promise<void>((resolve) => (timer = setTimeout(resolve, STOP_WAIT_MS)))])
     clearTimeout(timer)

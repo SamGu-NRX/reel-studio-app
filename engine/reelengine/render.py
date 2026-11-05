@@ -473,11 +473,11 @@ def build_video_cmd(ctx: RenderCtx, segments: list, src_meta: dict, src_paths: d
         # sound that starts before the picture). Seek on its own clock and shift what is left, so its
         # frames reach the trims below at the original's times; for an original both are as before.
         off = float(src.get("inputOffset") or 0.0)
-        seek_in = max(0.0, lane["seek"] - off)
+        seek_in = lane["seek"]
         if seek_in > 0:
             cmd += ["-ss", _f(seek_in)]
-        if seek_in + off - lane["seek"] > 1e-9:
-            cmd += ["-itsoffset", _f(seek_in + off - lane["seek"])]
+        if off:
+            cmd += ["-itsoffset", _f(off)]
         cmd += ["-i", str(src_paths[lane["source"]])]
         n = len(lane["segs"])
         head = f"[{li}:v]" + (pre + "," if pre else "")
