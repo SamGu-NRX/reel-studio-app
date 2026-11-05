@@ -1,6 +1,6 @@
 {
  "generated": "2026-11-05",
- "source": "r11/features.json (93 items) split and prioritised on 23 October; re-scored 5 November against getcurate/reel-studio main d4185a3 and its open PRs, and fork/redesign-beta at 41d4898",
+ "source": "r11/features.json (93 items) split and prioritised on 23 October; re-scored 5 November, after the second overnight run against getcurate/reel-studio main d4185a3 and its open PRs, and fork/redesign-beta at 3f0ee19",
  "legend": {
   "scores": "50 → 20 means old UI % → Redesign Beta %. Old UI is Aiden's repo or an open PR. New is fork/redesign-beta, UX and function together.",
   "old": [
@@ -103,11 +103,11 @@
    "status": "active",
    "priority": "P0",
    "old": 33,
-   "new": 31,
+   "new": 38,
    "size": "XL",
    "needs": [],
    "why": null,
-   "missing": "Instagram and TikTok can connect and post only in developer mode, with no sign-in service. YouTube posting is on main (hidden) but not in the redesign. Facebook is a file preset.",
+   "missing": "YouTube posting is in the redesign behind REELSTUDIO_POSTING=1. Instagram and TikTok connect only in developer mode, with no sign-in service. Facebook is a file preset.",
    "prs": [
     61,
     109,
@@ -121,6 +121,8 @@
    "replaces": [],
    "old_1023": 18,
    "new_1023": 12,
+   "old_am": 33,
+   "new_am": 31,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -137,7 +139,7 @@
    "size": "L",
    "needs": [],
    "why": null,
-   "missing": "No Connect button: Settings.tsx:304 says posting isn't ready, and instagram:connect works only in developer mode. The hosted sign-in service the OAuth handoff expects isn't built, and Meta App Review still gates real accounts.",
+   "missing": "No Connect button: Settings.tsx:313 shows a fixed 'Not connected', and instagram:connect works only in developer mode (instagram-ipc.ts:26). The hosted sign-in service isn't built, and Meta App Review still gates real accounts.",
    "prs": [],
    "prs_was": {},
    "tags": [
@@ -149,8 +151,10 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 40,
    "evidence_old": "fork branch, no PR: fork/ig-connect",
-   "evidence_new": "instagram-oauth.ts, instagram-store.ts; instagram-ipc.ts:13 off unless developer mode; app/test/instagram.test.ts"
+   "evidence_new": "instagram-ipc.ts:26; instagram-oauth.ts; app/test/instagram.test.ts"
   },
   {
    "id": "fb-publish",
@@ -177,36 +181,10 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 0,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "No Facebook login or publish code under app/src/main"
-  },
-  {
-   "id": "yt-publish",
-   "title": "YouTube: connect and publish",
-   "area": "Export & share",
-   "parent": "multi-platform",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P1",
-   "old": 100,
-   "new": 0,
-   "size": "M",
-   "needs": [],
-   "why": "#109 merged on 4 November, hidden behind REELSTUDIO_POSTING=1. The 23 October list had YouTube only inside 'Later platforms'.",
-   "missing": "Not in the redesign: #109 merged into main on 4 November, after beta's last merge. Beta has a YouTube Shorts file preset only.",
-   "prs": [
-    109
-   ],
-   "prs_was": {},
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "sam",
-   "first_asked": "2026-10-22T04:28:02Z",
-   "replaces": [],
-   "old_1023": null,
-   "new_1023": null,
-   "evidence_old": "#109 merged 2026-11-04",
-   "evidence_new": "No YouTube code under app/src/main; shared/platforms.ts preset only"
   },
   {
    "id": "ig-publish",
@@ -233,6 +211,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 40,
    "evidence_old": "fork branch, no PR: fork/ig-connect",
    "evidence_new": "main/instagram.ts publish behind developer mode; Outs.tsx:257; instagram.test.ts"
   },
@@ -259,6 +239,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 40,
    "evidence_old": "fork branch, no PR: fork/tiktok-connect",
    "evidence_new": "main/tiktok-oauth.ts, tiktok-store.ts; index.ts:726 registers TikTok only in developer mode; app/test/tiktok.test.ts"
   },
@@ -287,8 +269,40 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 40,
    "evidence_old": "fork branch, no PR: fork/tiktok-connect",
    "evidence_new": "main/tiktok.ts publish; preload tiktok.publish; tiktok.test.ts; nothing in SharePlatforms.tsx"
+  },
+  {
+   "id": "yt-publish",
+   "title": "YouTube: connect and publish",
+   "area": "Export & share",
+   "parent": "multi-platform",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P1",
+   "old": 100,
+   "new": 40,
+   "size": "M",
+   "needs": [],
+   "why": "#109 merged on 4 November, hidden behind REELSTUDIO_POSTING=1. The 23 October list had YouTube only inside 'Later platforms'.",
+   "missing": "Share's 'Post to YouTube' and Settings › Posting are built and tested, but they appear only with REELSTUDIO_POSTING=1, so no user can reach them.",
+   "prs": [
+    109
+   ],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-22T04:28:02Z",
+   "replaces": [],
+   "old_1023": null,
+   "new_1023": null,
+   "old_am": 100,
+   "new_am": 0,
+   "evidence_old": "#109 merged 2026-11-04",
+   "evidence_new": "Outs.tsx:84-96,280-296; PostingSettings.tsx; main/posting.ts:98-101; app/e2e/posting.spec.ts"
   },
   {
    "id": "trial-reels",
@@ -319,6 +333,8 @@
    "replaces": [],
    "old_1023": 70,
    "new_1023": 60,
+   "old_am": 30,
+   "new_am": 60,
    "evidence_old": "#61 closed 2026-11-03",
    "evidence_new": "SharePlatforms.tsx:31-131 proposed Try 2 with confirm; index.ts:1302 projects:proposeTry; ai/test/trial.test.ts"
   },
@@ -331,11 +347,11 @@
    "status": "active",
    "priority": "P1",
    "old": 50,
-   "new": 60,
+   "new": 80,
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "#147's fix for a stopped export that left the Reel screen stuck on 'Wait for this version to finish' isn't in the redesign.",
+   "missing": "Polish only. #147's fix for a stopped export was left out on purpose: beta's job manager sends a job's last event after everything else and drops late events (jobs.ts:197-310).",
    "prs": [
     147
    ],
@@ -351,8 +367,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 40,
-   "evidence_old": "#147 (replaces #52) open draft, no bot review yet, CI cancelled",
-   "evidence_new": "#52's head is in beta; main/platform-export.ts:111; app/test/platform-export.test.ts"
+   "old_am": 50,
+   "new_am": 60,
+   "evidence_old": "#147 (replaces #52) open draft, no bot review yet, CI passing",
+   "evidence_new": "jobs.ts:197-260,288-310; app/e2e/export-stop.spec.ts; app/test/platform-export.test.ts"
   },
   {
    "id": "pub-later",
@@ -377,6 +395,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 0,
+   "new_am": 0,
    "evidence_old": "No PR or branch connects Threads, X or LinkedIn; YouTube moved to its own item.",
    "evidence_new": "shared/platforms.ts:23-32; app/test/platforms.test.ts"
   },
@@ -389,11 +409,11 @@
    "status": "active",
    "priority": "P0",
    "old": 50,
-   "new": 60,
+   "new": 80,
    "size": "XL",
    "needs": [],
    "why": null,
-   "missing": "The port is done: every commit the 23 October list named is in beta. Three later fixes on the PR heads (704e8f4, 9824c4d, 8ffe182) are not, and the 4 November rebases #137 to #140 wait on review.",
+   "missing": "All four parts are in beta with their later fixes; #138's jobs.share is left out with a reason. The rebases #137 to #140 still wait on review.",
    "prs": [
     137,
     138,
@@ -411,6 +431,8 @@
    "replaces": [],
    "old_1023": 55,
    "new_1023": 28,
+   "old_am": 50,
+   "new_am": 60,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -423,11 +445,11 @@
    "status": "active",
    "priority": "P0",
    "old": 50,
-   "new": 60,
+   "new": 80,
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "Process groups, the Windows Job Object and the leftover sweep work. Missing are 704e8f4 (keep engine list writes that Windows refuses while the file is read) and #137's guarded crash reaper.",
+   "missing": "Polish only. #137 is in. When Windows can't make a Job Object, contain.py:43-52 logs and runs on, so ffmpeg can outlive a crashed engine; that is #137's design, open for its review.",
    "prs": [
     137
    ],
@@ -441,8 +463,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 40,
-   "evidence_old": "#137 (replaces #85) open draft, no bot review yet, CI cancelled, failure",
-   "evidence_new": "app/src/main/proctree.ts; engine/tests/test_contain.py; app/test/orphans.test.ts; #85 lacks 704e8f4 only"
+   "old_am": 50,
+   "new_am": 60,
+   "evidence_old": "#137 (replaces #85) open draft, no bot review yet, CI passing",
+   "evidence_new": "704e8f42 ancestor; #137 as one diff; app/src/main/orphans.ts; engine/tests/test_contain.py:49-102"
   },
   {
    "id": "fn-owner",
@@ -453,13 +477,13 @@
    "status": "active",
    "priority": "P0",
    "old": 50,
-   "new": 60,
+   "new": 80,
    "size": "M",
    "needs": [
     "fn-contain"
    ],
    "why": "#86 is stacked on #85.",
-   "missing": "One writer per project works. Missing are 9824c4d and 8ffe182 (reserve projects before attachment writes, keep stuck attachment projects closed), so attachments can still refuse each other.",
+   "missing": "Polish only. #138's jobs.share is left out on purpose: attachments are staged inside the note queue's lane, so a second file of one drop waits its turn instead of being refused.",
    "prs": [
     138
    ],
@@ -473,8 +497,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 40,
-   "evidence_old": "#138 (replaces #86) open draft, no bot review yet, CI cancelled",
-   "evidence_new": "app/src/main/owner.ts; app/test/owner-token.test.ts; engine/tests/test_owner.py; 1d2aea9 is in beta"
+   "old_am": 50,
+   "new_am": 60,
+   "evidence_old": "#138 (replaces #86) open draft, no bot review yet, CI passing",
+   "evidence_new": "9824c4db, 8ffe1829 ancestors; attachments.ts:236,302; app/test/attachment-queue.test.ts, owner-token.test.ts"
   },
   {
    "id": "fn-reports",
@@ -485,13 +511,13 @@
    "status": "active",
    "priority": "P0",
    "old": 50,
-   "new": 60,
+   "new": 80,
    "size": "L",
    "needs": [
     "fn-owner"
    ],
    "why": "#87 is stacked on #86.",
-   "missing": "Reports sit beside each render and a saved version is never rewritten. Missing are the stack's attachment and Windows fixes above, and #144's engine version in the render fingerprint.",
+   "missing": "Polish only. #139 and #144 are in: a saved version missing a file is left alone, and the engine version is in the render fingerprint.",
    "prs": [
     139,
     144
@@ -506,8 +532,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 20,
-   "evidence_old": "#139 (replaces #87) open draft, no bot review yet, CI passing; #144 open draft, no bot review yet, CI cancelled",
-   "evidence_new": "render.py:1008-1020; engine/tests/test_note_versions.py; bdef3f7, 3dc091f, c719837 are in beta"
+   "old_am": 50,
+   "new_am": 60,
+   "evidence_old": "#139 (replaces #87) open draft, no bot review yet, CI passing; #144 open draft, no bot review yet, CI passing",
+   "evidence_new": "engine/tests/test_note_versions.py:64; render.py:96; test_render_fingerprint.py:35"
   },
   {
    "id": "fn-transaction",
@@ -518,13 +546,13 @@
    "status": "active",
    "priority": "P0",
    "old": 50,
-   "new": 60,
+   "new": 80,
    "size": "XL",
    "needs": [
     "fn-reports"
    ],
    "why": "Aiden's merge order: #85, #86 and #87, then #29.",
-   "missing": "The all-or-nothing note works on a private copy. Missing are the same three later fixes (704e8f4, 9824c4d, 8ffe182) and #140's reply wording when Stop comes after the save.",
+   "missing": "Polish only. The three later fixes came in with #58, and #140's BOM fix and reply wording are cherry-picked. Its download rollback is left out because restoreCredits covers it.",
    "prs": [
     140
    ],
@@ -538,8 +566,10 @@
    "replaces": [],
    "old_1023": 70,
    "new_1023": 40,
+   "old_am": 50,
+   "new_am": 60,
    "evidence_old": "#140 (replaces #29) open draft, no bot review yet, CI passing",
-   "evidence_new": "ai/test/note-atomic.test.ts incl. 'Stop during the final render'; 46a14b8 is in beta"
+   "evidence_new": "ai/test/note-atomic.test.ts; b27a2eb1 ancestor; beta README, 5 November table"
   },
   {
    "id": "fn-port",
@@ -550,13 +580,13 @@
    "status": "active",
    "priority": "P0",
    "old": null,
-   "new": 60,
+   "new": 80,
    "size": "L",
    "needs": [
     "fn-transaction"
    ],
    "why": null,
-   "missing": "The port is done: every commit the 23 October list named is in beta. Still to bring over: 704e8f4, 9824c4d and 8ffe182 from the PR heads, then whatever review changes in #137 to #140.",
+   "missing": "Done, apart from review: every fix from #137, #139, #140 and #144 is in beta, and #138's jobs.share is left out with a reason. Whatever review changes in #137 to #140 will need bringing over.",
    "prs": [],
    "prs_was": {},
    "tags": [],
@@ -566,8 +596,10 @@
    "replaces": [],
    "old_1023": null,
    "new_1023": 0,
+   "old_am": null,
+   "new_am": 60,
    "evidence_old": "No PR; unchanged.",
-   "evidence_new": "git merge-base: da7c0a7, 886fcae, c295dd0, 1d2aea9, bdef3f7, 3dc091f, c719837, 46a14b8 are ancestors of 41d4898"
+   "evidence_new": "704e8f42, 9824c4db, 8ffe1829, b27a2eb1 are ancestors of 3f0ee19; beta README, 5 November table"
   },
   {
    "id": "ep-ai-editor",
@@ -578,13 +610,13 @@
    "status": "active",
    "priority": "P0",
    "old": 62,
-   "new": 72,
+   "new": 76,
    "size": "XL",
    "needs": [
     "agent-harness"
    ],
    "why": "From its children's prerequisites.",
-   "missing": "Furthest behind: Reliable AI without capping the models (60); AI editor picker that really connects (60); Use my own AI server or key (80).",
+   "missing": "Furthest behind: Reliable AI without capping the models (60); Use my own AI server or key (80); AI editor picker that really connects (80).",
    "prs": [
     36,
     49,
@@ -608,6 +640,8 @@
    "replaces": [],
    "old_1023": 38,
    "new_1023": 64,
+   "old_am": 62,
+   "new_am": 72,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -624,7 +658,7 @@
    "size": "L",
    "needs": [],
    "why": null,
-   "missing": "The fixes from #33, #49, #74, #81 and #92 are in. Still no recorded live ChatGPT note, and #117, #135 and #143 are PRs to main only.",
+   "missing": "#117, #135 and #143 are in, and ai-run.json now records which model answered. There is still no recorded live ChatGPT note.",
    "prs": [
     117,
     49,
@@ -644,8 +678,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 60,
-   "evidence_old": "#117 (replaces #33) open draft, no bot review yet, CI passing; #49 merged 2026-10-29; #74 merged 2026-10-29; #81 merged 2026-10-29; #135 (replaces #92) open, no bot review yet, CI cancelled; #143 open draft, no bot review yet, CI cancelled",
-   "evidence_new": "ai/test/schema-parity.test.ts; ai/test/note-atomic.test.ts; editor.ts:168"
+   "old_am": 50,
+   "new_am": 60,
+   "evidence_old": "#117 (replaces #33) open draft, no bot review yet, CI passing; #49 merged 2026-10-29; #74 merged 2026-10-29; #81 merged 2026-10-29; #135 (replaces #92) open, no bot review yet, CI passing; #143 open draft, no bot review yet, CI passing",
+   "evidence_new": "anthropic.test.ts:104-200; tools.test.ts:467-475; #143 ported (d892be2)"
   },
   {
    "id": "ai-picker-connects",
@@ -656,11 +692,11 @@
    "status": "active",
    "priority": "P1",
    "old": 100,
-   "new": 60,
+   "new": 80,
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "Connect Claude and Connect ChatGPT work as rows of the editor picker. Missing is main's #106 (Cancel while the installer is still being saved), and there is still no live ChatGPT run.",
+   "missing": "Polish only. #106 isn't needed: the redesign has no in-app installer, so there is no install to cancel. No live ChatGPT run yet.",
    "prs": [
     90,
     106,
@@ -674,8 +710,10 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 80,
+   "old_am": 100,
+   "new_am": 60,
    "evidence_old": "#90 merged 2026-10-26; #106 merged 2026-10-30; #110 merged 2026-11-04",
-   "evidence_new": "vendor-connect.tsx:391-467; app/e2e/editor-hub.spec.ts; aad7c8c (#106) not in beta"
+   "evidence_new": "beta README, 5 November (#106 empty); vendor-connect.tsx; app/e2e/editor-hub.spec.ts"
   },
   {
    "id": "small-model-titles",
@@ -692,7 +730,7 @@
     "ai-frame-snapshot"
    ],
    "why": "#60 builds on #50's render-bound versions; the audit says to wait on #50 (audit-mid.md).",
-   "missing": "Polish only. The short titles use the Claude path; ChatGPT and your own server get the plain name.",
+   "missing": "Polish only. Short titles use the Claude path; ChatGPT and your own server get the plain name. #145's extra AI call waits on a decision.",
    "prs": [
     145,
     84
@@ -707,8 +745,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 40,
+   "old_am": 50,
+   "new_am": 80,
    "evidence_old": "#145 (replaces #60) open draft, no bot review yet, CI passing; #84 open, 0 Blocking, CI passing",
-   "evidence_new": "app/src/main/version-title.ts; Reel.tsx:756-760; app/test/version-title.test.ts"
+   "evidence_new": "app/src/main/version-title.ts; app/test/version-title.test.ts"
   },
   {
    "id": "custom-ai-server",
@@ -735,6 +775,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 80,
+   "old_am": 100,
+   "new_am": 80,
    "evidence_old": "#36 merged 2026-10-29",
    "evidence_new": "components/Connections.tsx; ai/test/connection.test.ts; app/e2e/connections.spec.ts:47"
   },
@@ -763,6 +805,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 60,
+   "old_am": 10,
+   "new_am": 80,
    "evidence_old": "#73 is the checker, not per-role model settings; the old UI has none (unchanged).",
    "evidence_new": "ai/src/index.ts:85-95; editor-limits.tsx:264; app/e2e/editor-hub.spec.ts:145"
   },
@@ -775,11 +819,11 @@
    "status": "active",
    "priority": "P0",
    "old": 80,
-   "new": 70,
+   "new": 75,
    "size": "L",
    "needs": [],
    "why": null,
-   "missing": "Furthest behind: Explain why each cover was picked (60); Port pro effects like motion blur (60); Edit it myself drawer (80).",
+   "missing": "Furthest behind: Port pro effects like motion blur (60); Explain why each cover was picked (80); Edit it myself drawer (80).",
    "prs": [
     17,
     39,
@@ -793,6 +837,8 @@
    "replaces": [],
    "old_1023": 80,
    "new_1023": 50,
+   "old_am": 80,
+   "new_am": 70,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -805,11 +851,11 @@
    "status": "active",
    "priority": "P0",
    "old": 70,
-   "new": 60,
+   "new": 80,
    "size": "S",
    "needs": [],
    "why": null,
-   "missing": "The cover strip says when and why each frame was picked, but the slider still steps 0.5 s (CoverTab.tsx:116); #17's 0.1 s step from 4 November isn't in.",
+   "missing": "Polish only. The cover strip says when and why each frame was picked, and the slider steps 0.1 s; no test checks the step.",
    "prs": [
     17
    ],
@@ -821,8 +867,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 60,
+   "old_am": 70,
+   "new_am": 60,
    "evidence_old": "#17 open, 0 Blocking, review predates the head, CI passing",
-   "evidence_new": "components/CoverPicks.tsx:70-72; app/e2e/cover.spec.ts; #17 head 4d73588 not in beta"
+   "evidence_new": "CoverTab.tsx:118 step 0.1 (#17 ported); components/CoverPicks.tsx; app/e2e/cover.spec.ts:51"
   },
   {
    "id": "edit-it-myself",
@@ -837,7 +885,7 @@
    "size": "L",
    "needs": [],
    "why": null,
-   "missing": "Polish only. The drawer has Cut (with Fix words), Subtitles, Sound, Pictures and Cover. Cut style, joins and zoom kinds have no hand controls.",
+   "missing": "Polish only. The drawer has Cut (Fix words, Pace, zoom-in kinds), Subtitles, Sound, Pictures and Cover. Joins can't be set by hand.",
    "prs": [],
    "prs_was": {},
    "tags": [],
@@ -847,8 +895,10 @@
    "replaces": [],
    "old_1023": 100,
    "new_1023": 60,
+   "old_am": 100,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
-   "evidence_new": "screens/edit/*Tab.tsx; app/e2e/edit-sounds.spec.ts, subtitles.spec.ts, mirror.spec.ts"
+   "evidence_new": "CutTab.tsx, PaceControls.tsx; app/e2e/cut-pace.spec.ts:33; app/test/hand-edit.test.ts"
   },
   {
    "id": "pro-effects",
@@ -879,8 +929,10 @@
    "replaces": [],
    "old_1023": 70,
    "new_1023": 0,
+   "old_am": 50,
+   "new_am": 60,
    "evidence_old": "#116 (replaces #64) open draft, no bot review yet, CI passing",
-   "evidence_new": "render.py:521-534; zoom.py:41; compositing/test_snap_zoom.py:99"
+   "evidence_new": "render.py:521-534; zoom.py:41; compositing/test_snap_zoom.py"
   },
   {
    "id": "mirror-flip",
@@ -907,6 +959,8 @@
    "replaces": [],
    "old_1023": 100,
    "new_1023": 80,
+   "old_am": 100,
+   "new_am": 80,
    "evidence_old": "#39 merged 2026-10-22",
    "evidence_new": "app/e2e/mirror.spec.ts:27; ai/src/tools.ts:1888"
   },
@@ -947,7 +1001,9 @@
     128,
     132,
     133,
-    142
+    142,
+    153,
+    157
    ],
    "prs_was": {},
    "tags": [],
@@ -957,6 +1013,8 @@
    "replaces": [],
    "old_1023": 32,
    "new_1023": 65,
+   "old_am": 31,
+   "new_am": 70,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -969,11 +1027,11 @@
    "status": "active",
    "priority": "P0",
    "old": 43,
-   "new": 73,
+   "new": 80,
    "size": "L",
    "needs": [],
    "why": null,
-   "missing": "Furthest behind: Honest progress for the first edit (60); Point at a moment to request changes (80); Simple notes thread with tool calls hidden (80).",
+   "missing": "Furthest behind: Point at a moment to request changes (80); Simple notes thread with tool calls hidden (80); Honest progress for the first edit (80).",
    "prs": [
     34,
     84,
@@ -987,6 +1045,8 @@
    "replaces": [],
    "old_1023": 43,
    "new_1023": 80,
+   "old_am": 43,
+   "new_am": 73,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -999,11 +1059,11 @@
    "status": "active",
    "priority": "P0",
    "old": 50,
-   "new": 60,
+   "new": 80,
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "The progress strip, Steps and 'Taking longer than usual' work, but beta has #34 from before its 4 November rewrite of how time left is learned (c8bf0e1), which answered the review's Blocking items.",
+   "missing": "Polish only. #34's rewrite of how time left is learned is in; the estimate hasn't been checked in a packaged build.",
    "prs": [
     34,
     84
@@ -1016,8 +1076,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 80,
-   "evidence_old": "#34 open, 4 Blocking, review predates the head, CI cancelled; #84 open, 0 Blocking, CI passing",
-   "evidence_new": "Composer.tsx:27-185; shared/live.ts:96,100; app/test/live.test.ts:188; beta has #34 at 48cafc0"
+   "old_am": 50,
+   "new_am": 60,
+   "evidence_old": "#34 open, 4 Blocking, review predates the head, CI passing; #84 open, 0 Blocking, CI passing",
+   "evidence_new": "#34 merged into beta; progress.ts learn() :227; app/test/progress.test.ts"
   },
   {
    "id": "change-at-moment",
@@ -1046,6 +1108,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 80,
+   "old_am": 50,
+   "new_am": 80,
    "evidence_old": "#126 (replaces #18) open draft, no bot review yet, CI passing",
    "evidence_new": "Composer.tsx:224-264; app/test/moments.test.ts; app/e2e/attach.spec.ts"
   },
@@ -1072,404 +1136,10 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 80,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "components/NotesLog.tsx:65-77; app/test/notes-log.test.ts"
-  },
-  {
-   "id": "rd-visual",
-   "title": "Visual system: pills, colour, type",
-   "area": "Design system",
-   "parent": "tasteful-redesign",
-   "kind": "epic",
-   "status": "active",
-   "priority": "P1",
-   "old": 20,
-   "new": 60,
-   "size": "L",
-   "needs": [],
-   "why": null,
-   "missing": "Furthest behind: A better logo (40); Intentional motion per Emil's guide (60); Pill buttons, no rounded-square clutter (60).",
-   "prs": [
-    12
-   ],
-   "prs_was": {},
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "roadmap",
-   "first_asked": "2026-10-21T03:05:45Z",
-   "replaces": [],
-   "old_1023": 25,
-   "new_1023": 60,
-   "evidence_old": null,
-   "evidence_new": null
-  },
-  {
-   "id": "better-logo",
-   "title": "A better logo",
-   "area": "Design system",
-   "parent": "rd-visual",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P1",
-   "old": 10,
-   "new": 40,
-   "size": "S",
-   "needs": [],
-   "why": null,
-   "missing": "No final mark is picked. The split-frame mark is in the title bar and sidebar only; the dock and installer icons are the old ones.",
-   "prs": [],
-   "prs_was": {},
-   "tags": [
-    "decision"
-   ],
-   "blocked_by_external": "Sam picks one of spec §10's three directions",
-   "origin": "sam",
-   "first_asked": "2026-10-22T03:56:06Z",
-   "replaces": [],
-   "old_1023": 10,
-   "new_1023": 40,
-   "evidence_old": "No PR; unchanged.",
-   "evidence_new": "components/brand.tsx:4-12; titlebar.tsx:59-64"
-  },
-  {
-   "id": "pill-buttons",
-   "title": "Pill buttons, no rounded-square clutter",
-   "area": "Design system",
-   "parent": "rd-visual",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P1",
-   "old": 10,
-   "new": 60,
-   "size": "M",
-   "needs": [],
-   "why": null,
-   "missing": "Rounded squares remain on .scrub-btn (styles.css:299), .logo (shell.css:17) and .att-thumb, and no test checks button shape.",
-   "prs": [],
-   "prs_was": {},
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "sam",
-   "first_asked": "2026-10-22T22:28:44Z",
-   "replaces": [],
-   "old_1023": 10,
-   "new_1023": 60,
-   "evidence_old": "No PR; unchanged.",
-   "evidence_new": "ui.tsx:9,21,62 Button, IconButton, Segmented; app/e2e/home-cards.spec.ts:20"
-  },
-  {
-   "id": "intentional-motion",
-   "title": "Intentional motion per Emil's guide",
-   "area": "Design system",
-   "parent": "rd-visual",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P2",
-   "old": 30,
-   "new": 60,
-   "size": "M",
-   "needs": [],
-   "why": null,
-   "missing": "Two of six runs dropped single frames after 'Use Claude'. Jank in the visible window and the drop fly-in aren't measured.",
-   "prs": [
-    12
-   ],
-   "prs_was": {},
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "sam",
-   "first_asked": "2026-10-21T03:06:59Z",
-   "replaces": [],
-   "old_1023": 50,
-   "new_1023": 60,
-   "evidence_old": "#12 closed 2026-11-03",
-   "evidence_new": "components/motion.ts; app/test/reduced-motion.test.ts; app/e2e/firstrun.spec.ts:298"
-  },
-  {
-   "id": "rd-tokens",
-   "title": "Colour and type tokens",
-   "area": "Design system",
-   "parent": "rd-visual",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P2",
-   "old": 30,
-   "new": 80,
-   "size": "S",
-   "needs": [],
-   "why": null,
-   "missing": "Tokens are defined (styles.css:1-67) and used across screens; nothing records a check of the leftover small-button overrides.",
-   "prs": [],
-   "prs_was": {},
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "sam",
-   "first_asked": "2026-10-21T03:05:45Z",
-   "replaces": [],
-   "old_1023": 30,
-   "new_1023": 80,
-   "evidence_old": "No PR; unchanged.",
-   "evidence_new": "styles.css:1-30; app/e2e/layout-audit.spec.ts"
-  },
-  {
-   "id": "rd-reel",
-   "title": "Reel screen: player and timeline",
-   "area": "Player & preview",
-   "parent": "tasteful-redesign",
-   "kind": "epic",
-   "status": "active",
-   "priority": "P1",
-   "old": 38,
-   "new": 65,
-   "size": "XL",
-   "needs": [
-    "multi-platform"
-   ],
-   "why": "From its children's prerequisites.",
-   "missing": "Furthest behind: Let users choose single or double view (0); Preview on different iPhone shapes (60); Faithful Instagram preview with my account (60).",
-   "prs": [
-    3,
-    22,
-    44,
-    66,
-    132,
-    133
-   ],
-   "prs_was": {},
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "roadmap",
-   "first_asked": "2026-10-21T01:45:31Z",
-   "replaces": [],
-   "old_1023": 38,
-   "new_1023": 52,
-   "evidence_old": null,
-   "evidence_new": null
-  },
-  {
-   "id": "instagram-preview",
-   "title": "Faithful Instagram preview with my account",
-   "area": "Player & preview",
-   "parent": "rd-reel",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P1",
-   "old": 50,
-   "new": 60,
-   "size": "M",
-   "needs": [
-    "instagram-posting"
-   ],
-   "why": "The real handle and picture come from the connected account.",
-   "missing": "The handle is the fixed text 'yourname' (Phone.tsx:331) and the counts are made up, though instagram.ts reads the connected account's name. #3's 4 November SE subtitle fixes aren't in.",
-   "prs": [
-    3,
-    132
-   ],
-   "prs_was": {
-    "132": 59
-   },
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "sam",
-   "first_asked": "2026-10-21T19:26:02Z",
-   "replaces": [],
-   "old_1023": 50,
-   "new_1023": 60,
-   "evidence_old": "#3 open, 6 Blocking, review predates the head, CI passing; #132 (replaces #59) open draft, no bot review yet, CI passing",
-   "evidence_new": "Phone.tsx:331,376,384; app/test/phone-shapes.test.ts; #59 head in beta"
-  },
-  {
-   "id": "smooth-player",
-   "title": "Smooth player with working scrubbing",
-   "area": "Player & preview",
-   "parent": "rd-reel",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P1",
-   "old": 50,
-   "new": 80,
-   "size": "M",
-   "needs": [],
-   "why": null,
-   "missing": "Polish only. Sam hasn't re-tested it, and it hasn't been checked in a packaged build.",
-   "prs": [
-    22,
-    44,
-    66
-   ],
-   "prs_was": {},
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "sam",
-   "first_asked": "2026-10-21T08:12:46Z",
-   "replaces": [],
-   "old_1023": 50,
-   "new_1023": 80,
-   "evidence_old": "#22 open draft, 1 Blocking, CI passing; #44 merged 2026-10-29; #66 merged 2026-10-29",
-   "evidence_new": "app/e2e/player-perf.spec.ts:36; player-covers.spec.ts:33; #44 and #66 in beta"
-  },
-  {
-   "id": "focus-view",
-   "title": "Big player view with live edits",
-   "area": "Player & preview",
-   "parent": "rd-reel",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P1",
-   "old": 30,
-   "new": 80,
-   "size": "L",
-   "needs": [],
-   "why": null,
-   "missing": "Polish only. The timeline can be hidden and the choice is remembered (View > Show Timeline).",
-   "prs": [],
-   "prs_was": {},
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "sam",
-   "first_asked": "2026-10-21T14:23:44Z",
-   "replaces": [],
-   "old_1023": 30,
-   "new_1023": 60,
-   "evidence_old": "No PR; unchanged.",
-   "evidence_new": "components/timelineShown.ts; Reel.tsx:969; app/e2e/timeline-lanes.spec.ts:236-275"
-  },
-  {
-   "id": "fullscreen-reel",
-   "title": "Watch the reel full screen, vertically",
-   "area": "Player & preview",
-   "parent": "rd-reel",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P2",
-   "old": 50,
-   "new": 80,
-   "size": "S",
-   "needs": [],
-   "why": null,
-   "missing": "Polish only. Full screen (key F) opens a dark stage that Esc closes.",
-   "prs": [
-    133
-   ],
-   "prs_was": {
-    "133": 4
-   },
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "sam",
-   "first_asked": "2026-10-21T01:45:31Z",
-   "replaces": [],
-   "old_1023": 50,
-   "new_1023": 60,
-   "evidence_old": "#133 (replaces #4) open draft, no bot review yet, CI cancelled",
-   "evidence_new": "components/FullStage.tsx:95-203; 4d64b0e (preview-modes); app/e2e/preview-modes.spec.ts:34"
-  },
-  {
-   "id": "phone-full-height",
-   "title": "Phone fills the whole height",
-   "area": "Player & preview",
-   "parent": "rd-reel",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P2",
-   "old": 30,
-   "new": 80,
-   "size": "S",
-   "needs": [],
-   "why": null,
-   "missing": "Polish only.",
-   "prs": [],
-   "prs_was": {},
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "sam",
-   "first_asked": "2026-10-21T17:15:58Z",
-   "replaces": [],
-   "old_1023": 30,
-   "new_1023": 80,
-   "evidence_old": "No PR; unchanged.",
-   "evidence_new": "Phone.tsx fitPhone; app/e2e/phone-view.spec.ts:25; reel-layout.spec.ts:24"
-  },
-  {
-   "id": "speed-control",
-   "title": "Playback speed in the player",
-   "area": "Player & preview",
-   "parent": "rd-reel",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P2",
-   "old": 30,
-   "new": 80,
-   "size": "S",
-   "needs": [],
-   "why": null,
-   "missing": "Polish only.",
-   "prs": [],
-   "prs_was": {},
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "sam",
-   "first_asked": "2026-10-22T03:56:06Z",
-   "replaces": [],
-   "old_1023": 30,
-   "new_1023": 80,
-   "evidence_old": "No PR; unchanged.",
-   "evidence_new": "PreviewControls.tsx:30-48; app/test/playback-rate.test.ts; app/e2e/preview-modes.spec.ts:34"
-  },
-  {
-   "id": "layout-choice",
-   "title": "Let users choose single or double view",
-   "area": "Design system",
-   "parent": "rd-reel",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P3",
-   "old": 10,
-   "new": 0,
-   "size": "M",
-   "needs": [],
-   "why": null,
-   "missing": "No single or double view choice: one video-and-notes layout, and Compare swaps versions in one player.",
-   "prs": [],
-   "prs_was": {},
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "sam",
-   "first_asked": "2026-10-21T19:26:02Z",
-   "replaces": [],
-   "old_1023": 10,
-   "new_1023": 0,
-   "evidence_old": "No PR; unchanged.",
-   "evidence_new": "Reel.tsx:129; no layout setting"
-  },
-  {
-   "id": "device-shapes",
-   "title": "Preview on different iPhone shapes",
-   "area": "Player & preview",
-   "parent": "rd-reel",
-   "kind": "leaf",
-   "status": "active",
-   "priority": "P3",
-   "old": 50,
-   "new": 60,
-   "size": "S",
-   "needs": [],
-   "why": null,
-   "missing": "The picker is back (Whole reel, iPhone SE, 17 and 17 Pro Max), but #3's 4 November fixes aren't in: on the SE the subtitle preview sits about 12 pt higher than the export puts it.",
-   "prs": [
-    3
-   ],
-   "prs_was": {},
-   "tags": [],
-   "blocked_by_external": null,
-   "origin": "sam",
-   "first_asked": "2026-10-21T01:45:31Z",
-   "replaces": [],
-   "old_1023": 50,
-   "new_1023": 0,
-   "evidence_old": "#3 open, 6 Blocking, review predates the head, CI passing",
-   "evidence_new": "shared/phone-shapes.ts:58-62; PreviewControls.tsx:70-115; app/test/phone-shapes.test.ts; 4d64b0e"
   },
   {
    "id": "rd-mystyle",
@@ -1479,29 +1149,62 @@
    "kind": "epic",
    "status": "active",
    "priority": "P1",
-   "old": 43,
-   "new": 73,
-   "size": "L",
+   "old": 45,
+   "new": 55,
+   "size": "XL",
    "needs": [],
    "why": null,
-   "missing": "Furthest behind: Learn from my past edits elsewhere (60); Remember my caption style for new reels (80); Memory panel that's easy to scan (80).",
+   "missing": "Furthest behind: My style rules checked on every render (0); Learn from my past edits elsewhere (60); Remember my caption style for new reels (80).",
    "prs": [
     70,
     80,
     82,
     127,
-    128
+    128,
+    153
    ],
    "prs_was": {},
    "tags": [],
    "blocked_by_external": null,
    "origin": "roadmap",
-   "first_asked": "2026-10-22T04:44:55Z",
+   "first_asked": "2026-10-21T03:05:45Z",
    "replaces": [],
    "old_1023": 57,
    "new_1023": 53,
+   "old_am": 43,
+   "new_am": 73,
    "evidence_old": null,
    "evidence_new": null
+  },
+  {
+   "id": "style-rule-checks",
+   "title": "My style rules checked on every render",
+   "area": "Learning & autonomy",
+   "parent": "rd-mystyle",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P1",
+   "old": 50,
+   "new": 0,
+   "size": "L",
+   "needs": [],
+   "why": "#153 (night 2) had no item. It is stacked on #128 and #127, the remember-style and My style edit PRs.",
+   "missing": "Not in the redesign: #153 is a PR to main. Beta has one rule kind (caption case, ai/src/style.ts:10) and checks nothing after a render.",
+   "prs": [
+    153
+   ],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-21T03:05:45Z",
+   "replaces": [],
+   "old_1023": null,
+   "new_1023": null,
+   "old_am": null,
+   "new_am": null,
+   "evidence_old": "#153 open draft, no bot review yet, CI passing",
+   "evidence_new": "No rule-check code on 3f0ee19; #153 not in the beta README"
   },
   {
    "id": "remember-style",
@@ -1516,7 +1219,7 @@
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "Polish only. #128's typed preference, with a confirm and a 'future reels' scope, is a PR to main.",
+   "missing": "Polish only. A typed or noted 'always' rule is asked about, with a 'For new reels' scope; #127 and #128 brought nothing new.",
    "prs": [
     128,
     80
@@ -1533,8 +1236,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 60,
+   "old_am": 50,
+   "new_am": 80,
    "evidence_old": "#128 (replaces #63) open draft, no bot review yet, CI passing; #80 merged 2026-10-29",
-   "evidence_new": "#63 and #80 commits in beta; app/e2e/remember-caption-case.spec.ts; ai/test/remember-caption-case.test.ts"
+   "evidence_new": "NotesLog.tsx:500; ai/src/style.ts:97-101; app/e2e/remember-caption-case.spec.ts"
   },
   {
    "id": "memory-panel",
@@ -1566,6 +1271,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 40,
+   "old_am": 50,
+   "new_am": 80,
    "evidence_old": "#82 merged 2026-11-04; #127 (replaces #83) open draft, no bot review yet, CI passing",
    "evidence_new": "MyStyle.tsx:199,385-410; app/e2e/memory-panel.spec.ts; #82 and #83 commits all in beta"
   },
@@ -1596,72 +1303,235 @@
    "replaces": [],
    "old_1023": 70,
    "new_1023": 60,
+   "old_am": 30,
+   "new_am": 60,
    "evidence_old": "#70 closed 2026-11-03",
    "evidence_new": "main/past-edits.ts:55-62; engine/tests/test_reference_import.py; app/e2e/my-style.spec.ts:74"
   },
   {
-   "id": "rd-onboarding",
-   "title": "Onboarding",
-   "area": "Onboarding",
+   "id": "rd-visual",
+   "title": "Visual system: pills, colour, type",
+   "area": "Design system",
    "parent": "tasteful-redesign",
    "kind": "epic",
    "status": "active",
    "priority": "P1",
-   "old": 43,
-   "new": 73,
+   "old": 20,
+   "new": 65,
    "size": "L",
    "needs": [],
    "why": null,
-   "missing": "Furthest behind: Smooth T3-style permissions in first run (60); Reuse a listening model already installed (80); Magical first run with a live demo (80).",
+   "missing": "Furthest behind: A better logo (40); Intentional motion per Emil's guide (60); Pill buttons, no rounded-square clutter (80).",
    "prs": [
-    142
+    12
    ],
    "prs_was": {},
    "tags": [],
    "blocked_by_external": null,
    "origin": "roadmap",
-   "first_asked": "2026-10-21T01:40:50Z",
+   "first_asked": "2026-10-21T03:05:45Z",
    "replaces": [],
-   "old_1023": 43,
+   "old_1023": 25,
    "new_1023": 60,
+   "old_am": 20,
+   "new_am": 60,
    "evidence_old": null,
    "evidence_new": null
   },
   {
-   "id": "first-run-permissions",
-   "title": "Smooth T3-style permissions in first run",
-   "area": "Onboarding",
-   "parent": "rd-onboarding",
+   "id": "better-logo",
+   "title": "A better logo",
+   "area": "Design system",
+   "parent": "rd-visual",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P1",
+   "old": 10,
+   "new": 40,
+   "size": "S",
+   "needs": [],
+   "why": null,
+   "missing": "No final mark is picked. The split-frame mark is in the title bar (now without a tile) and sidebar; the dock and installer icons are the old ones.",
+   "prs": [],
+   "prs_was": {},
+   "tags": [
+    "decision"
+   ],
+   "blocked_by_external": "Sam picks one of spec §10's three directions",
+   "origin": "sam",
+   "first_asked": "2026-10-22T03:56:06Z",
+   "replaces": [],
+   "old_1023": 10,
+   "new_1023": 40,
+   "old_am": 10,
+   "new_am": 40,
+   "evidence_old": "No PR; unchanged.",
+   "evidence_new": "components/brand.tsx; shell.css .logo"
+  },
+  {
+   "id": "pill-buttons",
+   "title": "Pill buttons, no rounded-square clutter",
+   "area": "Design system",
+   "parent": "rd-visual",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P1",
+   "old": 10,
+   "new": 80,
+   "size": "M",
+   "needs": [],
+   "why": null,
+   "missing": "Polish only. Every small button is a pill or circle, and a button-shape check in the layout audit catches a rounded square. The welcome logo tile stays square on purpose.",
+   "prs": [],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-22T22:28:44Z",
+   "replaces": [],
+   "old_1023": 10,
+   "new_1023": 60,
+   "old_am": 10,
+   "new_am": 60,
+   "evidence_old": "No PR; unchanged.",
+   "evidence_new": "38c6445, c2d1da5; layout-audit detect.ts button-shape; app/e2e/layout-audit-detect.spec.ts"
+  },
+  {
+   "id": "intentional-motion",
+   "title": "Intentional motion per Emil's guide",
+   "area": "Design system",
+   "parent": "rd-visual",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P2",
+   "old": 30,
+   "new": 60,
+   "size": "M",
+   "needs": [],
+   "why": null,
+   "missing": "Two of six runs dropped single frames after 'Use Claude'. Jank in the visible window and the drop fly-in aren't measured.",
+   "prs": [
+    12
+   ],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-21T03:06:59Z",
+   "replaces": [],
+   "old_1023": 50,
+   "new_1023": 60,
+   "old_am": 30,
+   "new_am": 60,
+   "evidence_old": "#12 closed 2026-11-03",
+   "evidence_new": "components/motion.ts; app/test/reduced-motion.test.ts; app/e2e/firstrun.spec.ts:298"
+  },
+  {
+   "id": "rd-tokens",
+   "title": "Colour and type tokens",
+   "area": "Design system",
+   "parent": "rd-visual",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P2",
+   "old": 30,
+   "new": 80,
+   "size": "S",
+   "needs": [],
+   "why": null,
+   "missing": "Polish only. Tokens are defined (styles.css:1-67) and used across screens, and the button-shape check now catches small-button overrides.",
+   "prs": [],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-21T03:05:45Z",
+   "replaces": [],
+   "old_1023": 30,
+   "new_1023": 80,
+   "old_am": 30,
+   "new_am": 80,
+   "evidence_old": "No PR; unchanged.",
+   "evidence_new": "styles.css; app/e2e/layout-audit.spec.ts"
+  },
+  {
+   "id": "rd-reel",
+   "title": "Reel screen: player and timeline",
+   "area": "Player & preview",
+   "parent": "tasteful-redesign",
+   "kind": "epic",
+   "status": "active",
+   "priority": "P1",
+   "old": 39,
+   "new": 69,
+   "size": "XL",
+   "needs": [
+    "multi-platform"
+   ],
+   "why": "From its children's prerequisites.",
+   "missing": "Furthest behind: Let users choose single or double view (0); Faithful Instagram preview with my account (60); Watch the reel full screen, vertically (80).",
+   "prs": [
+    3,
+    22,
+    44,
+    66,
+    132,
+    133,
+    157
+   ],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "roadmap",
+   "first_asked": "2026-10-21T01:45:31Z",
+   "replaces": [],
+   "old_1023": 38,
+   "new_1023": 52,
+   "old_am": 38,
+   "new_am": 65,
+   "evidence_old": null,
+   "evidence_new": null
+  },
+  {
+   "id": "instagram-preview",
+   "title": "Faithful Instagram preview with my account",
+   "area": "Player & preview",
+   "parent": "rd-reel",
    "kind": "leaf",
    "status": "active",
    "priority": "P1",
    "old": 50,
    "new": 60,
    "size": "M",
-   "needs": [],
-   "why": null,
-   "missing": "First run has no permission step. Notifications are asked on the Reel screen during Version 1 (Reel.tsx:1134) and folders in Settings. A clean-account check and a packaged notification check are still open.",
+   "needs": [
+    "instagram-posting"
+   ],
+   "why": "The real handle and picture come from the connected account.",
+   "missing": "The preview shows the connected account's handle and picture, else 'Your account' and no counts. Nothing in the redesign connects Instagram for a normal user, so everyone sees the placeholder.",
    "prs": [
-    142
+    3,
+    132
    ],
    "prs_was": {
-    "142": 37
+    "132": 59
    },
    "tags": [],
    "blocked_by_external": null,
    "origin": "sam",
-   "first_asked": "2026-10-21T01:40:50Z",
+   "first_asked": "2026-10-21T19:26:02Z",
    "replaces": [],
    "old_1023": 50,
    "new_1023": 60,
-   "evidence_old": "#142 (replaces #37) open draft, no bot review yet, CI passing",
-   "evidence_new": "app/test/permissions.test.ts; app/e2e/firstrun.spec.ts:178; Settings.tsx:237-248"
+   "old_am": 50,
+   "new_am": 60,
+   "evidence_old": "#3 open, 6 Blocking, review predates the head, CI passing; #132 (replaces #59) open draft, no bot review yet, CI passing",
+   "evidence_new": "Phone.tsx usePreviewAccount; app/e2e/phone-view.spec.ts; app/test/instagram.test.ts"
   },
   {
-   "id": "reuse-listening-model",
-   "title": "Reuse a listening model already installed",
-   "area": "Onboarding",
-   "parent": "rd-onboarding",
+   "id": "smooth-player",
+   "title": "Smooth player with working scrubbing",
+   "area": "Player & preview",
+   "parent": "rd-reel",
    "kind": "leaf",
    "status": "active",
    "priority": "P1",
@@ -1670,28 +1540,30 @@
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "Polish only. A reused model isn't labelled as found on this computer (ModelLine.tsx:65-90).",
+   "missing": "Polish only. Sam hasn't re-tested it, and it hasn't been checked in a packaged build.",
    "prs": [
-    142
+    22,
+    44,
+    66
    ],
-   "prs_was": {
-    "142": 37
-   },
+   "prs_was": {},
    "tags": [],
    "blocked_by_external": null,
    "origin": "sam",
-   "first_asked": "2026-10-21T01:40:50Z",
+   "first_asked": "2026-10-21T08:12:46Z",
    "replaces": [],
    "old_1023": 50,
-   "new_1023": 60,
-   "evidence_old": "#142 (replaces #37) open draft, no bot review yet, CI passing",
-   "evidence_new": "main/models.ts:137; app/e2e/listening.spec.ts:42; #37 commits all in beta"
+   "new_1023": 80,
+   "old_am": 50,
+   "new_am": 80,
+   "evidence_old": "#22 open draft, 1 Blocking, CI passing; #44 merged 2026-10-29; #66 merged 2026-10-29",
+   "evidence_new": "app/e2e/player-perf.spec.ts:36; player-covers.spec.ts:33; #44 and #66 in beta"
   },
   {
-   "id": "magical-onboarding",
-   "title": "Magical first run with a live demo",
-   "area": "Onboarding",
-   "parent": "rd-onboarding",
+   "id": "focus-view",
+   "title": "Big player view with live edits",
+   "area": "Player & preview",
+   "parent": "rd-reel",
    "kind": "leaf",
    "status": "active",
    "priority": "P1",
@@ -1700,18 +1572,196 @@
    "size": "L",
    "needs": [],
    "why": null,
-   "missing": "Polish only: the sound toggle's wording and the Windows version.",
+   "missing": "Polish only. The timeline can be hidden and the choice is remembered (View > Show Timeline).",
    "prs": [],
    "prs_was": {},
    "tags": [],
    "blocked_by_external": null,
    "origin": "sam",
-   "first_asked": "2026-10-22T04:05:45Z",
+   "first_asked": "2026-10-21T14:23:44Z",
    "replaces": [],
    "old_1023": 30,
    "new_1023": 60,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
-   "evidence_new": "FirstRun.tsx:48-169; first-run/demo.ts; app/e2e/onboarding.spec.ts:52; firstrun.spec.ts"
+   "evidence_new": "components/timelineShown.ts; Reel.tsx:969; app/e2e/timeline-lanes.spec.ts:236-275"
+  },
+  {
+   "id": "change-moments",
+   "title": "Show a change on the phone before its draft",
+   "area": "Player & preview",
+   "parent": "rd-reel",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P1",
+   "old": 50,
+   "new": 80,
+   "size": "L",
+   "needs": [],
+   "why": "#157 (night 2) and the redesign's ChangeMoments.tsx had no item. It answers the wait after a note: stills of the changed seconds first, then a 2 s clip, then the draft.",
+   "missing": "Polish only. Stills of the changed seconds show on the phone, then the 2 s clip, then the draft. The 700 ms minimum per picture isn't measured, and the e2e runs on the stand-in engine.",
+   "prs": [
+    157
+   ],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-21T03:05:45Z",
+   "replaces": [],
+   "old_1023": null,
+   "new_1023": null,
+   "old_am": null,
+   "new_am": null,
+   "evidence_old": "#157 open draft, no bot review yet, CI failure",
+   "evidence_new": "ChangeMoments.tsx (af11155); app/e2e/change-moments.spec.ts; engine/tests/test_moments.py"
+  },
+  {
+   "id": "fullscreen-reel",
+   "title": "Watch the reel full screen, vertically",
+   "area": "Player & preview",
+   "parent": "rd-reel",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P2",
+   "old": 50,
+   "new": 80,
+   "size": "S",
+   "needs": [],
+   "why": null,
+   "missing": "Polish only. Full screen (key F) opens a dark stage that Esc closes.",
+   "prs": [
+    133
+   ],
+   "prs_was": {
+    "133": 4
+   },
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-21T01:45:31Z",
+   "replaces": [],
+   "old_1023": 50,
+   "new_1023": 60,
+   "old_am": 50,
+   "new_am": 80,
+   "evidence_old": "#133 (replaces #4) open draft, no bot review yet, CI passing",
+   "evidence_new": "components/FullStage.tsx:95-203; 4d64b0e (preview-modes); app/e2e/preview-modes.spec.ts:34"
+  },
+  {
+   "id": "phone-full-height",
+   "title": "Phone fills the whole height",
+   "area": "Player & preview",
+   "parent": "rd-reel",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P2",
+   "old": 30,
+   "new": 80,
+   "size": "S",
+   "needs": [],
+   "why": null,
+   "missing": "Polish only.",
+   "prs": [],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-21T17:15:58Z",
+   "replaces": [],
+   "old_1023": 30,
+   "new_1023": 80,
+   "old_am": 30,
+   "new_am": 80,
+   "evidence_old": "No PR; unchanged.",
+   "evidence_new": "Phone.tsx fitPhone; app/e2e/phone-view.spec.ts:25; reel-layout.spec.ts:24"
+  },
+  {
+   "id": "speed-control",
+   "title": "Playback speed in the player",
+   "area": "Player & preview",
+   "parent": "rd-reel",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P2",
+   "old": 30,
+   "new": 80,
+   "size": "S",
+   "needs": [],
+   "why": null,
+   "missing": "Polish only.",
+   "prs": [],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-22T03:56:06Z",
+   "replaces": [],
+   "old_1023": 30,
+   "new_1023": 80,
+   "old_am": 30,
+   "new_am": 80,
+   "evidence_old": "No PR; unchanged.",
+   "evidence_new": "PreviewControls.tsx:30-48; app/test/playback-rate.test.ts; app/e2e/preview-modes.spec.ts:34"
+  },
+  {
+   "id": "layout-choice",
+   "title": "Let users choose single or double view",
+   "area": "Design system",
+   "parent": "rd-reel",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P3",
+   "old": 10,
+   "new": 0,
+   "size": "M",
+   "needs": [],
+   "why": null,
+   "missing": "No single or double view choice: one video-and-notes layout, and Compare swaps versions in one player.",
+   "prs": [],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-21T19:26:02Z",
+   "replaces": [],
+   "old_1023": 10,
+   "new_1023": 0,
+   "old_am": 10,
+   "new_am": 0,
+   "evidence_old": "No PR; unchanged.",
+   "evidence_new": "Reel.tsx:129; no layout setting"
+  },
+  {
+   "id": "device-shapes",
+   "title": "Preview on different iPhone shapes",
+   "area": "Player & preview",
+   "parent": "rd-reel",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P3",
+   "old": 50,
+   "new": 80,
+   "size": "S",
+   "needs": [],
+   "why": null,
+   "missing": "Polish only. The subtitle preview sits on the reel's own rectangle on every shape, which closes the SE gap #3 fixed; no test pins the SE height against the export.",
+   "prs": [
+    3
+   ],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-21T01:45:31Z",
+   "replaces": [],
+   "old_1023": 50,
+   "new_1023": 0,
+   "old_am": 50,
+   "new_am": 60,
+   "evidence_old": "#3 open, 6 Blocking, review predates the head, CI passing",
+   "evidence_new": "Player.tsx SubtitleSample; app/test/phone-shapes.test.ts; app/e2e/preview-modes.spec.ts:183,203"
   },
   {
    "id": "rd-home",
@@ -1738,6 +1788,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 70,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -1764,6 +1816,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 60,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "home.css:57-69,121-125; Home.tsx:385-420; app/e2e/home-cards.spec.ts"
   },
@@ -1792,8 +1846,132 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 80,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "#24 (merged 22 October) reopens running changes; it is navigation, not this view (unchanged).",
    "evidence_new": "Home.tsx:22,54-60,150-169; app/test/home-state.test.ts:42; home-cards.spec.ts:126"
+  },
+  {
+   "id": "rd-onboarding",
+   "title": "Onboarding",
+   "area": "Onboarding",
+   "parent": "tasteful-redesign",
+   "kind": "epic",
+   "status": "active",
+   "priority": "P1",
+   "old": 43,
+   "new": 80,
+   "size": "L",
+   "needs": [],
+   "why": null,
+   "missing": "Furthest behind: Reuse a listening model already installed (80); Smooth T3-style permissions in first run (80); Magical first run with a live demo (80).",
+   "prs": [
+    142
+   ],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "roadmap",
+   "first_asked": "2026-10-21T01:40:50Z",
+   "replaces": [],
+   "old_1023": 43,
+   "new_1023": 60,
+   "old_am": 43,
+   "new_am": 73,
+   "evidence_old": null,
+   "evidence_new": null
+  },
+  {
+   "id": "reuse-listening-model",
+   "title": "Reuse a listening model already installed",
+   "area": "Onboarding",
+   "parent": "rd-onboarding",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P1",
+   "old": 50,
+   "new": 80,
+   "size": "M",
+   "needs": [],
+   "why": null,
+   "missing": "Polish only. A reused model isn't labelled as found on this computer (ModelLine.tsx:65-90).",
+   "prs": [
+    142
+   ],
+   "prs_was": {
+    "142": 37
+   },
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-21T01:40:50Z",
+   "replaces": [],
+   "old_1023": 50,
+   "new_1023": 60,
+   "old_am": 50,
+   "new_am": 80,
+   "evidence_old": "#142 (replaces #37) open draft, no bot review yet, CI passing",
+   "evidence_new": "main/models.ts:137; app/e2e/listening.spec.ts:42; #37 commits all in beta"
+  },
+  {
+   "id": "first-run-permissions",
+   "title": "Smooth T3-style permissions in first run",
+   "area": "Onboarding",
+   "parent": "rd-onboarding",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P1",
+   "old": 50,
+   "new": 80,
+   "size": "M",
+   "needs": [],
+   "why": null,
+   "missing": "Polish only. A Mac gets a 'Your Mac' step that asks about notifications. No real macOS prompt has run (the tests use a platform seam), and the step doesn't ask about folders because new installs use Movies.",
+   "prs": [
+    142
+   ],
+   "prs_was": {
+    "142": 37
+   },
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-21T01:40:50Z",
+   "replaces": [],
+   "old_1023": 50,
+   "new_1023": 60,
+   "old_am": 50,
+   "new_am": 60,
+   "evidence_old": "#142 (replaces #37) open draft, no bot review yet, CI passing",
+   "evidence_new": "c570fa3; FirstRun.tsx; permissions.tsx; app/e2e/onboarding.spec.ts"
+  },
+  {
+   "id": "magical-onboarding",
+   "title": "Magical first run with a live demo",
+   "area": "Onboarding",
+   "parent": "rd-onboarding",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P1",
+   "old": 30,
+   "new": 80,
+   "size": "L",
+   "needs": [],
+   "why": null,
+   "missing": "Polish only: the sound toggle's wording and the Windows version. The Mac step now sits between the sample and the editor.",
+   "prs": [],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-22T04:05:45Z",
+   "replaces": [],
+   "old_1023": 30,
+   "new_1023": 60,
+   "old_am": 30,
+   "new_am": 80,
+   "evidence_old": "No PR; unchanged.",
+   "evidence_new": "FirstRun.tsx; app/e2e/onboarding.spec.ts; firstrun.spec.ts"
   },
   {
    "id": "rd-insights",
@@ -1820,6 +1998,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 20,
+   "old_am": 10,
+   "new_am": 20,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "screens/Insights.tsx:1-19; app/test/insights.test.ts tests the data side only"
   },
@@ -1846,6 +2026,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 80,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -1872,6 +2054,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 80,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "shared/chrome.ts:1-3; main/window.ts:38-39; app/test/titlebar.test.ts; app/e2e/titlebar.spec.ts"
   },
@@ -1898,6 +2082,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 80,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "main/window.ts:59-60,141-184; app/e2e/mac.spec.ts:150; layout-audit.spec.ts:25"
   },
@@ -1924,6 +2110,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 80,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -1950,6 +2138,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 80,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "Sidebar.tsx:11-83; app/e2e/a11y.spec.ts:152-180"
   },
@@ -1976,6 +2166,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 80,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "Sidebar.tsx:230-250; app/e2e/connect.spec.ts:79"
   },
@@ -2002,6 +2194,8 @@
    "replaces": [],
    "old_1023": 20,
    "new_1023": 70,
+   "old_am": 20,
+   "new_am": 80,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -2018,7 +2212,7 @@
    "size": "S",
    "needs": [],
    "why": null,
-   "missing": "Polish only.",
+   "missing": "Polish only. The new rows (Automatic updates, and Posting when it's on) are indexed.",
    "prs": [],
    "prs_was": {},
    "tags": [],
@@ -2028,8 +2222,10 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 80,
+   "old_am": 10,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
-   "evidence_new": "Settings.tsx:31-85; settings-index.ts:48-101; app/test/settings-search.test.ts"
+   "evidence_new": "settings-index.ts; app/test/settings-search.test.ts"
   },
   {
    "id": "rd-settings-sections",
@@ -2044,7 +2240,7 @@
    "size": "S",
    "needs": [],
    "why": null,
-   "missing": "Polish only. Advanced holds the cache, logs and Reset first run, as spec §8 asks.",
+   "missing": "Polish only. Advanced holds the cache, logs and Reset first run; a Posting section appears only with REELSTUDIO_POSTING=1.",
    "prs": [],
    "prs_was": {},
    "tags": [],
@@ -2054,8 +2250,10 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 60,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
-   "evidence_new": "settings-index.ts:5-41; Settings.tsx:526-559; app/e2e/settings.spec.ts:47"
+   "evidence_new": "settings-index.ts:5-41; app/e2e/settings.spec.ts:47"
   },
   {
    "id": "rd-library",
@@ -2085,6 +2283,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 60,
+   "old_am": 50,
+   "new_am": 60,
    "evidence_old": "#71 open, 0 Blocking, CI cancelled; #72 open, 0 Blocking, CI passing",
    "evidence_new": "screens/Library.tsx:10-16; app/e2e/library.spec.ts:32; #71 and #72 heads in beta"
   },
@@ -2101,7 +2301,7 @@
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "Strings outside the wording passes, such as notifications, still need one, and the licence and update text predates main's 30 October changes.",
+   "missing": "The licence and update text now follows main (AGPL, getreelstudio.com). New copy, such as the Mac step and posting, has had no wording pass.",
    "prs": [],
    "prs_was": {},
    "tags": [],
@@ -2111,8 +2311,10 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 80,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
-   "evidence_new": "86f9a03, 26fb06d, de15897; app/test/notes-log.test.ts:14,32"
+   "evidence_new": "Settings.tsx; app/test/update-copy.test.ts, legal.test.ts, posting-copy.test.ts"
   },
   {
    "id": "share-menu",
@@ -2127,7 +2329,7 @@
    "size": "S",
    "needs": [],
    "why": null,
-   "missing": "Polish only. Sam hasn't seen it.",
+   "missing": "Polish only. Sam hasn't seen it. 'Post to YouTube' joins the menu only with REELSTUDIO_POSTING=1.",
    "prs": [],
    "prs_was": {},
    "tags": [],
@@ -2137,8 +2339,10 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 80,
+   "old_am": 10,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
-   "evidence_new": "components/Outs.tsx; SharePlatforms.tsx; app/e2e/share.spec.ts:10"
+   "evidence_new": "components/Outs.tsx; app/e2e/share.spec.ts"
   },
   {
    "id": "windows-support",
@@ -2149,13 +2353,13 @@
    "status": "active",
    "priority": "P0",
    "old": 50,
-   "new": 67,
+   "new": 73,
    "size": "L",
    "needs": [
     "ep-install"
    ],
    "why": "From its children's prerequisites.",
-   "missing": "The redesign's suites pass on Windows 11, but its installer is unsigned and #97's signing isn't in it.",
+   "missing": "The redesign's suites pass on Windows 11 and #97's signing is wired in, but no signed Windows installer has been built.",
    "prs": [
     57,
     62,
@@ -2173,6 +2377,8 @@
    "replaces": [],
    "old_1023": 57,
    "new_1023": 13,
+   "old_am": 50,
+   "new_am": 67,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -2189,7 +2395,7 @@
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "Polish only. #56, #57, #62, #65 and #89 are in, and the title bar check passed on Windows 11. #123's rebase of #56 is a PR to main.",
+   "missing": "Polish only. #56, #57, #62, #65 and #89 are in; #123 (the rebase of #56) brought nothing new.",
    "prs": [
     123,
     57,
@@ -2207,8 +2413,10 @@
    "replaces": [],
    "old_1023": 70,
    "new_1023": 0,
+   "old_am": 50,
+   "new_am": 80,
    "evidence_old": "#123 (replaces #56) open draft, no bot review yet, CI passing; #57 merged 2026-10-29; #62 merged 2026-10-29; #65 merged 2026-10-29; #89 merged 2026-10-29",
-   "evidence_new": "installer.nsh:40; app/e2e/titlebar.spec.ts; Windows report batch 20 (28 Oct)"
+   "evidence_new": "packaging/installer.nsh; app/e2e/titlebar.spec.ts; beta README, 5 November table"
   },
   {
    "id": "win-redesign-run",
@@ -2225,7 +2433,7 @@
     "win-fixes"
    ],
    "why": null,
-   "missing": "The suites pass on Windows 11 (e2e 87 passed, 0 failed), but nobody has used an installed Windows build of the redesign, and the nightly installer is unsigned.",
+   "missing": "The new lanes' suites pass on Windows 11 at 3f0ee19, but nobody has used an installed Windows build of the redesign, and the nightly installer is unsigned.",
    "prs": [],
    "prs_was": {},
    "tags": [],
@@ -2235,8 +2443,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 20,
+   "old_am": 50,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
-   "evidence_new": "Windows report batch 20: win-tests-green off beta 4de5f6d, merged into beta"
+   "evidence_new": "Night-2 Windows runs at 3f0ee19: typecheck, app tests, e2e cut-pace, edit-sounds, change-moments"
   },
   {
    "id": "windows-signed-updates",
@@ -2247,14 +2457,14 @@
    "status": "active",
    "priority": "P2",
    "old": 50,
-   "new": 40,
+   "new": 60,
    "size": "M",
    "needs": [
     "win-redesign-run",
     "in-app-updater"
    ],
    "why": "It reuses the in-app updater's flow (#35) and needs a redesign build that runs on Windows.",
-   "missing": "Windows downloads an update and restarts to install, but the installer is unsigned (electron-builder.yml:154). #97's signing and #121's paid feed aren't in the redesign.",
+   "missing": "Windows downloads an update and installs it, and #97's Azure signing is wired in (RS_WIN_SIGN=1, check-win-signatures.ps1), but no signed Windows installer has been built or upgraded from.",
    "prs": [
     121,
     123,
@@ -2271,8 +2481,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 20,
+   "old_am": 50,
+   "new_am": 40,
    "evidence_old": "#121 (replaces #75) open draft, no bot review yet, CI passing; #123 (replaces #56) open draft, no bot review yet, CI passing; #97 merged 2026-10-30",
-   "evidence_new": "update-machine.ts:110-114; updater-electron.test.ts:141; electron-builder.yml:154-157"
+   "evidence_new": "packaging/electron-builder.yml:155-164; make-config.js; app/test/make-config.test.ts; updater-electron.test.ts:245"
   },
   {
    "id": "ep-install",
@@ -2283,11 +2495,11 @@
    "status": "active",
    "priority": "P0",
    "old": 50,
-   "new": 60,
+   "new": 80,
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "Furthest behind: Updates inside the app, T3-style (60); Drag-to-Applications install window on Mac (60).",
+   "missing": "Furthest behind: Updates inside the app, T3-style (80); Drag-to-Applications install window on Mac (80).",
    "prs": [
     96,
     107,
@@ -2304,6 +2516,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 33,
+   "old_am": 50,
+   "new_am": 60,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -2316,11 +2530,11 @@
    "status": "active",
    "priority": "P0",
    "old": 50,
-   "new": 60,
+   "new": 80,
    "size": "S",
    "needs": [],
    "why": null,
-   "missing": "The designed DMG window and move-to-Applications prompt are built. #31's two later test fixes (cbe963a, b9cf6a3) aren't in, and no signed Mac install has been rerun.",
+   "missing": "Polish only. #31's later fixes and #125 are in. No signed Mac install has been rerun, and only packaging/test-mac-install.sh checks the DMG window.",
    "prs": [
     125
    ],
@@ -2334,8 +2548,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 40,
+   "old_am": 50,
+   "new_am": 60,
    "evidence_old": "#125 (replaces #31) open draft, no bot review yet, CI passing",
-   "evidence_new": "packaging/dmg/make-dmg.sh; move-to-applications.test.ts; beta has #31 at 54ac95f"
+   "evidence_new": "cbe963a and b9cf6a3 are ancestors of beta; app/test/move-to-applications.test.ts"
   },
   {
    "id": "in-app-updater",
@@ -2346,11 +2562,11 @@
    "status": "active",
    "priority": "P1",
    "old": 50,
-   "new": 60,
+   "new": 80,
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "Check, download and install work against GitHub. Main now updates from getreelstudio.com with a purchase key (#96, #107, #120), which the redesign lacks, and no signed old-to-new upgrade has run.",
+   "missing": "Polish only. Updates come from getreelstudio.com with a download key, wired into Settings, the update popover and What's new. No signed old-to-new upgrade has run, and the nightly's updater is off.",
    "prs": [
     120,
     122,
@@ -2372,8 +2588,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 40,
-   "evidence_old": "#120 (replaces #35) open draft, no bot review yet, CI passing; #122 (replaces #76) open draft, no bot review yet, CI passing; #96 merged 2026-10-30; #107 merged 2026-11-04; #136 open draft, no bot review yet, CI cancelled",
-   "evidence_new": "UpdateButton.tsx:209; UpdateSettings.tsx:41; updater.test.ts; update.spec.ts:97"
+   "old_am": 50,
+   "new_am": 60,
+   "evidence_old": "#120 (replaces #35) open draft, no bot review yet, CI passing; #122 (replaces #76) open draft, no bot review yet, CI passing; #96 merged 2026-10-30; #107 merged 2026-11-04; #136 open draft, no bot review yet, CI passing",
+   "evidence_new": "UpdateButton.tsx:228-232; update-key.ts; app/test/update-key.test.ts, updater-electron.test.ts; app/e2e/update.spec.ts:114"
   },
   {
    "id": "homebrew-install",
@@ -2403,6 +2621,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 20,
+   "old_am": 30,
+   "new_am": 0,
    "evidence_old": "#1 closed 2026-10-29",
    "evidence_new": "No Casks/ or cask workflow in beta's tree"
   },
@@ -2414,12 +2634,12 @@
    "kind": "epic",
    "status": "active",
    "priority": "P0",
-   "old": 40,
-   "new": 55,
+   "old": 42,
+   "new": 48,
    "size": "XL",
    "needs": [],
    "why": null,
-   "missing": "Furthest behind: Opt-in usage data, off in settings (20); Measured performance everywhere, like T3 (60); Secure backend and IPC (60).",
+   "missing": "Furthest behind: An export matches a fresh render (0); Opt-in usage data, off in settings (20); Measured performance everywhere, like T3 (60).",
    "prs": [
     26,
     66,
@@ -2431,7 +2651,11 @@
     148,
     149,
     150,
-    151
+    151,
+    152,
+    154,
+    155,
+    156
    ],
    "prs_was": {},
    "tags": [],
@@ -2441,6 +2665,8 @@
    "replaces": [],
    "old_1023": 37,
    "new_1023": 40,
+   "old_am": 40,
+   "new_am": 55,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -2457,7 +2683,7 @@
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "A perf harness (scripts/perf) and player scrub tests are in, but nothing measures the whole app. #124's keyframes and the render speed PRs (#141, #148 to #151) are PRs to main.",
+   "missing": "The render speed work (#141, #146, #148 to #151) is ported with tests, and scripts/perf measures the player. Nothing measures the whole app: #152's timings, #154 and #155 are PRs to main, and the idle-machine timings haven't run.",
    "prs": [
     26,
     66,
@@ -2466,7 +2692,10 @@
     148,
     149,
     150,
-    151
+    151,
+    152,
+    154,
+    155
    ],
    "prs_was": {
     "124": 67
@@ -2478,8 +2707,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 40,
-   "evidence_old": "#26 closed 2026-10-29; #66 merged 2026-10-29; #124 (replaces #67) open draft, no bot review yet, CI passing; #141 open draft, no bot review yet, CI passing; #148 open draft, no bot review yet, CI passing; #149 open draft, no bot review yet, CI passing; #150 open draft, no bot review yet, CI failure; #151 open draft, no bot review yet, CI passing",
-   "evidence_new": "scripts/perf/run.mjs; app/e2e/player-perf.spec.ts:36-91"
+   "old_am": 50,
+   "new_am": 60,
+   "evidence_old": "#26 closed 2026-10-29; #66 merged 2026-10-29; #124 (replaces #67) open draft, no bot review yet, CI passing; #141 open draft, no bot review yet, CI passing; #148 open draft, no bot review yet, CI passing; #149 open draft, no bot review yet, CI passing; #150 open draft, no bot review yet, CI passing; #151 open draft, no bot review yet, CI passing; #152 open draft, no bot review yet, CI passing; #154 open draft, no bot review yet, CI passing; #155 open draft, no bot review yet, CI passing",
+   "evidence_new": "test_seek_per_segment.py, test_frames_without_draft.py, test_window_captions.py, test_hdr_draft.py; engine/harness/; scripts/perf/run.mjs"
   },
   {
    "id": "security-hardening",
@@ -2490,11 +2721,11 @@
    "status": "active",
    "priority": "P0",
    "old": 50,
-   "new": 60,
+   "new": 80,
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "The IPC sender check and argument checks are in, with tests. #69's check against statuses below 200 and #119's rebase are PRs to main.",
+   "missing": "Polish only. #69's check against statuses below 200 and #119 are in.",
    "prs": [
     119,
     69
@@ -2509,8 +2740,40 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 60,
+   "old_am": 50,
+   "new_am": 60,
    "evidence_old": "#119 (replaces #32) open draft, no bot review yet, CI passing; #69 open, 0 Blocking, review predates the head, CI passing",
-   "evidence_new": "app/src/main/ipc-guard.ts:17; app/test/ipc-guard.test.ts; app/e2e/ipc-security.spec.ts"
+   "evidence_new": "ai/src/safety.ts:161; ai/test/secfix.test.ts:192; app/test/ipc-guard.test.ts; app/e2e/ipc-security.spec.ts"
+  },
+  {
+   "id": "render-equals-fresh",
+   "title": "An export matches a fresh render",
+   "area": "Platform & infra",
+   "parent": "ep-quality",
+   "kind": "leaf",
+   "status": "active",
+   "priority": "P1",
+   "old": 50,
+   "new": 0,
+   "size": "M",
+   "needs": [],
+   "why": "#156 (night 2) had no item. Its test replays draft then export and requires the same bytes as a fresh folder; it found exports reusing draft-quality b-roll.",
+   "missing": "Not in the redesign, and the bug is: broll.py's cache key (_key, broll.py:552) leaves out draft or final, so an export after a draft reuses the draft's CRF 23 b-roll. #156 and test_incremental_render.py are a PR to main.",
+   "prs": [
+    156
+   ],
+   "prs_was": {},
+   "tags": [],
+   "blocked_by_external": null,
+   "origin": "sam",
+   "first_asked": "2026-10-21T03:08:08Z",
+   "replaces": [],
+   "old_1023": null,
+   "new_1023": null,
+   "old_am": null,
+   "new_am": null,
+   "evidence_old": "#156 open draft, no bot review yet, CI passing",
+   "evidence_new": "broll.py:545-575 on 3f0ee19; no test_incremental_render.py in the tree"
   },
   {
    "id": "telemetry-opt-in",
@@ -2537,6 +2800,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 20,
+   "old_am": 10,
+   "new_am": 20,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "ModelsAndPrivacy.tsx:25; settings.ts:66"
   },
@@ -2553,7 +2818,7 @@
    "size": "S",
    "needs": [],
    "why": "#77 (now #118) had no item on 23 October.",
-   "missing": "Polish only. Dialogs make the page behind them inert and keep Tab inside.",
+   "missing": "Polish only. Dialogs make the page behind them inert and keep Tab inside, with #118's one Tab stop per radio group.",
    "prs": [
     118
    ],
@@ -2567,8 +2832,10 @@
    "replaces": [],
    "old_1023": null,
    "new_1023": null,
+   "old_am": 50,
+   "new_am": 80,
    "evidence_old": "#118 (replaces #77) open draft, no bot review yet, CI passing",
-   "evidence_new": "#77's commits all in beta; b852585; app/e2e/dialog.spec.ts:34"
+   "evidence_new": "ui.tsx:42-53,230; app/e2e/dialog.spec.ts:34; app/e2e/posting.spec.ts:89"
   },
   {
    "id": "analytics",
@@ -2595,6 +2862,8 @@
    "replaces": [],
    "old_1023": 2,
    "new_1023": 0,
+   "old_am": 15,
+   "new_am": 25,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -2623,6 +2892,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 0,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "No Facebook insights code on beta"
   },
@@ -2651,6 +2922,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 40,
    "evidence_old": "fork branch, no PR: fork/insights-data",
    "evidence_new": "main/instagram.ts:331-366 saves outcomes.json; app/test/insights.test.ts"
   },
@@ -2679,6 +2952,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 40,
    "evidence_old": "fork branch, no PR: fork/insights-data",
    "evidence_new": "main/tiktok.ts:353-369; tiktok-ipc.ts; tiktok.test.ts"
   },
@@ -2707,6 +2982,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 0,
+   "new_am": 20,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "main/insights.ts; app/test/insights.test.ts; Insights.tsx empty"
   },
@@ -2719,11 +2996,11 @@
    "status": "active",
    "priority": "P1",
    "old": 60,
-   "new": 73,
+   "new": 80,
    "size": "L",
    "needs": [],
    "why": null,
-   "missing": "Furthest behind: Keep 60 fps, offer 30 fps (60); Send to my phone (80); Save to iCloud Drive and Google Drive (80).",
+   "missing": "Furthest behind: Keep 60 fps, offer 30 fps (80); Send to my phone (80); Save to iCloud Drive and Google Drive (80).",
    "prs": [
     47,
     48,
@@ -2739,6 +3016,8 @@
    "replaces": [],
    "old_1023": 73,
    "new_1023": 67,
+   "old_am": 60,
+   "new_am": 73,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -2751,11 +3030,11 @@
    "status": "active",
    "priority": "P1",
    "old": 50,
-   "new": 60,
+   "new": 80,
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "Option C (30 fps previews, the source rate up to 60 in the final) is only in #146, which isn't in the redesign. Settings.tsx:257 still has the older 'Faster versions' switch.",
+   "missing": "Polish only. Previews run at 30 fps, the final keeps the source rate up to 60, and the Settings switch says so (#146).",
    "prs": [
     146,
     51,
@@ -2772,8 +3051,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 60,
-   "evidence_old": "#146 (replaces #30) open draft, no bot review yet, CI cancelled; #51 merged 2026-10-29; #124 (replaces #67) open draft, no bot review yet, CI passing",
-   "evidence_new": "engine/reelengine/init.py:39-41; engine/tests/test_source_fps.py; compositing/test_keyframes.py:26"
+   "old_am": 50,
+   "new_am": 60,
+   "evidence_old": "#146 (replaces #30) open draft, no bot review yet, CI passing; #51 merged 2026-10-29; #124 (replaces #67) open draft, no bot review yet, CI passing",
+   "evidence_new": "render.py:130 preview_fps; compositing/test_preview_fps.py:50,54; app/e2e/source-fps.spec.ts:7"
   },
   {
    "id": "send-to-phone",
@@ -2800,6 +3081,8 @@
    "replaces": [],
    "old_1023": 100,
    "new_1023": 80,
+   "old_am": 100,
+   "new_am": 80,
    "evidence_old": "#48 merged 2026-11-04",
    "evidence_new": "SendToPhone.tsx:219,230,314; app/e2e/phone.spec.ts:46; app/test/phone-share.test.ts"
   },
@@ -2830,6 +3113,8 @@
    "replaces": [],
    "old_1023": 70,
    "new_1023": 60,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "#47 closed 2026-11-03",
    "evidence_new": "main/cloud-drive.ts:89,139; app/test/cloud-drive.test.ts; app/e2e/cloud-drive.spec.ts"
   },
@@ -2861,6 +3146,8 @@
    "replaces": [],
    "old_1023": 11,
    "new_1023": 0,
+   "old_am": 24,
+   "new_am": 25,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -2891,6 +3178,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 20,
    "evidence_old": "fork branch, no PR: fork/learning-loop (engine trial log)",
    "evidence_new": "engine/reelengine/variation.py; engine/tests/test_variation.py; no caller in app/src"
   },
@@ -2920,6 +3209,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 40,
    "evidence_old": "fork branch, no PR: fork/insights-data",
    "evidence_new": "main/instagram.ts:331-366; main/tiktok.ts:353-369; main/insights.ts; insights.test.ts"
   },
@@ -2948,6 +3239,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 0,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "No such code in ai/src or app/src"
   },
@@ -2974,6 +3267,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 10,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "No reference-library code in ai/src/tools.ts or app/src/main"
   },
@@ -3002,6 +3297,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 20,
    "evidence_old": "fork branch, no PR: fork/learning-loop (variation.py)",
    "evidence_new": "engine/reelengine/variation.py:16; engine/tests/test_variation.py:78"
   },
@@ -3028,6 +3325,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 20,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "ai/src/editor.ts:385; ai/test/checker.test.ts; no eval scripts in beta"
   },
@@ -3060,6 +3359,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 40,
    "evidence_old": "fork branch, no PR: fork/learning-loop",
    "evidence_new": "ai/src/learning.ts:129; ai/test/learning.test.ts; ai/test/style-proposals.test.ts"
   },
@@ -3078,7 +3379,7 @@
     "cv-style-seed"
    ],
    "why": "The cut style stores the seed; a variation without a style has only captions and brightness to vary.",
-   "missing": "The seed is stored and the same seed renders the same bytes, but you can't choose or compare seeds in the app; only the command-line trial path varies it.",
+   "missing": "The seed is stored and the same seed renders the same bytes. Cut › Pace's 'Try other moments' picks a new seed for the cut, but you can't compare seeds, and only the command line varies anything else.",
    "prs": [],
    "prs_was": {},
    "tags": [],
@@ -3088,8 +3389,10 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 60,
    "evidence_old": "fork branch, no PR: fork/learning-loop",
-   "evidence_new": "engine/reelengine/variation.py:25,83; engine/tests/test_variation.py:27,41; test_cut_style.py"
+   "evidence_new": "variation.py:25,83; engine/tests/test_variation.py; app/e2e/cut-pace.spec.ts"
   },
   {
    "id": "agent-harness",
@@ -3120,6 +3423,8 @@
    "replaces": [],
    "old_1023": 34,
    "new_1023": 20,
+   "old_am": 50,
+   "new_am": 64,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -3138,7 +3443,7 @@
     "fn-transaction"
    ],
    "why": null,
-   "missing": "You can't steer a note while it runs, and there are no parallel threads. Beta also lacks #58's attachment-staging race fixes (5c04a82, 9c069cc, 68702c3).",
+   "missing": "You can't steer a note while it runs, and there are no parallel threads. #58's attachment-staging race fixes are in now.",
    "prs": [
     58
    ],
@@ -3152,8 +3457,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 60,
+   "old_am": 70,
+   "new_am": 60,
    "evidence_old": "#58 open, 0 Blocking, CI passing",
-   "evidence_new": "main/note-queue.ts:223; app/test/note-queue.test.ts, note-queue.property.test.ts; NotesLog.tsx:523"
+   "evidence_new": "#58 b27a2eb1 ancestor; app/test/note-queue.test.ts, note-queue.property.test.ts"
   },
   {
    "id": "ai-frame-snapshot",
@@ -3170,7 +3477,7 @@
     "fn-transaction"
    ],
    "why": "#50 ties a snapshot to the render a note made, which only means something once a note is all-or-nothing.",
-   "missing": "Polish only. Frames and checks are tied to one render and a stale preview is refused. Stills still wait for a draft render (#150 is a PR to main).",
+   "missing": "Polish only. look_at_frames now draws stills from the edit when no preview matches (#150), and a stale preview is still refused.",
    "prs": [
     129
    ],
@@ -3184,8 +3491,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 20,
+   "old_am": 50,
+   "new_am": 80,
    "evidence_old": "#129 (replaces #50) open draft, no bot review yet, CI passing",
-   "evidence_new": "ai/src/tools.ts:2119-2132; compositing/test_render_identity.py; ai/test/receipts.test.ts"
+   "evidence_new": "ai/src/tools.ts:2151,2202; engine/tests/test_frames_without_draft.py; ai/test/receipts.test.ts"
   },
   {
    "id": "checker-agent",
@@ -3214,6 +3523,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 20,
+   "old_am": 70,
+   "new_am": 80,
    "evidence_old": "#73 open draft, 0 Blocking, CI passing",
    "evidence_new": "ai/src/editor.ts:390,633; Settings.tsx:89-95; ai/test/checker.test.ts"
   },
@@ -3243,6 +3554,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 40,
    "evidence_old": "fork branch, no PR: fork/mcp-harness-2",
    "evidence_new": "ai/src/index.ts:775-789; ai/test/harness-checker.test.ts"
   },
@@ -3271,6 +3584,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 60,
    "evidence_old": "fork branch, no PR: fork/mcp-harness",
    "evidence_new": "ai/relay/mcp-relay.js; ai/src/mcp/run.ts; ai/test/mcp-harness.test.ts"
   },
@@ -3304,6 +3619,8 @@
    "replaces": [],
    "old_1023": 33,
    "new_1023": 53,
+   "old_am": 43,
+   "new_am": 67,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -3342,7 +3659,9 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 80,
-   "evidence_old": "#130 (replaces #19) open draft, no bot review yet, CI cancelled; #129 (replaces #50) open draft, no bot review yet, CI passing; #145 (replaces #60) open draft, no bot review yet, CI passing",
+   "old_am": 50,
+   "new_am": 80,
+   "evidence_old": "#130 (replaces #19) open draft, no bot review yet, CI passing; #129 (replaces #50) open draft, no bot review yet, CI passing; #145 (replaces #60) open draft, no bot review yet, CI passing",
    "evidence_new": "NotesLog.tsx:13,232; app/test/notes-log.test.ts; app/test/version-diff.test.ts; #19 and #50 heads in beta"
   },
   {
@@ -3370,6 +3689,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 80,
+   "old_am": 50,
+   "new_am": 80,
    "evidence_old": "#22 open draft, 1 Blocking, CI passing",
    "evidence_new": "Reel.tsx:678-682,832-875; app/e2e/ux.spec.ts:170"
   },
@@ -3398,6 +3719,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 40,
    "evidence_old": "fork branch, no PR: fork/version-merge",
    "evidence_new": "app/src/main/index.ts:1187-1199; ai/test/version-tree.test.ts, version-merge.test.ts"
   },
@@ -3430,6 +3753,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 45,
+   "old_am": 60,
+   "new_am": 70,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -3459,6 +3784,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 40,
+   "old_am": 50,
+   "new_am": 60,
    "evidence_old": "#6 and #15 merged, but no run shows the crash gone (unchanged).",
    "evidence_new": "1985e17 and 8c84bfe are ancestors of beta; engine/tests/test_decode_frames.py; app/e2e/edit-sounds.spec.ts:58"
   },
@@ -3489,6 +3816,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 60,
+   "old_am": 70,
+   "new_am": 80,
    "evidence_old": "#72 open, 0 Blocking, CI passing",
    "evidence_new": "#72's head in beta; compositing/test_sfx.py; app/test/sfx.test.ts; app/e2e/edit-sounds.spec.ts:31-67"
   },
@@ -3520,6 +3849,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 60,
+   "old_am": 50,
+   "new_am": 80,
    "evidence_old": "#55 open, 0 Blocking, CI passing; #71 open, 0 Blocking, CI cancelled",
    "evidence_new": "#55 and #71 heads in beta; ai/src/tools.ts:763-860; ai/test/asset-media.test.ts; engine/tests/test_asset_media.py"
   },
@@ -3550,6 +3881,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 20,
+   "old_am": 70,
+   "new_am": 60,
    "evidence_old": "#55 open, 0 Blocking, CI passing",
    "evidence_new": "ai/test/stock.test.ts; stock-keys.tsx; ai/test/stock-settings.test.ts"
   },
@@ -3569,7 +3902,7 @@
     "notes-all-or-nothing"
    ],
    "why": "From its children's prerequisites.",
-   "missing": "The cut style, J/L/smash joins, zoom kinds, the meter and beat accents are built, set by the AI only. No match cuts, no hand controls.",
+   "missing": "The cut style, joins, zoom kinds, the meter and beat accents are built. A person can now set the pace and each zoom-in's kind; joins are AI-only, and match cuts are refused with a reason.",
    "prs": [
     116
    ],
@@ -3584,6 +3917,8 @@
    ],
    "old_1023": 11,
    "new_1023": 4,
+   "old_am": 26,
+   "new_am": 53,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -3602,7 +3937,7 @@
     "cv-style-seed"
    ],
    "why": "A transition is chosen per style, so the style has to exist in project.json first.",
-   "missing": "J, L and smash joins work and show as markers on the timeline, but match cuts are refused (project.ts:559), and only the AI can set a join.",
+   "missing": "J, L and smash joins work and show on the timeline, but no one can set a join by hand, and match cuts are refused with a reason: the engine doesn't compare shots (project.ts:576-579).",
    "prs": [],
    "prs_was": {},
    "tags": [],
@@ -3612,8 +3947,10 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 60,
    "evidence_old": "fork branch, no PR: fork/cut-vocab",
-   "evidence_new": "engine/reelengine/cut.py:152-178; ai/test/joins.test.ts; engine/tests/test_cut_vocab_integration.py"
+   "evidence_new": "ai/src/project.ts:576-579; ai/test/joins.test.ts:44"
   },
   {
    "id": "cv-style-seed",
@@ -3630,7 +3967,7 @@
     "fn-port"
    ],
    "why": "It adds project.json fields and AI tools, which the note transaction rewrites; building it first means porting it twice.",
-   "missing": "A preset (clean, standard, hyper, punchline) and a seed drive zooms, music and checks, but only the AI sets them; there's no picker. The preset numbers are marked untested on real output (ai/src/cut-style.ts:2).",
+   "missing": "Pace (Calm, Steady, Fast, Punchline) and 'Try other moments' are now picked by hand in Cut › Pace. The preset numbers are still untested on real output (cut-style.ts:2), and the player shows a picked pace only after the next version renders.",
    "prs": [],
    "prs_was": {},
    "tags": [],
@@ -3640,8 +3977,10 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 60,
    "evidence_old": "fork branch, no PR: fork/cut-vocab",
-   "evidence_new": "ai/src/tools.ts:1401; ai/test/cut-style.test.ts; engine/tests/test_cut_style.py"
+   "evidence_new": "46b0f27; PaceControls.tsx; app/e2e/cut-pace.spec.ts:33; app/test/hand-edit.test.ts:97,110"
   },
   {
    "id": "cv-zoom-kinds",
@@ -3658,7 +3997,7 @@
     "cv-style-seed"
    ],
    "why": "Which kinds a reel uses is set by its style.",
-   "missing": "Polish only. Punch, snap and drift zooms have names and ramps, but only the AI sets them.",
+   "missing": "Polish only. Each zoom-in can be set to Instant, Quick or Slow (punch, snap, drift) by hand. Zoom-ins can't be added by hand, and giving a kind pins the scale at 1.12.",
    "prs": [
     116
    ],
@@ -3672,8 +4011,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 20,
+   "old_am": 50,
+   "new_am": 80,
    "evidence_old": "#116 (replaces #64) open draft, no bot review yet, CI passing",
-   "evidence_new": "ai/src/tools.ts:1842-1844; compositing/test_zoom_kinds.py, test_snap_zoom.py; ai/test/zoom-kinds.test.ts"
+   "evidence_new": "46b0f27, 6f79132, be8b96d; PaceControls.tsx; app/e2e/cut-pace.spec.ts:33"
   },
   {
    "id": "cv-opening-density",
@@ -3703,6 +4044,8 @@
    ],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 60,
    "evidence_old": "fork branch, no PR: fork/cut-vocab",
    "evidence_new": "ai/prompts/system.md:77; ai/src/cut-style.ts:3-6; ai/test/cut-style.test.ts:138"
   },
@@ -3731,6 +4074,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 20,
+   "old_am": 30,
+   "new_am": 60,
    "evidence_old": "fork branch, no PR: fork/beat-accents",
    "evidence_new": "engine/reelengine/music.py:746-781; broll.py:182; compositing/test_beat_accents.py"
   },
@@ -3760,6 +4105,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "fork branch, no PR: fork/timeline-lanes",
    "evidence_new": "app/e2e/timeline-lanes.spec.ts:123; app/test/lanes.test.ts; Timeline.tsx:241-247,305"
   },
@@ -3786,6 +4133,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "fork branch, no PR: fork/cut-vocab",
    "evidence_new": "engine/reelengine/cut_style.py; engine/tests/test_cut_style.py:8; ai/test/cut-style.test.ts"
   },
@@ -3814,6 +4163,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 0,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "No angle code on beta"
   },
@@ -3842,6 +4193,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 0,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "No motion detection on beta"
   },
@@ -3871,6 +4224,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 35,
+   "old_am": 42,
+   "new_am": 45,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -3887,7 +4242,7 @@
    "size": "M",
    "needs": [],
    "why": null,
-   "missing": "Polish only. Five looks with size, position and Karaoke colours are under Subtitles.",
+   "missing": "Polish only. Five looks with size, position and Karaoke colours are under Subtitles. #131's engine half is in; its renderer half has no place in the redesign.",
    "prs": [
     131
    ],
@@ -3901,8 +4256,10 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 60,
+   "old_am": 50,
+   "new_am": 80,
    "evidence_old": "#131 (replaces #53) open draft, no bot review yet, CI passing",
-   "evidence_new": "#53 head in beta; app/e2e/caption-looks.spec.ts:9; app/test/caption-presets.test.ts"
+   "evidence_new": "beta README (#131 engine part); engine/tests/test_ux_captions.py; app/e2e/caption-looks.spec.ts"
   },
   {
    "id": "transcript-editing",
@@ -3929,6 +4286,8 @@
    "replaces": [],
    "old_1023": 50,
    "new_1023": 60,
+   "old_am": 100,
+   "new_am": 80,
    "evidence_old": "#54 merged 2026-11-04",
    "evidence_new": "#54 head in beta; components/SubtitleLines.tsx; app/e2e/subtitles.spec.ts:15"
   },
@@ -3955,6 +4314,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 20,
+   "old_am": 10,
+   "new_am": 20,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "ai/prompts/system.md:93-104; animations.generated.ts"
   },
@@ -3981,6 +4342,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 10,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "No matting code on beta"
   },
@@ -4009,6 +4372,8 @@
    "replaces": [],
    "old_1023": 37,
    "new_1023": 53,
+   "old_am": 37,
+   "new_am": 67,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -4025,7 +4390,7 @@
    "size": "S",
    "needs": [],
    "why": null,
-   "missing": "Polish only. Drop, paste and Open with all start a reel. #134's later Windows link and --updated filtering is a PR to main.",
+   "missing": "Polish only. Drop, paste and Open with all start a reel, with #134's fix and one for files opened before the app is ready (no test of its own).",
    "prs": [
     134
    ],
@@ -4041,8 +4406,10 @@
    "replaces": [],
    "old_1023": 70,
    "new_1023": 80,
-   "evidence_old": "#134 (replaces #46) open draft, no bot review yet, CI cancelled",
-   "evidence_new": "#46's commits all in beta; App.tsx:111-159; app/e2e/intake.spec.ts, intake-window.spec.ts"
+   "old_am": 50,
+   "new_am": 80,
+   "evidence_old": "#134 (replaces #46) open draft, no bot review yet, CI passing",
+   "evidence_new": "beta README (#134 0aff55a); app/e2e/intake.spec.ts, intake-window.spec.ts"
   },
   {
    "id": "plan-in-chat",
@@ -4067,6 +4434,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 60,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "ai/src/editor.ts:828-830; app/e2e/plan.spec.ts:22,143,173"
   },
@@ -4093,6 +4462,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 20,
+   "old_am": 30,
+   "new_am": 40,
    "evidence_old": "fork branch, no PR: fork/more-reels (a series for reels made from one video)",
    "evidence_new": "app/src/main/propose-reels.ts:113-134; Home.tsx:130-192; app/test/propose-reels.test.ts"
   },
@@ -4127,6 +4498,8 @@
    "replaces": [],
    "old_1023": 42,
    "new_1023": 40,
+   "old_am": 54,
+   "new_am": 43,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -4153,6 +4526,8 @@
    "replaces": [],
    "old_1023": null,
    "new_1023": 0,
+   "old_am": null,
+   "new_am": 20,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "gh run list -R SamGu-NRX/reel-studio-app; ba2c807 in beta"
   },
@@ -4169,7 +4544,7 @@
    "size": "S",
    "needs": [],
    "why": null,
-   "missing": "The PR template and CONTRIBUTING.md are in. The label list and trusted-contributor files aren't in the tree.",
+   "missing": "The PR template, CONTRIBUTING.md and AGENTS.md are in. CONTRIBUTING.md:48-62 mentions a CLA check that has no workflow, and the label list and trusted-contributor files aren't in the tree.",
    "prs": [
     28
    ],
@@ -4181,8 +4556,10 @@
    "replaces": [],
    "old_1023": 70,
    "new_1023": 60,
+   "old_am": 100,
+   "new_am": 60,
    "evidence_old": "#28 merged 2026-10-29",
-   "evidence_new": ".github/pull_request_template.md; CONTRIBUTING.md"
+   "evidence_new": ".github/pull_request_template.md; CONTRIBUTING.md:48-62; .github/workflows"
   },
   {
    "id": "ci-checks",
@@ -4197,7 +4574,7 @@
    "size": "S",
    "needs": [],
    "why": null,
-   "missing": "The checks are in, including #68's retry. No CI run exists for the redesign branch itself.",
+   "missing": "The checks are in, including #68's retry and #108's PyAV removal. No CI run exists for the redesign branch, and the leak check would report 8 findings (sample media, scripts/perf names).",
    "prs": [
     42,
     43,
@@ -4214,8 +4591,10 @@
    "replaces": [],
    "old_1023": 100,
    "new_1023": 80,
+   "old_am": 100,
+   "new_am": 80,
    "evidence_old": "#42 merged 2026-10-22; #43 merged 2026-10-22; #38 merged 2026-10-22; #45 merged 2026-10-22; #68 merged 2026-10-29; #105 merged 2026-10-30",
-   "evidence_new": ".github/workflows/ci.yml:57-81; leak-check.yml; f97b7ad (#68)"
+   "evidence_new": ".github/workflows/ci.yml:57-81; leak-check.yml"
   },
   {
    "id": "test-audit-skill",
@@ -4244,6 +4623,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 60,
+   "old_am": 10,
+   "new_am": 0,
    "evidence_old": "#28 merged without the skill (954fa3e removed agent settings), and #91 closed (unchanged).",
    "evidence_new": "ls-tree 41d4898: no .claude or skills paths"
   },
@@ -4262,7 +4643,7 @@
     "fork-ci"
    ],
    "why": null,
-   "missing": "The nightly workflow builds the redesign and publishes pre-releases, but it lives on fork/infra/nightly, not in beta. Mac builds aren't notarized, Windows builds aren't signed, and the last run was 29 October.",
+   "missing": "The nightly workflow builds and publishes pre-releases, but it lives on fork/infra/nightly, not in beta. Mac builds aren't notarized, Windows builds aren't signed, the nightly's updater is now off, and the last run was 29 October.",
    "prs": [],
    "prs_was": {},
    "tags": [],
@@ -4272,8 +4653,10 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 60,
    "evidence_old": "fork branch, no PR: fork/infra/nightly, green run 40811441841 on 29 Oct",
-   "evidence_new": "fork/infra/nightly nightly.yml; run 40811441841; app/test/nightly-channel.test.ts"
+   "evidence_new": "fork/infra/nightly nightly.yml; app/test/nightly-channel.test.ts:162"
   },
   {
    "id": "uv-tooling",
@@ -4300,6 +4683,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 40,
+   "old_am": 30,
+   "new_am": 40,
    "evidence_old": "#28 merged, but uv runs the engine only in CI; CONTRIBUTING.md and the packaged runtime still use pip (unchanged).",
    "evidence_new": ".github/workflows/ci.yml:57,70,81; CONTRIBUTING.md:20"
   },
@@ -4329,6 +4714,8 @@
    "replaces": [],
    "old_1023": 15,
    "new_1023": 0,
+   "old_am": 15,
+   "new_am": 0,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -4357,6 +4744,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 0,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "No niche code on beta"
   },
@@ -4385,6 +4774,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "No Wrapped code on beta"
   },
@@ -4411,6 +4802,8 @@
    "replaces": [],
    "old_1023": 4,
    "new_1023": 4,
+   "old_am": 24,
+   "new_am": 52,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -4437,6 +4830,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 0,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "settings-index.ts:27 library-folder; no external source code in main/library.ts"
   },
@@ -4465,6 +4860,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 60,
    "evidence_old": "fork branch, no PR: fork/more-reels",
    "evidence_new": "ai/src/propose.ts; app/test/propose-reels.test.ts; app/e2e/more-reels.spec.ts:14"
   },
@@ -4493,6 +4890,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 60,
    "evidence_old": "fork branch, no PR: fork/multi-clip-intake",
    "evidence_new": "ai/src/editor.ts:319; Timeline.tsx:296; engine/tests/test_multi_source.py; ai/test/multi-source.test.ts"
   },
@@ -4511,7 +4910,7 @@
     "media-drive"
    ],
    "why": null,
-   "missing": "Indexing runs in the background and nothing shows its progress: no screen reads the footage index status (shared/api.ts:577). No measured saving yet.",
+   "missing": "Indexing runs in the background and nothing shows its progress: no screen reads the footage index status (shared/api.ts:588). No measured saving yet.",
    "prs": [],
    "prs_was": {},
    "tags": [],
@@ -4521,8 +4920,10 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 60,
    "evidence_old": "fork branch, no PR: fork/footage-index",
-   "evidence_new": "app/src/main/index.ts:260-261; engine/tests/test_footage.py; app/test/footage-index.test.ts"
+   "evidence_new": "app/src/main/index.ts; app/test/footage-index.test.ts; engine/tests/test_footage.py"
   },
   {
    "id": "mc-sources",
@@ -4549,6 +4950,8 @@
    "replaces": [],
    "old_1023": 0,
    "new_1023": 20,
+   "old_am": 30,
+   "new_am": 80,
    "evidence_old": "fork branch, no PR: fork/multi-source",
    "evidence_new": "engine/tests/test_multi_source.py; ai/test/multi-source.test.ts; tools.ts:1321-1351 list_sources, set_clips"
   },
@@ -4575,6 +4978,8 @@
    "replaces": [],
    "old_1023": 20,
    "new_1023": 0,
+   "old_am": 20,
+   "new_am": 0,
    "evidence_old": null,
    "evidence_new": null
   },
@@ -4603,6 +5008,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 10,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "No mobile code on beta"
   },
@@ -4629,6 +5036,8 @@
    "replaces": [],
    "old_1023": 10,
    "new_1023": 0,
+   "old_am": 10,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "app/src/main/account.ts:5-18"
   },
@@ -4658,6 +5067,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "fork/browser-server-proto isn't an ancestor of beta"
   },
@@ -4684,6 +5095,8 @@
    "replaces": [],
    "old_1023": 30,
    "new_1023": 0,
+   "old_am": 30,
+   "new_am": 0,
    "evidence_old": "No PR; unchanged.",
    "evidence_new": "ls-tree 41d4898"
   }
