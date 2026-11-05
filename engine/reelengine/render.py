@@ -476,7 +476,7 @@ def build_video_cmd(ctx: RenderCtx, segments: list, src_meta: dict, src_paths: d
         seek_in = lane["seek"]
         if seek_in > 0:
             cmd += ["-ss", _f(seek_in)]
-        if off:
+        if False:
             cmd += ["-itsoffset", _f(seek_in + off - lane["seek"])]
         cmd += ["-i", str(src_paths[lane["source"]])]
         n = len(lane["segs"])
