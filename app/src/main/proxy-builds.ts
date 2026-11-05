@@ -46,6 +46,7 @@ export function createProxyBuilds(makeRunner: (hooks: ExitHooks) => RunEngine, l
         })
         .finally(() => {
           if (!spawned) markExited() // never started: nothing to wait for
+          forget(slug, build)
         })
     }
     running.set(slug, build)

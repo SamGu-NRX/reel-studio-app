@@ -228,7 +228,7 @@ def build_one(project_dir: Path, src: dict, path: Path, short_side: int = SHORT_
         raise EngineError("PROXY_SOURCE", f"source {sid} at {path} is unreadable", "I couldn't read this video.")
     mp4, side = _files(project_dir, sid, key)
     mp4.parent.mkdir(parents=True, exist_ok=True)
-    held = _take_lock(mp4.parent / f"{sid}.lock")
+    held = open(mp4.parent / f"{sid}.lock", "a+b")
     if held is None:
         return {"status": "busy", "reason": "another build of this take is running"}
     try:
@@ -236,7 +236,7 @@ def build_one(project_dir: Path, src: dict, path: Path, short_side: int = SHORT_
             return {"status": "ready", "file": str(mp4)}
         return _build(project_dir, src, path, key, mp4, side, short_side, on_pct)
     finally:
-        _release_lock(held)
+        held.close()
 
 
 def _build(project_dir: Path, src: dict, path: Path, key: str, mp4: Path, side: Path, short_side: int,
