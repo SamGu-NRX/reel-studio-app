@@ -65,8 +65,6 @@ async function walk(variant: string, env: Record<string, string>, size: { width:
   const profile = freshProfile(variant)
   const { app, page } = await launch({ ...profile.env, ...env })
   await page.setViewportSize(size)
-  const connected = () => page.evaluate(() => window.reel.ai.active().then((p) => p.connected && p.id !== 'none'))
-  await expect.poll(connected, { message: ai ? 'an AI is connected' : 'no AI is connected' }).toBe(ai)
   const stops: Stop[] = []
   const stop = async (name: string, selectors: string[], kind?: Stop['kind']) => {
     const ways = await waysIn(page, selectors)
@@ -76,8 +74,14 @@ async function walk(variant: string, env: Record<string, string>, size: { width:
   const exports = join(profile.root, 'Library', 'Exports')
   const saved = () => existsSync(exports) && readdirSync(exports).some((f) => f.endsWith('.mp4'))
   try {
+    const connected = () => page.evaluate(() => window.reel.ai.active().then((p) => p.connected && p.id !== 'none'))
+    await expect.poll(connected, { message: ai ? 'an AI is connected' : 'no AI is connected' }).toBe(ai)
     const deadline = Date.now() + 280_000
     let last = ''
+    // A choice made is counted once: after acting, the walk waits for that screen to move on (a new reel's copy keeps
+    // its stage up for a moment), and Share's choice is made once even if its popover has to be opened again.
+    const gone = (sel: string) => expect(page.locator(sel).first()).toBeHidden({ timeout: 60_000 }).catch(() => {})
+    let shared = false
     while (!saved()) {
       expect(Date.now(), `stuck at "${last}" after ${stops.map((s) => s.name).join(', ')}`).toBeLessThan(deadline)
       const at = await where(page)
@@ -87,6 +91,7 @@ async function walk(variant: string, env: Record<string, string>, size: { width:
         if (await pick.count()) {
           await stop('Pick the video', ['.fr-welcome'], 'decision')
           await pick.setInputFiles([media.video])
+          await gone('.fr-welcome:not(.leaving)')
         } else {
           await stop('Welcome', ['.fr-welcome'])
           await page.getByTestId('get-started').click()
@@ -106,15 +111,21 @@ async function walk(variant: string, env: Record<string, string>, size: { width:
       } else if (at === 'pick') {
         await stop('Pick the video', ['[data-testid="drop-zone"]', '[data-testid="plan-connect-step"]'], 'decision')
         await page.getByTestId('planned-stage').getByTestId('file-input').setInputFiles([media.video])
+        await gone('[data-testid="planned-stage"]')
       } else if (at === 'ready') {
         const share = page.getByTestId('share')
         await expect(share).toBeEnabled({ timeout: 120_000 })
-        await stop('Keep the draft or say what to change', ['[data-testid="share"]', '[data-testid="edit-myself"]', '[data-testid="note-input"]', '[data-testid="composer-connect"]'], 'decision')
+        if (!shared) await stop('Keep the draft or say what to change', ['[data-testid="share"]', '[data-testid="edit-myself"]', '[data-testid="note-input"]', '[data-testid="composer-connect"]'], 'decision')
+        shared = true
         await share.click()
       } else if (at === 'share') {
-        await stop('Post it or save it', ['[data-testid="share-pop"] .sp-main ul'], 'decision')
-        await page.getByTestId('share-finder').click()
-        await expect(page.getByTestId('share-pop')).toContainText('.mp4', { timeout: 120_000 })
+        if (!stops.some((s) => s.name === 'Post it or save it')) await stop('Post it or save it', ['[data-testid="share-pop"] .sp-main ul'], 'decision')
+        // the popover can close under the walk (a job ending re-renders the screen): then the loop opens it again
+        const save = page.getByTestId('share-finder')
+        if (await save.isVisible().catch(() => false)) {
+          await save.click({ timeout: 5_000 }).catch(() => {})
+          await expect(page.getByTestId('share-pop')).toContainText('.mp4', { timeout: 120_000 }).catch(() => {})
+        }
       } else if (at === 'ai-setup') {
         throw new Error('AI setup showed on the way to a first reel; it belongs where it first helps, such as the first typed note')
       } else {
@@ -146,7 +157,8 @@ test.describe('decisions to a first reel', () => {
   })
 
   test('with an AI connected, at the smallest window', async () => {
-    // the practice editor (main/ai-mock.ts REELSTUDIO_MOCK_NOTE), connected from the start
+    // the practice editor (main/ai-mock.ts REELSTUDIO_MOCK_NOTE), connected from the start. Its Version 1 is the mock's
+    // basic first edit; what this counts is the choices around it, which are the same.
     const stops = await walk('ai', { REELSTUDIO_MOCK_NOTE: '400' }, { width: 1100, height: 720 }, true)
     record('ai', stops)
     expect(stops.filter((s) => s.kind === 'decision').map((s) => s.name)).toEqual(['Pick the video', 'Keep the draft or say what to change', 'Post it or save it'])
